@@ -1,0 +1,8 @@
+{
+    "fortran.linter.modOutput": "${workspaceFolder}/modFiles/",
+    // "fortran.linter.includePaths": [
+    //     "./build/modules/"
+    // ],
+    // "fortran.linter.modOutput": "./build/modules/"
+    // "cmake.ctest.testSuiteDelimiter": "_",
+}

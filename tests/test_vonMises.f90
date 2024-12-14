@@ -1,0 +1,174 @@
+program test_vonMises
+    implicit none
+    
+    logical :: passed
+
+    call test_vonMises_stresseq_hydrostatic_1(passed)
+    if (.not. passed) STOP 1
+
+    call test_vonMises_stresseq_simple_tensile_2(passed)
+    if (.not. passed) STOP 2
+
+    call test_vonMises_stresseq_biaxial_3(passed)
+    if (.not. passed) STOP 3
+
+    call test_vonMises_stresseq_shear_4(passed)
+    if (.not. passed) STOP 4
+
+    call test_vonMises_stresseq_derivates_5(passed)
+    if (.not. passed) STOP 5
+
+    print*, "Passed!", passed
+    STOP 0
+end program test_vonMises
+
+subroutine test_vonMises_stresseq_hydrostatic_1(passed)
+    use, intrinsic :: iso_fortran_env
+    use tensors_types
+    use mod_vonMises
+    implicit none
+    
+    real(real64), parameter :: EPS=1e-10
+    logical, intent(out) :: passed
+
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: to_test1 
+
+    real(real64) :: result
+    real(real64) :: expected_result1 = 0.0D0
+
+
+    call to_test1%init((/5D0, 5D0, 5D0, 0D0, 0D0, 0D0/))
+
+    result = vm%stress_eq(to_test1)
+    passed = (abs(result - expected_result1) < EPS)
+    if (.not. passed) return
+end subroutine
+
+subroutine test_vonMises_stresseq_simple_tensile_2(passed)
+    use, intrinsic :: iso_fortran_env
+    use mod_vonMises
+    implicit none
+    
+    real(real64), parameter :: EPS=1e-10
+    logical, intent(out) :: passed
+
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: to_test2
+
+    real(real64) :: result
+    real(real64) :: expected_result2 = 5D0
+
+    call to_test2%init((/5D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+    
+    result = vm%stress_eq(to_test2)
+    passed = (abs(result - expected_result2) < EPS)
+    if (.not. passed) return
+    
+end subroutine
+
+subroutine test_vonMises_stresseq_biaxial_3(passed)
+    use, intrinsic :: iso_fortran_env
+    use mod_vonMises
+    implicit none
+    
+    real(real64), parameter :: EPS=1e-10
+    logical, intent(out) :: passed
+
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: to_test3
+
+    real(real64) :: result
+    real(real64) :: expected_result3 = 5D0
+
+
+    call to_test3%init((/5D0, 5D0, 0D0, 0D0, 0D0, 0D0/))
+    result = vm%stress_eq(to_test3)
+    passed = (abs(result - expected_result3) < EPS)
+    if (.not. passed) return
+
+end subroutine
+
+subroutine test_vonMises_stresseq_shear_4(passed)
+    use, intrinsic :: iso_fortran_env
+    use mod_vonMises
+    implicit none
+    
+    real(real64), parameter :: EPS=1e-10
+    logical, intent(out) :: passed
+
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: to_test4
+
+    real(real64) :: result
+    real(real64) :: expected_result4 = 3D0**0.5D0 
+
+    call to_test4%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
+    result = vm%stress_eq(to_test4)
+    passed = (abs(result - expected_result4) < EPS)
+    if (.not. passed) return
+end subroutine
+
+subroutine test_vonMises_stresseq_derivates_5(passed)
+    use, intrinsic :: iso_fortran_env
+    use mod_vonMises
+    implicit none
+    
+    real(real64), parameter :: EPS=1e-10
+    logical, intent(out) :: passed
+
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: to_test
+
+    type(ten_3D2Osym) :: result1, result2
+
+    call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+    result1 = vm%dstressEq_dstress(to_test)
+    result2 = vm%dstressEq_dstress_numeric(to_test)
+    passed = result1 .isequal. result2
+    if (.not. passed) return
+
+    call to_test%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
+    result1 = vm%dstressEq_dstress(to_test)
+    result2 = vm%dstressEq_dstress_numeric(to_test)
+    passed = result1 .isequal. result2
+    if (.not. passed) return
+
+    call to_test%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
+    result1 = vm%dstressEq_dstress(to_test)
+    result2 = vm%dstressEq_dstress_numeric(to_test)
+    passed = result1 .isequal. result2
+    if (.not. passed) return
+
+    call to_test%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
+    result1 = vm%dstressEq_dstress(to_test)
+    result2 = vm%dstressEq_dstress_numeric(to_test)
+    passed = result1 .isequal. result2
+    if (.not. passed) return
+
+    call to_test%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
+    result1 = vm%dstressEq_dstress(to_test)
+    result2 = vm%dstressEq_dstress_numeric(to_test)
+    passed = result1 .isequal. result2
+    if (.not. passed) return
+
+    call to_test%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
+    result1 = vm%dstressEq_dstress(to_test)
+    result2 = vm%dstressEq_dstress_numeric(to_test)
+    passed = result1 .isequal. result2
+    if (.not. passed) return
+
+    call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
+    result1 = vm%dstressEq_dstress(to_test)
+    result2 = vm%dstressEq_dstress_numeric(to_test)
+    passed = result1 .isequal. result2
+    if (.not. passed) return
+
+    call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
+    result1 = vm%dstressEq_dstress(to_test)
+    result2 = vm%dstressEq_dstress_numeric(to_test)
+    passed = result1 .isequal. result2
+    if (.not. passed) return
+
+end subroutine
+

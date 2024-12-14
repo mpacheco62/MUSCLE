@@ -1,0 +1,226 @@
+module mod_ten_3D2O
+    use, intrinsic :: iso_fortran_env
+    implicit none
+    private
+
+    type, public :: ten_3D2O
+    !! Type of a second order (O2) whith three dimensions (3D)
+    real(real64), dimension(9) :: vals
+    contains
+        generic, public :: init => init_ten_3D2O, init2_ten_3D2O
+        procedure, private :: init_ten_3D2O, init2_ten_3D2O
+    end type ten_3D2O
+
+    public :: operator(.isequal.)
+    interface operator (.isequal.)
+        module procedure isequal_3D2O
+    end interface
+
+    public :: operator(+)
+    interface operator (+)
+        module procedure sum_3D2O
+    end interface
+
+    public :: operator(-)
+    interface operator (-)
+        module procedure sub_3D2O
+        module procedure subU_3D2O
+    end interface
+
+    public :: operator(*)
+    interface operator (*)
+        module procedure mul_real64_3D2O
+        module procedure mul_3D2O_real64
+    end interface
+
+    public :: operator( / )
+    interface operator ( / )
+        module procedure div_3D2O_real64
+    end interface
+
+    public :: operator(.dev.)
+    interface operator (.dev.)
+        module procedure dev_3D2O
+    end interface
+
+    public :: operator(.ddot.)
+    interface operator (.ddot.)
+        module procedure ddot_3D2O_3D2O
+    end interface
+
+    public :: assignment (=)
+    interface assignment (=)
+        module procedure ten_3D2O_real64_assign
+    end interface
+
+contains
+
+    pure module subroutine ten_3D2O_real64_assign(a, b)
+        implicit none
+        type(ten_3D2O), intent(out) :: a
+        real(real64), intent(in) :: b
+        a%vals = b
+    end subroutine ten_3D2O_real64_assign
+
+    module subroutine init_ten_3D2O(self, vals)
+        implicit none
+        class(ten_3D2O), intent(inout) :: self
+        real(real64), intent(in) :: vals(9)
+        self%vals = vals
+    end subroutine init_ten_3D2O
+
+    module subroutine init2_ten_3D2O(self, xx, xy, xz, yx, yy, yz, zx, zy, zz)
+        implicit none
+        class(ten_3D2O), intent(inout) :: self
+        real(real64), intent(in) :: xx, xy, xz, yx, yy, yz, zx, zy, zz
+        self%vals = (/xx, yx, zx, xy, yy, zy, xz, yz, zz/)
+    end subroutine init2_ten_3D2O
+
+    pure module function isequal_3D2O(a, b) result(res)
+        implicit none
+        class(ten_3D2O), intent(in) :: a, b
+        logical :: res
+        real(real64), parameter :: EPS=1e-7, EPS_ABS=1e-30
+        real(real64) :: norm_a, norm_b, norm_max, norm
+
+        norm_a =   abs(a%vals(1)) + abs(a%vals(2)) + abs(a%vals(3)) &
+                 + abs(a%vals(4)) + abs(a%vals(5)) + abs(a%vals(6)) &
+                 + abs(a%vals(7)) + abs(a%vals(8)) + abs(a%vals(9))
+
+        norm_b =   abs(b%vals(1)) + abs(b%vals(2)) + abs(b%vals(3)) &
+                 + abs(b%vals(4)) + abs(b%vals(5)) + abs(b%vals(6)) &
+                 + abs(b%vals(7)) + abs(b%vals(8)) + abs(b%vals(9))
+
+        norm_max = max(max(norm_a, norm_b), EPS_ABS)
+
+        norm =   abs(a%vals(1)-b%vals(1)) + abs(a%vals(2)-b%vals(2)) + abs(a%vals(3)-b%vals(3)) &
+               + abs(a%vals(4)-b%vals(4)) + abs(a%vals(5)-b%vals(5)) + abs(a%vals(6)-b%vals(6)) &
+               + abs(a%vals(7)-b%vals(7)) + abs(a%vals(8)-b%vals(8)) + abs(a%vals(9)-b%vals(9))
+
+        
+        if (norm/norm_max .gt. EPS) res=.false.
+        if (norm/norm_max .le. EPS) res=.true.
+        
+    end function isequal_3D2O
+
+    pure module function sum_3D2O(a, b) result(res)
+        implicit none
+        class(ten_3D2O), intent(in) :: a, b
+        type(ten_3D2O) :: res
+
+        res%vals = a%vals + b%vals
+    end function sum_3D2O
+
+    pure module function sub_3D2O(a, b) result(res)
+        implicit none
+        class(ten_3D2O), intent(in) :: a, b
+        type(ten_3D2O) :: res
+
+        res%vals = a%vals - b%vals
+    end function sub_3D2O
+
+    pure module function subU_3D2O(a) result(res)
+        implicit none
+        class(ten_3D2O), intent(in) :: a
+        type(ten_3D2O) :: res
+
+        res%vals = -a%vals
+    end function subU_3D2O
+
+    pure module function mul_real64_3D2O(a, b) result(res)
+        implicit none
+        real(real64), intent(in) :: a
+        class(ten_3D2O), intent(in) :: b
+        type(ten_3D2O) :: res
+
+        res%vals = a * b%vals
+    end function mul_real64_3D2O
+
+    pure module function mul_3D2O_real64(a, b) result(res)
+        implicit none
+        real(real64), intent(in) :: b
+        class(ten_3D2O), intent(in) :: a
+        type(ten_3D2O) :: res
+
+        res%vals =  a%vals * b
+    end function mul_3D2O_real64
+
+    pure module function div_3D2O_real64(a, b) result(res)
+        implicit none
+        real(real64), intent(in) :: b
+        class(ten_3D2O), intent(in) :: a
+        type(ten_3D2O) :: res
+
+        res%vals = a%vals/b
+    end function div_3D2O_real64
+
+    pure module function ddot_3D2O_3D2O(a, b) result(res)
+        implicit none
+        class(ten_3D2O), intent(in) :: a, b
+        real(real64) :: res
+    
+        res =   a%vals(1)*b%vals(1) &
+              + a%vals(2)*b%vals(2) &
+              + a%vals(3)*b%vals(3) &
+              + a%vals(4)*b%vals(4) &
+              + a%vals(5)*b%vals(5) &
+              + a%vals(6)*b%vals(6) &
+              + a%vals(7)*b%vals(7) &
+              + a%vals(8)*b%vals(8) &
+              + a%vals(9)*b%vals(9)
+    
+    end function ddot_3D2O_3D2O
+
+    pure module function dev_3D2O(a) result(res)
+        implicit none
+        class(ten_3D2O), intent(in) :: a
+        type(ten_3D2O) :: res
+
+        real(real64) :: hydro
+        hydro = (a%vals(1) + a%vals(5) + a%vals(9))/3D0
+        res%vals(1) = a%vals(1) - hydro
+        res%vals(5) = a%vals(5) - hydro
+        res%vals(9) = a%vals(9) - hydro
+        res%vals(2:4) = a%vals(2:4)
+        res%vals(6:8) = a%vals(6:8)
+    end function dev_3D2O
+
+    ! ! !TODO HACERLE UN TESTTTSSS!!!!!
+    ! ! module procedure tdot_3D2Osym_3D2Osym
+    ! !     implicit none
+    ! !     !
+    ! !     !  | ( 1:1111) ( 7:1122) (12:1133) (16:1112) (19:1123) (21:1113) |
+    ! !     !  | ( 7:2211) ( 2:2222) ( 8:2233) (13:2212) (17:2223) (20:2213) |
+    ! !     !  | (12:3311) ( 8:3322) ( 3:3333) ( 9:3312) (14:3323) (18:3313) |
+    ! !     !  | (16:1211) (13:1222) ( 9:1233) ( 4:1212) (10:1223) (15:1213) |
+    ! !     !  | (19:2311) (17:2322) (14:2333) (10:2312) ( 5:2323) (11:2313) |
+    ! !     !  | (21:1311) (20:1322) (18:1333) (15:1312) (11:1323) ( 6:1313) |
+    ! !     res%vals( 1) = a%vals(1)*b%vals(1)
+    ! !     res%vals( 7) = a%vals(1)*b%vals(2)
+    ! !     res%vals(12) = a%vals(1)*b%vals(3)
+    ! !     res%vals(16) = a%vals(1)*b%vals(4)
+    ! !     res%vals(19) = a%vals(1)*b%vals(5)
+    ! !     res%vals(21) = a%vals(1)*b%vals(6)
+
+    ! !     res%vals( 2) = a%vals(2)*b%vals(2)
+    ! !     res%vals( 8) = a%vals(2)*b%vals(3)
+    ! !     res%vals(13) = a%vals(2)*b%vals(4)
+    ! !     res%vals(17) = a%vals(2)*b%vals(5)
+    ! !     res%vals(20) = a%vals(2)*b%vals(6)
+
+    ! !     res%vals( 3) = a%vals(3)*b%vals(3)
+    ! !     res%vals( 9) = a%vals(3)*b%vals(4)
+    ! !     res%vals(14) = a%vals(3)*b%vals(5)
+    ! !     res%vals(18) = a%vals(3)*b%vals(6)
+
+    ! !     res%vals( 4) = a%vals(4)*b%vals(4)
+    ! !     res%vals(10) = a%vals(4)*b%vals(5)
+    ! !     res%vals(15) = a%vals(4)*b%vals(6)
+
+    ! !     res%vals( 5) = a%vals(5)*b%vals(5)
+    ! !     res%vals(11) = a%vals(5)*b%vals(6)
+        
+    ! !     res%vals( 6) = a%vals(6)*b%vals(6)
+    ! ! end procedure tdot_3D2Osym_3D2Osym
+
+end module mod_ten_3D2O
