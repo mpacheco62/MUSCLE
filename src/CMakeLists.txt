@@ -30,6 +30,7 @@ set(MY_MODS   basic_operations.f90
               cutting_plane.f90
               basis_elasticity.f90
               inverses_mat.f90
+              elasticity_linear.f90
               CACHE INTERNAL "")
 
 add_library(umatlib ${TENSORS_TYPES} ${MY_MODS})
