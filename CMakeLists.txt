@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(plasticity VERSION 0.1
+project(Lib_Umats VERSION 0.1
         DESCRIPTION "Library for umats"
         LANGUAGES Fortran C) # C for the tests
 include(CTest)

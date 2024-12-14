@@ -1,6 +1,3 @@
-python/code_generation.py
-python/data.csv
-python/FIndex_degradation.csv
-python/hashin.py
-python/plot.py
-python/test1.py
+python/
+bin/
+build/
