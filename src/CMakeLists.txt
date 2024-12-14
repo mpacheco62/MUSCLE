@@ -24,9 +24,12 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
 
 set(MY_MODS   basic_operations.f90
               basis_yield_criteria.f90
+              basis_hardening_law.f90
               swift_hardening.f90
               vonMises.f90
               cutting_plane.f90
+              basis_elasticity.f90
+              inverses_mat.f90
               CACHE INTERNAL "")
 
 add_library(umatlib ${TENSORS_TYPES} ${MY_MODS})

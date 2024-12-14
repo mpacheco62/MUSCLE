@@ -97,7 +97,9 @@ module tensors_types
     ! end interface
 
     public :: operator(.tdot.)
+    public :: operator(.inv.)
     
+
     public :: assignment (=)
 
     ! interface ! iden_3D4O4T

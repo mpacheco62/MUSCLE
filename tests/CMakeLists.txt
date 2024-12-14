@@ -6,6 +6,10 @@ target_link_libraries(test_vonMises PRIVATE umatlib)
 add_test(Test_vonMises "${CMAKE_SOURCE_DIR}/bin/test_vonMises")
 
 
+add_executable(test_swift_law test_swift_law.f90)
+target_link_libraries(test_swift_law PRIVATE umatlib)
+add_test(Test_swift_law "${CMAKE_SOURCE_DIR}/bin/test_swift_law")
+
 add_subdirectory(tensors_types)
 
 # add_executable(test_tensors_types_ten_3d2Osym tensors_types/test_tensors_types_ten_3d2Osym.f90)

@@ -15,6 +15,11 @@ module mod_ten_3D4O3sym
         module procedure isequal_3D4O3sym
     end interface
 
+    public :: operator(.inv.)
+    interface operator (.inv.)
+        module procedure inv_3D4O3sym
+    end interface
+
     public :: operator(+)
     interface operator (+)
         module procedure sum_3D4O3sym
@@ -38,14 +43,14 @@ module mod_ten_3D4O3sym
     end interface
 contains
     
-    module subroutine init_ten_3D4O3sym(self, vals)
+    pure module subroutine init_ten_3D4O3sym(self, vals)
         implicit none
         class(ten_3D4O3sym), intent(inout) :: self
         real(real64), intent(in) :: vals(21)
         self%vals = vals
     end subroutine init_ten_3D4O3sym
 
-    module subroutine init2_ten_3D4O3sym(self,             & 
+    pure module subroutine init2_ten_3D4O3sym(self,             & 
                                          xxxx, yyyy, zzzz, &
                                          xyxy, yzyz, xzxz, &
                                          xxyy, yyzz,       &
@@ -160,6 +165,43 @@ contains
         res%vals = b%vals/a
     end function div_3D4O3sym_real64
 
+    pure module function inv_3D4O3sym(a) result(res)
+        use, intrinsic :: iso_fortran_env
+        use inverses_mat
+        implicit none
+        class(ten_3D4O3sym), intent(in) :: a
+        type(ten_3D4O3sym) :: res
+        real(real64) :: mat_a(6,6), mat_b(6,6), v(21)
+        logical :: ok
+        v = a%vals
+        mat_a = reshape((/  v(1),  v(7), v(12), v(16), v(19), v(21), &
+                            v(7),  v(2),  v(8), v(13), v(17), v(20), &
+                           v(12),  v(8),  v(3),  v(9), v(14), v(18), & 
+                           v(16), v(13),  v(9),  v(4), v(10), v(15), &
+                           v(19), v(17), v(14), v(10),  v(5), v(11), &
+                           v(21), v(20), v(18), v(15), v(11),  v(6)  &
+                        /), (/6,6/))
 
+        call M66INV(mat_a, mat_b, ok)
+
+        v = (/ mat_b(1,1), mat_b(2,2), mat_b(3,3), mat_b(4,4), mat_b(5,5), mat_b(6,6),  &
+               mat_b(1,2), mat_b(2,3), mat_b(3,4), mat_b(4,5), mat_b(5,6),              &
+               mat_b(1,3), mat_b(2,4), mat_b(3,5), mat_b(4,6),                          &
+               mat_b(1,4), mat_b(2,5), mat_b(3,6),                                      &
+               mat_b(1,5), mat_b(2,6),                                                  &
+               mat_b(1,6)                                                               &
+              /)
+        
+        call res%init(v)
+        
+            !
+            !  | ( 1:1111) ( 7:1122) (12:1133) (16:1112) (19:1123) (21:1113) |
+            !  | ( 7:2211) ( 2:2222) ( 8:2233) (13:2212) (17:2223) (20:2213) |
+            !  | (12:3311) ( 8:3322) ( 3:3333) ( 9:3312) (14:3323) (18:3313) |
+            !  | (16:1211) (13:1222) ( 9:1233) ( 4:1212) (10:1223) (15:1213) |
+            !  | (19:2311) (17:2322) (14:2333) (10:2312) ( 5:2323) (11:2313) |
+            !  | (21:1311) (20:1322) (18:1333) (15:1312) (11:1323) ( 6:1313) |
+
+    end function inv_3D4O3sym
 
 end module mod_ten_3D4O3sym
