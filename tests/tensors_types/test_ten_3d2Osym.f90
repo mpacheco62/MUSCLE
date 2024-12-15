@@ -25,6 +25,9 @@ program test_3D2Osym
     call test_ten_3D2Osym_ddot(passed)
     if (.not. passed) STOP 7
 
+    call test_ten_3D2Osym_components(passed)
+    if (.not. passed) STOP 8
+
     print*, "Hola!", passed
     STOP 0
 end program test_3D2Osym
@@ -228,4 +231,46 @@ subroutine test_ten_3D2Osym_ddot(passed)
     if (abs((to_test2 .ddot. to_test1) - 528D0) < 1D-10) passed = .true.
     print*, to_test1 .ddot. to_test2
     if (.not. passed) return
+end subroutine
+
+
+
+subroutine test_ten_3D2Osym_components(passed)
+    use, intrinsic :: iso_fortran_env
+    use tensors_types
+    implicit none
+    
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym) :: to_test1
+    real(real64) :: expected
+    
+    passed = .false.
+
+    call to_test1%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
+
+    expected = 1D0
+    if (abs(to_test1%xx() - expected) < 1D-10) passed = .true.
+    if (.not. passed) return
+
+    expected = 2D0
+    if (abs(to_test1%yy() - expected) < 1D-10) passed = .true.
+    if (.not. passed) return
+
+    expected = 3D0
+    if (abs(to_test1%zz() - expected) < 1D-10) passed = .true.
+    if (.not. passed) return
+
+    expected = 4D0
+    if (abs(to_test1%xy() - expected) < 1D-10) passed = .true.
+    if (.not. passed) return
+
+    expected = 5D0
+    if (abs(to_test1%yz() - expected) < 1D-10) passed = .true.
+    if (.not. passed) return
+
+    expected = 6D0
+    if (abs(to_test1%xz() - expected) < 1D-10) passed = .true.
+    if (.not. passed) return
+
 end subroutine

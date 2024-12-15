@@ -19,11 +19,11 @@ module mod_base_elasticity
             type(ten_3D2Osym) :: res
         end function stress_interface
 
-        function dstress_dstrain_interface(self, strain) result(res)
+        pure function dstress_dstrain_interface(self, strain) result(res)
             use, intrinsic :: iso_fortran_env
             use tensors_types
             import Base_elasticity
-            class(Base_elasticity), intent(inout) :: self
+            class(Base_elasticity), intent(in) :: self
             class(ten_3D2Osym), intent(in) :: strain
             type(ten_3D4O3sym) :: res
         end function dstress_dstrain_interface

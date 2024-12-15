@@ -9,6 +9,7 @@ module mod_ten_3D2Osym
         contains
             generic, public :: init => init_ten_3D2Osym, init2_ten_3D2Osym 
             procedure, private :: init_ten_3D2Osym, init2_ten_3D2Osym
+            procedure, public :: xx, yy, zz, xy, yz, xz
     end type ten_3D2Osym
 
     public :: operator(.isequal.)
@@ -66,14 +67,14 @@ contains
         a%vals = b
     end subroutine
 
-    module subroutine init_ten_3D2Osym(self, vals)
+    pure module subroutine init_ten_3D2Osym(self, vals)
         implicit none
         class(ten_3D2Osym), intent(inout) :: self
         real(real64), intent(in) :: vals(6)
         self%vals = vals
     end subroutine
 
-    module subroutine init2_ten_3D2Osym(self, xx, yy, zz, xy, yz, xz)
+    pure module subroutine init2_ten_3D2Osym(self, xx, yy, zz, xy, yz, xz)
         ! voigt notation used: 11, 22, 33, 12, 23, 13
         implicit none
         class(ten_3D2Osym), intent(inout) :: self
@@ -171,5 +172,48 @@ contains
         res%vals(1:3) = a%vals(1:3) - hydro
         res%vals(4:6) = a%vals(4:6)
     end function dev_3D2Osym
+    
+    ! (/xx, yy, zz, xy, yz, xz/)
+    pure module function xx(a) result(res)
+        implicit none
+        class(ten_3D2Osym), intent(in) :: a
+        real(real64) :: res
+        res = a%vals(1)
+    end function xx
+    
+    pure module function yy(a) result(res)
+        implicit none
+        class(ten_3D2Osym), intent(in) :: a
+        real(real64) :: res
+        res = a%vals(2)
+    end function yy
+
+    pure module function zz(a) result(res)
+        implicit none
+        class(ten_3D2Osym), intent(in) :: a
+        real(real64) :: res
+        res = a%vals(3)
+    end function zz
+
+    pure module function xy(a) result(res)
+        implicit none
+        class(ten_3D2Osym), intent(in) :: a
+        real(real64) :: res
+        res = a%vals(4)
+    end function xy
+
+    pure module function yz(a) result(res)
+        implicit none
+        class(ten_3D2Osym), intent(in) :: a
+        real(real64) :: res
+        res = a%vals(5)
+    end function yz
+
+    pure module function xz(a) result(res)
+        implicit none
+        class(ten_3D2Osym), intent(in) :: a
+        real(real64) :: res
+        res = a%vals(6)
+    end function xz
 
 end module mod_ten_3D2Osym
