@@ -34,7 +34,7 @@ subroutine test_closest_point_vonmises(passed)
     error = .False.
     
 
-    call strain%init(xx=0.15D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
+    call strain%init(xx=0.07D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
     call strain_p%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)

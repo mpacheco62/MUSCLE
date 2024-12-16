@@ -34,6 +34,7 @@ module mod_closest_point
                 dhard = hardening%dstress_dep(strain_pf)
                 f = yield%stress_eq(stress) - hard
                 df = yield%dstressEq_dstress(stress)
+                write(*,*) "f:", f,  dgamma!, stress
 
                 residual1 = strain_p_init - strain_p + (dgamma*df)
                 residual2 = strain_pf_init - strain_pf + dgamma
@@ -42,7 +43,6 @@ module mod_closest_point
                 norm_res = (residual(1)+residual(2)+residual(3)+residual(4)+residual(5)+residual(6))**0.5
 
                 ! write(*,*) "f:", f, norm_res, residual1, dgamma
-                write(*,*) "f:", f,  dgamma
                 if ((abs(f) .lt. tol) .and. (norm_res .lt. tol)) return  ! Elastic case non varing
 
                 ddf = yield%ddstressEq_ddstress(stress)
@@ -52,7 +52,8 @@ module mod_closest_point
                 ! ddgamma = (f-(residual1 .ddot. hess .ddot. df))/((df .ddot. hess .ddot. df) + dhard)
                 dgamma = dgamma + ddgamma
                 strain_pf = strain_pf_init + dgamma
-                strain_p = strain_p_init + dgamma*df
+                ! strain_p = strain_p_init + dgamma*df
+                strain_p = ((.inv. elas_tan) .ddot. hess)! .ddot. (residual1 + ddgamma*df))
                 ! write(*,*) "f:", f,  ddgamma, dgamma 
 
             end do

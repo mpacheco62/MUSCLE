@@ -184,12 +184,20 @@ contains
 
         call M66INV(mat_a, mat_b, ok)
 
-        v = (/ mat_b(1,1), mat_b(2,2), mat_b(3,3), mat_b(4,4), mat_b(5,5), mat_b(6,6),  &
-               mat_b(1,2), mat_b(2,3), mat_b(3,4), mat_b(4,5), mat_b(5,6),              &
-               mat_b(1,3), mat_b(2,4), mat_b(3,5), mat_b(4,6),                          &
-               mat_b(1,4), mat_b(2,5), mat_b(3,6),                                      &
-               mat_b(1,5), mat_b(2,6),                                                  &
-               mat_b(1,6)                                                               &
+        ! v = (/ mat_b(1,1), mat_b(2,2), mat_b(3,3), mat_b(4,4), mat_b(5,5), mat_b(6,6),  &
+        !        mat_b(1,2), mat_b(2,3), mat_b(3,4), mat_b(4,5), mat_b(5,6),              &
+        !        mat_b(1,3), mat_b(2,4), mat_b(3,5), mat_b(4,6),                          &
+        !        mat_b(1,4), mat_b(2,5), mat_b(3,6),                                      &
+        !        mat_b(1,5), mat_b(2,6),                                                  &
+        !        mat_b(1,6)                                                               &
+        !       /)
+
+        v = (/ mat_b(1,1), mat_b(2,2), mat_b(3,3), mat_b(4,4)/4D0, mat_b(5,5)/4D0, mat_b(6,6)/4D0,  &
+               mat_b(1,2), mat_b(2,3), mat_b(3,4)/2D0, mat_b(4,5)/4D0, mat_b(5,6)/4D0,              &
+               mat_b(1,3), mat_b(2,4)/2D0, mat_b(3,5)/2D0, mat_b(4,6)/4D0,                          &
+               mat_b(1,4)/2D0, mat_b(2,5)/2D0, mat_b(3,6)/2D0,                                      &
+               mat_b(1,5)/2D0, mat_b(2,6)/2D0,                                                  &
+               mat_b(1,6)/2D0                                                               &
               /)
         
         call res%init(v)
