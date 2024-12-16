@@ -19,7 +19,9 @@ add_executable(test_cutting_plane test_cutting_plane.f90)
 target_link_libraries(test_cutting_plane PRIVATE umatlib)
 add_test(test_cutting_plane "${CMAKE_SOURCE_DIR}/bin/test_cutting_plane")
 
-
+add_executable(test_closest_point test_closest_point.f90)
+target_link_libraries(test_closest_point PRIVATE umatlib)
+add_test(test_closest_point "${CMAKE_SOURCE_DIR}/bin/test_closest_point")
 # add_executable(test_tensors_types_ten_3d2Osym tensors_types/test_tensors_types_ten_3d2Osym.f90)
 # target_link_libraries(test_tensors_types_ten_3d2Osym PRIVATE mylib)
 

@@ -28,6 +28,7 @@ set(MY_MODS   basic_operations.f90
               swift_hardening.f90
               vonMises.f90
               cutting_plane.f90
+              closest_point.f90
               basis_elasticity.f90
               inverses_mat.f90
               elasticity_linear.f90
