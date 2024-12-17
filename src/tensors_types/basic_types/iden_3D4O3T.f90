@@ -1,10 +1,12 @@
+! \delta_ij\delta_kl
 module mod_iden_3D4O3T
+    ! \delta_ij\delta_kl
     use, intrinsic :: iso_fortran_env
     use mod_iden_3D4O3TMod
     implicit none
     private
 
-    type, public :: iden_3D4O3T  ! val*\delta_ij
+    type, public :: iden_3D4O3T  ! \delta_ij\delta_kl
     end type iden_3D4O3T
 
 

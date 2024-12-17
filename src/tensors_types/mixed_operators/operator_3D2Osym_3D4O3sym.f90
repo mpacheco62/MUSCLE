@@ -35,9 +35,9 @@ module mod_operator_3D2Osym_3D4O3sym
         real(real64) :: a1111b11, a1122b22, a1133b33, a1112b12, a1123b23, a1113b13
         real(real64) :: a2211b11, a2222b22, a2233b33, a2212b12, a2223b23, a2213b13
         real(real64) :: a3311b11, a3322b22, a3333b33, a3312b12, a3323b23, a3313b13
-        real(real64) :: a1211b11, a1222b22, a1233b33, a1212b12, a1223b23, a1213b13
-        real(real64) :: a2311b11, a2322b22, a2333b33, a2312b12, a2323b23, a2313b13
-        real(real64) :: a1311b11, a1322b22, a1333b33, a1312b12, a1323b23, a1313b13
+        real(real64) :: a1112b11, a2212b22, a3312b33, a1212b12, a1223b23, a1213b13
+        real(real64) :: a1123b11, a2223b22, a3323b33, a2312b12, a2323b23, a2313b13
+        real(real64) :: a1113b11, a2213b22, a3313b33, a1312b12, a1323b23, a1313b13
 
         a1111b11 = a%vals( 1)*b%vals(1)
         a1122b22 = a%vals( 7)*b%vals(2)
@@ -60,23 +60,23 @@ module mod_operator_3D2Osym_3D4O3sym
         a3323b23 = a%vals(14)*b%vals(5)
         a3313b13 = a%vals(18)*b%vals(6)
 
-        a1211b11 = a%vals(16)*b%vals(1)
-        a1222b22 = a%vals(13)*b%vals(2)
-        a1233b33 = a%vals( 9)*b%vals(3)
+        a1112b11 = a%vals(16)*b%vals(1)
+        a2212b22 = a%vals(13)*b%vals(2)
+        a3312b33 = a%vals( 9)*b%vals(3)
         a1212b12 = a%vals( 4)*b%vals(4)
         a1223b23 = a%vals(10)*b%vals(5)
         a1213b13 = a%vals(15)*b%vals(6)
 
-        a2311b11 = a%vals(19)*b%vals(1)
-        a2322b22 = a%vals(17)*b%vals(2)
-        a2333b33 = a%vals(14)*b%vals(3)
+        a1123b11 = a%vals(19)*b%vals(1)
+        a2223b22 = a%vals(17)*b%vals(2)
+        a3323b33 = a%vals(14)*b%vals(3)
         a2312b12 = a%vals(10)*b%vals(4)
         a2323b23 = a%vals( 5)*b%vals(5)
         a2313b13 = a%vals(11)*b%vals(6)
 
-        a1311b11 = a%vals(21)*b%vals(1)
-        a1322b22 = a%vals(20)*b%vals(2)
-        a1333b33 = a%vals(18)*b%vals(3)
+        a1113b11 = a%vals(21)*b%vals(1)
+        a2213b22 = a%vals(20)*b%vals(2)
+        a3313b33 = a%vals(18)*b%vals(3)
         a1312b12 = a%vals(15)*b%vals(4)
         a1323b23 = a%vals(11)*b%vals(5)
         a1313b13 = a%vals( 6)*b%vals(6)
@@ -84,9 +84,9 @@ module mod_operator_3D2Osym_3D4O3sym
         res%vals(1) = a1111b11 + a1122b22 + a1133b33 + 2*a1112b12 + 2*a1123b23 + 2*a1113b13
         res%vals(2) = a2211b11 + a2222b22 + a2233b33 + 2*a2212b12 + 2*a2223b23 + 2*a2213b13
         res%vals(3) = a3311b11 + a3322b22 + a3333b33 + 2*a3312b12 + 2*a3323b23 + 2*a3313b13
-        res%vals(4) = a1211b11 + a1222b22 + a1233b33 + 2*a1212b12 + 2*a1223b23 + 2*a1213b13
-        res%vals(5) = a2311b11 + a2322b22 + a2333b33 + 2*a2312b12 + 2*a2323b23 + 2*a2313b13
-        res%vals(6) = a1311b11 + a1322b22 + a1333b33 + 2*a1312b12 + 2*a1323b23 + 2*a1313b13
+        res%vals(4) = a1112b11 + a2212b22 + a3312b33 + 2*a1212b12 + 2*a1223b23 + 2*a1213b13
+        res%vals(5) = a1123b11 + a2223b22 + a3323b33 + 2*a2312b12 + 2*a2323b23 + 2*a2313b13
+        res%vals(6) = a1113b11 + a2213b22 + a3313b33 + 2*a1312b12 + 2*a1323b23 + 2*a1313b13
         
     end function ddot_3D4O3sym_3D2Osym
 

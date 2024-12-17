@@ -41,6 +41,7 @@ module tensors_types
     use mod_ten_3D2O
     use mod_ten_3D2Osym
     use mod_ten_3D4O3sym
+    use mod_ten_3D4O2sym
     use mod_iden_3D2OMod
     use mod_iden_3D2O
     use mod_iden_3D4O3TMod
@@ -56,12 +57,17 @@ module tensors_types
     use mod_operator_I3D4O4T_3D4O3sym
     use mod_operator_I3D4O4TMod_3D4O3sym
     use mod_operator_3D2Osym_3D4O3sym
+    use mod_operator_3D4O2sym_3D4O3sym
+    use mod_operator_3D2Osym_3D4O2sym
+    use mod_operator_I3D4O3T_3D4O2sym
+    use mod_operator_I3D4O4T_3D4O2sym
 
     implicit None
 
     public :: ten_3D2O
     public :: ten_3D2Osym
     public :: ten_3D4O3sym
+    public :: ten_3D4O2sym
     public :: iden_3D2Omod
     public :: iden_3D2O
     public :: iden_3D4O3TMod

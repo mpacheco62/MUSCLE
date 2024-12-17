@@ -173,6 +173,7 @@ contains
         type(ten_3D4O3sym) :: res
         real(real64) :: mat_a(6,6), mat_b(6,6), v(21)
         logical :: ok
+        integer :: iok
         v = a%vals
         mat_a = reshape((/  v(1),  v(7), v(12), v(16), v(19), v(21), &
                             v(7),  v(2),  v(8), v(13), v(17), v(20), &
@@ -182,7 +183,10 @@ contains
                            v(21), v(20), v(18), v(15), v(11),  v(6)  &
                         /), (/6,6/))
 
-        call M66INV(mat_a, mat_b, ok)
+        ! call M66INV(mat_a, mat_b, ok)
+
+
+        call FINDInv(mat_a, mat_b, 6, iok)
 
         ! v = (/ mat_b(1,1), mat_b(2,2), mat_b(3,3), mat_b(4,4), mat_b(5,5), mat_b(6,6),  &
         !        mat_b(1,2), mat_b(2,3), mat_b(3,4), mat_b(4,5), mat_b(5,6),              &
@@ -199,6 +203,17 @@ contains
                mat_b(1,5)/2D0, mat_b(2,6)/2D0,                                                  &
                mat_b(1,6)/2D0                                                               &
               /)
+
+
+        ! mat_a = reshape((/  v(1),  v(7), v(12), v(16), v(19), v(21), &
+        !                     v(7),  v(2),  v(8), v(13), v(17), v(20), &
+        !                     v(12),  v(8),  v(3),  v(9), v(14), v(18), & 
+        !                     v(16), v(13),  v(9),  v(4), v(10), v(15), &
+        !                     v(19), v(17), v(14), v(10),  v(5), v(11), &
+        !                     v(21), v(20), v(18), v(15), v(11),  v(6)  &
+        !                     /), (/6,6/))
+        ! call M66INV(mat_a, mat_b, ok)
+        ! call FINDInv(mat_a, mat_b, 6, iok)
         
         call res%init(v)
         

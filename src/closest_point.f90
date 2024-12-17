@@ -16,10 +16,11 @@ module mod_closest_point
             type(ten_3D2Osym), intent(out) :: stress
             logical, intent(out) :: error
             real(real64), parameter :: TOL=1D-5
-            type(ten_3D2Osym) :: df, strain_p_init, residual1
+            type(ten_3D2Osym) :: df, strain_p_init, residual1, dstrain_p
             type(ten_3D4O3sym) :: elas_tan, hess, ddf
             real(real64) :: dgamma, ddgamma, hard, dhard, f, strain_pf_init, norm_res
             real(real64) :: residual(7), residual2
+            ! type(ten_3D4O2sym) :: test
             integer :: i
 
             error = .False.
@@ -34,7 +35,6 @@ module mod_closest_point
                 dhard = hardening%dstress_dep(strain_pf)
                 f = yield%stress_eq(stress) - hard
                 df = yield%dstressEq_dstress(stress)
-                write(*,*) "f:", f,  dgamma!, stress
 
                 residual1 = strain_p_init - strain_p + (dgamma*df)
                 residual2 = strain_pf_init - strain_pf + dgamma
@@ -42,19 +42,17 @@ module mod_closest_point
                 residual(1:6) = residual1%vals**2
                 norm_res = (residual(1)+residual(2)+residual(3)+residual(4)+residual(5)+residual(6))**0.5
 
-                ! write(*,*) "f:", f, norm_res, residual1, dgamma
                 if ((abs(f) .lt. tol) .and. (norm_res .lt. tol)) return  ! Elastic case non varing
 
                 ddf = yield%ddstressEq_ddstress(stress)
                 hess = .inv. ((.inv. elas_tan) + dgamma*ddf)
-                ! print*, f, residual1 .ddot. hess .ddot. df
+
                 ddgamma = (f-(df .ddot. hess .ddot. residual1) - dhard*residual2)/((df .ddot. hess .ddot. df) + dhard)
-                ! ddgamma = (f-(residual1 .ddot. hess .ddot. df))/((df .ddot. hess .ddot. df) + dhard)
                 dgamma = dgamma + ddgamma
                 strain_pf = strain_pf_init + dgamma
                 ! strain_p = strain_p_init + dgamma*df
-                strain_p = ((.inv. elas_tan) .ddot. hess)! .ddot. (residual1 + ddgamma*df))
-                ! write(*,*) "f:", f,  ddgamma, dgamma 
+                dstrain_p = (((.inv. elas_tan) .ddot. hess) .ddot. (residual1 + ddgamma*df))
+                strain_p = strain_p + dstrain_p
 
             end do
 
