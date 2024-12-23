@@ -182,6 +182,14 @@ subroutine test_swift(passed)
     passed = (abs(result - expected_result1) < EPS)
     if (.not. passed) return
 
+
+!***********************************************************************************    
+    ! swift = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
+    ! result = swift%stress(0.34857844D0)  ! 90MPa
+    ! print*, "swift", result
+    ! passed = .false.
+    ! return
+
 end subroutine
 
 

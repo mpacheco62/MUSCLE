@@ -18,15 +18,15 @@ module inverses_mat
 
         IMPLICIT NONE
   
-        DOUBLE PRECISION, DIMENSION(6,6), INTENT(IN)  :: A
-        DOUBLE PRECISION, DIMENSION(6,6), INTENT(OUT) :: AINV
+        REAL(real64), INTENT(IN)  :: A(6,6)
+        REAL(real64), INTENT(OUT) :: AINV(6,6)
         LOGICAL, INTENT(OUT) :: OK_FLAG
   
-        DOUBLE PRECISION, PARAMETER :: EPS = 1.0D-10
-        DOUBLE PRECISION :: DET, A11, A12, A13, A14, A15, A16, A21, A22, A23, A24, &
+        REAL(real64), PARAMETER :: EPS = 1.0D-20, EPS2 = 1.0D-10
+        REAL(real64) :: DET, A11, A12, A13, A14, A15, A16, A21, A22, A23, A24, &
            A25, A26, A31, A32, A33, A34, A35, A36, A41, A42, A43, A44, A45, A46,   &
            A51, A52, A53, A54, A55, A56, A61, A62, A63, A64, A65, A66
-        DOUBLE PRECISION, DIMENSION(6,6) :: COFACTOR
+        REAL(real64):: COFACTOR(6,6), norm, norm2
   
   
         A11=A(1,1); A12=A(1,2); A13=A(1,3); A14=A(1,4); A15=A(1,5); A16=A(1,6)
@@ -35,6 +35,10 @@ module inverses_mat
         A41=A(4,1); A42=A(4,2); A43=A(4,3); A44=A(4,4); A45=A(4,5); A46=A(4,6)
         A51=A(5,1); A52=A(5,2); A53=A(5,3); A54=A(5,4); A55=A(5,5); A56=A(5,6)
         A61=A(6,1); A62=A(6,2); A63=A(6,3); A64=A(6,4); A65=A(6,5); A66=A(6,6)
+
+        norm = (sum(A**2))**0.5D0
+
+
   
         DET = -(A16*A25*A34*A43*A52-A15*A26*A34*A43*A52-A16*A24*A35*A43*             &
            A52+A14*A26*A35*A43*A52+A15*A24*A36*A43*A52-A14*A25*A36*A43*A52-A16*A25*  &
@@ -244,7 +248,8 @@ module inverses_mat
            A32*A44*A55-A11*A23*A32*A44*A55-A12*A21*A33*A44*A55+A11*A22*A33*A44*A55)* &
            A66
   
-        IF (ABS(DET) .LE. EPS) THEN
+        norm2 = ABS(DET)/norm
+        IF ((norm .le. EPS2) .or. (ABS(DET)/norm .LE. EPS)) THEN
            AINV = 0.0D0
            OK_FLAG = .FALSE.
            RETURN
@@ -1565,98 +1570,98 @@ module inverses_mat
         END SUBROUTINE M66INV
 
 
-      !Subroutine to find the inverse of a square matrix
-      !Author : Louisda16th a.k.a Ashwith J. Rego
-      !Reference : Algorithm has been well explained in:
-      !http://math.uww.edu/~mcfarlat/inverse.htm           
-      !http://www.tutor.ms.unimelb.edu.au/matrix/matrix_inverse.html
-      PURE SUBROUTINE FINDInv(matrix, inverse, n, errorflag)
-         IMPLICIT NONE
-         !Declarations
-         INTEGER, INTENT(IN) :: n
-         INTEGER, INTENT(OUT) :: errorflag  !Return error status. -1 for error, 0 for normal
-         REAL(real64), INTENT(IN), DIMENSION(n,n) :: matrix  !Input matrix
-         REAL(real64), INTENT(OUT), DIMENSION(n,n) :: inverse !Inverted matrix
+      ! !Subroutine to find the inverse of a square matrix
+      ! !Author : Louisda16th a.k.a Ashwith J. Rego
+      ! !Reference : Algorithm has been well explained in:
+      ! !http://math.uww.edu/~mcfarlat/inverse.htm           
+      ! !http://www.tutor.ms.unimelb.edu.au/matrix/matrix_inverse.html
+      ! PURE SUBROUTINE FINDInv(matrix, inverse, n, errorflag)
+      !    IMPLICIT NONE
+      !    !Declarations
+      !    INTEGER, INTENT(IN) :: n
+      !    INTEGER, INTENT(OUT) :: errorflag  !Return error status. -1 for error, 0 for normal
+      !    REAL(real64), INTENT(IN), DIMENSION(n,n) :: matrix  !Input matrix
+      !    REAL(real64), INTENT(OUT), DIMENSION(n,n) :: inverse !Inverted matrix
          
-         LOGICAL :: FLAG
-         INTEGER :: i, j, k
-         REAL(real64) :: m
-         REAL(real64), DIMENSION(n,2*n) :: augmatrix !augmented matrix
+      !    LOGICAL :: FLAG
+      !    INTEGER :: i, j, k
+      !    REAL(real64) :: m
+      !    REAL(real64), DIMENSION(n,2*n) :: augmatrix !augmented matrix
          
-         FLAG = .TRUE.
-         !Augment input matrix with an identity matrix
-         DO i = 1, n
-         DO j = 1, 2*n
-            IF (j <= n ) THEN
-               augmatrix(i,j) = matrix(i,j)
-            ELSE IF ((i+n) == j) THEN
-               augmatrix(i,j) = 1
-            Else
-               augmatrix(i,j) = 0
-            ENDIF
-         END DO
-         END DO
+      !    FLAG = .TRUE.
+      !    !Augment input matrix with an identity matrix
+      !    DO i = 1, n
+      !    DO j = 1, 2*n
+      !       IF (j <= n ) THEN
+      !          augmatrix(i,j) = matrix(i,j)
+      !       ELSE IF ((i+n) == j) THEN
+      !          augmatrix(i,j) = 1
+      !       Else
+      !          augmatrix(i,j) = 0
+      !       ENDIF
+      !    END DO
+      !    END DO
          
-         !Reduce augmented matrix to upper traingular form
-         DO k =1, n-1
-         IF (augmatrix(k,k) == 0) THEN
-            FLAG = .FALSE.
-            DO i = k+1, n
-               IF (augmatrix(i,k) /= 0) THEN
-               DO j = 1,2*n
-                  augmatrix(k,j) = augmatrix(k,j)+augmatrix(i,j)
-               END DO
-               FLAG = .TRUE.
-               EXIT
-               ENDIF
-               IF (FLAG .EQV. .FALSE.) THEN
-               inverse = 0
-               errorflag = -1
-               return
-               ENDIF
-            END DO
-         ENDIF
-         DO j = k+1, n      
-            m = augmatrix(j,k)/augmatrix(k,k)
-            DO i = k, 2*n
-               augmatrix(j,i) = augmatrix(j,i) - m*augmatrix(k,i)
-            END DO
-         END DO
-         END DO
+      !    !Reduce augmented matrix to upper traingular form
+      !    DO k =1, n-1
+      !    IF (augmatrix(k,k) == 0) THEN
+      !       FLAG = .FALSE.
+      !       DO i = k+1, n
+      !          IF (augmatrix(i,k) /= 0) THEN
+      !          DO j = 1,2*n
+      !             augmatrix(k,j) = augmatrix(k,j)+augmatrix(i,j)
+      !          END DO
+      !          FLAG = .TRUE.
+      !          EXIT
+      !          ENDIF
+      !          IF (FLAG .EQV. .FALSE.) THEN
+      !          inverse = 0
+      !          errorflag = -1
+      !          return
+      !          ENDIF
+      !       END DO
+      !    ENDIF
+      !    DO j = k+1, n      
+      !       m = augmatrix(j,k)/augmatrix(k,k)
+      !       DO i = k, 2*n
+      !          augmatrix(j,i) = augmatrix(j,i) - m*augmatrix(k,i)
+      !       END DO
+      !    END DO
+      !    END DO
          
-         !Test for invertibility
-         DO i = 1, n
-         IF (augmatrix(i,i) == 0) THEN
-            inverse = 0
-            errorflag = -1
-            return
-         ENDIF
-         END DO
+      !    !Test for invertibility
+      !    DO i = 1, n
+      !    IF (augmatrix(i,i) == 0) THEN
+      !       inverse = 0
+      !       errorflag = -1
+      !       return
+      !    ENDIF
+      !    END DO
          
-         !Make diagonal elements as 1
-         DO i = 1 , n
-         m = augmatrix(i,i)
-         DO j = i , (2 * n)        
-               augmatrix(i,j) = (augmatrix(i,j) / m)
-         END DO
-         END DO
+      !    !Make diagonal elements as 1
+      !    DO i = 1 , n
+      !    m = augmatrix(i,i)
+      !    DO j = i , (2 * n)        
+      !          augmatrix(i,j) = (augmatrix(i,j) / m)
+      !    END DO
+      !    END DO
          
-         !Reduced right side half of augmented matrix to identity matrix
-         DO k = n-1, 1, -1
-         DO i =1, k
-         m = augmatrix(i,k+1)
-            DO j = k, (2*n)
-               augmatrix(i,j) = augmatrix(i,j) -augmatrix(k+1,j) * m
-            END DO
-         END DO
-         END DO        
+      !    !Reduced right side half of augmented matrix to identity matrix
+      !    DO k = n-1, 1, -1
+      !    DO i =1, k
+      !    m = augmatrix(i,k+1)
+      !       DO j = k, (2*n)
+      !          augmatrix(i,j) = augmatrix(i,j) -augmatrix(k+1,j) * m
+      !       END DO
+      !    END DO
+      !    END DO        
          
-         !store answer
-         DO i =1, n
-         DO j = 1, n
-            inverse(i,j) = augmatrix(i,j+n)
-         END DO
-         END DO
-         errorflag = 0
-      END SUBROUTINE FINDinv
+      !    !store answer
+      !    DO i =1, n
+      !    DO j = 1, n
+      !       inverse(i,j) = augmatrix(i,j+n)
+      !    END DO
+      !    END DO
+      !    errorflag = 0
+      ! END SUBROUTINE FINDinv
 end module

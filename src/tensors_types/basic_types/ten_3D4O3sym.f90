@@ -183,10 +183,10 @@ contains
                            v(21), v(20), v(18), v(15), v(11),  v(6)  &
                         /), (/6,6/))
 
-        ! call M66INV(mat_a, mat_b, ok)
+        call M66INV(mat_a, mat_b, ok)
 
 
-        call FINDInv(mat_a, mat_b, 6, iok)
+        ! call FINDInv(mat_a, mat_b, 6, iok)
 
         ! v = (/ mat_b(1,1), mat_b(2,2), mat_b(3,3), mat_b(4,4), mat_b(5,5), mat_b(6,6),  &
         !        mat_b(1,2), mat_b(2,3), mat_b(3,4), mat_b(4,5), mat_b(5,6),              &
