@@ -6,6 +6,9 @@ add_executable(test_vonMises test_vonMises.f90)
 target_link_libraries(test_vonMises PRIVATE umatlib)
 add_test(Test_vonMises "${CMAKE_SOURCE_DIR}/bin/test_vonMises")
 
+add_executable(test_CPB06 test_CPB06.f90)
+target_link_libraries(test_CPB06 PRIVATE umatlib)
+add_test(Test_CPB06 "${CMAKE_SOURCE_DIR}/bin/test_CPB06")
 
 add_executable(test_swift_law test_swift_law.f90)
 target_link_libraries(test_swift_law PRIVATE umatlib)

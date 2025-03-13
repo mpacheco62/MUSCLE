@@ -6,8 +6,8 @@ module mod_yield_criteria
     type, abstract :: Base_yield_critera
         contains
             procedure(stress_eq_interface), deferred :: stress_eq
-            procedure(dstressEq_dstress_interface), deferred :: dstressEq_dstress
-            procedure(ddstressEq_ddstress_interface), deferred :: ddstressEq_ddstress
+            procedure :: dstressEq_dstress => dstressEq_dstress_numeric
+            procedure :: ddstressEq_ddstress => ddstressEq_ddstress_numeric
             procedure :: dstressEq_dstress_numeric
             procedure :: ddstressEq_ddstress_numeric
             procedure, private :: ddf_dxdy_numeric_vals
@@ -141,7 +141,6 @@ module mod_yield_criteria
             real(real64) :: f13p_33p, f13p_33m, f13m_33p, f13m_33m
             real(real64) :: f13p_12p, f13p_12m, f13m_12p, f13m_12m
             real(real64) :: f13p_23p, f13p_23m, f13m_23p, f13m_23m
-            real(real64) :: temp
 
             ! res = 0.0D0
             stress_eq = self%stress_eq(stress)

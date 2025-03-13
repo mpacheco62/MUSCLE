@@ -34,6 +34,7 @@ set(MY_MODS   basic_operations.f90
               basis_hardening_law.f90
               swift_hardening.f90
               vonMises.f90
+              CPB06.f90
               cutting_plane.f90
               closest_point.f90
               basis_elasticity.f90
