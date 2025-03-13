@@ -21,6 +21,7 @@ module mod_CPB06
 
         dev = .dev. stress
         res = (1.5D0*(dev .ddot. dev))**0.5
+        ! testing comment
     end function stress_eq
 
   !   pure function dstressEq_dstress_vm(self, stress) result(res)
