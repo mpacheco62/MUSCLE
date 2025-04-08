@@ -33,6 +33,7 @@ set(MY_MODS   basic_operations.f90
               basis_yield_criteria.f90
               basis_hardening_law.f90
               swift_hardening.f90
+              bilinear_hardening.f90
               vonMises.f90
               CPB06.f90
               cutting_plane.f90

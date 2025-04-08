@@ -17,6 +17,11 @@ target_link_libraries(test_swift_law PRIVATE umatlib)
 target_include_directories(test_swift_law PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(Test_swift_law "${CMAKE_SOURCE_DIR}/bin/test_swift_law")
 
+add_executable(test_bilinear_hardening test_bilinear_hardening.f90)
+target_link_libraries(test_bilinear_hardening PRIVATE umatlib)
+target_include_directories(test_bilinear_hardening PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
+add_test(Test_bilinear_hardening "${CMAKE_SOURCE_DIR}/bin/test_bilinear_hardening")
+
 add_executable(test_elasticity_linear test_elasticity_linear.f90)
 target_link_libraries(test_elasticity_linear PRIVATE umatlib)
 target_include_directories(test_elasticity_linear PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
