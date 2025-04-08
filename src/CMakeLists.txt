@@ -44,9 +44,22 @@ set(MY_MODS   basic_operations.f90
 
       #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 add_library(umatlib ${TENSORS_TYPES} ${MY_MODS})
+target_compile_options(umatlib PRIVATE -c -cpp -fopenmp -fPIC -mcmodel=medium)
 set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
-install(TARGETS umatlib LIBRARY)
+install(TARGETS umatlib EXPORT umatlib-targets LIBRARY)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib/ TYPE INCLUDE)
+
+# Create and install package configuration and version files.
+configure_file(
+  umatlib-config.cmake.in
+  ${CMAKE_BINARY_DIR}/umatlib-config.cmake @ONLY)
+
+install(FILES ${CMAKE_BINARY_DIR}/umatlib-config.cmake
+	TYPE LIB
+        )
+
+install(EXPORT umatlib-targets
+        DESTINATION lib)
 
 
 add_executable(my_exe main.f90)
