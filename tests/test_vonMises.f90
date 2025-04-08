@@ -3,29 +3,32 @@ program test_vonMises
     
     logical :: passed
 
-    call test_vonMises_stresseq_hydrostatic_1(passed)
+    call test_vonMises_stresseq_hydrostatic(passed)
     if (.not. passed) STOP 1
 
-    call test_vonMises_stresseq_simple_tensile_2(passed)
+    call test_vonMises_stresseq_simple_tensile(passed)
     if (.not. passed) STOP 2
 
-    call test_vonMises_stresseq_biaxial_3(passed)
+    call test_vonMises_stresseq_zero_stress(passed)
     if (.not. passed) STOP 3
 
-    call test_vonMises_stresseq_shear_4(passed)
+    call test_vonMises_stresseq_biaxial(passed)
     if (.not. passed) STOP 4
 
-    call test_vonMises_stresseq_derivates_5(passed)
+    call test_vonMises_stresseq_shear(passed)
     if (.not. passed) STOP 5
 
-    call test_vonMises_stresseq_derivates2_6(passed)
+    call test_vonMises_stresseq_derivates(passed)
     if (.not. passed) STOP 6
+
+    call test_vonMises_stresseq_derivates2(passed)
+    if (.not. passed) STOP 7
 
     print*, "Passed!", passed
     STOP 0
 end program test_vonMises
 
-subroutine test_vonMises_stresseq_hydrostatic_1(passed)
+subroutine test_vonMises_stresseq_hydrostatic(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     use mod_vonMises
@@ -48,7 +51,7 @@ subroutine test_vonMises_stresseq_hydrostatic_1(passed)
     if (.not. passed) return
 end subroutine
 
-subroutine test_vonMises_stresseq_simple_tensile_2(passed)
+subroutine test_vonMises_stresseq_simple_tensile(passed)
     use, intrinsic :: iso_fortran_env
     use mod_vonMises
     implicit none
@@ -70,7 +73,30 @@ subroutine test_vonMises_stresseq_simple_tensile_2(passed)
     
 end subroutine
 
-subroutine test_vonMises_stresseq_biaxial_3(passed)
+subroutine test_vonMises_stresseq_zero_stress(passed)
+    use, intrinsic :: iso_fortran_env
+    use tensors_types
+    use mod_vonMises
+    implicit none
+    
+    real(real64), parameter :: EPS=1e-10
+    logical, intent(out) :: passed
+
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: to_test1 
+
+    real(real64) :: result
+    real(real64) :: expected_result1 = 0.0D0
+
+
+    call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+
+    result = vm%stress_eq(to_test1)
+    passed = (abs(result - expected_result1) < EPS)
+    if (.not. passed) return
+end subroutine
+
+subroutine test_vonMises_stresseq_biaxial(passed)
     use, intrinsic :: iso_fortran_env
     use mod_vonMises
     implicit none
@@ -92,7 +118,7 @@ subroutine test_vonMises_stresseq_biaxial_3(passed)
 
 end subroutine
 
-subroutine test_vonMises_stresseq_shear_4(passed)
+subroutine test_vonMises_stresseq_shear(passed)
     use, intrinsic :: iso_fortran_env
     use mod_vonMises
     implicit none
@@ -112,7 +138,7 @@ subroutine test_vonMises_stresseq_shear_4(passed)
     if (.not. passed) return
 end subroutine
 
-subroutine test_vonMises_stresseq_derivates_5(passed)
+subroutine test_vonMises_stresseq_derivates(passed)
     use, intrinsic :: iso_fortran_env
     use mod_vonMises
     implicit none
@@ -176,7 +202,7 @@ subroutine test_vonMises_stresseq_derivates_5(passed)
 end subroutine
 
 
-subroutine test_vonMises_stresseq_derivates2_6(passed)
+subroutine test_vonMises_stresseq_derivates2(passed)
     use, intrinsic :: iso_fortran_env
     use mod_vonMises
     implicit none

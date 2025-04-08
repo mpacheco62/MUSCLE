@@ -15,7 +15,7 @@ module mod_closest_point
             type(ten_3D2Osym), intent(inout) :: strain_p
             type(ten_3D2Osym), intent(out) :: stress
             logical, intent(out) :: error
-            real(real64), parameter :: TOL=1D-5
+            real(real64), parameter :: TOL=1D-5, TOL2=1D-8
             type(ten_3D2Osym) :: df, strain_p_init, residual1, dstrain_p
             type(ten_3D4O3sym) :: elas_tan, hess, ddf
             real(real64) :: dgamma, ddgamma, hard, dhard, f, strain_pf_init, norm_res
@@ -26,15 +26,22 @@ module mod_closest_point
             error = .False.
             dgamma = 0d0
 
+            
             strain_p_init = strain_p
             strain_pf_init = strain_pf
             elas_tan = elasticity%dstress_dstrain(strain-strain_p)  ! constant
+
+            stress = elasticity%stress(strain-strain_p)
+            hard = hardening%stress(strain_pf)
+            f = yield%stress_eq(stress) - hard
+            if (f/hard - 1D0 .le. -TOL2) return
+
             do i=1,100
-                stress = elasticity%stress(strain-strain_p)
-                hard = hardening%stress(strain_pf)
+
+            
                 dhard = hardening%dstress_dep(strain_pf)
-                f = yield%stress_eq(stress) - hard
                 df = yield%dstressEq_dstress(stress)
+
 
                 residual1 = strain_p_init - strain_p + (dgamma*df)
                 residual2 = strain_pf_init - strain_pf + dgamma
@@ -42,7 +49,7 @@ module mod_closest_point
                 residual(1:6) = residual1%vals**2
                 norm_res = (residual(1)+residual(2)+residual(3)+residual(4)+residual(5)+residual(6))**0.5
 
-                if ((abs(f) .lt. tol) .and. (norm_res .lt. tol)) return  ! Elastic case non varing
+                if ((abs(f) .lt. tol) .and. (norm_res .lt. tol)) return  ! Converged
 
                 ddf = yield%ddstressEq_ddstress(stress)
                 hess = .inv. ((.inv. elas_tan) + dgamma*ddf)
@@ -53,6 +60,12 @@ module mod_closest_point
                 ! strain_p = strain_p_init + dgamma*df
                 dstrain_p = (((.inv. elas_tan) .ddot. hess) .ddot. (residual1 + ddgamma*df))
                 strain_p = strain_p + dstrain_p
+
+
+                !*** Start algorithm ***
+                stress = elasticity%stress(strain-strain_p)
+                hard = hardening%stress(strain_pf)
+                f = yield%stress_eq(stress) - hard
 
             end do
 

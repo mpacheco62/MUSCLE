@@ -5,6 +5,11 @@ program test_closest_point
     call test_closest_point_vonmises_uniaxial_tensile(passed)
     if (.not. passed) STOP 1
 
+    call test_closest_point_vonmises_zero_strain(passed)
+    if (.not. passed) STOP 2
+
+    call test_closest_point_vonmises_elastic_strain(passed)
+    if (.not. passed) STOP 3
 
     print*, "Passed!", passed
     STOP 0
@@ -45,6 +50,139 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
                                       xy=0D0, yz=0D0, xz=0D0)
                                       
     call strain%init(xx=0.43857844D0, yy=-0.20128922D0, zz=-0.20128922D0, xy=0D0, yz=0D0, xz=0D0)
+    call strain_p%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
+    call elas%set_parameters(young=1000D0, poisson=0.3D0)
+    sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
+
+    call closest_point(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
+                       stress=stress, strain_pf=strain_pf, strain_p=strain_p, error=error)
+
+    passed = stress .isequal. expected_stress
+    if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
+                              "Expected:", expected_stress, new_line('A'),  &
+                              "Actual Value:", stress, new_line('A'),       &
+                              "Difference", stress - expected_stress
+    if (.not. passed) return
+    
+    passed = abs(strain_pf - expected_strain_effective) < EPS
+    if (.not. passed) print*, "Effective plastic Strain is not equal", new_line('A'), &
+                              "Expected:", expected_strain_effective, new_line('A'),  &
+                              "Actual Value:", strain_pf, new_line('A'),              &
+                              "Difference", strain_pf - expected_strain_effective
+    if (.not. passed) return
+
+    passed = strain_p .isequal. expected_strain_plastic
+    if (.not. passed) print*, "Plastic Strain is not equal", new_line('A'), &
+                              "Expected:", expected_strain_plastic, new_line('A'), &
+                              "Actual Value:", strain_p, new_line('A'),            & 
+                              "Difference:", strain_p - expected_strain_plastic
+    if (.not. passed) return
+
+    return
+end subroutine
+
+
+
+
+subroutine test_closest_point_vonmises_zero_strain(passed)
+    use tensors_types
+    use, intrinsic :: iso_fortran_env, only : real64
+    use mod_swift_hardening, only : Swift_hardening
+    use mod_vonMises, only : VonMises
+    use mod_elasticity_linear, only : Elasticity_linear
+    use mod_closest_point, only : closest_point
+    implicit none
+
+    real(real64), parameter :: EPS=1e-8
+    logical, intent(out) :: passed
+
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: strain, strain_p, stress
+    type(Swift_hardening) :: sw
+    type(Elasticity_linear) :: elas
+    real(real64) :: strain_pf
+    logical :: error
+
+    type(ten_3D2Osym) :: expected_stress, expected_strain_plastic
+    real(real64) :: expected_strain_effective
+
+
+    passed = .False.
+    strain_pf = 0D0
+    error = .False.
+
+    expected_strain_effective = 0.0D0
+    call expected_stress%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
+    call expected_strain_plastic%init(xx=0D0, yy=0D0, zz=0D0, &
+                                      xy=0D0, yz=0D0, xz=0D0)
+                                      
+    call strain%init(xx=0.0D0, yy=0.0D0, zz=0.0D0, xy=0D0, yz=0D0, xz=0D0)
+    call strain_p%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
+    call elas%set_parameters(young=1000D0, poisson=0.3D0)
+    sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
+
+    call closest_point(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
+                       stress=stress, strain_pf=strain_pf, strain_p=strain_p, error=error)
+
+    passed = stress .isequal. expected_stress
+    if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
+                              "Expected:", expected_stress, new_line('A'),  &
+                              "Actual Value:", stress, new_line('A'),       &
+                              "Difference", stress - expected_stress
+    if (.not. passed) return
+    
+    passed = abs(strain_pf - expected_strain_effective) < EPS
+    if (.not. passed) print*, "Effective plastic Strain is not equal", new_line('A'), &
+                              "Expected:", expected_strain_effective, new_line('A'),  &
+                              "Actual Value:", strain_pf, new_line('A'),              &
+                              "Difference", strain_pf - expected_strain_effective
+    if (.not. passed) return
+
+    passed = strain_p .isequal. expected_strain_plastic
+    if (.not. passed) print*, "Plastic Strain is not equal", new_line('A'), &
+                              "Expected:", expected_strain_plastic, new_line('A'), &
+                              "Actual Value:", strain_p, new_line('A'),            & 
+                              "Difference:", strain_p - expected_strain_plastic
+    if (.not. passed) return
+
+    return
+end subroutine
+
+
+
+subroutine test_closest_point_vonmises_elastic_strain(passed)
+    use tensors_types
+    use, intrinsic :: iso_fortran_env, only : real64
+    use mod_swift_hardening, only : Swift_hardening
+    use mod_vonMises, only : VonMises
+    use mod_elasticity_linear, only : Elasticity_linear
+    use mod_closest_point, only : closest_point
+    implicit none
+
+    real(real64), parameter :: EPS=1e-8
+    logical, intent(out) :: passed
+
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: strain, strain_p, stress
+    type(Swift_hardening) :: sw
+    type(Elasticity_linear) :: elas
+    real(real64) :: strain_pf
+    logical :: error
+
+    type(ten_3D2Osym) :: expected_stress, expected_strain_plastic
+    real(real64) :: expected_strain_effective
+
+
+    passed = .False.
+    strain_pf = 0D0
+    error = .False.
+
+    expected_strain_effective = 0.0D0
+    call expected_stress%init(xx=1D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
+    call expected_strain_plastic%init(xx=0D0, yy=0D0, zz=0D0, &
+                                      xy=0D0, yz=0D0, xz=0D0)
+                                      
+    call strain%init(xx=0.001D0, yy=-0.0003D0, zz=-0.0003D0, xy=0D0, yz=0D0, xz=0D0)
     call strain_p%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
