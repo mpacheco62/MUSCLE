@@ -42,7 +42,13 @@ set(MY_MODS   basic_operations.f90
               elasticity_linear.f90
               CACHE INTERNAL "")
 
+      #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 add_library(umatlib ${TENSORS_TYPES} ${MY_MODS})
+set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
+install(TARGETS umatlib LIBRARY)
+install(DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib/ TYPE INCLUDE)
+
+
 add_executable(my_exe main.f90)
 target_link_libraries(my_exe PRIVATE umatlib)
 
