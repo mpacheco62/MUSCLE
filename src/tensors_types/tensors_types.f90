@@ -1,8 +1,12 @@
 module tensors_types
+    !! author: MPacheco
+    !! version: 1.0 - Initial documentation
+    !!
     !! Tensors Types Module
     !! ====================
     !!
-    !! @description
+    !! This module serves as the central access point for various tensor types.
+    !! 
     !! This module serves as the central access point for various tensor types and their associated
     !! operations within the UmatLib library. It aggregates tensor definitions and operator
     !! implementations from specialized submodules, providing a unified interface for users.
@@ -11,12 +15,12 @@ module tensors_types
     !! modules (`mod_ten_*`, `mod_iden_*`, `mod_operator_*`) and makes specific types and
     !! operators publicly available. This promotes modularity and organization within the library.
     !!
-    !! @section Nomenclature
+    !! Nomenclature
+    !! ------------
     !!
     !! The module exposes two main categories of tensor types: Regular Tensors and Identity Tensors.
     !!
-    !! Regular Tensors:
-    !! ----------------
+    !! ### Regular Tensors:
     !!
     !! Nomenclature `ten_xyz`:
     !!
@@ -31,8 +35,7 @@ module tensors_types
     !! - `ten_3D4O2sym`: 3D tensor, fourth order, with minor symmetries (\(C_{ijkl} = C_{jikl} = C_{ijlk}\)).
     !! - `ten_3D4O3sym`: 3D tensor, fourth order, with major and minor symmetries (\(C_{ijkl} = C_{jikl} = C_{ijlk} = C_{klij}\)).
     !!
-    !! Identity Tensors:
-    !! ----------------
+    !! ### Identity Tensors:
     !!
     !! Nomenclature `iden_xyz` or `iden_xyzS`:
     !!
@@ -52,26 +55,27 @@ module tensors_types
     !! - `iden_3D2OS`: Scaled 3D identity tensor, second order (\(c \delta_{ij}\)).
     !! - `iden_3D4O3T`: 3D identity tensor, fourth order, type 3 (\(\delta_{ij}\delta_{kl}\)).
     !! - `iden_3D4O4T`: 3D identity tensor, fourth order, type 4 (symmetric identity).
-    !! - `iden_3D4O4TS`: Scaled 3D identity tensor, fourth order, type 4 (\(c * (\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})/2\)).
+    !! - `iden_3D4O4TS`: Scaled 3D identity tensor, fourth order, type 4 (\(c \cdot (\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})/2\)).
     !!
-    !! @section Public Entities
+    !! Public Entities
+    !! ---------------
     !!
     !! This module makes the following entities publicly available:
     !!
-    !! **Derived Types:**
+    !! ### Derived Types:
     !!
-    !! - `ten_3D2O`:       General 3D second-order tensor (from `mod_ten_3D2O`).
-    !! - `ten_3D2Osym`:    Symmetric 3D second-order tensor (from `mod_ten_3D2Osym`).
-    !! - `ten_3D4O2sym`:   3D fourth-order tensor with minor symmetries (from `mod_ten_3D4O2sym`).
-    !! - `ten_3D4O3sym`:   3D fourth-order tensor with major and minor symmetries (from `mod_ten_3D4O3sym`).
-    !! - `iden_3D2O`:      Standard 3D second-order identity tensor (from `mod_iden_3D2O`).
-    !! - `iden_3D2OS`:   Scaled 3D second-order identity tensor (from `mod_iden_3D2OS`).
-    !! - `iden_3D4O3T`:    Type 3 3D fourth-order identity tensor (from `mod_iden_3D4O3T`).
-    !! - `iden_3D4O3TS`: Scaled Type 3 3D fourth-order identity tensor (from `mod_iden_3D4O3TS`).
-    !! - `iden_3D4O4T`:    Type 4 (symmetric) 3D fourth-order identity tensor (from `mod_iden_3D4O4T`).
-    !! - `iden_3D4O4TS`: Scaled Type 4 3D fourth-order identity tensor (from `mod_iden_3D4O4TS`).
+    !! - [[ten_3D2O]]:       General 3D second-order tensor (from [[mod_ten_3D2O]]).
+    !! - [[ten_3D2Osym]]:    Symmetric 3D second-order tensor (from [[mod_ten_3D2Osym]]).
+    !! - [[ten_3D4O2sym]]:   3D fourth-order tensor with minor symmetries (from [[mod_ten_3D4O2sym]]).
+    !! - [[ten_3D4O3sym]]:   3D fourth-order tensor with major and minor symmetries (from [[mod_ten_3D4O3sym]]).
+    !! - [[iden_3D2O]]:      Standard 3D second-order identity tensor (from [[mod_iden_3D2O]]).
+    !! - [[iden_3D2OS]]:   Scaled 3D second-order identity tensor (from [[mod_iden_3D2OS]]).
+    !! - [[iden_3D4O3T]]:    Type 3 3D fourth-order identity tensor (from [[mod_iden_3D4O3T]]).
+    !! - [[iden_3D4O3TS]]: Scaled Type 3 3D fourth-order identity tensor (from [[mod_iden_3D4O3TS]]).
+    !! - [[iden_3D4O4T]]:    Type 4 (symmetric) 3D fourth-order identity tensor (from [[mod_iden_3D4O4T]]).
+    !! - [[iden_3D4O4TS]]: Scaled Type 4 3D fourth-order identity tensor (from [[mod_iden_3D4O4TS]]).
     !!
-    !! **Operators:**
+    !! ### Operators:
     !!
     !! The following operators are overloaded for various combinations of the public tensor types
     !! and intrinsic types (like `real(real64)`). The implementations are provided by the
@@ -84,14 +88,16 @@ module tensors_types
     !! - `.isequal.`: Custom equality comparison for tensors (checks for approximate equality of components).
     !! - `.dev.`: Deviatoric part of a second-order tensor.
     !! - `.ddot.`: Double dot product (e.g., `tensor4 : tensor2`, `tensor2 : tensor2`).
-    !! - `.tdot.`: Tensor dot product (specific definition depends on implementation, often \( (A \cdot B)_{ik} = A_{ij} B_{jk} \) for second order).
-    !! - `.inv.`: Inverse of a second-order tensor.
+    !! - `.tdot.`: Tensor dot product (specific definition depends on implementation, often \( (A \otimes B)_{ijkl} = A_{ij} B_{kl} \) for second order).
+    !! - `.inv.`: Inverse of a 3D fourth-order tensor, with major and minor symmetries.
     !!
-    !! **Assignment:**
+    !! ### Assignment:
     !!
     !! - `=`: Overloaded assignment allows copying between compatible tensor types.
     !!
-    !! @section Usage
+    !! Usage
+    !! -----
+    !!
     !! To use the tensor types and operations defined here, simply add `use tensors_types`
     !! to your Fortran code.
     !!
@@ -114,9 +120,6 @@ module tensors_types
     !!
     !! end program example_usage
     !! ```
-    !!
-    !! @contributor MPacheco
-    !! @version 1.0 - Initial aggregation module
 
     use, intrinsic :: iso_fortran_env
     ! use mod_ten_3D2O, only : ten_3D2O
