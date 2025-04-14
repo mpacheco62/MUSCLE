@@ -44,7 +44,7 @@ module mod_closest_point
 
 
                 residual1 = strain_p_init - strain_p + (dgamma*df)
-                residual2 = strain_pf_init - strain_pf + dgamma
+                ! residual2 = strain_pf_init - strain_pf + dgamma
 
                 residual(1:6) = residual1%vals**2
                 norm_res = (residual(1)+residual(2)+residual(3)+residual(4)+residual(5)+residual(6))**0.5
@@ -54,7 +54,9 @@ module mod_closest_point
                 ddf = yield%ddstressEq_ddstress(stress)
                 hess = .inv. ((.inv. elas_tan) + dgamma*ddf)
 
-                ddgamma = (f-(df .ddot. hess .ddot. residual1) - dhard*residual2)/((df .ddot. hess .ddot. df) + dhard)
+                ! Creo que residual2 siempre es cero en estos casos
+                !ddgamma = (f-(df .ddot. hess .ddot. residual1) - dhard*residual2)/((df .ddot. hess .ddot. df) + dhard)
+                ddgamma = (f-(df .ddot. hess .ddot. residual1))/((df .ddot. hess .ddot. df) + dhard)
                 dgamma = dgamma + ddgamma
                 strain_pf = strain_pf_init + dgamma
                 ! strain_p = strain_p_init + dgamma*df
@@ -66,6 +68,8 @@ module mod_closest_point
                 stress = elasticity%stress(strain-strain_p)
                 hard = hardening%stress(strain_pf)
                 f = yield%stress_eq(stress) - hard
+
+                print*, "iteration", i
 
             end do
 

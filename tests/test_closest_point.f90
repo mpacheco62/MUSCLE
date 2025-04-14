@@ -12,7 +12,7 @@ program test_closest_point
     if (.not. passed) STOP 3
 
     print*, "Passed!", passed
-    STOP 0
+    ! STOP 1
 end program test_closest_point
 
 subroutine test_closest_point_vonmises_uniaxial_tensile(passed)

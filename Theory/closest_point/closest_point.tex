@@ -1,0 +1,135 @@
+\documentclass[12pt]{article}
+\usepackage[letterpaper, margin=1.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\setlength\parindent{0pt}
+
+
+\begin{document}
+Se define:
+\begin{align} 
+    \pmb{\dot\varepsilon}^p &= \gamma \frac{\partial f\left(\pmb{\sigma}, \pmb{q}\right)}{\partial\pmb{\sigma}} \\
+    \pmb{\dot \alpha} &= \gamma \frac{\partial f\left(\pmb{\sigma}, \pmb{q}\right)}{\partial\pmb{q}} 
+    % \pmb{\dot q} &= -\gamma \mathbb{D} \frac{\partial f\left(\pmb{\sigma}, \pmb{q}\right)}{\partial\pmb{q}}
+\end{align}
+Con lo anterior se evalúa la derivada temporal de los esfuerzos $\pmb{q}$ producidos por las variables internas $\pmb{\alpha}$.
+\[ \pmb{\dot q} = -\nabla \pmb{q}\left(\pmb{\alpha}\right) \pmb{\dot\alpha} = -\gamma \mathbb{D} \frac{\partial f\left(\pmb{\sigma}, \pmb{q}\right)}{\partial\pmb{q}}\]
+
+Discretizando por euler implicito
+\begin{align} 
+    \pmb{\varepsilon}_{n+1}^p &= \pmb{\varepsilon}_{n}^p + \Delta\gamma\partial_{\pmb{\sigma}} f\left(\pmb{\sigma}_{n+1}, \pmb{q}_{n+1}\right) \\
+    % \pmb{q}_{n+1} &= \pmb{q}_{n} - \Delta\gamma\mathbb{D}\partial_{\pmb{q}} f\left(\pmb{\sigma}_{n+1}, \pmb{q}_{n+1}\right)
+    \pmb{\alpha}_{n+1} &= \pmb{\alpha}_{n} + \Delta\gamma\partial_{\pmb{q}} f\left(\pmb{\sigma}_{n+1}, \pmb{q}_{n+1}\right)
+\end{align}
+
+De esta forma se obtiene el sistema de ecuaciones siguiente:
+\begin{align} 
+\pmb{\varepsilon}_{n+1} &= \pmb{\varepsilon}_n + \Delta\pmb{\varepsilon} \\
+\pmb{\sigma}_{n+1} &= \mathbb{C} : \left( \pmb{\varepsilon}_{n+1} - \pmb{\varepsilon}_{n+1}^p \right) \\
+\pmb{\varepsilon}_{n+1}^p &= \pmb{\varepsilon}_{n}^p + \Delta\gamma\partial_{\pmb{\sigma}} f\left(\pmb{\sigma}_{n+1}, \pmb{q}_{n+1}\right)\\
+\pmb{\alpha}_{n+1} &= \pmb{\alpha}_{n} + \Delta\gamma\partial_{\pmb{q}} f\left(\pmb{\sigma}_{n+1}, \pmb{q}_{n+1}\right)
+\end{align}
+
+Se definen las componentes de prueba
+\begin{align} 
+    \pmb{\varepsilon}_{n+1}^{e\textnormal{ trial}} &= \pmb{\varepsilon}_{n+1} - \pmb{\varepsilon}_{n}^p \\
+    \pmb{\sigma}_{n+1}^{\textnormal{trial}} &= \mathbb{C} : \pmb{\varepsilon}_{n+1}^{e\textnormal{ trial}} \\
+    \pmb{q}_{n+1}^{\textnormal{trial}} &= \pmb{q}_{n+1} \\
+    f_{n+1}^{\textnormal{trial}} &= f\left(\pmb{\sigma}_{n+1}^{\textnormal{trial}}, \pmb{q}_{n+1}^{\textnormal{trial}}\right)
+\end{align}
+
+Para simplificar las ecuaciones se define la función de fluencia y las demás variables:
+\begin{align}
+    f\left(\pmb{\sigma}_{n+1}, \bar\varepsilon^p_{n+1}\right) &= \sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) - Y\left(\bar\varepsilon^p_{n+1}\right) \label{eqn:yield}\\
+    \pmb{\varepsilon}_{n+1}^p &= \pmb{\varepsilon}^p_{n} + \Delta\gamma\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right)  \label{eqn:plas_strain_imp}\\
+    \pmb{\alpha}_{n+1} &= \bar\varepsilon^p_{n+1} = \bar\varepsilon^p_{n} + \Delta\gamma  \label{eqn:eff_plas_strain_imp}\\
+    \pmb{q}_{n+1} &= Y(\bar\varepsilon^p_{n+1}) \\
+\end{align}
+
+En base a lo anterior se definen los dos residuos para poder hacer Newton-Rhapson. El primero $\pmb{R}_{n+1}^{\varepsilon^p}$ respecto de la deformación plástica (ecuación~\ref{eqn:plas_strain_imp}), el segundo $\pmb{R}_{n+1}^{f}$ respecto de la función de fluencia (ecuación~\ref{eqn:yield}):
+\begin{align}
+    \pmb{R}_{n+1}^{\varepsilon^p} &= -\pmb{\varepsilon}_{n+1}^p + \pmb{\varepsilon}_{n}^p + \Delta\gamma\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) \\
+    \pmb{R}_{n+1}^{f} &= \sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) - Y\left(\bar\varepsilon^p_{n+1}\right)
+\end{align}
+
+Como $\pmb{\varepsilon}^p_{n+1}$ es constante en el algoritmo de retorno plástico, se puede obtener la siguiente expresión en las iteraciones de Newton-Rhapson:
+\[
+\left(\pmb{\sigma}_{n+1}^{(k)} + \Delta\pmb{\sigma}_{n+1}^{(k)}\right) = \mathbb{C}:\left[\pmb{\varepsilon}_{n+1} - \left(\pmb{\varepsilon}_{n+1}^{p^{(k)}} + \Delta\pmb{\varepsilon}_{n+1}^{p^{(k)}}\right)\right] \implies \Delta\pmb{\sigma}_{n+1}^{(k)} = -\mathbb{C}:\Delta\pmb{\varepsilon}_{n+1}^{p^{(k)}}
+\]\[
+    \Delta\pmb{\varepsilon}_{n+1}^{p^{(k)}} = -\mathbb{C}^{-1}:\Delta\pmb{\sigma}_{n+1}^{(k)}
+\]
+
+Ahora se linealiza el sistema por medio de los residuos
+\[\renewcommand\arraystretch{1.6}
+    \begin{bmatrix}
+        \frac{\partial\pmb{R}_{n+1}^{\varepsilon^p}}{\partial \pmb{\varepsilon}^p_{n+1}} & \frac{\partial\pmb{R}_{n+1}^{\varepsilon^p}}{\partial \Delta\gamma_{n+1}} \\ 
+        \frac{\partial\pmb{R}_{n+1}^{f}}{\partial \pmb{\varepsilon}^p_{n+1}} & \frac{\partial\pmb{R}_{n+1}^{f}}{\partial \Delta\gamma_{n+1}} \\
+    \end{bmatrix}
+    \begin{bmatrix}
+        \Delta\pmb{\varepsilon}^p_{n+1} \\
+        \Delta^2\gamma_{n+1} \\
+    \end{bmatrix} = -
+    \begin{bmatrix}
+        \pmb{R}_{n+1}^{\varepsilon^p} \\
+        \pmb{R}_{n+1}^{f} \\
+    \end{bmatrix} 
+\]
+Tomando $\pmb{\Xi} = \left[\mathbb{C}^{-1} + \Delta\gamma\partial^2_{\sigma\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right)\right]^{-1}$ 
+\[\renewcommand\arraystretch{1.6}
+    \begin{bmatrix}
+        \pmb{\Xi}^{-1}:\Delta\pmb{\sigma}_{n+1}:\left[\Delta\pmb{\varepsilon}^p_{n+1}\right]^{-1} & \partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) \\ 
+        \partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\Delta\pmb{\sigma}_{n+1}:\left[\Delta\pmb{\varepsilon}^p_{n+1}\right]^{-1} & -\partial_{\Delta\gamma}Y\left(\bar\varepsilon^p_{n+1}\right)
+    \end{bmatrix}
+    \begin{bmatrix}
+        \Delta\pmb{\varepsilon}^p_{n+1} \\
+        \Delta^2\gamma_{n+1} \\
+    \end{bmatrix} = -
+    \begin{bmatrix}
+        \pmb{R}_{n+1}^{\varepsilon^p} \\
+        \pmb{R}_{n+1}^{f} \\
+    \end{bmatrix}
+\]
+De la primera ecuación se despeja $\Delta\pmb{\sigma}_{n+1}$:
+\[ \pmb{\Xi}^{-1}:\Delta\pmb{\sigma}_{n+1} + \partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right)\Delta^2\gamma + \pmb{R}_{n+1}^{\varepsilon^p} = 0\]
+\[ \Delta\pmb{\sigma}_{n+1} = \pmb{\Xi}:\left[-\partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right)\Delta^2\gamma - \pmb{R}_{n+1}^{\varepsilon^p} \right]\]
+
+De la segunda ecuación
+\[ \partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\Delta\pmb{\sigma}_{n+1} - \partial_{\Delta\gamma}Y\left(\bar\varepsilon^p_{n+1}\right)\Delta^2\gamma_{n+1} + \pmb{R}_{n+1}^{f} = 0\]
+\[ -\partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:\partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right)\Delta^2\gamma
+   -\partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:\pmb{R}_{n+1}^{\varepsilon^p} 
+   - \partial_{\Delta\gamma}Y\left(\bar\varepsilon^p_{n+1}\right)\Delta^2\gamma_{n+1} + \pmb{R}_{n+1}^{f} = 0\]
+
+Factorizando por $\Delta^2\gamma$ y despejando
+\[
+\Delta^2\gamma = \frac{\pmb{R}_{n+1}^{f} - \partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:\pmb{R}_{n+1}^{\varepsilon^p}}
+{\partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:\partial_{\sigma}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) + \partial_{\Delta\gamma}Y\left(\bar\varepsilon^p_{n+1}\right)}
+\]
+
+
+\section*{Tangente consistente}
+\[\pmb{\sigma}_{n+1} = \mathbb{C}:\left(\pmb{\varepsilon}_{n+1} - \pmb{\varepsilon}_{n+1}^p\right) \]
+\begin{equation} \label{eqn:hooke_differential}
+    d\pmb{\sigma}_{n+1} = \mathbb{C}:\left(d\pmb{\varepsilon}_{n+1} - d\pmb{\varepsilon}_{n+1}^p\right)
+\end{equation}
+Luego se diferencia el residuo de deformación plástico $\pmb{R}_{n+1}^{\varepsilon^p}$
+\[\pmb{R}_{n+1}^{\varepsilon^p} = 0 = -\pmb{\varepsilon}_{n+1}^p + \pmb{\varepsilon}_{n}^p + \Delta\gamma\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) \]
+\[d\pmb{\varepsilon}_{n+1}^p = d\Delta\gamma\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) + \Delta\gamma\partial_{\pmb{\sigma}\pmb{\sigma}}^2 \sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) : d\pmb{\sigma}_{n+1} \]
+
+El término $d\pmb{\varepsilon}_{n+1}^p$ se reemplaza en la ecuación~\ref{eqn:hooke_differential}. 
+\[d\pmb{\sigma}_{n+1} = \mathbb{C}:\left(d\pmb{\varepsilon}_{n+1} - d\Delta\gamma\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) - \Delta\gamma\partial_{\pmb{\sigma}\pmb{\sigma}}^2 \sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) : d\pmb{\sigma}_{n+1}\right)\]
+\[\mathbb{C}^{-1}:d\pmb{\sigma}_{n+1} = d\pmb{\varepsilon}_{n+1} - d\Delta\gamma\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) - \Delta\gamma\partial_{\pmb{\sigma}\pmb{\sigma}}^2 \sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) : d\pmb{\sigma}_{n+1}\]
+\[\pmb{\Xi}^{-1}:d\pmb{\sigma}_{n+1} = d\pmb{\varepsilon}_{n+1} - d\Delta\gamma\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right)\]
+\[d\pmb{\sigma}_{n+1} = \pmb{\Xi}:\left[d\pmb{\varepsilon}_{n+1} - d\Delta\gamma\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right)\right]\]
+
+Luego se utiliza la función de fluencia y se diferencia.
+\[ f(\pmb{\sigma}_{n+1}, \Delta\gamma_{n+1}) = 0 = \sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) - Y\left(\bar\varepsilon^p_{n+1}\right)\]
+\[ 0 = \partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):d\pmb{\sigma}_{n+1} - \partial_{\Delta\gamma} Y\left(\bar\varepsilon^p_{n+1}\right) d\Delta\gamma_{n+1}\]
+\[ 0 = \partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:\left[d\pmb{\varepsilon}_{n+1} - d\Delta\gamma\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right)\right] - \partial_{\Delta\gamma} Y\left(\bar\varepsilon^p_{n+1}\right) d\Delta\gamma_{n+1}\]
+\[ 0 = \partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:d\pmb{\varepsilon}_{n+1} - d\Delta\gamma\left[\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) + \partial_{\Delta\gamma} Y\left(\bar\varepsilon^p_{n+1}\right)\right]\]
+\[ d\Delta\gamma = \frac{\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:d\pmb{\varepsilon}_{n+1} }{\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) + \partial_{\Delta\gamma} Y\left(\bar\varepsilon^p_{n+1}\right)}\]
+
+\[d\pmb{\sigma}_{n+1} = \left[\pmb{\Xi} - \frac{\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi} \otimes \partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi} }{\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right):\pmb{\Xi}:\partial_{\pmb{\sigma}}\sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) + \partial_{\Delta\gamma} Y\left(\bar\varepsilon^p_{n+1}\right)}\right] :d\pmb{\varepsilon}_{n+1} \]
+
+
+
+\end{document}

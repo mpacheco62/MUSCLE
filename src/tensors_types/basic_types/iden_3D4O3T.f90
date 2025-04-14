@@ -2,7 +2,7 @@
 module mod_iden_3D4O3T
     ! \delta_ij\delta_kl
     use, intrinsic :: iso_fortran_env
-    use mod_iden_3D4O3TMod
+    use mod_iden_3D4O3TS
     implicit none
     private
 
@@ -27,7 +27,7 @@ contains
         implicit none
         class(iden_3D4O3T), intent(in) :: I2
         real(real64), intent(in) :: a
-        type(iden_3D4O3Tmod) :: res
+        type(iden_3D4O3TS) :: res
         res%val = a 
     end function mul_I3D4O3T_real64
 
@@ -35,7 +35,7 @@ contains
         implicit none
         class(iden_3D4O3T), intent(in) :: I2
         real(real64), intent(in) :: a
-        type(iden_3D4O3Tmod) :: res
+        type(iden_3D4O3TS) :: res
         res%val = a 
     end function mul_real64_I3D4O3T
 
@@ -43,7 +43,7 @@ contains
         implicit none
         class(iden_3D4O3T), intent(in) :: I2
         real(real64), intent(in) :: a
-        type(iden_3D4O3Tmod) :: res
+        type(iden_3D4O3TS) :: res
         res%val = 1D0/a
     end function div_I3D4O3T_real64
 

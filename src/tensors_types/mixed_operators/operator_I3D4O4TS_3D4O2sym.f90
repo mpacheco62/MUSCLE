@@ -1,6 +1,6 @@
-module mod_operator_I3D4O4TMod_3D4O2sym
+module mod_operator_I3D4O4TS_3D4O2sym
     use, intrinsic :: iso_fortran_env
-    use mod_iden_3D4O4TMod
+    use mod_iden_3D4O4TS
     use mod_ten_3D4O2sym
     implicit none
     private
@@ -15,22 +15,22 @@ module mod_operator_I3D4O4TMod_3D4O2sym
 
     ! public :: operator(+)
     ! interface operator (+)
-    !     module procedure sum_3D4O3sym_I3D4O4TMod
-    !     module procedure sum_I3D4O4TMod_3D4O3sym
+    !     module procedure sum_3D4O3sym_I3D4O4TS
+    !     module procedure sum_I3D4O4TS_3D4O3sym
     ! end interface
 
     ! public :: operator(-)
     ! interface operator (-)
-    !     module procedure sub_3D4O3sym_I3D4O4TMod
-    !     module procedure sub_I3D4O4TMod_3D4O3sym
+    !     module procedure sub_3D4O3sym_I3D4O4TS
+    !     module procedure sub_I3D4O4TS_3D4O3sym
     ! end interface
     
     contains
 
 
-    pure module function sum_I3D4O4TMod_3D4O2sym(I2, a) result(res)
+    pure module function sum_I3D4O4TS_3D4O2sym(I2, a) result(res)
         implicit none
-        class(iden_3D4O4TMod), intent(in) :: I2
+        class(iden_3D4O4TS), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         call res%init(a%vals)
@@ -40,11 +40,11 @@ module mod_operator_I3D4O4TMod_3D4O2sym
         res%vals(4,4) = res%vals(4,4) + 0.5D0*I2%val
         res%vals(5,5) = res%vals(5,5) + 0.5D0*I2%val
         res%vals(6,6) = res%vals(6,6) + 0.5D0*I2%val
-    end function sum_I3D4O4TMod_3D4O2sym
+    end function sum_I3D4O4TS_3D4O2sym
 
-    pure module function sum_3D4O2sym_I3D4O4TMod(a, I2) result(res)
+    pure module function sum_3D4O2sym_I3D4O4TS(a, I2) result(res)
         implicit none
-        class(iden_3D4O4TMod), intent(in) :: I2
+        class(iden_3D4O4TS), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         call res%init(a%vals)
@@ -54,11 +54,11 @@ module mod_operator_I3D4O4TMod_3D4O2sym
         res%vals(4,4) = res%vals(4,4) + 0.5D0*I2%val
         res%vals(5,5) = res%vals(5,5) + 0.5D0*I2%val
         res%vals(6,6) = res%vals(6,6) + 0.5D0*I2%val
-    end function sum_3D4O2sym_I3D4O4TMod
+    end function sum_3D4O2sym_I3D4O4TS
 
-    pure module function sub_I3D4O4TMod_3D4O2sym(I2, a) result(res)
+    pure module function sub_I3D4O4TS_3D4O2sym(I2, a) result(res)
         implicit none
-        class(iden_3D4O4TMod), intent(in) :: I2
+        class(iden_3D4O4TS), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         call res%init(-a%vals)
@@ -68,11 +68,11 @@ module mod_operator_I3D4O4TMod_3D4O2sym
         res%vals(4,4) = res%vals(4,4) + 0.5D0*I2%val
         res%vals(5,5) = res%vals(5,5) + 0.5D0*I2%val
         res%vals(6,6) = res%vals(6,6) + 0.5D0*I2%val
-    end function sub_I3D4O4TMod_3D4O2sym
+    end function sub_I3D4O4TS_3D4O2sym
 
-    pure module function sub_3D4O2sym_I3D4O4TMod(a, I2) result(res)
+    pure module function sub_3D4O2sym_I3D4O4TS(a, I2) result(res)
         implicit none
-        class(iden_3D4O4TMod), intent(in) :: I2
+        class(iden_3D4O4TS), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         call res%init(a%vals)
@@ -82,5 +82,5 @@ module mod_operator_I3D4O4TMod_3D4O2sym
         res%vals(4,4) = res%vals(4,4) - 0.5D0*I2%val
         res%vals(5,5) = res%vals(5,5) - 0.5D0*I2%val
         res%vals(6,6) = res%vals(6,6) - 0.5D0*I2%val
-    end function sub_3D4O2sym_I3D4O4TMod
-end module mod_operator_I3D4O4TMod_3D4O2sym
+    end function sub_3D4O2sym_I3D4O4TS
+end module mod_operator_I3D4O4TS_3D4O2sym

@@ -3,3 +3,8 @@ bin/
 build/
 modFiles/
 output/
+doc/
+
+Theory/**
+!Theory/**/
+!*.tex

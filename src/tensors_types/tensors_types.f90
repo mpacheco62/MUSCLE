@@ -1,9 +1,20 @@
 module tensors_types
-    !! Tensors types
-    !! =============
+    !! Tensors Types Module
+    !! ====================
     !!
-    !! This module contains the definitions of tensors. So far, there are two tensors implemented.
-    !! 
+    !! @description
+    !! This module serves as the central access point for various tensor types and their associated
+    !! operations within the UmatLib library. It aggregates tensor definitions and operator
+    !! implementations from specialized submodules, providing a unified interface for users.
+    !!
+    !! Instead of defining the tensor types and operations directly, this module uses other
+    !! modules (`mod_ten_*`, `mod_iden_*`, `mod_operator_*`) and makes specific types and
+    !! operators publicly available. This promotes modularity and organization within the library.
+    !!
+    !! @section Nomenclature
+    !!
+    !! The module exposes two main categories of tensor types: Regular Tensors and Identity Tensors.
+    !!
     !! Regular Tensors:
     !! ----------------
     !!
@@ -11,51 +22,122 @@ module tensors_types
     !!
     !! - `x`: Dimensions of the tensor (e.g., 3D)
     !! - `y`: Order of the tensor (e.g., 2O, 4O)
-    !! - `z`: Number of symmetries of the tensor (e.g., sym, 3sym)
+    !! - `z`: Number of symmetries of the tensor (e.g., sym, 2sym, 3sym)
     !!
     !! Examples:
     !!
-    !! - `ten_3D2Osym`: 3D tensor, second order, with symmetries.
-    !! - `ten_3D4O3sym`: 3D tensor, fourth order, with major and minor, symmetries.
+    !! - `ten_3D2O`: 3D tensor, second order, no specific symmetry assumed in the type name (likely stored as 3x3).
+    !! - `ten_3D2Osym`: 3D tensor, second order, symmetric (likely stored efficiently, e.g., 6 components).
+    !! - `ten_3D4O2sym`: 3D tensor, fourth order, with minor symmetries (\(C_{ijkl} = C_{jikl} = C_{ijlk}\)).
+    !! - `ten_3D4O3sym`: 3D tensor, fourth order, with major and minor symmetries (\(C_{ijkl} = C_{jikl} = C_{ijlk} = C_{klij}\)).
     !!
     !! Identity Tensors:
     !! ----------------
     !!
-    !! Nomenclature `iden_xyz`:
+    !! Nomenclature `iden_xyz` or `iden_xyzS`:
     !!
     !! - `x`: Dimensions of the tensor (e.g., 3D)
     !! - `y`: Order of the tensor (e.g., 2O, 4O)
     !! - `z`: Type of identity (e.g., None, 1T, 2T, 3T, 4T)
-    !!     * None: Only valid for a second order tensor
-    !!     * `1`: \(\delta_{ik}\delta_{jl}\), only valid for a fourth order tensor
-    !!     * `2`: \(\delta_{il}\delta_{jk}\), only valid for a fourth order tensor
-    !!     * `3`: \(\delta_{ij}\delta_{kl}\), only valid for a fourth order tensor
-    !!     * `4`: \(\frac{\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk}}{2}\), only valid for a fourth order tensor
+    !!     * `None`: Standard second-order identity tensor \(\delta_{ij}\). (`iden_3D2O`)
+    !!     * `1T`: \(\delta_{ik}\delta_{jl}\), only valid for a fourth order tensor.
+    !!     * `2T`: \(\delta_{il}\delta_{jk}\), only valid for a fourth order tensor.
+    !!     * `3T`: \(\delta_{ij}\delta_{kl}\), only valid for a fourth order tensor. (`iden_3D4O3T`)
+    !!     * `4T`: \(\frac{\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk}}{2}\), symmetric fourth-order identity. (`iden_3D4O4T`)
+    !! - `S`: Suffix indicating a *scaled* identity tensor (e.g., `val * identity`). (`iden_3D2OS`, `iden_3D4O3TS`, `iden_3D4O4TS`)
     !!
     !! Examples:
     !!
-    !! - `iden_3D2O`: 3D indentity type, second order.
-    !! - `iden_3D4O4T`: 3D identity type, fourth order, fourth type.
+    !! - `iden_3D2O`: 3D identity tensor, second order (\(\delta_{ij}\)).
+    !! - `iden_3D2OS`: Scaled 3D identity tensor, second order (\(c \delta_{ij}\)).
+    !! - `iden_3D4O3T`: 3D identity tensor, fourth order, type 3 (\(\delta_{ij}\delta_{kl}\)).
+    !! - `iden_3D4O4T`: 3D identity tensor, fourth order, type 4 (symmetric identity).
+    !! - `iden_3D4O4TS`: Scaled 3D identity tensor, fourth order, type 4 (\(c * (\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})/2\)).
+    !!
+    !! @section Public Entities
+    !!
+    !! This module makes the following entities publicly available:
+    !!
+    !! **Derived Types:**
+    !!
+    !! - `ten_3D2O`:       General 3D second-order tensor (from `mod_ten_3D2O`).
+    !! - `ten_3D2Osym`:    Symmetric 3D second-order tensor (from `mod_ten_3D2Osym`).
+    !! - `ten_3D4O2sym`:   3D fourth-order tensor with minor symmetries (from `mod_ten_3D4O2sym`).
+    !! - `ten_3D4O3sym`:   3D fourth-order tensor with major and minor symmetries (from `mod_ten_3D4O3sym`).
+    !! - `iden_3D2O`:      Standard 3D second-order identity tensor (from `mod_iden_3D2O`).
+    !! - `iden_3D2OS`:   Scaled 3D second-order identity tensor (from `mod_iden_3D2OS`).
+    !! - `iden_3D4O3T`:    Type 3 3D fourth-order identity tensor (from `mod_iden_3D4O3T`).
+    !! - `iden_3D4O3TS`: Scaled Type 3 3D fourth-order identity tensor (from `mod_iden_3D4O3TS`).
+    !! - `iden_3D4O4T`:    Type 4 (symmetric) 3D fourth-order identity tensor (from `mod_iden_3D4O4T`).
+    !! - `iden_3D4O4TS`: Scaled Type 4 3D fourth-order identity tensor (from `mod_iden_3D4O4TS`).
+    !!
+    !! **Operators:**
+    !!
+    !! The following operators are overloaded for various combinations of the public tensor types
+    !! and intrinsic types (like `real(real64)`). The implementations are provided by the
+    !! `mod_operator_*` modules.
+    !!
+    !! - `+`: Addition (e.g., `tensor + tensor`).
+    !! - `-`: Subtraction (e.g., `tensor - tensor`).
+    !! - `*`: Multiplication (scalar * tensor, tensor * scalar, potentially tensor * tensor depending on definitions).
+    !! - `/`: Division (tensor / scalar).
+    !! - `.isequal.`: Custom equality comparison for tensors (checks for approximate equality of components).
+    !! - `.dev.`: Deviatoric part of a second-order tensor.
+    !! - `.ddot.`: Double dot product (e.g., `tensor4 : tensor2`, `tensor2 : tensor2`).
+    !! - `.tdot.`: Tensor dot product (specific definition depends on implementation, often \( (A \cdot B)_{ik} = A_{ij} B_{jk} \) for second order).
+    !! - `.inv.`: Inverse of a second-order tensor.
+    !!
+    !! **Assignment:**
+    !!
+    !! - `=`: Overloaded assignment allows copying between compatible tensor types.
+    !!
+    !! @section Usage
+    !! To use the tensor types and operations defined here, simply add `use tensors_types`
+    !! to your Fortran code.
+    !!
+    !! ```fortran
+    !! program example_usage
+    !!   use tensors_types
+    !!   implicit none
+    !!
+    !!   type(ten_3D2Osym) :: stress, strain, stress_dev
+    !!   type(ten_3D4O3sym) :: C_elastic
+    !!   real(real64) :: scalar_val
+    !!
+    !!   ! ... initialize tensors ...
+    !!
+    !!   stress = C_elastic : strain  ! Double dot product via overloaded operator
+    !!   stress_dev = .dev. stress   ! Deviatoric part
+    !!   stress = stress + stress_dev * scalar_val ! Addition, multiplication
+    !!
+    !!   ! ... etc ...
+    !!
+    !! end program example_usage
+    !! ```
+    !!
+    !! @contributor MPacheco
+    !! @version 1.0 - Initial aggregation module
+
     use, intrinsic :: iso_fortran_env
     ! use mod_ten_3D2O, only : ten_3D2O
     use mod_ten_3D2O
     use mod_ten_3D2Osym
     use mod_ten_3D4O3sym
     use mod_ten_3D4O2sym
-    use mod_iden_3D2OMod
+    use mod_iden_3D2OS
     use mod_iden_3D2O
-    use mod_iden_3D4O3TMod
+    use mod_iden_3D4O3TS
     use mod_iden_3D4O3T
-    use mod_iden_3D4O4TMod
+    use mod_iden_3D4O4TS
     use mod_iden_3D4O4T
     use mod_operator_I3D2O_3D2Osym
     use mod_operator_I3D2O_3D2O
-    use mod_operator_I3D2OMod_3D2Osym
-    use mod_operator_I3D2OMod_3D2O
+    use mod_operator_I3D2OS_3D2Osym
+    use mod_operator_I3D2OS_3D2O
     use mod_operator_I3D4O3T_3D4O3sym
-    use mod_operator_I3D4O3TMod_3D4O3sym
+    use mod_operator_I3D4O3TS_3D4O3sym
     use mod_operator_I3D4O4T_3D4O3sym
-    use mod_operator_I3D4O4TMod_3D4O3sym
+    use mod_operator_I3D4O4TS_3D4O3sym
     use mod_operator_3D2Osym_3D4O3sym
     use mod_operator_3D4O2sym_3D4O3sym
     use mod_operator_3D2Osym_3D4O2sym
@@ -68,11 +150,11 @@ module tensors_types
     public :: ten_3D2Osym
     public :: ten_3D4O3sym
     public :: ten_3D4O2sym
-    public :: iden_3D2Omod
+    public :: iden_3D2OS
     public :: iden_3D2O
-    public :: iden_3D4O3TMod
+    public :: iden_3D4O3TS
     public :: iden_3D4O3T
-    public :: iden_3D4O4TMod
+    public :: iden_3D4O4TS
     public :: iden_3D4O4T
 
     private 
@@ -80,12 +162,12 @@ module tensors_types
 
     ! iden_3D4O3T ! \delta_ij\delta_kl
 
-    ! iden_3D4O3TMod ! val*\delta_ij\delta_kl
+    ! iden_3D4O3TS ! val*\delta_ij\delta_kl
 
     ! type, public :: iden_3D4O4T ! (\delta_ik\delta_jl + \delta_il\delta_jk)/2
     ! end type iden_3D4O4T
 
-    ! iden_3D4O4TMod ! val*(\delta_ik\delta_jl + \delta_il\delta_jk)/2
+    ! iden_3D4O4TS ! val*(\delta_ik\delta_jl + \delta_il\delta_jk)/2
     
 
     public :: operator(.isequal.)
