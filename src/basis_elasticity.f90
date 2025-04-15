@@ -2,7 +2,9 @@ module mod_base_elasticity
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit None
+    PRIVATE
 
+    PUBLIC :: Base_elasticity
     type, abstract :: Base_elasticity
         contains
             procedure(stress_interface), deferred :: stress

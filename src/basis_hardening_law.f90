@@ -1,7 +1,9 @@
 module mod_hardening_law
     use, intrinsic :: iso_fortran_env
     implicit None
-
+    PRIVATE
+    
+    PUBLIC :: Base_hardening_law
     type, abstract :: Base_hardening_law
         contains
             procedure(stress_interface), deferred :: stress

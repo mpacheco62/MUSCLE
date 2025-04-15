@@ -112,7 +112,7 @@ module tensors_types
     !!
     !!   ! ... initialize tensors ...
     !!
-    !!   stress = C_elastic : strain  ! Double dot product via overloaded operator
+    !!   stress = C_elastic .ddot. strain  ! Double dot product via overloaded operator
     !!   stress_dev = .dev. stress   ! Deviatoric part
     !!   stress = stress + stress_dev * scalar_val ! Addition, multiplication
     !!

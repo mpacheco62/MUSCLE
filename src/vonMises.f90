@@ -2,7 +2,9 @@ module mod_vonMises
     use, intrinsic :: iso_fortran_env
     use mod_yield_criteria
     implicit none
+    PRIVATE
 
+    PUBLIC :: VonMises
     type, extends(Base_yield_critera) :: VonMises
     contains
         procedure :: stress_eq

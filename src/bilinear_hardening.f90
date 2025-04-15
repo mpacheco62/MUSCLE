@@ -2,7 +2,9 @@ module mod_bilinear_hardening
     use, intrinsic :: iso_fortran_env
     use mod_hardening_law
     implicit none
+    PRIVATE
 
+    PUBLIC :: Bilinear_hardening
     type, extends(Base_hardening_law) :: Bilinear_hardening
         real(real64) :: y0, K
     contains

@@ -2,7 +2,9 @@ module mod_yield_criteria
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit None
+    PRIVATE
 
+    public :: Base_yield_critera
     type, abstract :: Base_yield_critera
         contains
             procedure(stress_eq_interface), deferred :: stress_eq

@@ -50,6 +50,7 @@ end subroutine
 
 subroutine test_CPB06_stresseq_simple_tensile_2(passed)
     use, intrinsic :: iso_fortran_env
+    use tensors_types
     use mod_CPB06
     implicit none
     
@@ -72,6 +73,7 @@ end subroutine
 
 subroutine test_CPB06_stresseq_biaxial_3(passed)
     use, intrinsic :: iso_fortran_env
+    use tensors_types
     use mod_CPB06
     implicit none
     
@@ -94,6 +96,7 @@ end subroutine
 
 subroutine test_CPB06_stresseq_shear_4(passed)
     use, intrinsic :: iso_fortran_env
+    use tensors_types
     use mod_CPB06
     implicit none
     
@@ -114,6 +117,7 @@ end subroutine
 
 subroutine test_CPB06_stresseq_derivates_5(passed)
     use, intrinsic :: iso_fortran_env
+    use tensors_types
     use mod_CPB06
     implicit none
     
@@ -178,6 +182,7 @@ end subroutine
 
 subroutine test_CPB06_stresseq_derivates2_6(passed)
     use, intrinsic :: iso_fortran_env
+    use tensors_types
     use mod_CPB06
     implicit none
     

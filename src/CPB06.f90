@@ -2,7 +2,9 @@ module mod_CPB06
     use, intrinsic :: iso_fortran_env
     use mod_yield_criteria
     implicit none
+    PRIVATE
 
+    PUBLIC :: CPB06
     type, extends(Base_yield_critera) :: CPB06
     contains
         procedure :: stress_eq

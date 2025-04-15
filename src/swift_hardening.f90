@@ -2,7 +2,9 @@ module mod_swift_hardening
     use, intrinsic :: iso_fortran_env
     use mod_hardening_law
     implicit none
+    PRIVATE
 
+    PUBLIC :: Swift_hardening
     type, extends(Base_hardening_law) :: Swift_hardening
         real(real64) :: k, e0, n
     contains

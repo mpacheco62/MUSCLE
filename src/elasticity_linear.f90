@@ -3,7 +3,9 @@ module mod_elasticity_linear
     use tensors_types
     use mod_base_elasticity
     implicit none
+    PRIVATE
 
+    PUBLIC :: Elasticity_linear
     type, extends(Base_elasticity) :: Elasticity_linear
         real(real64), private :: young, poisson
         real(real64), private :: e1, e2, e3
