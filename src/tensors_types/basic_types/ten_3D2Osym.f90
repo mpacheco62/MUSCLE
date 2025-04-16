@@ -1,15 +1,143 @@
 module mod_ten_3D2Osym
+    !! Module mod_ten_3D2Osym
+    !! =======================
+    !!
+    !! Defines the type for symmetric 3D second-order tensors and associated operations.
+    !!
+    !! This module provides the derived type `ten_3D2Osym` to represent a symmetric
+    !! second-order tensor in three dimensions (like stress or strain tensors).
+    !! The tensor is stored internally using Voigt notation with 6 components
+    !! in the order (11, 22, 33, 12, 23, 13).
+    !!
+    !! The module overloads standard arithmetic operators (+, -, *, /), a custom
+    !! equality comparison operator (.isequal.), the deviatoric operator (.dev.),
+    !! and the double dot product operator (.ddot.) for this tensor type.
+    !! It also provides methods for initialization and accessing individual components.
+    !!
+    !! Public Entities
+    !! ---------------
+    !!
+    !! ### Derived Type:
+    !!
+    !! - `ten_3D2Osym`: Represents a symmetric 3D second-order tensor.
+    !!     - Component: `vals(6) :: real(real64)` - Stores the 6 Voigt components
+    !!       (xx, yy, zz, xy, yz, xz).
+    !!     - Generic Procedure: `init` - Initializes the tensor either from a
+    !!       6-element array or from individual xx, yy, zz, xy, yz, xz components.
+    !!     - Procedures: `xx`, `yy`, `zz`, `xy`, `yz`, `xz` - Accessor functions
+    !!       for individual tensor components.
+    !!
+    !! ### Operators:
+    !!
+    !! - `.isequal.`: Compares two `ten_3D2Osym` tensors for approximate equality.
+    !! - `+`: Adds two `ten_3D2Osym` tensors.
+    !! - `-`: Subtracts two `ten_3D2Osym` tensors (binary) or computes the unary negation.
+    !! - `*`: Multiplies a `ten_3D2Osym` tensor by a `real(real64)` scalar (or vice-versa).
+    !! - `/`: Divides a `ten_3D2Osym` tensor by a `real(real64)` scalar.
+    !! - `.dev.`: Computes the deviatoric part of a `ten_3D2Osym` tensor.
+    !! - `.ddot.`: Computes the double dot product (scalar result) of two `ten_3D2Osym` tensors.
+    !!
+    !! ### Assignment:
+    !!
+    !! - `=`: Allows assigning a single `real(real64)` scalar value to all components
+    !!        of a `ten_3D2Osym` tensor.
+    !!
+    !! Usage
+    !! -----
+    !!
+    !! ```fortran
+    !! program example_ten_3d2osym_usage
+    !!   use mod_ten_3D2Osym
+    !!   use iso_fortran_env, only: real64
+    !!   implicit none
+    !!
+    !!   type(ten_3D2Osym) :: stress, strain, stress_dev
+    !!   real(real64) :: trace_stress, dot_product
+    !!   logical :: are_equal
+    !!
+    !!   ! Initialize using individual components (Voigt: 11, 22, 33, 12, 23, 13)
+    !!   call stress%init(100.0D0, 50.0D0, 20.0D0, 10.0D0, 5.0D0, -2.0D0)
+    !!
+    !!   ! Initialize strain to zero using scalar assignment
+    !!   strain = 0.0D0
+    !!   ! Set some strain components
+    !!   strain%vals(1) = 0.001 ! e_xx
+    !!   strain%vals(4) = 0.002 ! e_xy
+    !!
+    !!   ! Calculate deviatoric stress
+    !!   stress_dev = .dev. stress
+    !!
+    !!   ! Calculate double dot product
+    !!   dot_product = stress .ddot. strain
+    !!
+    !!   ! Access a component
+    !!   print *, "Stress XX component:", stress%xx() ! Note the parentheses for the function call
+    !!   print *, "Stress XY component:", stress%xy()
+    !!   print *, "Deviatoric Stress ZZ:", stress_dev%zz()
+    !!   print *, "Stress : Strain =", dot_product
+    !!
+    !!   ! Comparison
+    !!   are_equal = (stress .isequal. stress_dev)
+    !!   print *, "Is stress equal to its deviatoric part?", are_equal
+    !!
+    !! end program example_ten_3d2osym_usage
+    !! ```
+    !!
+    !! For more information see [[tensors_types]]
+
     use, intrinsic :: iso_fortran_env
     implicit none
     private
 
     type, public :: ten_3D2Osym
-        !! Type of a second order (O2), symmetric (sym) whith three dimensions (3D)
+        !! Symmetric 3D Second-Order Tensor (Voigt Notation)
+        !! ==================================================
+        !!
+        !! Represents a symmetric second-order tensor in three dimensions, such as
+        !! stress (\(\sigma_{ij}\)) or strain (\(\epsilon_{ij}\)), where \(\sigma_{ij} = \sigma_{ji}\).
+        !! Due to symmetry, only 6 independent components are needed.
+        !!
+        !! Storage:
+        !! --------
+        !! The tensor components are stored internally in a 1D array `vals` of size 6
+        !! using Voigt notation with the following mapping:
+        !! - `vals(1)`: Component (1,1) or xx
+        !! - `vals(2)`: Component (2,2) or yy
+        !! - `vals(3)`: Component (3,3) or zz
+        !! - `vals(4)`: Component (1,2) or xy (Note: This is the tensorial shear component, not the engineering one)
+        !! - `vals(5)`: Component (2,3) or yz
+        !! - `vals(6)`: Component (1,3) or xz
+        !!
+        !! Access:
+        !! -------
+        !! Components can be accessed directly via the `vals` array or more conveniently
+        !! using the type-bound procedures `xx()`, `yy()`, `zz()`, `xy()`, `yz()`, `xz()`.
+        !!
+        !! Initialization:
+        !! ---------------
+        !! Use the generic `init` procedure to initialize either from a 6-element `real(real64)`
+        !! array (following the Voigt order above) or by providing the 6 components
+        !! individually (xx, yy, zz, xy, yz, xz).
+        !!
+        !! For more information see [[tensors_types]]
         real(real64), dimension(6) :: vals
+            !! Stores the 6 independent components in Voigt notation: (xx, yy, zz, xy, yz, xz).
         contains
-            generic, public :: init => init_ten_3D2Osym, init2_ten_3D2Osym 
+            generic, public :: init => init_ten_3D2Osym, init2_ten_3D2Osym
+                !! Generic interface for initialization.
             procedure, private :: init_ten_3D2Osym, init2_ten_3D2Osym
-            procedure, public :: xx, yy, zz, xy, yz, xz
+            procedure, public :: xx 
+                !! Accessor for the xx (1,1) component.
+            procedure, public :: yy 
+                !! Accessor for the yy (2,2) component.
+            procedure, public :: zz
+                !! Accessor for the zz (3,3) component.
+            procedure, public :: xy
+                !! Accessor for the xy (1,2) component.
+            procedure, public :: yz
+                !! Accessor for the yz (2,3) component.
+            procedure, public :: xz
+                !! Accessor for the xz (1,3) component.
     end type ten_3D2Osym
 
     public :: operator(.isequal.)
@@ -68,6 +196,9 @@ contains
     end subroutine
 
     pure module subroutine init_ten_3D2Osym(self, vals)
+        !! Initializes a ten_3D2Osym tensor from a 6-element array (Voigt order).
+        !!
+        !! voigt notation used: 11, 22, 33, 12, 23, 13
         implicit none
         class(ten_3D2Osym), intent(inout) :: self
         real(real64), intent(in) :: vals(6)
@@ -75,7 +206,7 @@ contains
     end subroutine
 
     pure module subroutine init2_ten_3D2Osym(self, xx, yy, zz, xy, yz, xz)
-        ! voigt notation used: 11, 22, 33, 12, 23, 13
+        !! Initializes a ten_3D2Osym tensor from its 6 individual components.
         implicit none
         class(ten_3D2Osym), intent(inout) :: self
         real(real64), intent(in) :: xx, yy, zz, xy, yz, xz
@@ -83,6 +214,11 @@ contains
     end subroutine
 
     pure module function isequal_3D2Osym(a, b) result(res)
+        !! `.isequal.` Compares two ten_3D2Osym tensors for approximate equality.
+        !! Uses a modified L1 norm (shear components weighted by 2) with relative
+        !! and absolute tolerances (EPS, EPS_ABS).
+        !! norm(a) = |a_11| + |a_22| + |a_33| + 2|a_12| + 2|a_23| + 2|a_13|
+        !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
         implicit none
         class(ten_3D2Osym), intent(in) :: a, b
         logical :: res
@@ -173,8 +309,8 @@ contains
         res%vals(4:6) = a%vals(4:6)
     end function dev_3D2Osym
     
-    ! (/xx, yy, zz, xy, yz, xz/)
     pure module function xx(a) result(res)
+        !! Accessor function for the xx (11) component (vals(1)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         real(real64) :: res
@@ -182,6 +318,7 @@ contains
     end function xx
     
     pure module function yy(a) result(res)
+        !! Accessor function for the yy (22) component (vals(2)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         real(real64) :: res
@@ -189,6 +326,7 @@ contains
     end function yy
 
     pure module function zz(a) result(res)
+        !! Accessor function for the zz (33) component (vals(3)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         real(real64) :: res
@@ -196,6 +334,7 @@ contains
     end function zz
 
     pure module function xy(a) result(res)
+        !! Accessor function for the xy (12) component (vals(4)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         real(real64) :: res
@@ -203,6 +342,7 @@ contains
     end function xy
 
     pure module function yz(a) result(res)
+        !! Accessor function for the yz (23) component (vals(5)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         real(real64) :: res
@@ -210,6 +350,7 @@ contains
     end function yz
 
     pure module function xz(a) result(res)
+        !! Accessor function for the xz (13) component (vals(6)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         real(real64) :: res

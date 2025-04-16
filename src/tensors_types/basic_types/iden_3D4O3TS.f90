@@ -2,7 +2,7 @@ module mod_iden_3D4O3TS
     !! Module mod_iden_3D4O3TS
     !! ======================
     !!
-    !! Defines the scaled 3D fourth-order identity tensor of type 3.
+    !! Defines the scaled 3D fourth-order identity tensor \(c \cdot (\delta_{ij}\delta_{kl})\).
     !!
     !! This module provides the definition for the scaled 3D fourth-order identity tensor
     !! corresponding to the tensor product of two second-order identity tensors, mathematically

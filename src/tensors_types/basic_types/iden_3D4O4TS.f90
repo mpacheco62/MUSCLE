@@ -2,7 +2,7 @@ module mod_iden_3D4O4TS
     !! Module mod_iden_3D4O4TS
     !! ======================
     !!
-    !! Defines the scaled 3D fourth-order symmetric identity tensor (type 4).
+    !! Defines the scaled 3D fourth-order symmetric identity tensor \(c \cdot \frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})\).
     !!
     !! This module provides the definition for the scaled 3D fourth-order symmetric identity tensor,
     !! mathematically represented as \(c \cdot \mathbf{I}^{sym} = c \cdot \frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})\),
@@ -64,10 +64,10 @@ module mod_iden_3D4O4TS
     private
 
     type, public :: iden_3D4O4TS
-        !! Scaled 3D fourth-order symmetric identity tensor \(c \cdot \mathbf{I}^{sym}\).
+        !! Scaled 3D fourth-order symmetric identity tensor \(c \cdot \frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})\).
         !! ============================================================================
         !!
-        !! Type for the scaled 3D fourth-order symmetric identity tensor (type 4).
+        !! Type for the scaled 3D fourth-order symmetric identity tensor \(c \cdot \frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})\).
         !!
         !! Represents the scaled 3D fourth-order symmetric identity tensor, mathematically
         !! \(c \cdot \mathbf{I}^{sym} = c \cdot \frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})\),

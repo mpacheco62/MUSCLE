@@ -2,7 +2,7 @@ module mod_iden_3D4O3T
     !! Module mod_iden_3D4O3T
     !! ======================
     !!
-    !! Defines the standard (non-scaled) 3D fourth-order identity tensor of type 3.
+    !! Defines the standard (non-scaled) 3D fourth-order identity tensor \(\delta_{ij}\delta_{kl}\).
     !!
     !! This module provides the definition for the standard 3D fourth-order identity tensor
     !! corresponding to the tensor product of two second-order identity tensors, mathematically

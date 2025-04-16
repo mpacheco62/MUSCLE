@@ -2,7 +2,7 @@ module mod_iden_3D4O4T
     !! Module mod_iden_3D4O4T
     !! ======================
     !!
-    !! Defines the standard (non-scaled) 3D fourth-order symmetric identity tensor (type 4).
+    !! Defines the standard (non-scaled) 3D fourth-order symmetric identity tensor \(\frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})\).
     !!
     !! This module provides the definition for the standard 3D fourth-order symmetric identity tensor,
     !! mathematically represented as \(\mathbf{I}^{sym} = \frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})\).
