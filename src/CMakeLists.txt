@@ -29,22 +29,37 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/tensors_types.f90
                   CACHE INTERNAL "")
 
-set(MY_MODS   basic_operations.f90
-              basis_yield_criteria.f90
-              basis_hardening_law.f90
-              swift_hardening.f90
-              bilinear_hardening.f90
-              vonMises.f90
-              CPB06.f90
-              cutting_plane.f90
-              closest_point.f90
-              basis_elasticity.f90
-              inverses_mat.f90
-              elasticity_linear.f90
-              CACHE INTERNAL "")
+set(HARDENING_LAWS   hardening_laws/basis_hardening_law.f90
+                     hardening_laws/swift_hardening.f90
+                     hardening_laws/bilinear_hardening.f90
+                     CACHE INTERNAL "")
+
+set(YIELD_CRITERIA   yield_criteria/basis_yield_criteria.f90
+                     yield_criteria/vonMises.f90
+                     yield_criteria/CPB06.f90
+                     CACHE INTERNAL "")
+
+set(ELASTICITY       elasticity/basis_elasticity.f90
+                     elasticity/elasticity_linear.f90
+                     CACHE INTERNAL "")
+
+set(RETURN_MAPPING   return_mapping/cutting_plane.f90
+                     return_mapping/closest_point.f90
+                     CACHE INTERNAL "")
+
+set(OPERATORS   operators/basic_operations.f90
+                operators/inverses_mat.f90
+               CACHE INTERNAL "")
 
       #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
-add_library(umatlib ${TENSORS_TYPES} ${MY_MODS})
+add_library(umatlib 
+                     ${TENSORS_TYPES}
+                     ${HARDENING_LAWS}
+                     ${YIELD_CRITERIA}
+                     ${ELASTICITY}
+                     ${RETURN_MAPPING}
+                     ${OPERATORS}
+                     )
 target_compile_options(umatlib PRIVATE -c -cpp -fopenmp -fPIC -mcmodel=medium)
 set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
 install(TARGETS umatlib EXPORT umatlib-targets LIBRARY)
