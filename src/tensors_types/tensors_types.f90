@@ -141,6 +141,7 @@ module tensors_types
     use mod_operator_I3D4O3TS_3D4O3sym
     use mod_operator_I3D4O4T_3D4O3sym
     use mod_operator_I3D4O4TS_3D4O3sym
+    use mod_operator_3D2Osym_3D2O
     use mod_operator_3D2Osym_3D4O3sym
     use mod_operator_3D4O2sym_3D4O3sym
     use mod_operator_3D2Osym_3D4O2sym

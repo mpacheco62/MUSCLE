@@ -28,6 +28,12 @@ program test_3D2Osym
     call test_ten_3D2Osym_components(passed)
     if (.not. passed) STOP 8
 
+    call test_ten_3D2Osym_dot(passed)
+    if (.not. passed) STOP 9
+
+    call test_ten_3D2Osym_square(passed)
+    if (.not. passed) STOP 10
+
     print*, "Hola!", passed
     STOP 0
 end program test_3D2Osym
@@ -271,6 +277,126 @@ subroutine test_ten_3D2Osym_components(passed)
 
     expected = 6D0
     if (abs(to_test1%xz() - expected) < 1D-10) passed = .true.
+    if (.not. passed) return
+
+end subroutine
+
+
+subroutine test_ten_3D2Osym_dot(passed)
+    use, intrinsic :: iso_fortran_env
+    use tensors_types
+    implicit none
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym) :: to_test1, to_test2
+    type(ten_3D2O) :: expected, result
+    
+    passed = .false.
+
+    call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+    call expected%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+    result = to_test1 * to_test1
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+
+    call to_test1%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
+    call expected%init((/1D0, 0D0, 0D0, &
+                         0D0, 1D0, 0D0, &
+                         0D0, 0D0, 1D0/))
+    result = to_test1 * to_test1
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+    call to_test1%init((/2D0, 2D0, 2D0, 0D0, 0D0, 0D0/))
+    call expected%init((/4D0, 0D0, 0D0, &
+                         0D0, 4D0, 0D0, &
+                         0D0, 0D0, 4D0/))
+    result = to_test1 * to_test1
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+    call to_test1%init((/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
+    call expected%init((/3D0, 3D0, 3D0, &
+                         3D0, 3D0, 3D0, &
+                         3D0, 3D0, 3D0/))
+    result = to_test1 * to_test1
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+    call to_test1%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
+    call expected%init((/53D0, 42D0, 44D0, &
+                         42D0, 45D0, 49D0, &
+                         44D0, 49D0, 70D0/))
+    result = to_test1 * to_test1
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+    call to_test1%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
+    call to_test2%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+    call expected%init((/0D0, 0D0, 0D0, &
+                         0D0, 0D0, 0D0, &
+                         0D0, 0D0, 0D0/))
+    result = to_test1 * to_test2
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+    result = to_test2 * to_test1
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+
+    call to_test1%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
+    call to_test2%init((/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
+    call expected%init((/11D0, 11D0, 14D0, &
+                         11D0, 11D0, 14D0, &
+                         11D0, 11D0, 14D0/))
+    result = to_test1 * to_test2
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+    call expected%init((/11D0, 11D0, 11D0, &
+                         11D0, 11D0, 11D0, &
+                         14D0, 14D0, 14D0/))
+    result = to_test2 * to_test1
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+end subroutine
+
+
+subroutine test_ten_3D2Osym_square(passed)
+    use, intrinsic :: iso_fortran_env
+    use tensors_types
+    implicit none
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym) :: to_test1, expected, result
+    
+    passed = .false.
+
+    call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+    call expected%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+    result = to_test1%square()
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+    call to_test1%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
+    call expected%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
+    result = to_test1%square()
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+    call to_test1%init((/2D0, 2D0, 2D0, 0D0, 0D0, 0D0/))
+    call expected%init((/4D0, 4D0, 4D0, 0D0, 0D0, 0D0/))
+    result = to_test1%square()
+    passed = result .isequal. expected
+    if (.not. passed) return
+
+    call to_test1%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
+    call expected%init((/53D0, 45D0, 70D0, 42D0, 49D0, 44D0/))
+    result = to_test1%square()
+    passed = result .isequal. expected
     if (.not. passed) return
 
 end subroutine

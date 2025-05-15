@@ -36,6 +36,13 @@ add_executable(test_closest_point test_closest_point.f90)
 target_link_libraries(test_closest_point PRIVATE umatlib)
 target_include_directories(test_closest_point PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(test_closest_point "${CMAKE_SOURCE_DIR}/bin/test_closest_point")
+
+
+add_executable(test_basic_operations test_basic_operations.f90)
+target_link_libraries(test_basic_operations PRIVATE umatlib)
+target_include_directories(test_basic_operations PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
+add_test(test_basic_operations "${CMAKE_SOURCE_DIR}/bin/test_basic_operations")
+
 # add_executable(test_tensors_types_ten_3d2Osym tensors_types/test_tensors_types_ten_3d2Osym.f90)
 # target_link_libraries(test_tensors_types_ten_3d2Osym PRIVATE mylib)
 

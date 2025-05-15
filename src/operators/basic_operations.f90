@@ -2,6 +2,10 @@ module basic_operations
   use, intrinsic :: iso_fortran_env
   
   public
+  private :: eigenvals_3x3sym
+  interface eigenvals
+    module procedure eigenvals_3x3sym
+  end interface
 
 
   contains
@@ -151,4 +155,61 @@ module basic_operations
         end do
       end function derivative_escalar_tensor3x3sym
 
+      pure function eigenvals_3x3sym(mat)
+        ! based on https://doi.org/10.1002/nme.7153
+        use tensors_types
+        implicit none
+        type(ten_3D2Osym), intent(in) :: mat
+        real(real64) :: eigenvals_3x3sym(3)
+
+        real(real64), parameter :: EPS=1e-10
+        real(real64) :: I1, J2, s, d, alpha
+        real(real64) :: J2_sqrt
+        real(real64) :: cd, lam_a, lam_b, lam_c, sd
+        integer :: sj
+        type(ten_3D2Osym) :: Sm, T, d1, d2
+        type(iden_3D2O) :: Iden
+
+
+
+        I1 = sum(mat%vals(1:3))
+        J2 = ((mat%vals(1)-mat%vals(2))**2D0 + (mat%vals(2)-mat%vals(3))**2D0 + (mat%vals(3)-mat%vals(1))**2D0)/6D0 &
+             + (mat%vals(4)**2 + mat%vals(5)**2 + mat%vals(6)**2)
+        s = (J2/3D0)**0.5D0
+
+        if (abs(s).le.EPS) then
+          eigenvals_3x3sym = I1/3D0
+          return
+        end if
+        
+        Sm = mat - (I1/3D0)*Iden
+        T = Sm%square() - (2D0/3D0)*J2*Iden
+        d1 = T-s*Sm
+        d2 = T+s*Sm
+        d = ((d1 .ddot. d1) / (d2 .ddot. d2))**0.5D0
+
+        J2_sqrt = J2**0.5D0
+        if ((1D0-d) .le. EPS) then
+          eigenvals_3x3sym(1) = J2_sqrt
+          eigenvals_3x3sym(2) = 0
+          eigenvals_3x3sym(3) = eigenvals_3x3sym(1)
+          eigenvals_3x3sym = eigenvals_3x3sym + I1/3D0
+          return
+        end if
+
+        sj = int((1D0-d)/abs(1D0-d))
+        alpha = 2D0/3D0 * datan(d**sj)
+        cd = sj*s*cos(alpha)
+        lam_a = 2D0*cd
+
+        sd = J2_sqrt*sin(alpha)
+        lam_b = -cd + sd
+        lam_c = -cd - sd
+
+        eigenvals_3x3sym(1) = max(lam_a, max(lam_b, lam_c))
+        eigenvals_3x3sym(3) = min(lam_a, min(lam_b, lam_c))
+        eigenvals_3x3sym(2) = lam_a + lam_b + lam_c - eigenvals_3x3sym(1) - eigenvals_3x3sym(3)
+        eigenvals_3x3sym = eigenvals_3x3sym + I1/3D0
+
+      end function eigenvals_3x3sym
 end module

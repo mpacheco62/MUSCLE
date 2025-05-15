@@ -23,6 +23,7 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/mixed_operators/operator_I3D4O4T_3D4O3sym.f90
                   tensors_types/mixed_operators/operator_I3D4O4TS_3D4O2sym.f90
                   tensors_types/mixed_operators/operator_I3D4O4TS_3D4O3sym.f90
+                  tensors_types/mixed_operators/operator_3D2Osym_3D2O.f90
                   tensors_types/mixed_operators/operator_3D2Osym_3D4O2sym.f90
                   tensors_types/mixed_operators/operator_3D2Osym_3D4O3sym.f90
                   tensors_types/mixed_operators/operator_3D4O2sym_3D4O3sym.f90
