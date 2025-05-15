@@ -19,7 +19,7 @@ program test_basic_operations
     ! call test_dp_sym_6_4(passed)
     ! if (.not. passed) STOP 4
 
-    print*, "Hola!", passed
+    ! print*, "Hola!", passed
     STOP 0
 end program test_basic_operations
 
@@ -34,12 +34,11 @@ subroutine test_eigenvalues(passed)
     type(ten_3D2Osym):: to_test
     real(real64), dimension(3) :: expected, result
 
-    call to_test%init(vals=(/1D0, 1D0, 2D0, 0D0, 0D0, 0D0/))
+    call to_test%init(vals=(/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
     expected = (/ 1D0, 1D0, 1D0/)
     result = eigenvals(to_test)
 
-    print*, "Autovalores"
-    print*, result
+    passed = abs(norm2(expected-result)) .le. 1D-4
+    if (.not. passed) return 
 
-    passed = .false.
 end subroutine
