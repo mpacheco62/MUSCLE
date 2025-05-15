@@ -192,7 +192,7 @@ module basic_operations
         if ((1D0-d) .le. EPS) then
           eigenvals_3x3sym(1) = J2_sqrt
           eigenvals_3x3sym(2) = 0
-          eigenvals_3x3sym(3) = eigenvals_3x3sym(1)
+          eigenvals_3x3sym(3) = -eigenvals_3x3sym(1)
           eigenvals_3x3sym = eigenvals_3x3sym + I1/3D0
           return
         end if
