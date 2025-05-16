@@ -6,18 +6,19 @@
             "type": "cppdbg",
             "request": "launch",
             // Resolved by CMake Tools:
-            "program": "${command:cmake.launchTargetPath}",
-            "args": [],
+            "program": "${cmake.testProgram}",
+            "args": ["${cmake.testArgs}"],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [
-                {
-                    // add the directory where our target was built to the PATHs
-                    // it gets resolved by CMake Tools:
-                    "name": "PATH",
-                    "value": "${env:PATH}:${command:cmake.getLaunchTargetDirectory}"
-                },
-            ],
+            // "cwd": "${workspaceFolder}",
+            "cwd": "${cmake.testWorkingDirectory}",
+            // "environment": [
+            //     {
+            //         // add the directory where our target was built to the PATHs
+            //         // it gets resolved by CMake Tools:
+            //         "name": "PATH",
+            //         "value": "${env:PATH}:${command:cmake.getLaunchTargetDirectory}"
+            //     },
+            // ],
             "externalConsole": false,
             "MIMode": "gdb",
             "setupCommands": [
