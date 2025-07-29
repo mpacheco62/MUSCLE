@@ -3,8 +3,14 @@ module basic_operations
   
   public
   private :: eigenvals_3x3sym
+
   interface eigenvals
     module procedure eigenvals_3x3sym
+  end interface
+
+  interface derivative
+    module procedure derivative_escalar_tensor3x3sym
+    module procedure derivative_escalar_tensor3x3sym2
   end interface
 
 
@@ -123,6 +129,65 @@ module basic_operations
       end function derivative_escalar_tensor3x3
 
       pure function derivative_escalar_tensor3x3sym(func, mat)
+        use tensors_types
+        implicit none
+        interface
+          pure function f_scalar_3x3(x)
+            use, intrinsic :: iso_fortran_env
+            use tensors_types
+            implicit none
+            type(ten_3D2Osym), intent(in) :: x
+            real(real64) :: f_scalar_3x3
+          end function f_scalar_3x3
+        end interface
+
+        procedure(f_scalar_3x3) :: func
+        type(ten_3D2Osym), intent(in) :: mat
+        type(ten_3D2Osym) :: derivative_escalar_tensor3x3sym
+        
+        type(ten_3D2Osym) :: mat_var
+        real(real64) :: val_func, val_func_prev, val_func_forw, eps
+        real(real64), parameter :: DIVEPS = 1D-7, MAX_EPS=1D-40  !! Relative and minimum absolute step size
+
+        ! Use a relative step size, but ensure it's not too small
+        
+        derivative_escalar_tensor3x3sym%vals = 0.0D0
+        val_func = func(mat)
+        eps = max(abs(val_func*DIVEPS), MAX_EPS)
+
+        mat_var = mat
+        mat_var%vals(1) = mat%vals(1) + eps; val_func_forw = func(mat_var)
+        mat_var%vals(1) = mat%vals(1) - eps; val_func_prev = func(mat_var)
+        derivative_escalar_tensor3x3sym%vals(1) = (val_func_forw - val_func_prev)/(2D0*eps)
+        mat_var%vals(1) = mat%vals(1)
+
+        mat_var%vals(2) = mat%vals(2) + eps; val_func_forw = func(mat_var)
+        mat_var%vals(2) = mat%vals(2) - eps; val_func_prev = func(mat_var)
+        derivative_escalar_tensor3x3sym%vals(2) = (val_func_forw - val_func_prev)/(2D0*eps)
+        mat_var%vals(2) = mat%vals(2)
+
+        mat_var%vals(3) = mat%vals(3) + eps; val_func_forw = func(mat_var)
+        mat_var%vals(3) = mat%vals(3) - eps; val_func_prev = func(mat_var)
+        derivative_escalar_tensor3x3sym%vals(3) = (val_func_forw - val_func_prev)/(2D0*eps)
+        mat_var%vals(3) = mat%vals(3)
+
+        mat_var%vals(4) = mat%vals(4) + eps/2D0; val_func_forw = func(mat_var)
+        mat_var%vals(4) = mat%vals(4) - eps/2D0; val_func_prev = func(mat_var)
+        derivative_escalar_tensor3x3sym%vals(4) = (val_func_forw - val_func_prev)/(2D0*eps)
+        mat_var%vals(4) = mat%vals(4)
+
+        mat_var%vals(5) = mat%vals(5) + eps/2D0; val_func_forw = func(mat_var)
+        mat_var%vals(5) = mat%vals(5) - eps/2D0; val_func_prev = func(mat_var)
+        derivative_escalar_tensor3x3sym%vals(5) = (val_func_forw - val_func_prev)/(2D0*eps)
+        mat_var%vals(5) = mat%vals(5)
+
+        mat_var%vals(6) = mat%vals(6) + eps/2D0; val_func_forw = func(mat_var)
+        mat_var%vals(6) = mat%vals(6) - eps/2D0; val_func_prev = func(mat_var)
+        derivative_escalar_tensor3x3sym%vals(6) = (val_func_forw - val_func_prev)/(2D0*eps)
+        mat_var%vals(6) = mat%vals(6)
+      end function derivative_escalar_tensor3x3sym
+
+      pure function derivative_escalar_tensor3x3sym2(func, mat)
         implicit none
         interface
           pure function f_scalar_3x3(x)
@@ -135,14 +200,14 @@ module basic_operations
 
         procedure(f_scalar_3x3) :: func
         real(real64), intent(in) :: mat(3,3)
-        real(real64) :: derivative_escalar_tensor3x3sym(3,3)
+        real(real64) :: derivative_escalar_tensor3x3sym2(3,3)
         
         real(real64) :: mat_var(3,3), val_func, val_func_var
         real(real64), parameter :: EPS=1.0D-8
         integer :: i,j
 
 
-        derivative_escalar_tensor3x3sym = 0.0D0
+        derivative_escalar_tensor3x3sym2 = 0.0D0
         val_func = func(mat)
         do i=1,3
             do j=1,3
@@ -150,10 +215,10 @@ module basic_operations
                 mat_var(i,j) = mat_var(i,j) + EPS/2.0D0
                 mat_var(j,i) = mat_var(j,i) + EPS/2.0D0
                 val_func_var = func(mat_var)
-                derivative_escalar_tensor3x3sym(i,j) = (val_func_var - val_func)/EPS
+                derivative_escalar_tensor3x3sym2(i,j) = (val_func_var - val_func)/EPS
             end do
         end do
-      end function derivative_escalar_tensor3x3sym
+      end function derivative_escalar_tensor3x3sym2
 
       pure function eigenvals_3x3sym(mat)
         ! based on https://doi.org/10.1002/nme.7153

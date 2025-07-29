@@ -1,6 +1,7 @@
 # add_executable(test_basic_operations test_basic_operations.f90)
 # target_link_libraries(test_basic_operations PRIVATE mylib)
 add_subdirectory(tensors_types)
+add_subdirectory(operators)
 
 add_executable(test_vonMises test_vonMises.f90)
 target_link_libraries(test_vonMises PRIVATE umatlib)

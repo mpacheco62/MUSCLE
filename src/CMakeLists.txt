@@ -50,6 +50,7 @@ set(RETURN_MAPPING   return_mapping/cutting_plane.f90
 
 set(OPERATORS   operators/basic_operations.f90
                 operators/inverses_mat.f90
+                operators/derivatives.f90
                CACHE INTERNAL "")
 
       #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
