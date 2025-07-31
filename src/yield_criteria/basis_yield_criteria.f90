@@ -177,50 +177,22 @@ module mod_yield_criteria
             !! Computes d(stress_eq)/d(stress) numerically using central finite differences.
             !! This is the default implementation bound to the `dstressEq_dstress` procedure.
             use, intrinsic :: iso_fortran_env
+            use :: derivatives
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
             class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the derivative is evaluated.
             type(ten_3D2Osym) :: res                       !! Output first derivative tensor (`ten_3D2Osym`).
 
-            type(ten_3D2Osym) :: stress_var1, stress_var2
-            real(real64) :: stress_eq
-            real(real64), parameter :: DIVEPS = 1D-7, MAX_EPS=1D-40  !! Relative and minimum absolute step size
-            real(real64) :: eps
+            res = derivative(wrapper, stress)
 
-            res = 0.0D0
-            stress_eq = self%stress_eq(stress)
-
-            ! Use a relative step size, but ensure it's not too small
-            eps = max(abs(stress_eq*DIVEPS), MAX_EPS)
-
-            ! d/d(sigma_11)
-            stress_var1 = stress; stress_var1%vals(1) = stress_var1%vals(1) + eps
-            stress_var2 = stress; stress_var2%vals(1) = stress_var2%vals(1) - eps
-            res%vals(1) = (self%stress_eq(stress_var1) - self%stress_eq(stress_var2))/(2D0*eps)
-
-            ! d/d(sigma_22)
-            stress_var1%vals(1) = stress_var1%vals(1) - eps; stress_var1%vals(2) = stress_var1%vals(2) + eps
-            stress_var2%vals(1) = stress_var2%vals(1) + eps; stress_var2%vals(2) = stress_var2%vals(2) - eps
-            res%vals(2) = (self%stress_eq(stress_var1) - self%stress_eq(stress_var2))/(2D0*eps)
-
-            ! d/d(sigma_33)
-            stress_var1%vals(2) = stress_var1%vals(2) - eps; stress_var1%vals(3) = stress_var1%vals(3) + eps
-            stress_var2%vals(2) = stress_var2%vals(2) + eps; stress_var2%vals(3) = stress_var2%vals(3) - eps
-            res%vals(3) = (self%stress_eq(stress_var1) - self%stress_eq(stress_var2))/(2D0*eps)
-
-            ! d/d(sigma_12)
-            stress_var1%vals(3) = stress_var1%vals(3) - eps; stress_var1%vals(4) = stress_var1%vals(4) + eps/2D0
-            stress_var2%vals(3) = stress_var2%vals(3) + eps; stress_var2%vals(4) = stress_var2%vals(4) - eps/2D0
-            res%vals(4) = (self%stress_eq(stress_var1) - self%stress_eq(stress_var2))/(2D0*eps)
-
-            ! d/d(sigma_23)
-            stress_var1%vals(4) = stress_var1%vals(4) - eps/2D0; stress_var1%vals(5) = stress_var1%vals(5) + eps/2D0
-            stress_var2%vals(4) = stress_var2%vals(4) + eps/2D0; stress_var2%vals(5) = stress_var2%vals(5) - eps/2D0
-            res%vals(5) = (self%stress_eq(stress_var1) - self%stress_eq(stress_var2))/(2D0*eps)
-
-            ! d/d(sigma_13)
-            stress_var1%vals(5) = stress_var1%vals(5) - eps/2D0; stress_var1%vals(6) = stress_var1%vals(6) + eps/2D0
-            stress_var2%vals(5) = stress_var2%vals(5) + eps/2D0; stress_var2%vals(6) = stress_var2%vals(6) - eps/2D0
-            res%vals(6) = (self%stress_eq(stress_var1) - self%stress_eq(stress_var2))/(2D0*eps)
+            contains
+                pure function wrapper(x1) result(res1)
+                    use, intrinsic :: iso_fortran_env
+                    use tensors_types, only : ten_3D2Osym
+                    implicit none
+                    type(ten_3D2Osym), intent(in) :: x1
+                    real(real64) :: res1
+                    res1 = self%stress_eq(x1)
+                end function wrapper
 
         end function dstressEq_dstress_numeric
 
