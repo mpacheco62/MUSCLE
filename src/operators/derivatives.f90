@@ -6,6 +6,11 @@ module derivatives
         module procedure derivative_scalar_3D2Osym
     end interface
 
+    public :: derivative2O
+    interface derivative2O
+        module procedure derivative2O_scalar_3D2Osym
+    end interface
+
     interface
         pure function f_scalar_3D2O(x)
             use tensors_types, only : ten_3D2O
@@ -117,5 +122,41 @@ module derivatives
         mat_var%vals(6) = mat%vals(6)
 
     end function derivative_scalar_3D2OSym
+
+
+    pure function derivative2O_scalar_3D2Osym(func, mat, eps) result(res)
+        use tensors_types, only : ten_3D2Osym, ten_3D4O2sym
+        use, intrinsic :: iso_fortran_env
+        implicit none
+
+        procedure(f_scalar_3D2Osym) :: func
+        type(ten_3D2Osym), intent(in) :: mat
+        real(real64), intent(in), optional :: eps
+        type(ten_3D4O2sym) :: res
+        
+        real(real64), parameter :: DIVEPS = 1D-7, MAX_EPS=1D-40  !! Relative and minimum absolute step size
+        real(real64) :: val_func
+        real(real64) :: epsr
+
+        if (present(eps)) then
+            epsr = eps
+        else
+            val_func = func(mat)
+            epsr = max(abs(val_func*DIVEPS), MAX_EPS)
+        end if
+        !  Voigt Matrix Layout (I, J):
+        !  | (1,1) (1,2) (1,3) (1,4) (1,5) (1,6) |   <- xxxx, xxyy, xxzz, xxxy, xxyz, xxxz
+        !  | (2,1) (2,2) (2,3) (2,4) (2,5) (2,6) |   <- yyxx, yyyy, yyzz, yyxy, yyyz, yyxz
+        !  | (3,1) (3,2) (3,3) (3,4) (3,5) (3,6) |   <- zzxx, zzyy, zzzz, zzxy, zzyz, zzxz
+        !  | (4,1) (4,2) (4,3) (4,4) (4,5) (4,6) |   <- xyxx, xyyy, xyzz, xyxy, xyyz, xyxz
+        !  | (5,1) (5,2) (5,3) (5,4) (5,5) (5,6) |   <- yzxx, yzyy, yzzz, yzxy, yzyz, yzxz
+        !  | (6,1) (6,2) (6,3) (6,4) (6,5) (6,6) |   <- xzxx, xzyy, xzzz, xzxy, xzyz, xzxz
+        res%vals = 0.0D0
+
+        res%vals(1,1) = 1.0D0
+
+        return
+    end function derivative2O_scalar_3D2Osym
+
 
 end module

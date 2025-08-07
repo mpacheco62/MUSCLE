@@ -84,6 +84,8 @@ contains
     end function
 end module test_derivatives_mod
 
+
+! ********************** PROGRAM TEST ************************************
 program test_derivatives
     use derivatives
     implicit none
@@ -95,6 +97,10 @@ program test_derivatives
 
     call test_object_derivate(passed)
     if (.not. passed) STOP 2
+
+    call test_derivate2O(passed)
+    if (.not. passed) STOP 1
+
     STOP 0
 end program test_derivatives
 
@@ -172,5 +178,33 @@ subroutine test_object_derivate(passed)
                               "The expected are:", expected
     if (.not. passed) return
 
+
+end subroutine
+
+
+
+subroutine test_derivate2O(passed)
+    use, intrinsic :: iso_fortran_env
+    use derivatives
+    use tensors_types
+    use test_derivatives_mod
+    implicit none
+    
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym):: to_test
+    type(ten_3D4O2sym) :: expected, result
+
+    call to_test%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
+    expected%vals = 0.0D0
+    result = derivative2O(fun_scalar_test1, to_test)
+
+    passed = expected .isequal. result
+
+    if (.not. passed) print*, "Case 1 second derivative",  new_line('A'), &
+                              "The eigenvalues obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
 
 end subroutine
