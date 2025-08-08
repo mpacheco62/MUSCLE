@@ -5,12 +5,12 @@ module tests_I3D2OS
     implicit none
     contains
 
-integer function test_iden_3D2OS_sum() result(notPassed) bind(C)
+integer function test_iden_2OS_sum() result(notPassed) bind(C)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
-    type(iden_3D2OS) :: to_test1, to_test2
-    type(iden_3D2OS) :: temp
+    type(iden_2OS) :: to_test1, to_test2
+    type(iden_2OS) :: temp
     real(real64), parameter :: eps=1e-15
 
     notPassed = 0
@@ -40,13 +40,13 @@ integer function test_iden_3D2OS_sum() result(notPassed) bind(C)
 
 end function
 
-! subroutine test_iden_3D2OS_sub(passed)
+! subroutine test_iden_2OS_sub(passed)
 !     use, intrinsic :: iso_fortran_env
 !     use tensors_types
 !     implicit none
 !     logical, intent(out) :: passed
-!     type(iden_3D2OS) :: to_test1, to_test2
-!     type(iden_3D2OS) :: temp
+!     type(iden_2OS) :: to_test1, to_test2
+!     type(iden_2OS) :: temp
 !     real(real64), parameter :: eps=1e-15
 
 !     call to_test1%init(0D0)
@@ -74,13 +74,13 @@ end function
 
 ! end subroutine
 
-! subroutine test_iden_3D2OS_mul(passed)
+! subroutine test_iden_2OS_mul(passed)
 !     use, intrinsic :: iso_fortran_env
 !     use tensors_types
 !     implicit none
 !     logical, intent(out) :: passed
-!     type(iden_3D2OS) :: to_test1
-!     type(iden_3D2OS) :: temp
+!     type(iden_2OS) :: to_test1
+!     type(iden_2OS) :: temp
 !     real(real64), parameter :: eps=1e-15
 
 !     call to_test1%init(0D0)
@@ -111,13 +111,13 @@ end function
 
 ! end subroutine
 
-! subroutine test_iden_3D2OS_div(passed)
+! subroutine test_iden_2OS_div(passed)
 !     use, intrinsic :: iso_fortran_env
 !     use tensors_types
 !     implicit none
 !     logical, intent(out) :: passed
-!     type(iden_3D2OS) :: to_test1
-!     type(iden_3D2OS) :: temp
+!     type(iden_2OS) :: to_test1
+!     type(iden_2OS) :: temp
 !     real(real64), parameter :: eps=1e-15
 
 !     call to_test1%init(0D0)

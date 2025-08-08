@@ -69,12 +69,12 @@ module mod_vonMises
       !  | (21:1311) (20:1322) (18:1333) (15:1312) (11:1323) ( 6:1313) |
 
       ! ! res = (3D0/(2D0*st_eq))*IDEN4_3sym() - (9D0/(4D0*st_eq_3))* (dev .tdot. dev) 
-      ! res = (3D0/(2D0*st_eq))*iden_3D4O4T()
+      ! res = (3D0/(2D0*st_eq))*iden_4O4T()
       ! res = (9D0/(4D0*st_eq_3))* (dev .tdot. dev)
-      ! ! res = (1D0/(2D0*st_eq))*iden_3D4O3T()
-      ! res = (3D0/(2D0*st_eq))*iden_3D4O4T() - (9D0/(4D0*st_eq_3))* (dev .tdot. dev)
-      ! res = (9D0/(4D0*st_eq_3))* (dev .tdot. dev) - (1D0/(2D0*st_eq))*iden_3D4O3T()
-      ! res = ((3D0/(2D0*st_eq))*iden_3D4O4T() - (9D0/(4D0*st_eq_3))* (dev .tdot. dev)) - (1D0/(2D0*st_eq))*iden_3D4O3T()
-      res = (3D0/(2D0*st_eq))*iden_3D4O4T() - (9D0/(4D0*st_eq_3))* (dev .tdot. dev) - (1D0/(2D0*st_eq))*iden_3D4O3T()
+      ! ! res = (1D0/(2D0*st_eq))*iden_4O3T()
+      ! res = (3D0/(2D0*st_eq))*iden_4O4T() - (9D0/(4D0*st_eq_3))* (dev .tdot. dev)
+      ! res = (9D0/(4D0*st_eq_3))* (dev .tdot. dev) - (1D0/(2D0*st_eq))*iden_4O3T()
+      ! res = ((3D0/(2D0*st_eq))*iden_4O4T() - (9D0/(4D0*st_eq_3))* (dev .tdot. dev)) - (1D0/(2D0*st_eq))*iden_4O3T()
+      res = (3D0/(2D0*st_eq))*iden_4O4T() - (9D0/(4D0*st_eq_3))* (dev .tdot. dev) - (1D0/(2D0*st_eq))*iden_4O3T()
   end function ddstressEq_ddstress_vm
 end module

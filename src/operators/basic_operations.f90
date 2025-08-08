@@ -233,7 +233,7 @@ module basic_operations
         real(real64) :: cd, lam_a, lam_b, lam_c, sd
         integer :: sj
         type(ten_3D2Osym) :: Sm, T, d1, d2
-        type(iden_3D2O) :: Iden
+        type(iden_2O) :: Iden
 
 
 

@@ -1,7 +1,7 @@
-add_executable(test_iden_3D2OS test_iden_3D2OS.f90)
-target_link_libraries(test_iden_3D2OS PRIVATE umatlib)
-target_include_directories(test_iden_3D2OS PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
-add_test(Test_iden_3D2OS "${CMAKE_SOURCE_DIR}/bin/test_iden_3D2OS")
+add_executable(test_iden_2OS test_iden_2OS.f90)
+target_link_libraries(test_iden_2OS PRIVATE umatlib)
+target_include_directories(test_iden_2OS PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
+add_test(Test_iden_2OS "${CMAKE_SOURCE_DIR}/bin/test_iden_2OS")
 
 add_executable(test_ten_3d2Osym test_ten_3d2Osym.f90)
 target_link_libraries(test_ten_3d2Osym PRIVATE umatlib)
@@ -14,11 +14,11 @@ target_include_directories(test_ten_3d2O PUBLIC ${CMAKE_BINARY_DIR}/modules/umat
 add_test(Test_ten_3d2O "${CMAKE_SOURCE_DIR}/bin/test_ten_3d2O")
 
 # set(TEST_LIST
-#   test_iden_3D2OS_sum
+#   test_iden_2OS_sum
 # )
 
-# create_test_sourcelist(_ tests_iden_3D2OS_main.c ${TEST_LIST})
-# add_executable(my_tests tests_iden_3D2OS_main.c test_iden_3D2OS2.f90)
+# create_test_sourcelist(_ tests_iden_2OS_main.c ${TEST_LIST})
+# add_executable(my_tests tests_iden_2OS_main.c test_iden_2OS2.f90)
 # target_link_libraries(my_tests PRIVATE mylib)
 
 # foreach (test ${TEST_LIST})

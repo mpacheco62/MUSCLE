@@ -1,6 +1,6 @@
 module mod_operator_I3D4O4T_3D4O2sym
     use, intrinsic :: iso_fortran_env
-    use mod_iden_3D4O4T
+    use mod_iden_4O4T
     use mod_ten_3D4O2sym
     implicit none
     private
@@ -31,7 +31,7 @@ module mod_operator_I3D4O4T_3D4O2sym
 
     pure module function sum_I3D4O4T_3D4O2sym(I2, a) result(res)
         implicit none
-        class(iden_3D4O4T), intent(in) :: I2
+        class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         call res%init(a%vals)
@@ -45,7 +45,7 @@ module mod_operator_I3D4O4T_3D4O2sym
 
     pure module function sum_3D4O2sym_I3D4O4T(a, I2) result(res)
         implicit none
-        class(iden_3D4O4T), intent(in) :: I2
+        class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         call res%init(a%vals)
@@ -59,7 +59,7 @@ module mod_operator_I3D4O4T_3D4O2sym
 
     pure module function sub_I3D4O4T_3D4O2sym(I2, a) result(res)
         implicit none
-        class(iden_3D4O4T), intent(in) :: I2
+        class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         call res%init(-a%vals)
@@ -73,7 +73,7 @@ module mod_operator_I3D4O4T_3D4O2sym
 
     pure module function sub_3D4O2sym_I3D4O4T(a, I2) result(res)
         implicit none
-        class(iden_3D4O4T), intent(in) :: I2
+        class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         call res%init(a%vals)

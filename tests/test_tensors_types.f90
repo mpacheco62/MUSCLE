@@ -500,18 +500,18 @@ subroutine test_I3D2O_3D2Osym_sum(passed)
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     call expected_result%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
-    passed = (to_test1 + iden_3D2O()) .isequal. expected_result
+    passed = (to_test1 + iden_2O()) .isequal. expected_result
     if (.not. passed) return
     
-    passed = (iden_3D2O() + to_test1) .isequal. expected_result
+    passed = (iden_2O() + to_test1) .isequal. expected_result
     if (.not. passed) return
 
     call to_test1%init((/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
     call expected_result%init((/2D0, 2D0, 2D0, 1D0, 1D0, 1D0/))
-    passed = (to_test1 + iden_3D2O()) .isequal. expected_result
+    passed = (to_test1 + iden_2O()) .isequal. expected_result
     if (.not. passed) return
     
-    passed = (iden_3D2O() + to_test1) .isequal. expected_result
+    passed = (iden_2O() + to_test1) .isequal. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -527,18 +527,18 @@ subroutine test_I3D2O_3D2Osym_sub(passed)
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     call expected_result%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
-    passed = (iden_3D2O() - to_test1) .isequal. expected_result
+    passed = (iden_2O() - to_test1) .isequal. expected_result
     if (.not. passed) return
     
-    passed = (to_test1 - iden_3D2O()) .isequal. (-expected_result)
+    passed = (to_test1 - iden_2O()) .isequal. (-expected_result)
     if (.not. passed) return
 
     call to_test1%init((/2D0, 2D0, 2D0, 1D0, 1D0, 1D0/))
     call expected_result%init((/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
-    passed = (to_test1 - iden_3D2O()) .isequal. expected_result
+    passed = (to_test1 - iden_2O()) .isequal. expected_result
     if (.not. passed) return
     
-    passed = (iden_3D2O() - to_test1) .isequal. (-expected_result)
+    passed = (iden_2O() - to_test1) .isequal. (-expected_result)
     if (.not. passed) return
 end subroutine
 
@@ -552,23 +552,23 @@ subroutine test_I2_real64_mul(passed)
     type(ten_3D2Osym) :: expected_result
 
     call expected_result%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
-    passed = (1D0*iden_3D2O()) .isequal. expected_result
+    passed = (1D0*iden_2O()) .isequal. expected_result
     if (.not. passed) return
     
-    passed = (iden_3D2O()*1D0) .isequal. expected_result
+    passed = (iden_2O()*1D0) .isequal. expected_result
     if (.not. passed) return
 
-    passed = ((-1D0)*iden_3D2O()) .isequal. (-expected_result)
+    passed = ((-1D0)*iden_2O()) .isequal. (-expected_result)
     if (.not. passed) return
     
-    passed = (iden_3D2O()*(-1D0)) .isequal. (-expected_result)
+    passed = (iden_2O()*(-1D0)) .isequal. (-expected_result)
     if (.not. passed) return
     
     call expected_result%init((/2D0, 2D0, 2D0, 0D0, 0D0, 0D0/))
-    passed = (2D0*iden_3D2O()) .isequal. expected_result
+    passed = (2D0*iden_2O()) .isequal. expected_result
     if (.not. passed) return
     
-    passed = (iden_3D2O()*2D0) .isequal. expected_result
+    passed = (iden_2O()*2D0) .isequal. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -582,14 +582,14 @@ subroutine test_I2_real64_div(passed)
     type(ten_3D2Osym) :: expected_result
 
     call expected_result%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
-    passed = (iden_3D2O()/1D0) .isequal. expected_result
+    passed = (iden_2O()/1D0) .isequal. expected_result
     if (.not. passed) return
     
-    passed = (iden_3D2O()/(-1D0)) .isequal. (-expected_result)
+    passed = (iden_2O()/(-1D0)) .isequal. (-expected_result)
     if (.not. passed) return
     
     call expected_result%init((/2D0, 2D0, 2D0, 0D0, 0D0, 0D0/))
-    passed = (iden_3D2O()/(0.5D0)) .isequal. expected_result
+    passed = (iden_2O()/(0.5D0)) .isequal. expected_result
     if (.not. passed) return
     
 end subroutine
@@ -606,16 +606,16 @@ subroutine test_I3D2O_3D2Osym_ddot(passed)
     passed = .false.
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    if (abs(iden_3D2O() .ddot. to_test1) > EPS ) return
-    if (abs(to_test1 .ddot. iden_3D2O()) > EPS ) return
+    if (abs(iden_2O() .ddot. to_test1) > EPS ) return
+    if (abs(to_test1 .ddot. iden_2O()) > EPS ) return
 
     call to_test1%init((/0D0, 0D0, 0D0, 10D0, 10D0, 10D0/))
-    if (abs(iden_3D2O() .ddot. to_test1) > EPS ) return
-    if (abs(to_test1 .ddot. iden_3D2O()) > EPS ) return
+    if (abs(iden_2O() .ddot. to_test1) > EPS ) return
+    if (abs(to_test1 .ddot. iden_2O()) > EPS ) return
     
     call to_test1%init((/1D0, 1D0, 1D0, 10D0, 10D0, 10D0/))
-    if (abs((iden_3D2O() .ddot. to_test1) -3.0D0) > EPS ) return
-    if (abs((to_test1 .ddot. iden_3D2O()) -3.0D0) > EPS ) return
+    if (abs((iden_2O() .ddot. to_test1) -3.0D0) > EPS ) return
+    if (abs((to_test1 .ddot. iden_2O()) -3.0D0) > EPS ) return
 
     passed = .true.
     

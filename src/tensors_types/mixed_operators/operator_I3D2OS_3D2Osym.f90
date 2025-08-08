@@ -1,6 +1,6 @@
 module mod_operator_I3D2OS_3D2Osym
     use, intrinsic :: iso_fortran_env
-    use mod_iden_3D2OS
+    use mod_iden_2OS
     use mod_ten_3D2Osym
     implicit none
     private
@@ -27,7 +27,7 @@ module mod_operator_I3D2OS_3D2Osym
 
     pure module function ddot_I3D2OS_3D2Osym(I2, b) result(res)
         implicit none
-        class(iden_3D2OS), intent(in) :: I2
+        class(iden_2OS), intent(in) :: I2
         class(ten_3D2Osym), intent(in) :: b
         real(real64) :: res
         res = I2%val*(b%vals(1) + b%vals(2) + b%vals(3))
@@ -35,7 +35,7 @@ module mod_operator_I3D2OS_3D2Osym
 
     pure module function ddot_3D2Osym_I3D2OS(b, I2) result(res)
         implicit none
-        class(iden_3D2OS), intent(in) :: I2
+        class(iden_2OS), intent(in) :: I2
         class(ten_3D2Osym), intent(in) :: b
         real(real64) :: res
         res = I2%val*(b%vals(1) + b%vals(2) + b%vals(3))
@@ -43,7 +43,7 @@ module mod_operator_I3D2OS_3D2Osym
 
     pure module function sum_I3D2OS_3D2Osym(I2, a) result(res)
         implicit none
-        class(iden_3D2OS), intent(in) :: I2
+        class(iden_2OS), intent(in) :: I2
         type(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
         res%vals = a%vals
@@ -52,7 +52,7 @@ module mod_operator_I3D2OS_3D2Osym
 
     pure module function sum_3D2Osym_I3D2OS(a, I2) result(res)
         implicit none
-        class(iden_3D2OS), intent(in) :: I2
+        class(iden_2OS), intent(in) :: I2
         type(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
         res%vals = a%vals
@@ -61,7 +61,7 @@ module mod_operator_I3D2OS_3D2Osym
 
     pure module function sub_I3D2OS_3D2Osym(I2, a) result(res)
         implicit none
-        class(iden_3D2OS), intent(in) :: I2
+        class(iden_2OS), intent(in) :: I2
         type(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
         res%vals = -a%vals
@@ -70,7 +70,7 @@ module mod_operator_I3D2OS_3D2Osym
 
     pure module function sub_3D2Osym_I3D2OS(a, I2) result(res)
         implicit none
-        class(iden_3D2OS), intent(in) :: I2
+        class(iden_2OS), intent(in) :: I2
         type(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
         res%vals = a%vals

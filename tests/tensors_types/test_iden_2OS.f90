@@ -6,16 +6,16 @@ program test_I3D2OS
     ! real*8 :: a
     ! call test123(a, 5D0)
 
-    call test_iden_3D2OS_sum(passed)
+    call test_iden_2OS_sum(passed)
     if (.not. passed) STOP 1
 
-    call test_iden_3D2OS_sub(passed)
+    call test_iden_2OS_sub(passed)
     if (.not. passed) STOP 2
 
-    call test_iden_3D2OS_mul(passed)
+    call test_iden_2OS_mul(passed)
     if (.not. passed) STOP 3
 
-    call test_iden_3D2OS_div(passed)
+    call test_iden_2OS_div(passed)
     if (.not. passed) STOP 4
 
     ! call test_ten_3D2O_mul(passed)
@@ -35,13 +35,13 @@ program test_I3D2OS
 end program test_I3D2OS
 
 
-subroutine test_iden_3D2OS_sum(passed)
+subroutine test_iden_2OS_sum(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
     logical, intent(out) :: passed
-    type(iden_3D2OS) :: to_test1, to_test2
-    type(iden_3D2OS) :: temp
+    type(iden_2OS) :: to_test1, to_test2
+    type(iden_2OS) :: temp
     real(real64), parameter :: eps=1e-15
 
     call to_test1%init(0D0)
@@ -69,13 +69,13 @@ subroutine test_iden_3D2OS_sum(passed)
 
 end subroutine
 
-subroutine test_iden_3D2OS_sub(passed)
+subroutine test_iden_2OS_sub(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
     logical, intent(out) :: passed
-    type(iden_3D2OS) :: to_test1, to_test2
-    type(iden_3D2OS) :: temp
+    type(iden_2OS) :: to_test1, to_test2
+    type(iden_2OS) :: temp
     real(real64), parameter :: eps=1e-15
 
     call to_test1%init(0D0)
@@ -103,13 +103,13 @@ subroutine test_iden_3D2OS_sub(passed)
 
 end subroutine
 
-subroutine test_iden_3D2OS_mul(passed)
+subroutine test_iden_2OS_mul(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
     logical, intent(out) :: passed
-    type(iden_3D2OS) :: to_test1
-    type(iden_3D2OS) :: temp
+    type(iden_2OS) :: to_test1
+    type(iden_2OS) :: temp
     real(real64), parameter :: eps=1e-15
 
     call to_test1%init(0D0)
@@ -140,13 +140,13 @@ subroutine test_iden_3D2OS_mul(passed)
 
 end subroutine
 
-subroutine test_iden_3D2OS_div(passed)
+subroutine test_iden_2OS_div(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
     logical, intent(out) :: passed
-    type(iden_3D2OS) :: to_test1
-    type(iden_3D2OS) :: temp
+    type(iden_2OS) :: to_test1
+    type(iden_2OS) :: temp
     real(real64), parameter :: eps=1e-15
 
     call to_test1%init(0D0)

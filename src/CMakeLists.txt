@@ -5,12 +5,12 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/basic_types/ten_3D2Osym.f90
                   tensors_types/basic_types/ten_3D4O3sym.f90
                   tensors_types/basic_types/ten_3D4O2sym.f90
-                  tensors_types/basic_types/iden_3D2OS.f90
-                  tensors_types/basic_types/iden_3D2O.f90
-                  tensors_types/basic_types/iden_3D4O3TS.f90
-                  tensors_types/basic_types/iden_3D4O3T.f90
-                  tensors_types/basic_types/iden_3D4O4TS.f90
-                  tensors_types/basic_types/iden_3D4O4T.f90
+                  tensors_types/basic_types/iden_2OS.f90
+                  tensors_types/basic_types/iden_2O.f90
+                  tensors_types/basic_types/iden_4O3TS.f90
+                  tensors_types/basic_types/iden_4O3T.f90
+                  tensors_types/basic_types/iden_4O4TS.f90
+                  tensors_types/basic_types/iden_4O4T.f90
                   tensors_types/mixed_operators/operator_I3D2O_3D2Osym.f90
                   tensors_types/mixed_operators/operator_I3D2O_3D2O.f90
                   tensors_types/mixed_operators/operator_I3D2OS_3D2Osym.f90

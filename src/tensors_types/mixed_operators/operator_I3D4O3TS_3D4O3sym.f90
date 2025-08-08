@@ -1,6 +1,6 @@
 module mod_operator_I3D4O3TS_3D4O3sym
     use, intrinsic :: iso_fortran_env
-    use mod_iden_3D4O3TS
+    use mod_iden_4O3TS
     use mod_ten_3D4O3sym
     implicit none
     private
@@ -35,7 +35,7 @@ module mod_operator_I3D4O3TS_3D4O3sym
 
     ! pure module function ddot_I3D4O3TS_3D4O3sym(I2, b) result(res)
     !     implicit none
-    !     class(iden_3D4O3TS), intent(in) :: I2
+    !     class(iden_4O3TS), intent(in) :: I2
     !     class(ten_3D4O3sym), intent(in) :: b
     !     real(real64) :: res
     !     res = b%vals(1) + b%vals(2) + b%vals(3)
@@ -43,7 +43,7 @@ module mod_operator_I3D4O3TS_3D4O3sym
 
     ! pure module function ddot_3D4O3sym_I3D4O3TS(b, I2) result(res)
     !     implicit none
-    !     class(iden_3D4O3TS), intent(in) :: I2
+    !     class(iden_4O3TS), intent(in) :: I2
     !     class(ten_3D4O3sym), intent(in) :: b
     !     real(real64) :: res
     !     res = b%vals(1) + b%vals(2) + b%vals(3)
@@ -51,7 +51,7 @@ module mod_operator_I3D4O3TS_3D4O3sym
 
     pure module function sum_I3D4O3TS_3D4O3sym(I2, a) result(res)
         implicit none
-        class(iden_3D4O3TS), intent(in) :: I2
+        class(iden_4O3TS), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a
         type(ten_3D4O3sym) :: res
         res%vals( 1: 3) = a%vals( 1: 3) + I2%val
@@ -64,7 +64,7 @@ module mod_operator_I3D4O3TS_3D4O3sym
 
     pure module function sum_3D4O3sym_I3D4O3TS(a, I2) result(res)
         implicit none
-        class(iden_3D4O3TS), intent(in) :: I2
+        class(iden_4O3TS), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a
         type(ten_3D4O3sym) :: res
         res%vals( 1: 3) = a%vals( 1: 3) + I2%val
@@ -77,7 +77,7 @@ module mod_operator_I3D4O3TS_3D4O3sym
 
     pure module function sub_I3D4O3TS_3D4O3sym(I2, a) result(res)
         implicit none
-        class(iden_3D4O3TS), intent(in) :: I2
+        class(iden_4O3TS), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a
         type(ten_3D4O3sym) :: res
         res%vals( 1: 3) = -a%vals( 1: 3) + I2%val
@@ -90,7 +90,7 @@ module mod_operator_I3D4O3TS_3D4O3sym
 
     pure module function sub_3D4O3sym_I3D4O3TS(a, I2) result(res)
         implicit none
-        class(iden_3D4O3TS), intent(in) :: I2
+        class(iden_4O3TS), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a
         type(ten_3D4O3sym) :: res
         res%vals( 1: 3) = a%vals( 1: 3) - I2%val
