@@ -125,6 +125,7 @@ module tensors_types
     ! use mod_ten_3D2O, only : ten_3D2O
     use mod_ten_3D2O
     use mod_ten_3D2Osym
+    use mod_ten_2D2Osym
     use mod_ten_3D4O3sym
     use mod_ten_3D4O2sym
     use mod_iden_2OS
@@ -134,8 +135,10 @@ module tensors_types
     use mod_iden_4O4TS
     use mod_iden_4O4T
     use mod_operator_I2O_3D2Osym
+    use mod_operator_I2O_2D2Osym
     use mod_operator_I2O_3D2O
     use mod_operator_I2OS_3D2Osym
+    use mod_operator_I2OS_2D2Osym
     use mod_operator_I2OS_3D2O
     use mod_operator_I4O3T_3D4O3sym
     use mod_operator_I4O3TS_3D4O3sym
