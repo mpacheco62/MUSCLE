@@ -1,4 +1,4 @@
-module tests_I3D2OS
+module tests_I2OS
     use iso_fortran_env
     use iso_c_binding
     use tensors_types

@@ -133,20 +133,20 @@ module tensors_types
     use mod_iden_4O3T
     use mod_iden_4O4TS
     use mod_iden_4O4T
-    use mod_operator_I3D2O_3D2Osym
-    use mod_operator_I3D2O_3D2O
-    use mod_operator_I3D2OS_3D2Osym
-    use mod_operator_I3D2OS_3D2O
-    use mod_operator_I3D4O3T_3D4O3sym
-    use mod_operator_I3D4O3TS_3D4O3sym
-    use mod_operator_I3D4O4T_3D4O3sym
-    use mod_operator_I3D4O4TS_3D4O3sym
+    use mod_operator_I2O_3D2Osym
+    use mod_operator_I2O_3D2O
+    use mod_operator_I2OS_3D2Osym
+    use mod_operator_I2OS_3D2O
+    use mod_operator_I4O3T_3D4O3sym
+    use mod_operator_I4O3TS_3D4O3sym
+    use mod_operator_I4O4T_3D4O3sym
+    use mod_operator_I4O4TS_3D4O3sym
     use mod_operator_3D2Osym_3D2O
     use mod_operator_3D2Osym_3D4O3sym
     use mod_operator_3D4O2sym_3D4O3sym
     use mod_operator_3D2Osym_3D4O2sym
-    use mod_operator_I3D4O3T_3D4O2sym
-    use mod_operator_I3D4O4T_3D4O2sym
+    use mod_operator_I4O3T_3D4O2sym
+    use mod_operator_I4O4T_3D4O2sym
 
     implicit None
 
@@ -195,54 +195,54 @@ module tensors_types
     public :: assignment (=)
 
     ! interface ! iden_4O4T
-    !     module pure function sum_I3D4O4T_3D4O3sym(I4, a) result(res)
+    !     module pure function sum_I4O4T_3D4O3sym(I4, a) result(res)
     !         implicit none
     !         class(iden_4O4T), intent(in) :: I4
     !         type(ten_3D4O3sym), intent(in) :: a
     !         type(ten_3D4O3sym) :: res
-    !     end function sum_I3D4O4T_3D4O3sym
+    !     end function sum_I4O4T_3D4O3sym
 
-    !     module pure function sum_3D4O3sym_I3D4O4T(a, I4) result(res)
+    !     module pure function sum_3D4O3sym_I4O4T(a, I4) result(res)
     !         implicit none
     !         class(iden_4O4T), intent(in) :: I4
     !         type(ten_3D4O3sym), intent(in) :: a
     !         type(ten_3D4O3sym) :: res
-    !     end function sum_3D4O3sym_I3D4O4T
+    !     end function sum_3D4O3sym_I4O4T
 
-    !     module pure function sub_I3D4O4T_3D4O3sym(I4, a) result(res)
+    !     module pure function sub_I4O4T_3D4O3sym(I4, a) result(res)
     !         implicit none
     !         class(iden_4O4T), intent(in) :: I4
     !         type(ten_3D4O3sym), intent(in) :: a
     !         type(ten_3D4O3sym) :: res
-    !     end function sub_I3D4O4T_3D4O3sym
+    !     end function sub_I4O4T_3D4O3sym
 
-    !     module pure function sub_3D4O3sym_I3D4O4T(a, I4) result(res)
+    !     module pure function sub_3D4O3sym_I4O4T(a, I4) result(res)
     !         implicit none
     !         class(iden_4O4T), intent(in) :: I4
     !         type(ten_3D4O3sym), intent(in) :: a
     !         type(ten_3D4O3sym) :: res
-    !     end function sub_3D4O3sym_I3D4O4T
+    !     end function sub_3D4O3sym_I4O4T
 
-    !     module pure function mul_I3D4O4T_real64(I4, a) result(res)
+    !     module pure function mul_I4O4T_real64(I4, a) result(res)
     !         implicit none
     !         class(iden_4O4T), intent(in) :: I4
     !         real(real64), intent(in) :: a
     !         type(ten_3D4O3sym) :: res
-    !     end function mul_I3D4O4T_real64
+    !     end function mul_I4O4T_real64
 
-    !     module pure function mul_real64_I3D4O4T(a, I4) result(res)
+    !     module pure function mul_real64_I4O4T(a, I4) result(res)
     !         implicit none
     !         class(iden_4O4T), intent(in) :: I4
     !         real(real64), intent(in) :: a
     !         type(ten_3D4O3sym) :: res
-    !     end function mul_real64_I3D4O4T
+    !     end function mul_real64_I4O4T
 
-    !     module pure function div_I3D4O4T_real64(I4, a) result(res)
+    !     module pure function div_I4O4T_real64(I4, a) result(res)
     !         implicit none
     !         class(iden_4O4T), intent(in) :: I4
     !         real(real64), intent(in) :: a
     !         type(ten_3D4O3sym) :: res
-    !     end function div_I3D4O4T_real64
+    !     end function div_I4O4T_real64
     ! end interface
 
     ! interface  !O4 3D 3Sym

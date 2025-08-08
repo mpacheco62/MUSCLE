@@ -43,10 +43,10 @@ program test_basic_operations
     call test_ten_3D4O3sym_3D2Osym_ddot(passed)
     if (.not. passed) STOP 13
 
-    call test_I3D2O_3D2Osym_sum(passed)
+    call test_I2O_3D2Osym_sum(passed)
     if (.not. passed) STOP 14
 
-    call test_I3D2O_3D2Osym_sub(passed)
+    call test_I2O_3D2Osym_sub(passed)
     if (.not. passed) STOP 15
 
     call test_I2_real64_mul(passed)
@@ -55,7 +55,7 @@ program test_basic_operations
     call test_I2_real64_div(passed)
     if (.not. passed) STOP 17
 
-    call test_I3D2O_3D2Osym_ddot(passed)
+    call test_I2O_3D2Osym_ddot(passed)
     if (.not. passed) STOP 18 
 
     ! call test_dp_sym_6_4(passed)
@@ -488,7 +488,7 @@ subroutine test_ten_3D4O3sym_3D2Osym_ddot(passed)
 
 end subroutine
 
-subroutine test_I3D2O_3D2Osym_sum(passed)
+subroutine test_I2O_3D2Osym_sum(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
@@ -515,7 +515,7 @@ subroutine test_I3D2O_3D2Osym_sum(passed)
     if (.not. passed) return
 end subroutine
 
-subroutine test_I3D2O_3D2Osym_sub(passed)
+subroutine test_I2O_3D2Osym_sub(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
@@ -594,7 +594,7 @@ subroutine test_I2_real64_div(passed)
     
 end subroutine
 
-subroutine test_I3D2O_3D2Osym_ddot(passed)
+subroutine test_I2O_3D2Osym_ddot(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none

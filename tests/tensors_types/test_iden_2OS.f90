@@ -1,4 +1,4 @@
-program test_I3D2OS
+program test_I2OS
     use tensors_types
     implicit none
     logical :: passed
@@ -32,7 +32,7 @@ program test_I3D2OS
 
     print*, "Hola!", passed
     STOP 0
-end program test_I3D2OS
+end program test_I2OS
 
 
 subroutine test_iden_2OS_sum(passed)

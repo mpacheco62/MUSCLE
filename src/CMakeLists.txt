@@ -1,4 +1,4 @@
-# set(OPERATORS tensors_types/mixed_operators/operator_I3D2O_3D2Osym.f90
+# set(OPERATORS tensors_types/mixed_operators/operator_I2O_3D2Osym.f90
 #               CACHE INTERNAL "")
 
 set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
@@ -11,18 +11,18 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/basic_types/iden_4O3T.f90
                   tensors_types/basic_types/iden_4O4TS.f90
                   tensors_types/basic_types/iden_4O4T.f90
-                  tensors_types/mixed_operators/operator_I3D2O_3D2Osym.f90
-                  tensors_types/mixed_operators/operator_I3D2O_3D2O.f90
-                  tensors_types/mixed_operators/operator_I3D2OS_3D2Osym.f90
-                  tensors_types/mixed_operators/operator_I3D2OS_3D2O.f90
-                  tensors_types/mixed_operators/operator_I3D4O3T_3D4O2sym.f90
-                  tensors_types/mixed_operators/operator_I3D4O3T_3D4O3sym.f90
-                  tensors_types/mixed_operators/operator_I3D4O3TS_3D4O2sym.f90
-                  tensors_types/mixed_operators/operator_I3D4O3TS_3D4O3sym.f90
-                  tensors_types/mixed_operators/operator_I3D4O4T_3D4O2sym.f90
-                  tensors_types/mixed_operators/operator_I3D4O4T_3D4O3sym.f90
-                  tensors_types/mixed_operators/operator_I3D4O4TS_3D4O2sym.f90
-                  tensors_types/mixed_operators/operator_I3D4O4TS_3D4O3sym.f90
+                  tensors_types/mixed_operators/operator_I2O_3D2Osym.f90
+                  tensors_types/mixed_operators/operator_I2O_3D2O.f90
+                  tensors_types/mixed_operators/operator_I2OS_3D2Osym.f90
+                  tensors_types/mixed_operators/operator_I2OS_3D2O.f90
+                  tensors_types/mixed_operators/operator_I4O3T_3D4O2sym.f90
+                  tensors_types/mixed_operators/operator_I4O3T_3D4O3sym.f90
+                  tensors_types/mixed_operators/operator_I4O3TS_3D4O2sym.f90
+                  tensors_types/mixed_operators/operator_I4O3TS_3D4O3sym.f90
+                  tensors_types/mixed_operators/operator_I4O4T_3D4O2sym.f90
+                  tensors_types/mixed_operators/operator_I4O4T_3D4O3sym.f90
+                  tensors_types/mixed_operators/operator_I4O4TS_3D4O2sym.f90
+                  tensors_types/mixed_operators/operator_I4O4TS_3D4O3sym.f90
                   tensors_types/mixed_operators/operator_3D2Osym_3D2O.f90
                   tensors_types/mixed_operators/operator_3D2Osym_3D4O2sym.f90
                   tensors_types/mixed_operators/operator_3D2Osym_3D4O3sym.f90
