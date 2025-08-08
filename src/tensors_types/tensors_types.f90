@@ -155,6 +155,7 @@ module tensors_types
 
     public :: ten_3D2O
     public :: ten_3D2Osym
+    public :: ten_2D2Osym
     public :: ten_3D4O3sym
     public :: ten_3D4O2sym
     public :: iden_2OS
