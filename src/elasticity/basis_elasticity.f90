@@ -113,14 +113,17 @@ module mod_base_elasticity
         !! and provide implementations for the deferred procedures `stress` and `dstress_dstrain`.
         !! This allows for polymorphic handling of different material models.
         contains
-            procedure(stress_interface), deferred :: stress
+            procedure(stress_interface_3D), deferred :: stress_3D
+                !! Computes the stress tensor for a given strain tensor.
+            procedure(stress_interface_2D), deferred :: stress_2D
                 !! Computes the stress tensor for a given strain tensor.
             procedure(dstress_dstrain_interface), deferred :: dstress_dstrain
                 !! Computes the tangent modulus (stiffness tensor) for a given strain tensor.
+            generic, public :: stress => stress_3D, stress_2D
     end type Base_elasticity
 
     interface
-        pure function stress_interface(self, strain) result(res)
+        pure function stress_interface_3D(self, strain) result(res)
             !! Interface for the `stress` procedure.
             !! Must be implemented by concrete subtypes of `Base_elasticity`.
             use, intrinsic :: iso_fortran_env
@@ -132,7 +135,21 @@ module mod_base_elasticity
                 !! Input strain tensor (`ten_3D2Osym`).
             type(ten_3D2Osym) :: res
                 !! Output stress tensor (`ten_3D2Osym`).
-        end function stress_interface
+        end function stress_interface_3D
+
+        pure function stress_interface_2D(self, strain) result(res)
+            !! Interface for the `stress` procedure.
+            !! Must be implemented by concrete subtypes of `Base_elasticity`.
+            use, intrinsic :: iso_fortran_env
+            use tensors_types, only : ten_2D2Osym
+            import Base_elasticity
+            class(Base_elasticity), intent(in) :: self 
+                !! The elasticity model object.
+            class(ten_2D2Osym), intent(in) :: strain
+                !! Input strain tensor (`ten_3D2Osym`).
+            type(ten_2D2Osym) :: res
+                !! Output stress tensor (`ten_3D2Osym`).
+        end function stress_interface_2D
 
         pure function dstress_dstrain_interface(self, strain) result(res)
             !! Interface for the `dstress_dstrain` procedure.

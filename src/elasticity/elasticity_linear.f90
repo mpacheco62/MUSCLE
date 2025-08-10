@@ -113,7 +113,9 @@ module mod_elasticity_linear
     contains
         procedure :: dstress_dstrain => dstress_dstrain_linear
             !! Calculates the constant tangent modulus tensor.
-        procedure :: stress => stress_linear
+        procedure :: stress_3D => stress_linear
+            !! Calculates stress using Hooke's law.
+        procedure :: stress_2D => stress_linear2D
             !! Calculates stress using Hooke's law.
         procedure :: set_parameters
             !! Sets the material parameters (E, nu) and optionally pre-calculates the tangent.
@@ -193,6 +195,34 @@ module mod_elasticity_linear
         call res%init(xx=xx, yy=yy, zz=zz, xy=xy, yz=yz, xz=xz)
         return 
     end function stress_linear
+
+    pure function stress_linear2D(self, strain) result(res)
+        !! Calculates the stress tensor using Hooke's law for linear isotropic elasticity.
+        !! sigma = C : epsilon
+        implicit none
+        class(Elasticity_linear), intent(in) :: self
+            !! The linear elasticity model object containing material parameters.
+        class(ten_2D2Osym), intent(in) :: strain
+            !! Input strain tensor (`ten_2D2Osym`).
+        type(ten_2D2Osym) :: res
+            !! Output stress tensor (`ten_2D2Osym`).
+        real(real64) :: e1, e2, e3, xx, yy, zz, xy
+
+        ! Retrieve derived elastic constants
+        e1 = self%e1 ! lambda + 2*mu
+        e2 = self%e2 ! lambda
+        e3 = self%e3 ! mu
+
+        ! Calculate stress components using Hooke's law
+        xx = e1*strain%xx() + e2*(strain%yy()+strain%zz())
+        yy = e1*strain%yy() + e2*(strain%zz()+strain%xx())
+        zz = e1*strain%zz() + e2*(strain%xx()+strain%yy())
+        xy = 2*e3*strain%xy()  ! Note: 2*mu*epsilon_xy
+
+        ! Initialize the result tensor
+        call res%init(xx=xx, yy=yy, zz=zz, xy=xy)
+        return 
+    end function stress_linear2D
 
     pure function dstress_dstrain_linear(self, strain) result(res)
         !! Returns the constant tangent modulus (stiffness) tensor for linear isotropic elasticity.
