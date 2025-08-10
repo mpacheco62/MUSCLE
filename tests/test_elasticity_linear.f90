@@ -6,11 +6,17 @@ program test_elasticity_linear
     call test_tensile_nu0(passed)
     if (.not. passed) STOP 1
 
-    call test_tensile(passed)
+    call test_tensile_nu0_2D(passed)
     if (.not. passed) STOP 2
 
-    call test_dsigma_dstrain(passed)
+    call test_tensile(passed)
     if (.not. passed) STOP 3
+
+    call test_tensile_2D(passed)
+    if (.not. passed) STOP 4
+
+    call test_dsigma_dstrain(passed)
+    if (.not. passed) STOP 5
 
     print*, "Passed!", passed
     STOP 0
@@ -36,37 +42,119 @@ subroutine test_tensile_nu0(passed)
     call strain%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
     passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
     if (.not. passed) return
 
     call expected_result%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     call strain%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
     passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
     if (.not. passed) return
 
     call expected_result%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     call strain%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
     passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
     if (.not. passed) return
 
     call expected_result%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     call strain%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
     passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
     if (.not. passed) return
 
     call expected_result%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     call strain%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     result = el%stress(strain=strain)
     passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
     if (.not. passed) return
 
     call expected_result%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     call strain%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     result = el%stress(strain=strain)
     passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
     if (.not. passed) return
+end subroutine
+
+subroutine test_tensile_nu0_2D(passed)
+    use, intrinsic :: iso_fortran_env
+    use tensors_types
+    use mod_elasticity_linear
+    implicit none
+    
+    real(real64), parameter :: EPS=1e-10
+    logical, intent(out) :: passed
+
+    type(Elasticity_linear) :: el
+    type(ten_2D2Osym) :: expected_result, result 
+    type(ten_2D2Osym) :: strain 
+
+    call el%set_parameters(young=1D0, poisson=0D0)
+    
+    
+    call expected_result%init((/1D0, 0D0, 0D0, 0D0/))
+    call strain%init((/1D0, 0D0, 0D0, 0D0/))
+    result = el%stress(strain=strain)
+    passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
+    if (.not. passed) return
+
+    call expected_result%init((/0D0, 1D0, 0D0, 0D0/))
+    call strain%init((/0D0, 1D0, 0D0, 0D0/))
+    result = el%stress(strain=strain)
+    passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
+    if (.not. passed) return
+
+    call expected_result%init((/0D0, 0D0, 1D0, 0D0/))
+    call strain%init((/0D0, 0D0, 1D0, 0D0/))
+    result = el%stress(strain=strain)
+    passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
+    if (.not. passed) return
+
+    call expected_result%init((/0D0, 0D0, 0D0, 1D0/))
+    call strain%init((/0D0, 0D0, 0D0, 1D0/))
+    result = el%stress(strain=strain)
+    passed = result .isequal. expected_result
+    if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
+                              "Expected:", expected_result, new_line('A'),  &
+                              "Actual Value:", result, new_line('A'),       &
+                              "Difference", result - expected_result
+    if (.not. passed) return
+
 end subroutine
 
 subroutine test_tensile(passed)
@@ -105,6 +193,49 @@ subroutine test_tensile(passed)
 
     call expected_result%init((/0D0, 0D0, 0D0, 0.769230769D0, 0D0, 0D0/))
     call strain%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
+    result = el%stress(strain=strain)
+    passed = result .isequal. expected_result
+    if (.not. passed) return
+
+end subroutine
+
+
+subroutine test_tensile_2D(passed)
+    use, intrinsic :: iso_fortran_env
+    use tensors_types
+    use mod_elasticity_linear
+    implicit none
+    
+    real(real64), parameter :: EPS=1e-10
+    logical, intent(out) :: passed
+
+    type(Elasticity_linear) :: el
+    type(ten_2D2Osym) :: expected_result, result 
+    type(ten_2D2Osym) :: strain 
+
+    call el%set_parameters(young=1D0, poisson=0.3D0)
+    
+    
+    call expected_result%init((/1D0, 0D0, 0D0, 0D0/))
+    call strain%init((/1D0, -0.3D0, -0.3D0, 0D0/))
+    result = el%stress(strain=strain)
+    passed = result .isequal. expected_result
+    if (.not. passed) return
+    
+    call expected_result%init((/0D0, 1D0, 0D0, 0D0/))
+    call strain%init((/-0.3D0, 1D0, -0.3D0, 0D0/))
+    result = el%stress(strain=strain)
+    passed = result .isequal. expected_result
+    if (.not. passed) return
+
+    call expected_result%init((/0D0, 0D0, 1D0, 0D0/))
+    call strain%init((/-0.3D0, -0.3D0, 1D0, 0D0/))
+    result = el%stress(strain=strain)
+    passed = result .isequal. expected_result
+    if (.not. passed) return
+
+    call expected_result%init((/0D0, 0D0, 0D0, 0.769230769D0/))
+    call strain%init((/0D0, 0D0, 0D0, 1D0/))
     result = el%stress(strain=strain)
     passed = result .isequal. expected_result
     if (.not. passed) return
