@@ -127,6 +127,7 @@ module tensors_types
     use mod_ten_3D2Osym
     use mod_ten_2D2Osym
     use mod_ten_3D4O3sym
+    use mod_ten_2D4O3sym
     use mod_ten_3D4O2sym
     use mod_iden_2OS
     use mod_iden_2O
@@ -146,6 +147,7 @@ module tensors_types
     use mod_operator_I4O4TS_3D4O3sym
     use mod_operator_3D2Osym_3D2O
     use mod_operator_3D2Osym_3D4O3sym
+    use mod_operator_2D2Osym_2D4O3sym
     use mod_operator_3D4O2sym_3D4O3sym
     use mod_operator_3D2Osym_3D4O2sym
     use mod_operator_I4O3T_3D4O2sym
@@ -157,6 +159,7 @@ module tensors_types
     public :: ten_3D2Osym
     public :: ten_2D2Osym
     public :: ten_3D4O3sym
+    public :: ten_2D4O3sym
     public :: ten_3D4O2sym
     public :: iden_2OS
     public :: iden_2O

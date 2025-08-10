@@ -189,15 +189,15 @@ contains
     end subroutine init_ten_3D4O3sym
 
     pure module subroutine init2_ten_3D4O3sym(self,             & 
-                                         xxxx, yyyy, zzzz, &
-                                         xyxy, yzyz, xzxz, &
-                                         xxyy, yyzz,       &
-                                         zzxy, xyyz, yzxz, &
-                                         xxzz,             &
-                                         yyxy, zzyz, xyxz, &
-                                         xxxy, yyyz, zzxz, &
-                                         xxyz, yyxz, xxxz  &
-                                         )
+                                              xxxx, yyyy, zzzz, &
+                                              xyxy, yzyz, xzxz, &
+                                              xxyy, yyzz,       &
+                                              zzxy, xyyz, yzxz, &
+                                              xxzz,             &
+                                              yyxy, zzyz, xyxz, &
+                                              xxxy, yyyz, zzxz, &
+                                              xxyz, yyxz, xxxz  &
+                                              )
         !! Initializes a ten_3D4O3sym tensor from its 21 individual components.
         !! Input arguments correspond to the independent Voigt matrix components C(I,J)
         !! in a specific order (see implementation and type documentation).
@@ -238,35 +238,11 @@ contains
         real(real64), parameter :: EPS=1e-7, EPS_ABS=1e-30
         real(real64) :: norm_a, norm_b, norm_max, norm
 
-        ! norm_a = sum(abs(a%vals(1:6))) + 2.0D0 * sum(abs(a%vals(7:21)))
-        ! norm_b = sum(abs(b%vals(1:6))) + 2.0D0 * sum(abs(b%vals(7:21)))
-
-        norm_a =   abs(a%vals( 1)) +   abs(a%vals( 2)) +   abs(a%vals( 3)) + &
-                   abs(a%vals( 4)) +   abs(a%vals( 5)) +   abs(a%vals( 6)) + &
-                 2*abs(a%vals( 7)) + 2*abs(a%vals( 8)) + 2*abs(a%vals( 9)) + &
-                 2*abs(a%vals(10)) + 2*abs(a%vals(11)) + 2*abs(a%vals(12)) + & 
-                 2*abs(a%vals(13)) + 2*abs(a%vals(14)) + 2*abs(a%vals(15)) + &
-                 2*abs(a%vals(16)) + 2*abs(a%vals(17)) + 2*abs(a%vals(18)) + &
-                 2*abs(a%vals(19)) + 2*abs(a%vals(20)) + 2*abs(a%vals(21))
-        norm_b =   abs(b%vals( 1)) +   abs(b%vals( 2)) +   abs(b%vals( 3)) + &
-                   abs(b%vals( 4)) +   abs(b%vals( 5)) +   abs(b%vals( 6)) + &
-                 2*abs(b%vals( 7)) + 2*abs(b%vals( 8)) + 2*abs(b%vals( 9)) + &
-                 2*abs(b%vals(10)) + 2*abs(b%vals(11)) + 2*abs(b%vals(12)) + & 
-                 2*abs(b%vals(13)) + 2*abs(b%vals(14)) + 2*abs(b%vals(15)) + &
-                 2*abs(b%vals(16)) + 2*abs(b%vals(17)) + 2*abs(b%vals(18)) + &
-                 2*abs(b%vals(19)) + 2*abs(b%vals(20)) + 2*abs(b%vals(21))  
-
+        norm_a = sum(abs(a%vals(1:6))) + 2.0D0 * sum(abs(a%vals(7:21)))
+        norm_b = sum(abs(b%vals(1:6))) + 2.0D0 * sum(abs(b%vals(7:21)))
         norm_max = max(max(norm_a, norm_b), EPS_ABS)
-
-        norm =   abs(a%vals( 1)-b%vals( 1)) +   abs(a%vals( 2)-b%vals( 2)) +   abs(a%vals( 3)-b%vals( 3)) + &
-                 abs(a%vals( 4)-b%vals( 4)) +   abs(a%vals( 5)-b%vals( 5)) +   abs(a%vals( 6)-b%vals( 6)) + &
-               2*abs(a%vals( 7)-b%vals( 7)) + 2*abs(a%vals( 8)-b%vals( 8)) + 2*abs(a%vals( 9)-b%vals( 9)) + &
-               2*abs(a%vals(10)-b%vals(10)) + 2*abs(a%vals(11)-b%vals(11)) + 2*abs(a%vals(12)-b%vals(12)) + &
-               2*abs(a%vals(13)-b%vals(13)) + 2*abs(a%vals(14)-b%vals(14)) + 2*abs(a%vals(15)-b%vals(15)) + &
-               2*abs(a%vals(16)-b%vals(16)) + 2*abs(a%vals(17)-b%vals(17)) + 2*abs(a%vals(18)-b%vals(18)) + &
-               2*abs(a%vals(19)-b%vals(19)) + 2*abs(a%vals(20)-b%vals(20)) + 2*abs(a%vals(21)-b%vals(21))
         
-        ! norm = sum(abs(a%vals(1:6) - b%vals(1:6))) + 2.0D0 * sum(abs(a%vals(7:21) - b%vals(7:21)))
+        norm = sum(abs(a%vals(1:6) - b%vals(1:6))) + 2.0D0 * sum(abs(a%vals(7:21) - b%vals(7:21)))
 
         if (norm/norm_max .gt. EPS) res=.false.
         if (norm/norm_max .le. EPS) res=.true.

@@ -5,6 +5,7 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/basic_types/ten_3D2Osym.f90
                   tensors_types/basic_types/ten_2D2Osym.f90
                   tensors_types/basic_types/ten_3D4O3sym.f90
+                  tensors_types/basic_types/ten_2D4O3sym.f90
                   tensors_types/basic_types/ten_3D4O2sym.f90
                   tensors_types/basic_types/iden_2OS.f90
                   tensors_types/basic_types/iden_2O.f90
@@ -29,6 +30,7 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/mixed_operators/operator_3D2Osym_3D2O.f90
                   tensors_types/mixed_operators/operator_3D2Osym_3D4O2sym.f90
                   tensors_types/mixed_operators/operator_3D2Osym_3D4O3sym.f90
+                  tensors_types/mixed_operators/operator_2D2Osym_2D4O3sym.f90
                   tensors_types/mixed_operators/operator_3D4O2sym_3D4O3sym.f90
                   tensors_types/tensors_types.f90
                   CACHE INTERNAL "")
