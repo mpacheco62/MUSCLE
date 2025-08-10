@@ -108,25 +108,29 @@ module mod_elasticity_linear
         real(real64), private :: young        !! Young's Modulus (E)
         real(real64), private :: poisson      !! Poisson's Ratio (nu)
         real(real64), private :: e1, e2, e3   !! Derived elastic constants related to Lame parameters
-        type(ten_3D4O3sym), private :: tan    !! Pre-calculated tangent modulus tensor (stiffness)
-        logical, private :: tan_init=.FALSE.  !! Flag indicating if 'tan' has been calculated
+        type(ten_3D4O3sym), private :: tan_3D    !! Pre-calculated tangent modulus tensor (stiffness)
+        type(ten_2D4O3sym), private :: tan_2D    !! Pre-calculated tangent modulus tensor (stiffness)
+        logical, private :: tan_init_3D=.FALSE.  !! Flag indicating if 'tan' has been calculated
+        logical, private :: tan_init_2D=.FALSE.  !! Flag indicating if 'tan' has been calculated
     contains
-        procedure :: dstress_dstrain => dstress_dstrain_linear
+        procedure :: dstress_dstrain_3D => dstress_dstrain_linear_3D
             !! Calculates the constant tangent modulus tensor.
-        procedure :: stress_3D => stress_linear
+        procedure :: dstress_dstrain_2D => dstress_dstrain_linear_2D
+            !! Calculates the constant tangent modulus tensor.
+        procedure :: stress_3D => stress_linear_3D
             !! Calculates stress using Hooke's law.
-        procedure :: stress_2D => stress_linear2D
+        procedure :: stress_2D => stress_linear_2D
             !! Calculates stress using Hooke's law.
         procedure :: set_parameters
             !! Sets the material parameters (E, nu) and optionally pre-calculates the tangent.
     end type Elasticity_linear
 
     contains
-    pure subroutine set_parameters(self, young, poisson, calc_tan)
+    pure subroutine set_parameters(self, young, poisson, calc_tan_3D, calc_tan_2D)
         !! Sets the material parameters (Young's modulus, Poisson's ratio) for the linear elastic model.
         !! Optionally pre-calculates the tangent modulus tensor.
         implicit none
-        logical, optional, intent(in) :: calc_tan
+        logical, optional, intent(in) :: calc_tan_3D, calc_tan_2D
             !! If present and .TRUE. (default), pre-calculates and stores the tangent modulus.
         class(Elasticity_linear), intent(inout) :: self
             !! The linear elasticity model object
@@ -135,10 +139,13 @@ module mod_elasticity_linear
         real(real64), intent(in) :: poisson
             !! Poisson's Ratio (nu).
         real(real64) :: e1, e2, e3
-        logical :: ccalc_tan
+        logical :: ccalc_tan_3D, ccalc_tan_2D
         
-        ccalc_tan = .True.
-        if (present(calc_tan)) ccalc_tan = calc_tan
+        ccalc_tan_3D = .True.
+        if (present(calc_tan_3D)) ccalc_tan_3D = calc_tan_3D
+
+        ccalc_tan_2D = .True.
+        if (present(calc_tan_2D)) ccalc_tan_2D = calc_tan_2D
 
         self%young = young
         self%poisson = poisson
@@ -154,19 +161,29 @@ module mod_elasticity_linear
         self%e2 = e2
         self%e3 = e3
 
-        self%tan_init = ccalc_tan
-        call self%tan%init( xxxx=e1,  yyyy=e1,  zzzz=e1,  &
-                            xxyy=e2,  yyzz=e2,  xxzz=e2,  &
-                           xxxy=0D0, xxyz=0D0, xxxz=0D0,  &
-                           yyxy=0D0, yyyz=0D0, yyxz=0D0,  &
-                           zzxy=0D0, zzyz=0D0, zzxz=0D0,  &
-                            xyxy=e3,  yzyz=e3,  xzxz=e3,  &
-                           xyyz=0D0, yzxz=0D0,  xyxz=0D0  &
-                           )
+        self%tan_init_3D = ccalc_tan_3D
+        if (ccalc_tan_3D) then
+            call self%tan_3D%init( xxxx= e1, yyyy= e1, zzzz= e1,  &
+                                   xxyy= e2, yyzz= e2, xxzz= e2,  &
+                                   xxxy=0D0, xxyz=0D0, xxxz=0D0,  &
+                                   yyxy=0D0, yyyz=0D0, yyxz=0D0,  &
+                                   zzxy=0D0, zzyz=0D0, zzxz=0D0,  &
+                                   xyxy= e3, yzyz= e3, xzxz= e3,  &
+                                   xyyz=0D0, yzxz=0D0, xyxz=0D0   &
+                                   )
+        end if
+        
+        if (ccalc_tan_2D) then
+            call self%tan_2D%init( xxxx= e1, yyyy= e1, zzzz= e1,  &
+                                   xxyy= e2, yyzz= e2, xxzz= e2,  &
+                                   xxxy=0D0, yyxy=0D0, zzxy=0D0,  &
+                                   xyxy= e3                       &
+                                   )
+        end if
 
     end subroutine
 
-    pure function stress_linear(self, strain) result(res)
+    pure function stress_linear_3D(self, strain) result(res)
         !! Calculates the stress tensor using Hooke's law for linear isotropic elasticity.
         !! sigma = C : epsilon
         implicit none
@@ -194,9 +211,9 @@ module mod_elasticity_linear
         ! Initialize the result tensor
         call res%init(xx=xx, yy=yy, zz=zz, xy=xy, yz=yz, xz=xz)
         return 
-    end function stress_linear
+    end function stress_linear_3D
 
-    pure function stress_linear2D(self, strain) result(res)
+    pure function stress_linear_2D(self, strain) result(res)
         !! Calculates the stress tensor using Hooke's law for linear isotropic elasticity.
         !! sigma = C : epsilon
         implicit none
@@ -222,9 +239,9 @@ module mod_elasticity_linear
         ! Initialize the result tensor
         call res%init(xx=xx, yy=yy, zz=zz, xy=xy)
         return 
-    end function stress_linear2D
+    end function stress_linear_2D
 
-    pure function dstress_dstrain_linear(self, strain) result(res)
+    pure function dstress_dstrain_linear_3D(self, strain) result(res)
         !! Returns the constant tangent modulus (stiffness) tensor for linear isotropic elasticity.
         !! C_ijkl = d(sigma_ij) / d(epsilon_kl)
         implicit none
@@ -236,9 +253,9 @@ module mod_elasticity_linear
             !! Output tangent modulus tensor (`ten_3D4O3sym`).
         real(real64) :: e1, e2, e3
 
-        if (self%tan_init) then
+        if (self%tan_init_3D) then
             ! Return the pre-calculated tangent if available
-            res = self%tan
+            res = self%tan_3D
             return
         else
             ! Calculate the tangent on the fly if not pre-calculated
@@ -255,6 +272,35 @@ module mod_elasticity_linear
                           )
             return
         end if
-    end function dstress_dstrain_linear
+    end function dstress_dstrain_linear_3D
 
+    pure function dstress_dstrain_linear_2D(self, strain) result(res)
+        !! Returns the constant tangent modulus (stiffness) tensor for linear isotropic elasticity.
+        !! C_ijkl = d(sigma_ij) / d(epsilon_kl)
+        implicit none
+        class(Elasticity_linear), intent(in) :: self
+            !! The linear elasticity model object.
+        class(ten_2D2Osym), intent(in) :: strain
+            !! Input strain tensor (`ten_3D2Osym`). Ignored for linear elasticity as the tangent is constant.
+        type(ten_2D4O3sym) :: res
+            !! Output tangent modulus tensor (`ten_3D4O3sym`).
+        real(real64) :: e1, e2, e3
+
+        if (self%tan_init_2D) then
+            ! Return the pre-calculated tangent if available
+            res = self%tan_2D
+            return
+        else
+            ! Calculate the tangent on the fly if not pre-calculated
+            e1 = self%e1
+            e2 = self%e2
+            e3 = self%e3
+            call res%init( xxxx= e1, yyyy= e1, zzzz= e1,  &
+                           xxyy= e2, yyzz= e2, xxzz= e2,  &
+                           xxxy=0D0, yyxy=0D0, zzxy=0D0,  &
+                           xyxy= e3                       &
+                          )
+            return
+        end if
+    end function dstress_dstrain_linear_2D
 end module

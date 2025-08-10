@@ -117,9 +117,12 @@ module mod_base_elasticity
                 !! Computes the stress tensor for a given strain tensor.
             procedure(stress_interface_2D), deferred :: stress_2D
                 !! Computes the stress tensor for a given strain tensor.
-            procedure(dstress_dstrain_interface), deferred :: dstress_dstrain
+            procedure(dstress_dstrain_interface_3D), deferred :: dstress_dstrain_3D
+                !! Computes the tangent modulus (stiffness tensor) for a given strain tensor.
+            procedure(dstress_dstrain_interface_2D), deferred :: dstress_dstrain_2D
                 !! Computes the tangent modulus (stiffness tensor) for a given strain tensor.
             generic, public :: stress => stress_3D, stress_2D
+            generic, public :: dstress_dstrain => dstress_dstrain_3D, dstress_dstrain_2D
     end type Base_elasticity
 
     interface
@@ -146,12 +149,12 @@ module mod_base_elasticity
             class(Base_elasticity), intent(in) :: self 
                 !! The elasticity model object.
             class(ten_2D2Osym), intent(in) :: strain
-                !! Input strain tensor (`ten_3D2Osym`).
+                !! Input strain tensor (`ten_2D2Osym`).
             type(ten_2D2Osym) :: res
-                !! Output stress tensor (`ten_3D2Osym`).
+                !! Output stress tensor (`ten_2D2Osym`).
         end function stress_interface_2D
 
-        pure function dstress_dstrain_interface(self, strain) result(res)
+        pure function dstress_dstrain_interface_3D(self, strain) result(res)
             !! Interface for the `dstress_dstrain` procedure.
             !! Must be implemented by concrete subtypes of `Base_elasticity`.
             use, intrinsic :: iso_fortran_env
@@ -163,7 +166,21 @@ module mod_base_elasticity
                 !! Input strain tensor (`ten_3D2Osym`) at which the tangent is evaluated.
             type(ten_3D4O3sym) :: res
                 !! Output tangent modulus tensor (`ten_3D4O3sym`).
-        end function dstress_dstrain_interface
+        end function dstress_dstrain_interface_3D
+
+        pure function dstress_dstrain_interface_2D(self, strain) result(res)
+            !! Interface for the `dstress_dstrain` procedure.
+            !! Must be implemented by concrete subtypes of `Base_elasticity`.
+            use, intrinsic :: iso_fortran_env
+            use tensors_types, only : ten_2D2Osym, ten_2D4O3sym
+            import Base_elasticity
+            class(Base_elasticity), intent(in) :: self
+                !! The elasticity model object.
+            class(ten_2D2Osym), intent(in) :: strain
+                !! Input strain tensor (`ten_3D2Osym`) at which the tangent is evaluated.
+            type(ten_2D4O3sym) :: res
+                !! Output tangent modulus tensor (`ten_3D4O3sym`).
+        end function dstress_dstrain_interface_2D
 
     end interface
 
