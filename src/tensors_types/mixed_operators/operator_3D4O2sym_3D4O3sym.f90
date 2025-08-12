@@ -11,6 +11,10 @@ module mod_operator_3D4O2sym_3D4O3sym
         module procedure ddot_3D4O3sym_3D4O3sym
     end interface
 
+     public :: assignment (=)
+     interface assignment (=)
+         module procedure assign_3D4O2sym_3D4O3sym
+     end interface
 
     contains
 
@@ -105,5 +109,13 @@ module mod_operator_3D4O2sym_3D4O3sym
         
     end function ddot_3D4O3sym_3D4O3sym
 
+
+    subroutine assign_3D4O2sym_3D4O3sym(self, b)
+        implicit none
+        class(ten_3D4O2sym), intent(inout) :: self
+        class(ten_3D4O3sym), intent(in) :: b
+
+        self%vals(1:6,1) = b%vals(1:6)
+    end subroutine
 
 end module mod_operator_3D4O2sym_3D4O3sym
