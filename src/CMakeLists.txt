@@ -67,7 +67,11 @@ add_library(umatlib
                      ${RETURN_MAPPING}
                      ${OPERATORS}
                      )
-target_compile_options(umatlib PRIVATE -c -cpp -fopenmp -fPIC -mcmodel=medium)
+target_compile_options(umatlib PRIVATE 
+                                -c -cpp -fopenmp -fPIC -mcmodel=medium
+                                $<$<CONFIG:Debug>:-g>
+                                $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
+                        )
 set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
 install(TARGETS umatlib EXPORT umatlib-targets LIBRARY)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib/ TYPE INCLUDE)
@@ -86,6 +90,15 @@ install(EXPORT umatlib-targets
 
 
 add_executable(my_exe main.f90)
+target_include_directories(my_exe PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
+target_compile_options(my_exe PRIVATE 
+                        $<$<CONFIG:Debug>:-g>
+                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
+                        )
+target_link_options(my_exe PRIVATE 
+                        $<$<CONFIG:Debug>:-g>
+                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
+                        )
 target_link_libraries(my_exe PRIVATE umatlib)
 
 

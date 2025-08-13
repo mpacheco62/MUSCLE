@@ -1,0 +1,22 @@
+    {
+      "buildType": {
+        "default": "Debug",
+        "choices": {
+          "Debug": {
+            "short": "Debug",
+            "long": "Debug build with optimizations disabled and debug info.",
+            "buildType": "Debug"
+          },
+          "Release": {
+            "short": "Release",
+            "long": "Release build with optimizations enabled and no debug info.",
+            "buildType": "Release"
+          },
+          "MyCustomVariant": {
+            "short": "Profile",
+            "long": "A custom build variant with specific flags.",
+            "buildType": "Profile"
+          }
+        }
+      }
+    }
