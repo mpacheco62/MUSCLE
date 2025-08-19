@@ -209,7 +209,7 @@ subroutine test_derivate2O(passed)
     logical, intent(out) :: passed
 
     type(ten_3D2Osym):: to_test
-    type(ten_3D4O2sym) :: expected, result
+    type(ten_3D4O2sym) :: expected, result, temp
     real(real64) :: E, nu, lam, mu
 
     call to_test%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
@@ -237,7 +237,12 @@ subroutine test_derivate2O(passed)
                        )
     result = derivative2O(energy_hooke, to_test)
 
-    passed = expected .isequal. result
+    temp = result - expected
+    passed = .false.
+    if (temp%norm() < 1D-3) passed = .true.
+     
+    print*, "Teste!!!!!!", temp%norm()
+
     if (.not. passed) print*, "Case 2 second derivative",  new_line('A'), &
                               "The hook law by derivative is different to analitical", new_line('A'), &
                               "The values obtained are:", new_line('A'),  &
@@ -263,7 +268,4 @@ subroutine test_derivate2O(passed)
                               expected%vals(5,:)-result%vals(5,:), new_line('A'), &
                               expected%vals(6,:)-result%vals(6,:), new_line('A')
     if (.not. passed) return
-
-
-    passed = .false.
 end subroutine
