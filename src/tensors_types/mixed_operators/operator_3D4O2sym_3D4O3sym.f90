@@ -114,8 +114,16 @@ module mod_operator_3D4O2sym_3D4O3sym
         implicit none
         class(ten_3D4O2sym), intent(inout) :: self
         class(ten_3D4O3sym), intent(in) :: b
+        real(real64) :: a(21), d(6,6)
+        a = b%vals
+        d(1,1)=a(1) ;  d(1,2)=a(7) ;  d(1,3)=a(12);  d(1,4)=a(16) ; d(1,5)=a(19) ; d(1,6)=a(21)
+        d(2,1)=a(7) ;  d(2,2)=a(2) ;  d(2,3)=a(8) ;  d(2,4)=a(13) ; d(2,5)=a(17) ; d(2,6)=a(20)
+        d(3,1)=a(12);  d(3,2)=a(8) ;  d(3,3)=a(3) ;  d(3,4)=a(9)  ; d(3,5)=a(14) ; d(3,6)=a(18)
+        d(4,1)=a(16);  d(4,2)=a(13);  d(4,3)=a(9) ;  d(4,4)=a(4)  ; d(4,5)=a(10) ; d(4,6)=a(15)
+        d(5,1)=a(19);  d(5,2)=a(17);  d(5,3)=a(14);  d(5,4)=a(10) ; d(5,5)=a(5)  ; d(5,6)=a(11)
+        d(6,1)=a(21);  d(6,2)=a(20);  d(6,3)=a(18);  d(6,4)=a(15) ; d(6,5)=a(11) ; d(6,6)=a(6)
 
-        self%vals(1:6,1) = b%vals(1:6)
+        call self%init(d)
     end subroutine
 
 end module mod_operator_3D4O2sym_3D4O3sym

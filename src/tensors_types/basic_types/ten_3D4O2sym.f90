@@ -143,6 +143,7 @@ module mod_ten_3D4O2sym
             generic, public :: init => init_ten_3D4O2sym, init2_ten_3D4O2sym
                 !! Generic interface for initialization.
             procedure, private :: init_ten_3D4O2sym, init2_ten_3D4O2sym 
+            procedure, public :: norm => norm_3D4O2sym
     end type ten_3D4O2sym
 
     public :: operator(.isequal.)
@@ -253,10 +254,26 @@ contains
                 norm = norm + abs(temp%vals(i,j))
             end do
         end do
-        
+
         if (norm/norm_max .gt. EPS) res=.false.
         if (norm/norm_max .le. EPS) res=.true.
     end function isequal_3D4O2sym
+
+    pure module function norm_3D4O2sym(a) result(norm)
+        !! Uses the L1 norm of the difference of the 6x6 Voigt matrices with relative
+        !! norm(A) = sum(|A_IJ|) for I,J=1..6
+        implicit none
+        class(ten_3D4O2sym), intent(in) :: a
+        real(real64) :: norm
+        integer :: i, j
+
+        norm = 0D0
+        do i=1,6
+            do j=1,6
+                norm = norm + abs(a%vals(i,j))
+            end do
+        end do
+    end function norm_3D4O2sym
 
     pure module function sum_3D4O2sym(a, b) result(res)
         implicit none
