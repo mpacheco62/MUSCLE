@@ -137,7 +137,7 @@ subroutine test_derivate(passed)
 
     passed = expected .isequal. result
 
-    if (.not. passed) print*, "Case 1",  new_line('A'), &
+    if (.not. passed) print*, "Case 1 Derivate",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
                               "The values obtained are:", result, new_line('A'), &
                               "The expected are:", expected
@@ -147,7 +147,7 @@ subroutine test_derivate(passed)
     result = derivative(fun_scalar_test2, to_test)
     passed = expected .isequal. result
 
-    if (.not. passed) print*, "Case 2",  new_line('A'), &
+    if (.not. passed) print*, "Case 2 Derivate",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
                               "The values obtained are:", result, new_line('A'), &
                               "The expected are:", expected
@@ -158,7 +158,7 @@ subroutine test_derivate(passed)
     result = derivative(fun_scalar_test3, to_test)
     passed = expected .isequal. result
 
-    if (.not. passed) print*, "Case 3",  new_line('A'), &
+    if (.not. passed) print*, "Case 3 Derivate",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
                               "The values obtained are:", result, new_line('A'), &
                               "The expected are:", expected
@@ -187,7 +187,7 @@ subroutine test_object_derivate(passed)
 
     passed = expected .isequal. result
 
-    if (.not. passed) print*, "Case 1",  new_line('A'), &
+    if (.not. passed) print*, "Case 1 object",  new_line('A')Derivate, &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
                               "The values obtained are:", result, new_line('A'), &
                               "The expected are:", expected
@@ -245,8 +245,7 @@ subroutine test_derivate2O(passed)
                               "The values obtained are:", new_line('A'),  &
                               result%vals(:), new_line('A'), &
                               "The expected are:", new_line('A'), &
-                              expected%vals(:), new_line('A'), &
-                              "Differences:", new_line('A'), &
-                              expected%vals(:)-result%vals(:), new_line('A')
+                              expected%vals(:), new_line('A')
+                             
     if (.not. passed) return
 end subroutine
