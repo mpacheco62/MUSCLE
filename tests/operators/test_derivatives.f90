@@ -187,7 +187,7 @@ subroutine test_object_derivate(passed)
 
     passed = expected .isequal. result
 
-    if (.not. passed) print*, "Case 1 object",  new_line('A')Derivate, &
+    if (.not. passed) print*, "Case 1 Derivate object",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
                               "The values obtained are:", result, new_line('A'), &
                               "The expected are:", expected
