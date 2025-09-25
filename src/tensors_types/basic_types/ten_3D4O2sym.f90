@@ -275,22 +275,6 @@ contains
         end do
     end function norm_3D4O2sym
 
-    pure function norm_3D4O2sym(a) result(norm)
-        !! Uses the L1 norm of the difference of the 6x6 Voigt matrices with relative
-        !! norm(A) = sum(|A_IJ|) for I,J=1..6
-        implicit none
-        class(ten_3D4O2sym), intent(in) :: a
-        real(real64) :: norm
-        integer :: i, j
-
-        norm = 0D0
-        do i=1,6
-            do j=1,6
-                norm = norm + abs(a%vals(i,j))
-            end do
-        end do
-    end function norm_3D4O2sym
-
     pure function sum_3D4O2sym(a, b) result(res)
         implicit none
         class(ten_3D4O2sym), intent(in) :: a, b
