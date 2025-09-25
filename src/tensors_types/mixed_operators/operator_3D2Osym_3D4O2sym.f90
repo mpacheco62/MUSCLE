@@ -14,7 +14,7 @@ module mod_operator_3D2Osym_3D4O2sym
 
     contains
 
-    pure module function ddot_3D4O2sym_3D2Osym(a, b) result(res)
+    pure function ddot_3D4O2sym_3D2Osym(a, b) result(res)
         !
         !  | (1111) (1122) (1133) (1112) (1123) (1113) |
         !  | (2211) (2222) (2233) (2212) (2223) (2213) |
@@ -33,7 +33,7 @@ module mod_operator_3D2Osym_3D4O2sym
         
     end function ddot_3D4O2sym_3D2Osym
 
-    pure module function ddot_3D2Osym_3D4O2sym(b, a) result(res)
+    pure function ddot_3D2Osym_3D4O2sym(b, a) result(res)
         !
         !  | (1111) (1122) (1133) (1112) (1123) (1113) |
         !  | (2211) (2222) (2233) (2212) (2223) (2213) |

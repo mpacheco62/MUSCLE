@@ -97,7 +97,7 @@ module mod_iden_4O3T
 
 contains
 
-    pure module function mul_I4O3T_real64(I2, a) result(res)
+    pure function mul_I4O3T_real64(I2, a) result(res)
         implicit none
         class(iden_4O3T), intent(in) :: I2
         real(real64), intent(in) :: a
@@ -105,7 +105,7 @@ contains
         res%val = a 
     end function mul_I4O3T_real64
 
-    pure module function mul_real64_I4O3T(a, I2) result(res)
+    pure function mul_real64_I4O3T(a, I2) result(res)
         implicit none
         class(iden_4O3T), intent(in) :: I2
         real(real64), intent(in) :: a
@@ -113,7 +113,7 @@ contains
         res%val = a 
     end function mul_real64_I4O3T
 
-    pure module function div_I4O3T_real64(I2, a) result(res)
+    pure function div_I4O3T_real64(I2, a) result(res)
         implicit none
         class(iden_4O3T), intent(in) :: I2
         real(real64), intent(in) :: a

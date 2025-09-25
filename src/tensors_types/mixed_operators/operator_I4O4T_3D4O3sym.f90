@@ -33,7 +33,7 @@ module mod_operator_I4O4T_3D4O3sym
 
     contains
 
-    ! pure module function ddot_I4O4T_3D4O3sym(I2, b) result(res)
+    ! pure function ddot_I4O4T_3D4O3sym(I2, b) result(res)
     !     implicit none
     !     class(iden_4O4T), intent(in) :: I2
     !     class(ten_3D4O3sym), intent(in) :: b
@@ -41,7 +41,7 @@ module mod_operator_I4O4T_3D4O3sym
     !     res = b%vals(1) + b%vals(2) + b%vals(3)
     ! end function ddot_I4O4T_3D4O3sym
 
-    ! pure module function ddot_3D4O3sym_I4O4T(b, I2) result(res)
+    ! pure function ddot_3D4O3sym_I4O4T(b, I2) result(res)
     !     implicit none
     !     class(iden_4O4T), intent(in) :: I2
     !     class(ten_3D4O3sym), intent(in) :: b
@@ -49,7 +49,7 @@ module mod_operator_I4O4T_3D4O3sym
     !     res = b%vals(1) + b%vals(2) + b%vals(3)
     ! end function ddot_3D4O3sym_I4O4T
 
-    pure module function sum_I4O4T_3D4O3sym(I2, a) result(res)
+    pure function sum_I4O4T_3D4O3sym(I2, a) result(res)
         implicit none
         class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a
@@ -60,7 +60,7 @@ module mod_operator_I4O4T_3D4O3sym
         ! no se cuentan 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
     end function sum_I4O4T_3D4O3sym
 
-    pure module function sum_3D4O3sym_I4O4T(a, I2) result(res)
+    pure function sum_3D4O3sym_I4O4T(a, I2) result(res)
         implicit none
         class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a
@@ -70,7 +70,7 @@ module mod_operator_I4O4T_3D4O3sym
         res%vals(7:21) = a%vals(7:21)
     end function sum_3D4O3sym_I4O4T
 
-    pure module function sub_I4O4T_3D4O3sym(I2, a) result(res)
+    pure function sub_I4O4T_3D4O3sym(I2, a) result(res)
         implicit none
         class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a
@@ -80,7 +80,7 @@ module mod_operator_I4O4T_3D4O3sym
         res%vals(7:21) = -a%vals(7:21)
     end function sub_I4O4T_3D4O3sym
 
-    pure module function sub_3D4O3sym_I4O4T(a, I2) result(res)
+    pure function sub_3D4O3sym_I4O4T(a, I2) result(res)
         implicit none
         class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a

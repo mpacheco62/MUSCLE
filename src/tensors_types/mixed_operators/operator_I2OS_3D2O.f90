@@ -31,7 +31,7 @@ module mod_operator_I2OS_3D2O
 
     contains
 
-    pure module function ddot_I2OS_3D2O(I2, b) result(res)
+    pure function ddot_I2OS_3D2O(I2, b) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         class(ten_3D2O), intent(in) :: b
@@ -39,7 +39,7 @@ module mod_operator_I2OS_3D2O
         res = I2%val*(b%vals(1) + b%vals(5) + b%vals(9))
     end function ddot_I2OS_3D2O
 
-    pure module function ddot_3D2O_I2OS(b, I2) result(res)
+    pure function ddot_3D2O_I2OS(b, I2) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         class(ten_3D2O), intent(in) :: b
@@ -47,7 +47,7 @@ module mod_operator_I2OS_3D2O
         res = I2%val*(b%vals(1) + b%vals(5) + b%vals(9))
     end function ddot_3D2O_I2OS
 
-    pure module function sum_I2OS_3D2O(I2, a) result(res)
+    pure function sum_I2OS_3D2O(I2, a) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -58,7 +58,7 @@ module mod_operator_I2OS_3D2O
         res%vals(9) = res%vals(9) + I2%val
     end function sum_I2OS_3D2O
 
-    pure module function sum_3D2O_I2OS(a, I2) result(res)
+    pure function sum_3D2O_I2OS(a, I2) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -69,7 +69,7 @@ module mod_operator_I2OS_3D2O
         res%vals(9) = res%vals(9) + I2%val
     end function sum_3D2O_I2OS
 
-    pure module function sub_I2OS_3D2O(I2, a) result(res)
+    pure function sub_I2OS_3D2O(I2, a) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -80,7 +80,7 @@ module mod_operator_I2OS_3D2O
         res%vals(9) = I2%val + res%vals(9)
     end function sub_I2OS_3D2O
 
-    pure module function sub_3D2O_I2OS(a, I2) result(res)
+    pure function sub_3D2O_I2OS(a, I2) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -91,7 +91,7 @@ module mod_operator_I2OS_3D2O
         res%vals(9) = res%vals(9) - I2%val
     end function sub_3D2O_I2OS
 
-    pure module function mul_I2OS_3D2O(I2, a) result(res)
+    pure function mul_I2OS_3D2O(I2, a) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -99,7 +99,7 @@ module mod_operator_I2OS_3D2O
         res%vals = I2%val * a%vals
     end function mul_I2OS_3D2O
 
-    pure module function mul_3D2O_I2OS(a, I2) result(res)
+    pure function mul_3D2O_I2OS(a, I2) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a

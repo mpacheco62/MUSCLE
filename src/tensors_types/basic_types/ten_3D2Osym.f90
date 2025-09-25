@@ -189,14 +189,14 @@ module mod_ten_3D2Osym
 
 contains
 
-    pure module subroutine ten_3D2Osym_real64_assign(a, b)
+    pure subroutine ten_3D2Osym_real64_assign(a, b)
         implicit none
         type(ten_3D2Osym), intent(out) :: a
         real(real64), intent(in) :: b
         a%vals = b
     end subroutine
 
-    pure module subroutine init_ten_3D2Osym(self, vals)
+    pure subroutine init_ten_3D2Osym(self, vals)
         !! Initializes a ten_3D2Osym tensor from a 6-element array (Voigt order).
         !!
         !! voigt notation used: 11, 22, 33, 12, 23, 13
@@ -206,7 +206,7 @@ contains
         self%vals = vals
     end subroutine
 
-    pure module subroutine init2_ten_3D2Osym(self, xx, yy, zz, xy, yz, xz)
+    pure subroutine init2_ten_3D2Osym(self, xx, yy, zz, xy, yz, xz)
         !! Initializes a ten_3D2Osym tensor from its 6 individual components.
         implicit none
         class(ten_3D2Osym), intent(inout) :: self
@@ -214,7 +214,7 @@ contains
         self%vals = (/xx, yy, zz, xy, yz, xz/)
     end subroutine
 
-    pure module function isequal_3D2Osym(a, b) result(res)
+    pure function isequal_3D2Osym(a, b) result(res)
         !! `.isequal.` Compares two ten_3D2Osym tensors for approximate equality.
         !! Uses a modified L1 norm (shear components weighted by 2) with relative
         !! and absolute tolerances (EPS, EPS_ABS).
@@ -243,28 +243,28 @@ contains
         
     end function isequal_3D2Osym
 
-    pure module function sum_3D2Osym(a, b) result(res)
+    pure function sum_3D2Osym(a, b) result(res)
         implicit none
         class(ten_3D2Osym), intent(in) :: a, b
         type(ten_3D2Osym) :: res
         res%vals = a%vals + b%vals
     end function sum_3D2Osym
 
-    pure module function sub_3D2Osym(a, b) result(res)
+    pure function sub_3D2Osym(a, b) result(res)
         implicit none
         class(ten_3D2Osym), intent(in) :: a, b
         type(ten_3D2Osym) :: res
         res%vals = a%vals - b%vals
     end function sub_3D2Osym
 
-    pure module function subU_3D2Osym(a) result(res)
+    pure function subU_3D2Osym(a) result(res)
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
         res%vals = -a%vals
     end function subU_3D2Osym
 
-    pure module function mul_real64_3D2Osym(a, b) result(res)
+    pure function mul_real64_3D2Osym(a, b) result(res)
         implicit none
         real(real64), intent(in) :: a
         class(ten_3D2Osym), intent(in) :: b
@@ -272,7 +272,7 @@ contains
         res%vals = a * b%vals
     end function mul_real64_3D2Osym
 
-    pure module function mul_3D2Osym_real64(a, b) result(res)
+    pure function mul_3D2Osym_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
         class(ten_3D2Osym), intent(in) :: a
@@ -280,7 +280,7 @@ contains
         res%vals =  a%vals * b
     end function mul_3D2Osym_real64
 
-    pure module function div_3D2Osym_real64(a, b) result(res)
+    pure function div_3D2Osym_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
         class(ten_3D2Osym), intent(in) :: a
@@ -288,7 +288,7 @@ contains
         res%vals = a%vals/b
     end function div_3D2Osym_real64
 
-    pure module function ddot_3D2Osym_3D2Osym(a, b) result(res)
+    pure function ddot_3D2Osym_3D2Osym(a, b) result(res)
         implicit none
         class(ten_3D2Osym), intent(in) :: a, b
         real(real64) :: res
@@ -300,7 +300,7 @@ contains
                              + 2*a%vals(6)*b%vals(6)
     end function ddot_3D2Osym_3D2Osym
 
-    pure module function dev_3D2Osym(a) result(res)
+    pure function dev_3D2Osym(a) result(res)
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
@@ -310,7 +310,7 @@ contains
         res%vals(4:6) = a%vals(4:6)
     end function dev_3D2Osym
 
-    pure module function square_3D2Osym(a) result(res)
+    pure function square_3D2Osym(a) result(res)
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
@@ -322,7 +322,7 @@ contains
         res%vals(6) = a%vals(6)*(a%vals(1) + a%vals(3)) + a%vals(4)*a%vals(5)
     end function square_3D2Osym
     
-    pure module function xx(a) result(res)
+    pure function xx(a) result(res)
         !! Accessor function for the xx (11) component (vals(1)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
@@ -330,7 +330,7 @@ contains
         res = a%vals(1)
     end function xx
     
-    pure module function yy(a) result(res)
+    pure function yy(a) result(res)
         !! Accessor function for the yy (22) component (vals(2)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
@@ -338,7 +338,7 @@ contains
         res = a%vals(2)
     end function yy
 
-    pure module function zz(a) result(res)
+    pure function zz(a) result(res)
         !! Accessor function for the zz (33) component (vals(3)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
@@ -346,7 +346,7 @@ contains
         res = a%vals(3)
     end function zz
 
-    pure module function xy(a) result(res)
+    pure function xy(a) result(res)
         !! Accessor function for the xy (12) component (vals(4)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
@@ -354,7 +354,7 @@ contains
         res = a%vals(4)
     end function xy
 
-    pure module function yz(a) result(res)
+    pure function yz(a) result(res)
         !! Accessor function for the yz (23) component (vals(5)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a
@@ -362,7 +362,7 @@ contains
         res = a%vals(5)
     end function yz
 
-    pure module function xz(a) result(res)
+    pure function xz(a) result(res)
         !! Accessor function for the xz (13) component (vals(6)).
         implicit none
         class(ten_3D2Osym), intent(in) :: a

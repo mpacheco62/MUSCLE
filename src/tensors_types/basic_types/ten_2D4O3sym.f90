@@ -174,7 +174,7 @@ module mod_ten_2D4O3sym
     end interface
 contains
     
-    pure module subroutine init_ten_2D4O3sym(self, vals)
+    pure subroutine init_ten_2D4O3sym(self, vals)
         !! Initializes a ten_2D4O3sym tensor from a 10-element array (compressed Voigt order).
         implicit none
         class(ten_2D4O3sym), intent(inout) :: self
@@ -182,7 +182,7 @@ contains
         self%vals = vals
     end subroutine init_ten_2D4O3sym
 
-    pure module subroutine init2_ten_2D4O3sym(self,             & 
+    pure subroutine init2_ten_2D4O3sym(self,             & 
                                               xxxx, yyyy, zzzz, &
                                               xyxy, xxyy, yyzz, &
                                               zzxy, xxzz, yyxy, &
@@ -210,7 +210,7 @@ contains
                       /)
     end subroutine
 
-    pure module function isequal_2D4O3sym(a, b) result(res)
+    pure function isequal_2D4O3sym(a, b) result(res)
         !! `.isequal.` Compares two ten_2D4O3sym tensors for approximate equality.
         !! Uses a modified L1 norm based on the 10 stored components, where components
         !! corresponding to off-diagonal Voigt matrix entries are weighted by 2.
@@ -232,28 +232,28 @@ contains
         if (norm/norm_max .le. EPS) res=.true.
     end function isequal_2D4O3sym
 
-    pure module function sum_2D4O3sym(a, b) result(res)
+    pure function sum_2D4O3sym(a, b) result(res)
         implicit none
         class(ten_2D4O3sym), intent(in) :: a, b
         type(ten_2D4O3sym) :: res
         res%vals = a%vals + b%vals
     end function sum_2D4O3sym
 
-    pure module function sub_2D4O3sym(a, b) result(res)
+    pure function sub_2D4O3sym(a, b) result(res)
         implicit none
         class(ten_2D4O3sym), intent(in) :: a, b
         type(ten_2D4O3sym) :: res
         res%vals = a%vals - b%vals
     end function sub_2D4O3sym
 
-    pure module function subU_2D4O3sym(a) result(res)
+    pure function subU_2D4O3sym(a) result(res)
         implicit none
         class(ten_2D4O3sym), intent(in) :: a
         type(ten_2D4O3sym) :: res
         res%vals = -a%vals
     end function subU_2D4O3sym
 
-    pure module function mul_real64_2D4O3sym(a, b) result(res)
+    pure function mul_real64_2D4O3sym(a, b) result(res)
         implicit none
         real(real64), intent(in) :: a
         class(ten_2D4O3sym), intent(in) :: b
@@ -261,7 +261,7 @@ contains
         res%vals = a * b%vals
     end function mul_real64_2D4O3sym
 
-    pure module function mul_2D4O3sym_real64(b, a) result(res)
+    pure function mul_2D4O3sym_real64(b, a) result(res)
         implicit none
         real(real64), intent(in) :: a
         class(ten_2D4O3sym), intent(in) :: b
@@ -269,7 +269,7 @@ contains
         res%vals = a * b%vals
     end function mul_2D4O3sym_real64
 
-    pure module function div_2D4O3sym_real64(b, a) result(res)
+    pure function div_2D4O3sym_real64(b, a) result(res)
         implicit none
         real(real64), intent(in) :: a
         class(ten_2D4O3sym), intent(in) :: b
@@ -277,7 +277,7 @@ contains
         res%vals = b%vals/a
     end function div_2D4O3sym_real64
 
-    ! pure module function inv_2D4O3sym(a) result(res)
+    ! pure function inv_2D4O3sym(a) result(res)
     !     !! `.inv.` Computes the inverse of a ten_2D4O3sym tensor.
     !     !! Reconstructs the 6x6 symmetric Voigt matrix, inverts it using `M66INV`,
     !     !! and extracts the 21 independent components of the inverse, applying

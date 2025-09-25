@@ -18,7 +18,7 @@ module mod_operator_3D4O2sym_3D4O3sym
 
     contains
 
-    pure module function ddot_3D4O3sym_3D4O3sym(aT, bT) result(res)
+    pure function ddot_3D4O3sym_3D4O3sym(aT, bT) result(res)
         !
         !  | ( 1:1111) ( 7:1122) (12:1133) (16:1112) (19:1123) (21:1113) |
         !  | ( 7:2211) ( 2:2222) ( 8:2233) (13:2212) (17:2223) (20:2213) |

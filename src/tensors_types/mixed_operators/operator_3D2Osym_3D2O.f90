@@ -28,7 +28,7 @@ module mod_operator_3D2Osym_3D2O
 !     end interface
 
 contains
-    pure module function dot_3D2Osym_3D2Osym(a, b) result(res)
+    pure function dot_3D2Osym_3D2Osym(a, b) result(res)
         implicit none
         class(ten_3D2Osym), intent(in) :: a
         class(ten_3D2Osym), intent(in) :: b

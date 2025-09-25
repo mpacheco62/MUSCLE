@@ -27,7 +27,7 @@ module mod_operator_I4O3T_3D4O2sym
     
     contains
 
-    pure module function sum_I4O3T_3D4O2sym(I2, a) result(res)
+    pure function sum_I4O3T_3D4O2sym(I2, a) result(res)
         implicit none
         class(iden_4O3T), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
@@ -36,7 +36,7 @@ module mod_operator_I4O3T_3D4O2sym
         res%vals(1:3, 1:3) = res%vals(1:3, 1:3) + 1D0
     end function sum_I4O3T_3D4O2sym
 
-    pure module function sum_3D4O2sym_I4O3T(a, I2) result(res)
+    pure function sum_3D4O2sym_I4O3T(a, I2) result(res)
         implicit none
         class(iden_4O3T), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
@@ -45,7 +45,7 @@ module mod_operator_I4O3T_3D4O2sym
         res%vals(1:3, 1:3) = res%vals(1:3, 1:3) + 1D0
     end function sum_3D4O2sym_I4O3T
 
-    pure module function sub_I4O3T_3D4O2sym(I2, a) result(res)
+    pure function sub_I4O3T_3D4O2sym(I2, a) result(res)
         implicit none
         class(iden_4O3T), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a
@@ -54,7 +54,7 @@ module mod_operator_I4O3T_3D4O2sym
         res%vals(1:3, 1:3) = res%vals(1:3, 1:3) + 1D0
     end function sub_I4O3T_3D4O2sym
 
-    pure module function sub_3D4O2sym_I4O3T(a, I2) result(res)
+    pure function sub_3D4O2sym_I4O3T(a, I2) result(res)
         implicit none
         class(iden_4O3T), intent(in) :: I2
         type(ten_3D4O2sym), intent(in) :: a

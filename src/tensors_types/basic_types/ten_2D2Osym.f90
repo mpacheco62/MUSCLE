@@ -183,14 +183,14 @@ module mod_ten_2D2Osym
 
 contains
 
-    pure module subroutine ten_2D2Osym_real64_assign(a, b)
+    pure subroutine ten_2D2Osym_real64_assign(a, b)
         implicit none
         type(ten_2D2Osym), intent(out) :: a
         real(real64), intent(in) :: b
         a%vals = b
     end subroutine
 
-    pure module subroutine init_ten_2D2Osym(self, vals)
+    pure subroutine init_ten_2D2Osym(self, vals)
         !! Initializes a ten_2D2Osym tensor from a 6-element array (Voigt order).
         !!
         !! voigt notation used: 11, 22, 33, 12, 23, 13
@@ -200,7 +200,7 @@ contains
         self%vals = vals
     end subroutine
 
-    pure module subroutine init2_ten_2D2Osym(self, xx, yy, zz, xy)
+    pure subroutine init2_ten_2D2Osym(self, xx, yy, zz, xy)
         !! Initializes a ten_2D2Osym tensor from its 6 individual components.
         implicit none
         class(ten_2D2Osym), intent(inout) :: self
@@ -208,7 +208,7 @@ contains
         self%vals = (/xx, yy, zz, xy/)
     end subroutine
 
-    pure module function isequal_2D2Osym(a, b) result(res)
+    pure function isequal_2D2Osym(a, b) result(res)
         !! `.isequal.` Compares two ten_2D2Osym tensors for approximate equality.
         !! Uses a modified L1 norm (shear components weighted by 2) with relative
         !! and absolute tolerances (EPS, EPS_ABS).
@@ -237,28 +237,28 @@ contains
         
     end function isequal_2D2Osym
 
-    pure module function sum_2D2Osym(a, b) result(res)
+    pure function sum_2D2Osym(a, b) result(res)
         implicit none
         class(ten_2D2Osym), intent(in) :: a, b
         type(ten_2D2Osym) :: res
         res%vals = a%vals + b%vals
     end function sum_2D2Osym
 
-    pure module function sub_2D2Osym(a, b) result(res)
+    pure function sub_2D2Osym(a, b) result(res)
         implicit none
         class(ten_2D2Osym), intent(in) :: a, b
         type(ten_2D2Osym) :: res
         res%vals = a%vals - b%vals
     end function sub_2D2Osym
 
-    pure module function subU_2D2Osym(a) result(res)
+    pure function subU_2D2Osym(a) result(res)
         implicit none
         class(ten_2D2Osym), intent(in) :: a
         type(ten_2D2Osym) :: res
         res%vals = -a%vals
     end function subU_2D2Osym
 
-    pure module function mul_real64_2D2Osym(a, b) result(res)
+    pure function mul_real64_2D2Osym(a, b) result(res)
         implicit none
         real(real64), intent(in) :: a
         class(ten_2D2Osym), intent(in) :: b
@@ -266,7 +266,7 @@ contains
         res%vals = a * b%vals
     end function mul_real64_2D2Osym
 
-    pure module function mul_2D2Osym_real64(a, b) result(res)
+    pure function mul_2D2Osym_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
         class(ten_2D2Osym), intent(in) :: a
@@ -274,7 +274,7 @@ contains
         res%vals =  a%vals * b
     end function mul_2D2Osym_real64
 
-    pure module function div_2D2Osym_real64(a, b) result(res)
+    pure function div_2D2Osym_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
         class(ten_2D2Osym), intent(in) :: a
@@ -282,7 +282,7 @@ contains
         res%vals = a%vals/b
     end function div_2D2Osym_real64
 
-    pure module function ddot_2D2Osym_2D2Osym(a, b) result(res)
+    pure function ddot_2D2Osym_2D2Osym(a, b) result(res)
         implicit none
         class(ten_2D2Osym), intent(in) :: a, b
         real(real64) :: res
@@ -292,7 +292,7 @@ contains
                              + 2*a%vals(4)*b%vals(4)
     end function ddot_2D2Osym_2D2Osym
 
-    pure module function dev_2D2Osym(a) result(res)
+    pure function dev_2D2Osym(a) result(res)
         implicit none
         class(ten_2D2Osym), intent(in) :: a
         type(ten_2D2Osym) :: res
@@ -302,7 +302,7 @@ contains
         res%vals(4) = a%vals(4)
     end function dev_2D2Osym
 
-    pure module function square_2D2Osym(a) result(res)
+    pure function square_2D2Osym(a) result(res)
         implicit none
         class(ten_2D2Osym), intent(in) :: a
         type(ten_2D2Osym) :: res
@@ -312,7 +312,7 @@ contains
         res%vals(4) = a%vals(4)*(a%vals(1) + a%vals(2))
     end function square_2D2Osym
     
-    pure module function xx(a) result(res)
+    pure function xx(a) result(res)
         !! Accessor function for the xx (11) component (vals(1)).
         implicit none
         class(ten_2D2Osym), intent(in) :: a
@@ -320,7 +320,7 @@ contains
         res = a%vals(1)
     end function xx
     
-    pure module function yy(a) result(res)
+    pure function yy(a) result(res)
         !! Accessor function for the yy (22) component (vals(2)).
         implicit none
         class(ten_2D2Osym), intent(in) :: a
@@ -328,7 +328,7 @@ contains
         res = a%vals(2)
     end function yy
 
-    pure module function zz(a) result(res)
+    pure function zz(a) result(res)
         !! Accessor function for the zz (33) component (vals(3)).
         implicit none
         class(ten_2D2Osym), intent(in) :: a
@@ -336,7 +336,7 @@ contains
         res = a%vals(3)
     end function zz
 
-    pure module function xy(a) result(res)
+    pure function xy(a) result(res)
         !! Accessor function for the xy (12) component (vals(4)).
         implicit none
         class(ten_2D2Osym), intent(in) :: a

@@ -19,7 +19,7 @@ module mod_operator_2D2Osym_2D4O3sym
 
     contains
 
-    pure module function ddot_2D4O3sym_2D2Osym(a, b) result(res)
+    pure function ddot_2D4O3sym_2D2Osym(a, b) result(res)
         !
         !  | ( 1:1111) ( 5:1122) ( 8:1133) (10:1112) |
         !  | ( 5:2211) ( 2:2222) ( 6:2233) ( 9:2212) |
@@ -62,7 +62,7 @@ module mod_operator_2D2Osym_2D4O3sym
         
     end function ddot_2D4O3sym_2D2Osym
 
-    pure module function ddot_2D2Osym_2D4O3sym(b, a) result(res)
+    pure function ddot_2D2Osym_2D4O3sym(b, a) result(res)
         !
         !  | ( 1:1111) ( 5:1122) ( 8:1133) (10:1112) |
         !  | ( 5:2211) ( 2:2222) ( 6:2233) ( 9:2212) |
@@ -105,7 +105,7 @@ module mod_operator_2D2Osym_2D4O3sym
    
     end function ddot_2D2Osym_2D4O3sym
 
-    pure module function tdot_2D2Osym_2D2Osym(a, b) result(res)
+    pure function tdot_2D2Osym_2D2Osym(a, b) result(res)
         !
         !  | ( 1:1111) ( 5:1122) ( 8:1133) (10:1112) |
         !  | ( 5:2211) ( 2:2222) ( 6:2233) ( 9:2212) |

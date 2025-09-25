@@ -19,7 +19,7 @@ module mod_operator_3D2Osym_3D4O3sym
 
     contains
 
-    pure module function ddot_3D4O3sym_3D2Osym(a, b) result(res)
+    pure function ddot_3D4O3sym_3D2Osym(a, b) result(res)
         !
         !  | ( 1:1111) ( 7:1122) (12:1133) (16:1112) (19:1123) (21:1113) |
         !  | ( 7:2211) ( 2:2222) ( 8:2233) (13:2212) (17:2223) (20:2213) |
@@ -90,7 +90,7 @@ module mod_operator_3D2Osym_3D4O3sym
         
     end function ddot_3D4O3sym_3D2Osym
 
-    pure module function ddot_3D2Osym_3D4O3sym(b, a) result(res)
+    pure function ddot_3D2Osym_3D4O3sym(b, a) result(res)
         !
         !  | ( 1:1111) ( 7:1122) (12:1133) (16:1112) (19:1123) (21:1113) |
         !  | ( 7:2211) ( 2:2222) ( 8:2233) (13:2212) (17:2223) (20:2213) |
@@ -161,7 +161,7 @@ module mod_operator_3D2Osym_3D4O3sym
         
     end function ddot_3D2Osym_3D4O3sym
 
-    pure module function tdot_3D2Osym_3D2Osym(a, b) result(res)
+    pure function tdot_3D2Osym_3D2Osym(a, b) result(res)
         implicit none
         class(ten_3D2Osym), intent(in) :: a, b
         type(ten_3D4O3sym) :: res

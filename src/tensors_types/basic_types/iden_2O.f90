@@ -206,14 +206,14 @@ contains
         res%val = a 
     end function mul_real64_I2O
 
-    pure module function mul_I2O_I2O(I2a, I2b) result(res)
+    pure function mul_I2O_I2O(I2a, I2b) result(res)
         !! `\cdot` Multiplies two standard identity tensors. Conceptually I*I = I. Result is the standard identity
         implicit none
         class(iden_2O), intent(in) :: I2a, I2b
         type(iden_2O) :: res
     end function mul_I2O_I2O
 
-    pure module function div_I2O_real64(I2, a) result(res)
+    pure function div_I2O_real64(I2, a) result(res)
         !! Divides the standard identity tensor by a scalar. Result is a scaled identity.
         implicit none
         class(iden_2O), intent(in) :: I2

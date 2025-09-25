@@ -31,7 +31,7 @@ module mod_operator_I2O_2D2Osym
 
     contains
 
-    pure module function ddot_I2O_2D2Osym(I2, b) result(res)
+    pure function ddot_I2O_2D2Osym(I2, b) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         class(ten_2D2Osym), intent(in) :: b
@@ -39,7 +39,7 @@ module mod_operator_I2O_2D2Osym
         res = b%vals(1) + b%vals(2) + b%vals(3)
     end function ddot_I2O_2D2Osym
 
-    pure module function ddot_2D2Osym_I2O(b, I2) result(res)
+    pure function ddot_2D2Osym_I2O(b, I2) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         class(ten_2D2Osym), intent(in) :: b
@@ -47,7 +47,7 @@ module mod_operator_I2O_2D2Osym
         res = b%vals(1) + b%vals(2) + b%vals(3)
     end function ddot_2D2Osym_I2O
 
-    pure module function sum_I2O_2D2Osym(I2, a) result(res)
+    pure function sum_I2O_2D2Osym(I2, a) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a
@@ -56,7 +56,7 @@ module mod_operator_I2O_2D2Osym
         res%vals(1:3) = res%vals(1:3) + 1D0
     end function sum_I2O_2D2Osym
 
-    pure module function sum_2D2Osym_I2O(a, I2) result(res)
+    pure function sum_2D2Osym_I2O(a, I2) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a
@@ -65,7 +65,7 @@ module mod_operator_I2O_2D2Osym
         res%vals(1:3) = res%vals(1:3) + 1D0
     end function sum_2D2Osym_I2O
 
-    pure module function sub_I2O_2D2Osym(I2, a) result(res)
+    pure function sub_I2O_2D2Osym(I2, a) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a
@@ -74,7 +74,7 @@ module mod_operator_I2O_2D2Osym
         res%vals(1:3) = 1d0 + res%vals(1:3)
     end function sub_I2O_2D2Osym
 
-    pure module function sub_2D2Osym_I2O(a, I2) result(res)
+    pure function sub_2D2Osym_I2O(a, I2) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a
@@ -83,7 +83,7 @@ module mod_operator_I2O_2D2Osym
         res%vals(1:3) = res%vals(1:3) - 1D0
     end function sub_2D2Osym_I2O
 
-    pure module function mul_I2O_2D2Osym(I2, a) result(res)
+    pure function mul_I2O_2D2Osym(I2, a) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a
@@ -91,7 +91,7 @@ module mod_operator_I2O_2D2Osym
         res%vals = a%vals
     end function mul_I2O_2D2Osym
 
-    pure module function mul_2D2Osym_I2O(a, I2) result(res)
+    pure function mul_2D2Osym_I2O(a, I2) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a

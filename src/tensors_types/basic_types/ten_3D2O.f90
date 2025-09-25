@@ -176,14 +176,14 @@ module mod_ten_3D2O
 
 contains
 
-    pure module subroutine ten_3D2O_real64_assign(a, b)
+    pure subroutine ten_3D2O_real64_assign(a, b)
         implicit none
         type(ten_3D2O), intent(out) :: a
         real(real64), intent(in) :: b
         a%vals = b
     end subroutine ten_3D2O_real64_assign
 
-    module subroutine init_ten_3D2O(self, vals)
+    subroutine init_ten_3D2O(self, vals)
         !! Initializes a ten_3D2O tensor from a 9-element array (assumed column-major).
         implicit none
         class(ten_3D2O), intent(inout) :: self
@@ -191,7 +191,7 @@ contains
         self%vals = vals
     end subroutine init_ten_3D2O
 
-    module subroutine init2_ten_3D2O(self, xx, xy, xz, yx, yy, yz, zx, zy, zz)
+    subroutine init2_ten_3D2O(self, xx, xy, xz, yx, yy, yz, zx, zy, zz)
         !! Initializes a ten_3D2O tensor from its 9 individual components.
         !! Input order is (xx, xy, xz, yx, yy, yz, zx, zy, zz).
         !! Internal storage is column-major: (xx, yx, zx, xy, yy, zy, xz, yz, zz).
@@ -201,7 +201,7 @@ contains
         self%vals = (/xx, yx, zx, xy, yy, zy, xz, yz, zz/)
     end subroutine init2_ten_3D2O
 
-    pure module function isequal_3D2O(a, b) result(res)
+    pure function isequal_3D2O(a, b) result(res)
         !! `.isequal.` Compares two ten_3D2O tensors for approximate equality.
         !! Uses the standard L1 norm with relative and absolute tolerances (EPS, EPS_ABS).
         !! norm(a) = sum(|a_ij|) for all i,j
@@ -232,7 +232,7 @@ contains
         
     end function isequal_3D2O
 
-    pure module function sum_3D2O(a, b) result(res)
+    pure function sum_3D2O(a, b) result(res)
         implicit none
         class(ten_3D2O), intent(in) :: a, b
         type(ten_3D2O) :: res
@@ -240,7 +240,7 @@ contains
         res%vals = a%vals + b%vals
     end function sum_3D2O
 
-    pure module function sub_3D2O(a, b) result(res)
+    pure function sub_3D2O(a, b) result(res)
         implicit none
         class(ten_3D2O), intent(in) :: a, b
         type(ten_3D2O) :: res
@@ -248,7 +248,7 @@ contains
         res%vals = a%vals - b%vals
     end function sub_3D2O
 
-    pure module function subU_3D2O(a) result(res)
+    pure function subU_3D2O(a) result(res)
         implicit none
         class(ten_3D2O), intent(in) :: a
         type(ten_3D2O) :: res
@@ -256,7 +256,7 @@ contains
         res%vals = -a%vals
     end function subU_3D2O
 
-    pure module function mul_real64_3D2O(a, b) result(res)
+    pure function mul_real64_3D2O(a, b) result(res)
         implicit none
         real(real64), intent(in) :: a
         class(ten_3D2O), intent(in) :: b
@@ -265,7 +265,7 @@ contains
         res%vals = a * b%vals
     end function mul_real64_3D2O
 
-    pure module function mul_3D2O_real64(a, b) result(res)
+    pure function mul_3D2O_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
         class(ten_3D2O), intent(in) :: a
@@ -274,7 +274,7 @@ contains
         res%vals =  a%vals * b
     end function mul_3D2O_real64
 
-    pure module function div_3D2O_real64(a, b) result(res)
+    pure function div_3D2O_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
         class(ten_3D2O), intent(in) :: a
@@ -283,7 +283,7 @@ contains
         res%vals = a%vals/b
     end function div_3D2O_real64
 
-    pure module function ddot_3D2O_3D2O(a, b) result(res)
+    pure function ddot_3D2O_3D2O(a, b) result(res)
         implicit none
         class(ten_3D2O), intent(in) :: a, b
         real(real64) :: res
@@ -300,7 +300,7 @@ contains
     
     end function ddot_3D2O_3D2O
 
-    pure module function dev_3D2O(a) result(res)
+    pure function dev_3D2O(a) result(res)
         implicit none
         class(ten_3D2O), intent(in) :: a
         type(ten_3D2O) :: res

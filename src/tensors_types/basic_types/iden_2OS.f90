@@ -128,7 +128,7 @@ module mod_iden_2OS
 
     contains
 
-    module subroutine init_iden_2OS(self, val)
+    subroutine init_iden_2OS(self, val)
         !! Initializes or sets the scaling factor of an `iden_2OS` object.
         implicit none
         class(iden_2OS), intent(inout) :: self
@@ -138,35 +138,35 @@ module mod_iden_2OS
         self%val = val
     end subroutine init_iden_2OS
 
-    pure module function sum_I2OS_I2OS(I2a, I2b) result(res)
+    pure function sum_I2OS_I2OS(I2a, I2b) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2a, I2b
         type(iden_2OS) :: res
         res%val = I2a%val + I2b%val
     end function sum_I2OS_I2OS
 
-    pure module function subU_I2OS(I2a) result(res)
+    pure function subU_I2OS(I2a) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2a
         type(iden_2OS) :: res
         res%val = -I2a%val
     end function subU_I2OS
 
-    pure module function sub_I2OS_I2OS(I2a, I2b) result(res)
+    pure function sub_I2OS_I2OS(I2a, I2b) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2a, I2b
         type(iden_2OS) :: res
         res%val = I2a%val - I2b%val
     end function sub_I2OS_I2OS
 
-    pure module function mul_I2OS_I2OS(I2a, I2b) result(res)
+    pure function mul_I2OS_I2OS(I2a, I2b) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2a, I2b
         type(iden_2OS) :: res
         res%val = I2a%val*I2b%val
     end function mul_I2OS_I2OS
 
-    pure module function mul_I2OS_real64(IMod, a) result(res)
+    pure function mul_I2OS_real64(IMod, a) result(res)
         implicit none
         class(iden_2OS), intent(in) :: IMod
         real(real64), intent(in) :: a
@@ -174,7 +174,7 @@ module mod_iden_2OS
         res%val = IMod%val * a 
     end function mul_I2OS_real64
 
-    pure module function mul_real64_I2OS(a, IMod) result(res)
+    pure function mul_real64_I2OS(a, IMod) result(res)
         implicit none
         class(iden_2OS), intent(in) :: IMod
         real(real64), intent(in) :: a
@@ -182,7 +182,7 @@ module mod_iden_2OS
         res%val = IMod%val * a 
     end function mul_real64_I2OS
 
-    pure module function div_I2OS_real64(IMod, a) result(res)
+    pure function div_I2OS_real64(IMod, a) result(res)
         implicit none
         class(iden_2OS), intent(in) :: IMod
         real(real64), intent(in) :: a

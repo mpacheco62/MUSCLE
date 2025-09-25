@@ -25,7 +25,7 @@ module mod_operator_I2OS_2D2Osym
 
     contains
 
-    pure module function ddot_I2OS_2D2Osym(I2, b) result(res)
+    pure function ddot_I2OS_2D2Osym(I2, b) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         class(ten_2D2Osym), intent(in) :: b
@@ -33,7 +33,7 @@ module mod_operator_I2OS_2D2Osym
         res = I2%val*(b%vals(1) + b%vals(2) + b%vals(3))
     end function ddot_I2OS_2D2Osym
 
-    pure module function ddot_2D2Osym_I2OS(b, I2) result(res)
+    pure function ddot_2D2Osym_I2OS(b, I2) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         class(ten_2D2Osym), intent(in) :: b
@@ -41,7 +41,7 @@ module mod_operator_I2OS_2D2Osym
         res = I2%val*(b%vals(1) + b%vals(2) + b%vals(3))
     end function ddot_2D2Osym_I2OS
 
-    pure module function sum_I2OS_2D2Osym(I2, a) result(res)
+    pure function sum_I2OS_2D2Osym(I2, a) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a
@@ -50,7 +50,7 @@ module mod_operator_I2OS_2D2Osym
         res%vals(1:3) = res%vals(1:3) + I2%val
     end function sum_I2OS_2D2Osym
 
-    pure module function sum_2D2Osym_I2OS(a, I2) result(res)
+    pure function sum_2D2Osym_I2OS(a, I2) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a
@@ -59,7 +59,7 @@ module mod_operator_I2OS_2D2Osym
         res%vals(1:3) = res%vals(1:3) + I2%val
     end function sum_2D2Osym_I2OS
 
-    pure module function sub_I2OS_2D2Osym(I2, a) result(res)
+    pure function sub_I2OS_2D2Osym(I2, a) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a
@@ -68,7 +68,7 @@ module mod_operator_I2OS_2D2Osym
         res%vals(1:3) = I2%val + res%vals(1:3)
     end function sub_I2OS_2D2Osym
 
-    pure module function sub_2D2Osym_I2OS(a, I2) result(res)
+    pure function sub_2D2Osym_I2OS(a, I2) result(res)
         implicit none
         class(iden_2OS), intent(in) :: I2
         type(ten_2D2Osym), intent(in) :: a

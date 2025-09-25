@@ -31,7 +31,7 @@ module mod_operator_I2O_3D2O
 
     contains
 
-    pure module function ddot_I2O_3D2O(I2, b) result(res)
+    pure function ddot_I2O_3D2O(I2, b) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         class(ten_3D2O), intent(in) :: b
@@ -39,7 +39,7 @@ module mod_operator_I2O_3D2O
         res = b%vals(1) + b%vals(5) + b%vals(9)
     end function ddot_I2O_3D2O
 
-    pure module function ddot_3D2O_I2O(b, I2) result(res)
+    pure function ddot_3D2O_I2O(b, I2) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         class(ten_3D2O), intent(in) :: b
@@ -47,7 +47,7 @@ module mod_operator_I2O_3D2O
         res = b%vals(1) + b%vals(5) + b%vals(9)
     end function ddot_3D2O_I2O
 
-    pure module function sum_I2O_3D2O(I2, a) result(res)
+    pure function sum_I2O_3D2O(I2, a) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -56,7 +56,7 @@ module mod_operator_I2O_3D2O
         res%vals(1:3) = res%vals(1:3) + 1D0
     end function sum_I2O_3D2O
 
-    pure module function sum_3D2O_I2O(a, I2) result(res)
+    pure function sum_3D2O_I2O(a, I2) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -67,7 +67,7 @@ module mod_operator_I2O_3D2O
         res%vals(9) = res%vals(9) + 1D0
     end function sum_3D2O_I2O
 
-    pure module function sub_I2O_3D2O(I2, a) result(res)
+    pure function sub_I2O_3D2O(I2, a) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -78,7 +78,7 @@ module mod_operator_I2O_3D2O
         res%vals(9) = 1d0 + res%vals(9)
     end function sub_I2O_3D2O
 
-    pure module function sub_3D2O_I2O(a, I2) result(res)
+    pure function sub_3D2O_I2O(a, I2) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -89,7 +89,7 @@ module mod_operator_I2O_3D2O
         res%vals(9) = res%vals(9) - 1D0
     end function sub_3D2O_I2O
 
-    pure module function mul_I2O_3D2O(I2, a) result(res)
+    pure function mul_I2O_3D2O(I2, a) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
@@ -97,7 +97,7 @@ module mod_operator_I2O_3D2O
         res%vals = a%vals
     end function mul_I2O_3D2O
 
-    pure module function mul_3D2O_I2O(a, I2) result(res)
+    pure function mul_3D2O_I2O(a, I2) result(res)
         implicit none
         class(iden_2O), intent(in) :: I2
         type(ten_3D2O), intent(in) :: a
