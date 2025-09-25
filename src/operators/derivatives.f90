@@ -125,17 +125,18 @@ module derivatives
 
 
     pure function derivative2O_scalar_3D2Osym(func, mat, eps) result(res)
-        use tensors_types, only : ten_3D2Osym, ten_3D4O2sym
+        use tensors_types, only : ten_3D2Osym, ten_3D4O3sym,ten_3D4O2sym
         use, intrinsic :: iso_fortran_env
         implicit none
 
         procedure(f_scalar_3D2Osym) :: func
         type(ten_3D2Osym), intent(in) :: mat
         real(real64), intent(in), optional :: eps
-        type(ten_3D4O2sym) :: res
+        type(ten_3D4O2sym) :: a
+        type(ten_3D4O3sym) :: res
         type(ten_3D2Osym) :: mat_var
         integer :: i,j
-        real(real64), parameter :: DIVEPS = 1D-7, MAX_EPS=1D-40  !! Relative and minimum absolute step size
+        real(real64), parameter :: DIVEPS = 1D-4, MAX_EPS=1D-40  !! Relative and minimum absolute step size
         real(real64) :: val_func, val_func_forw, val_func_back
         real(real64) :: epsr,f_pp, f_pm, f_mp, f_mm
 
@@ -152,76 +153,52 @@ module derivatives
         !  | (4,1) (4,2) (4,3) (4,4) (4,5) (4,6) |   <- xyxx, xyyy, xyzz, xyxy, xyyz, xyxz
         !  | (5,1) (5,2) (5,3) (5,4) (5,5) (5,6) |   <- yzxx, yzyy, yzzz, yzxy, yzyz, yzxz
         !  | (6,1) (6,2) (6,3) (6,4) (6,5) (6,6) |   <- xzxx, xzyy, xzzz, xzxy, xzyz, xzxz
-        ! res%vals = 0.0D0
         !--------------------------------------------------------------------------------------
-        !Para las variables xxxx,yyyy,zzzz (1,1),(2,2),(3,3)
+        !! Voigt Matrix (Indices IJ):
+        !! ```
+        !! | 11 12 13 14 15 16 |
+        !! |    22 23 24 25 26 |
+        !! |       33 34 35 36 |
+        !! |          44 45 46 |
+        !! |             55 56 |
+        !! |                66 |
+        !! ```
+        !! Storage order in `vals(1:21)`:
+        !! (11, 22, 33, 44, 55, 66, 12, 23, 34, 45, 56, 13, 24, 35, 46, 14, 25, 36, 15, 26, 16)
+        a%vals = 0.0D0
+        res%vals = 0.0D0
         mat_var = mat
-        do i=1,3
-         mat_var%vals(i) = mat%vals(i) + 2*epsr; val_func_forw = func(mat_var)
-         mat_var%vals(i) = mat%vals(i) - 2*epsr; val_func_back = func(mat_var)
-         res%vals(i,i) = (val_func_forw - 2D0*func(mat) + val_func_back)/(4*epsr*epsr)
-         mat_var%vals(i) = mat%vals(i)
-        end do
-        !--------------------------------------------------------------------------------------
-        !Para las variables xyxy,yzyz,xzxz (4,4),(5,5),(6,6)
-        do i=4,6
-         mat_var%vals(i) = mat%vals(i) + epsr; val_func_forw = func(mat_var)
-         mat_var%vals(i) = mat%vals(i) - epsr; val_func_back = func(mat_var)
-         res%vals(i,i) = (val_func_forw - 2D0*func(mat) + val_func_back)/(4*epsr*epsr)
-         mat_var%vals(i) = mat%vals(i)
-        end do
-        !---------------------------------------------------------------------------------------
-        !Para las otras variables, como xxyy, (1,2) (1,3),(2,3),(2,1),(3,1) (3,2)
+        !Para las variables xxxx,yyyy,zzzz (1,1),(2,2),(3,3) con el if
+        !Para las otras variables, como xxyy, (1,2) (1,3),(2,3),(2,1),(3,1) (3,2) con el else
         do i=1,3
             do j=1,3
-                if (i == j) cycle 
-                ! (+epsr, +epsr)
-                mat_var%vals(i) = mat%vals(i) + epsr
-                mat_var%vals(j) = mat%vals(j) + epsr   
-                f_pp = func(mat_var)
-                ! (+epsr, -epsr)
-                mat_var%vals(i) = mat%vals(i) + epsr
-                mat_var%vals(j) = mat%vals(j) - epsr
-                f_pm = func(mat_var)
-                ! (-epsr, +epsr)
-                mat_var%vals(i) = mat%vals(i) - epsr
-                mat_var%vals(j) = mat%vals(j) + epsr
-                f_mp = func(mat_var)
-                ! (-epsr, -epsr)
-                mat_var%vals(i) = mat%vals(i) - epsr
-                mat_var%vals(j) = mat%vals(j) - epsr
-                f_mm = func(mat_var)
-                ! derivada
-                res%vals(i,j) = (f_pp - f_pm - f_mp + f_mm) / (4D0*epsr*epsr)
-                mat_var%vals(i) = mat%vals(i)
-                mat_var%vals(j) = mat%vals(j)
-            end do
-        end do
-        !-------------------------------------------------------------------------------------
-        !Para las otras variables con e al inicio y e/2 al final, como xxxy
-        ! (1,4) (1,5) (1,6),(2,4),(2,5),(2,6),(3,4),(3,5),(3,6)
-        do i=1,3
-            do j=4,6
-                ! (+epsr, +epsr)
-                mat_var%vals(i) = mat%vals(i) + epsr
-                mat_var%vals(j) = mat%vals(j) + epsr/2D0   
-                f_pp = func(mat_var)
-                ! (+epsr, -epsr)
-                mat_var%vals(i) = mat%vals(i) + epsr
-                mat_var%vals(j) = mat%vals(j) - epsr/2D0
-                f_pm = func(mat_var)
-                ! (-epsr, +epsr)
-                mat_var%vals(i) = mat%vals(i) - epsr
-                mat_var%vals(j) = mat%vals(j) + epsr/2D0
-                f_mp = func(mat_var)
-                ! (-epsr, -epsr)
-                mat_var%vals(i) = mat%vals(i) - epsr
-                mat_var%vals(j) = mat%vals(j) - epsr/2D0
-                f_mm = func(mat_var)
-                ! derivada
-                res%vals(i,j) = (f_pp - f_pm - f_mp + f_mm) / (4D0*epsr*epsr)
-                mat_var%vals(i) = mat%vals(i)
-                mat_var%vals(j) = mat%vals(j)
+                if (i == j) then 
+                     mat_var%vals(i) = mat%vals(i) + 2*epsr; val_func_forw = func(mat_var)
+                     mat_var%vals(i) = mat%vals(i) - 2*epsr; val_func_back = func(mat_var)
+                     a%vals(i,i) = (val_func_forw - 2D0*func(mat) + val_func_back)/(4*epsr*epsr)
+                     mat_var%vals(i) = mat%vals(i)
+                else
+                    ! (+epsr, +epsr)
+                    mat_var%vals(i) = mat%vals(i) + epsr
+                    mat_var%vals(j) = mat%vals(j) + epsr   
+                    f_pp = func(mat_var)
+                    ! (+epsr, -epsr)
+                    mat_var%vals(i) = mat%vals(i) + epsr
+                    mat_var%vals(j) = mat%vals(j) - epsr
+                    f_pm = func(mat_var)
+                    ! (-epsr, +epsr)
+                    mat_var%vals(i) = mat%vals(i) - epsr
+                    mat_var%vals(j) = mat%vals(j) + epsr
+                    f_mp = func(mat_var)
+                    ! (-epsr, -epsr)
+                    mat_var%vals(i) = mat%vals(i) - epsr
+                    mat_var%vals(j) = mat%vals(j) - epsr
+                    f_mm = func(mat_var)
+                    ! derivada
+                    a%vals(i,j) = (f_pp - f_pm - f_mp + f_mm) / (4D0*epsr*epsr)
+                    mat_var%vals(i) = mat%vals(i)
+                    mat_var%vals(j) = mat%vals(j)
+                end if
             end do
         end do
         !------------------------------------------------------------------------------------
@@ -246,42 +223,55 @@ module derivatives
                 mat_var%vals(j) = mat%vals(j) - epsr
                 f_mm = func(mat_var)
                 ! derivada
-                res%vals(i,j) = (f_pp - f_pm - f_mp + f_mm) / (4D0*epsr*epsr)
+                a%vals(i,j) = (f_pp - f_pm - f_mp + f_mm) / (4D0*epsr*epsr)
                 mat_var%vals(i) = mat%vals(i)
                 mat_var%vals(j) = mat%vals(j)
             end do
         end do
         !------------------------------------------------------------------------
-        !Para variables con dos e/2 pero distintas ej yzxy
+        !Para las variables xyxy,yzyz,xzxz (4,4),(5,5),(6,6) con el if
+        !Para variables con dos e/2 pero distintas ej yzxy, con el else
         !(4,5),(4,6),(5,6),(5,4),(6,4),(6,5)
         do i=4,6
             do j=4,6
-                if (i == j) cycle 
-                ! (+epsr, +epsr)
-                mat_var%vals(i) = mat%vals(i) + epsr/2D0
-                mat_var%vals(j) = mat%vals(j) + epsr/2D0   
-                f_pp = func(mat_var)
-                ! (+epsr, -epsr)
-                mat_var%vals(i) = mat%vals(i) + epsr/2D0
-                mat_var%vals(j) = mat%vals(j) - epsr/2D0
-                f_pm = func(mat_var)
-                ! (-epsr, +epsr)
-                mat_var%vals(i) = mat%vals(i) - epsr/2D0
-                mat_var%vals(j) = mat%vals(j) + epsr/2D0
-                f_mp = func(mat_var)
-                ! (-epsr, -epsr)
-                mat_var%vals(i) = mat%vals(i) - epsr/2D0
-                mat_var%vals(j) = mat%vals(j) - epsr/2D0
-                f_mm = func(mat_var)
-                ! derivada
-                res%vals(i,j) = (f_pp - f_pm - f_mp + f_mm) / (4D0*epsr*epsr)
-                mat_var%vals(i) = mat%vals(i)
-                mat_var%vals(j) = mat%vals(j)
+                if (i == j) then
+                    mat_var%vals(i) = mat%vals(i) + epsr; val_func_forw = func(mat_var)
+                    mat_var%vals(i) = mat%vals(i) - epsr; val_func_back = func(mat_var)
+                    a%vals(i,i) = (val_func_forw - 2D0*func(mat) + val_func_back)/(4*epsr*epsr)
+                    mat_var%vals(i) = mat%vals(i)
+                else
+                    ! (+epsr, +epsr)
+                    mat_var%vals(i) = mat%vals(i) + epsr/2D0
+                    mat_var%vals(j) = mat%vals(j) + epsr/2D0   
+                    f_pp = func(mat_var)
+                    ! (+epsr, -epsr)
+                    mat_var%vals(i) = mat%vals(i) + epsr/2D0
+                    mat_var%vals(j) = mat%vals(j) - epsr/2D0
+                    f_pm = func(mat_var)
+                    ! (-epsr, +epsr)
+                    mat_var%vals(i) = mat%vals(i) - epsr/2D0
+                    mat_var%vals(j) = mat%vals(j) + epsr/2D0
+                    f_mp = func(mat_var)
+                    ! (-epsr, -epsr)
+                    mat_var%vals(i) = mat%vals(i) - epsr/2D0
+                    mat_var%vals(j) = mat%vals(j) - epsr/2D0
+                    f_mm = func(mat_var)
+                    ! derivada
+                    a%vals(i,j) = (f_pp - f_pm - f_mp + f_mm) / (4D0*epsr*epsr)
+                    mat_var%vals(i) = mat%vals(i)
+                    mat_var%vals(j) = mat%vals(j)
+                end if
             end do
         end do
-        
+        !! (11, 22, 33, 44, 55, 66, 12, 23, 34, 45, 56, 13, 24, 35, 46, 14, 25, 36, 15, 26, 16)
+        res%vals(1)=a%vals(1,1)  ; res%vals(2)=a%vals(2,2)  ; res%vals(3)=a%vals(3,3)  ; res%vals(4)=a%vals(4,4)  
+        res%vals(5)=a%vals(5,5)  ; res%vals(6)=a%vals(6,6)  ; res%vals(7)=a%vals(1,2)  ; res%vals(8)=a%vals(2,3)  
+        res%vals(9)=a%vals(3,4)  ; res%vals(10)=a%vals(4,5) ; res%vals(11)=a%vals(5,6) ; res%vals(12)=a%vals(1,3)
+        res%vals(13)=a%vals(2,4) ; res%vals(14)=a%vals(3,5) ; res%vals(15)=a%vals(4,6) ; res%vals(16)=a%vals(1,4) 
+        res%vals(17)=a%vals(2,5) ; res%vals(18)=a%vals(3,6) ; res%vals(19)=a%vals(1,5) ; res%vals(20)=a%vals(2,6) 
+        res%vals(21)=a%vals(1,6)
         return
     end function derivative2O_scalar_3D2Osym
-
+    
 
 end module

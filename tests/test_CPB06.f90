@@ -40,11 +40,19 @@ subroutine test_CPB06_stresseq_hydrostatic_1(passed)
     real(real64) :: result
     real(real64) :: expected_result1 = 0.0D0
 
+    call cpb%init(c11=1D0, c12=0D0, c13=0D0, &
+                  c21=0D0, c22=1D0, c23=0D0, &
+                  c31=0D0, c32=0D0, c33=1D0, &
+                  c44=1D0, c55=1D0, c66=1D0, &
+                  k=0D0, a=2D0               &
+                  )
+
 
     call to_test1%init((/5D0, 5D0, 5D0, 0D0, 0D0, 0D0/))
 
     result = cpb%stress_eq(to_test1)
     passed = (abs(result - expected_result1) < EPS)
+    if (.not. passed) print*, "CPB06 hydrostatic not pass, result =", result, "expected =", expected_result1
     if (.not. passed) return
 end subroutine
 
@@ -62,6 +70,13 @@ subroutine test_CPB06_stresseq_simple_tensile_2(passed)
 
     real(real64) :: result
     real(real64) :: expected_result2 = 5D0
+
+    call cpb%init(c11=1D0, c12=0D0, c13=0D0, &
+                  c21=0D0, c22=1D0, c23=0D0, &
+                  c31=0D0, c32=0D0, c33=1D0, &
+                  c44=1D0, c55=1D0, c66=1D0, &
+                  k=0D0, a=2D0               &
+                  )
 
     call to_test2%init((/5D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     
@@ -86,6 +101,13 @@ subroutine test_CPB06_stresseq_biaxial_3(passed)
     real(real64) :: result
     real(real64) :: expected_result3 = 5D0
 
+    call cpb%init(c11=1D0, c12=0D0, c13=0D0, &
+                  c21=0D0, c22=1D0, c23=0D0, &
+                  c31=0D0, c32=0D0, c33=1D0, &
+                  c44=1D0, c55=1D0, c66=1D0, &
+                  k=0D0, a=2D0               &
+                  )
+
 
     call to_test3%init((/5D0, 5D0, 0D0, 0D0, 0D0, 0D0/))
     result = cpb%stress_eq(to_test3)
@@ -109,9 +131,17 @@ subroutine test_CPB06_stresseq_shear_4(passed)
     real(real64) :: result
     real(real64) :: expected_result4 = 3D0**0.5D0 
 
+    call cpb%init(c11=1D0, c12=0D0, c13=0D0, &
+                  c21=0D0, c22=1D0, c23=0D0, &
+                  c31=0D0, c32=0D0, c33=1D0, &
+                  c44=1D0, c55=1D0, c66=1D0, &
+                  k=0D0, a=2D0               &
+                  )
+
     call to_test4%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result = cpb%stress_eq(to_test4)
     passed = (abs(result - expected_result4) < EPS)
+    if (.not. passed) print*, "CPB06 shear not pass, result =", result, "expected =", expected_result4
     if (.not. passed) return
 end subroutine
 
@@ -128,6 +158,13 @@ subroutine test_CPB06_stresseq_derivates_5(passed)
     type(ten_3D2Osym) :: to_test
 
     type(ten_3D2Osym) :: result1, result2
+
+    call cpb%init(c11=1D0, c12=0D0, c13=0D0, &
+                  c21=0D0, c22=1D0, c23=0D0, &
+                  c31=0D0, c32=0D0, c33=1D0, &
+                  c44=1D0, c55=1D0, c66=1D0, &
+                  k=0D0, a=2D0               &
+                  )
 
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%dstressEq_dstress(to_test)
@@ -193,6 +230,13 @@ subroutine test_CPB06_stresseq_derivates2_6(passed)
     type(ten_3D2Osym) :: to_test
 
     type(ten_3D4O3sym) :: result1, result2
+
+    call cpb%init(c11=1D0, c12=0D0, c13=0D0, &
+                  c21=0D0, c22=1D0, c23=0D0, &
+                  c31=0D0, c32=0D0, c33=1D0, &
+                  c44=1D0, c55=1D0, c66=1D0, &
+                  k=0D0, a=2D0               &
+                  )
 
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%ddstressEq_ddstress(to_test)

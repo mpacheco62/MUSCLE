@@ -145,6 +145,7 @@ module mod_ten_3D4O3sym
             generic, public :: init => init_ten_3D4O3sym, init2_ten_3D4O3sym
                 !! Generic interface for initialization.
             procedure, private :: init_ten_3D4O3sym, init2_ten_3D4O3sym 
+            procedure, public :: norm => norm_3D4O3sym
     end type ten_3D4O3sym
 
     public :: operator(.isequal.)
@@ -247,6 +248,16 @@ contains
         if (norm/norm_max .gt. EPS) res=.false.
         if (norm/norm_max .le. EPS) res=.true.
     end function isequal_3D4O3sym
+
+    pure function norm_3D4O3sym(a) result(norms)
+        !! Uses a modified L1 norm based on the 21 stored components, where components
+        !! norm(A) = sum(|A_diag|) + 2*sum(|A_offdiag|) based on 6x6 Voigt matrix.
+        implicit none
+        class(ten_3D4O3sym), intent(in) :: a
+        real(real64) :: norms
+        norms = sum(abs(a%vals(1:6))) + 2.0D0 * sum(abs(a%vals(7:21)))
+    end function norm_3D4O3sym
+
 
     pure function sum_3D4O3sym(a, b) result(res)
         implicit none
