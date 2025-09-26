@@ -67,11 +67,30 @@ add_library(umatlib
                      ${RETURN_MAPPING}
                      ${OPERATORS}
                      )
-target_compile_options(umatlib PRIVATE 
-                                -c -cpp -fopenmp -fPIC -mcmodel=medium
-                                $<$<CONFIG:Debug>:-g>
-                                $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
-                        )
+
+if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
+        message(WARNING "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        target_compile_options(umatlib PRIVATE 
+                                        /c /Qopenmp
+                                        $<$<CONFIG:Debug>:/Z7>
+                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
+                                )
+
+        # target_compile_options(umatlib PRIVATE 
+        #                                 -c -Qopenmp -fpic
+        #                         )
+elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+        message(WARNING "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        target_compile_options(umatlib PRIVATE 
+                                        -c -cpp -fopenmp -fPIC -mcmodel=medium
+                                        $<$<CONFIG:Debug>:-g>
+                                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
+                                )
+else()
+    # Default options or a warning if an unsupported compiler is found
+    error(ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+endif()
+
 set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
 install(TARGETS umatlib EXPORT umatlib-targets LIBRARY)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib/ TYPE INCLUDE)
@@ -91,14 +110,36 @@ install(EXPORT umatlib-targets
 
 add_executable(my_exe main.f90)
 target_include_directories(my_exe PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
-target_compile_options(my_exe PRIVATE 
-                        $<$<CONFIG:Debug>:-g>
-                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
-                        )
-target_link_options(my_exe PRIVATE 
-                        $<$<CONFIG:Debug>:-g>
-                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
-                        )
+
+if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
+        message(WARNING "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        target_compile_options(my_exe PRIVATE
+                                        /c /Qopenmp
+                                        $<$<CONFIG:Debug>:/Z7>
+                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
+                                )
+        target_link_options(my_exe PRIVATE 
+                                        /c /Qopenmp
+                                        $<$<CONFIG:Debug>:/Z7>
+                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
+                                )
+elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+        message(WARNING "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        target_compile_options(my_exe PRIVATE 
+                                        -c -cpp -fopenmp -fPIC -mcmodel=medium
+                                        $<$<CONFIG:Debug>:-g>
+                                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
+                                )
+        target_link_options(my_exe PRIVATE 
+                                        -c -cpp -fopenmp -fPIC -mcmodel=medium
+                                        $<$<CONFIG:Debug>:-g>
+                                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
+                                )
+else()
+    # Default options or a warning if an unsupported compiler is found
+    error(ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+endif()
+
 target_link_libraries(my_exe PRIVATE umatlib)
 
 

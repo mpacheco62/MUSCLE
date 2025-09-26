@@ -1,17 +1,37 @@
 add_library(compile_options INTERFACE)
-target_compile_options(compile_options INTERFACE "-O3" "-Wall")
-target_compile_options(compile_options INTERFACE 
+
+if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
+        message(WARNING "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        target_compile_options(compile_options INTERFACE "/O3" "/warn:all")
+        target_compile_options(compile_options INTERFACE
+                                        $<$<CONFIG:Debug>:/Z7>
+                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
+                                )
+        target_link_options(compile_options INTERFACE
+                                        $<$<CONFIG:Debug>:/Z7>
+                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
+                                )
+
+        # target_compile_options(umatlib PRIVATE 
+        #                                 -c -Qopenmp -fpic
+        #                         )
+elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+        message(WARNING "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        target_compile_options(compile_options INTERFACE "-O3" "-Wall")
+        target_compile_options(compile_options INTERFACE
+                                        $<$<CONFIG:Debug>:-g>
+                                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
+                                )
+        target_link_options(compile_options INTERFACE 
                         $<$<CONFIG:Debug>:-g>
                         $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
                         )
-target_link_options(compile_options INTERFACE 
-                        $<$<CONFIG:Debug>:-g>
-                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
-                        )
+else()
+    # Default options or a warning if an unsupported compiler is found
+    error(ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+endif()
 
 
-# add_executable(test_basic_operations test_basic_operations.f90)
-# target_link_libraries(test_basic_operations PRIVATE mylib)
 add_subdirectory(tensors_types)
 add_subdirectory(operators)
 
@@ -55,10 +75,3 @@ add_executable(test_basic_operations test_basic_operations.f90)
 target_link_libraries(test_basic_operations PRIVATE umatlib compile_options)
 target_include_directories(test_basic_operations PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(test_basic_operations "${CMAKE_SOURCE_DIR}/bin/test_basic_operations")
-
-# add_executable(test_tensors_types_ten_3d2Osym tensors_types/test_tensors_types_ten_3d2Osym.f90)
-# target_link_libraries(test_tensors_types_ten_3d2Osym PRIVATE mylib)
-
-# add_test(Test_basic_operations "${CMAKE_SOURCE_DIR}/bin/test_basic_operations")
-#add_test(Test_tensors_types "${CMAKE_SOURCE_DIR}/bin/test_tensors_types")
-# add_test(Test_tensors_types_ten_3d2Osym "${CMAKE_SOURCE_DIR}/bin/test_tensors_types_ten_3d2Osym")
