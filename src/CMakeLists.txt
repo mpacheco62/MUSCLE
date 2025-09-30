@@ -69,7 +69,7 @@ add_library(umatlib
                      )
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
-        message(WARNING "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
         target_compile_options(umatlib PRIVATE 
                                         /c /Qopenmp
                                         $<$<CONFIG:Debug>:/Z7>
@@ -80,7 +80,7 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         #                                 -c -Qopenmp -fpic
         #                         )
 elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-        message(WARNING "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        message(STATUS "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
         target_compile_options(umatlib PRIVATE 
                                         -c -cpp -fopenmp -fPIC -mcmodel=medium
                                         $<$<CONFIG:Debug>:-g>
@@ -88,7 +88,7 @@ elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
                                 )
 else()
     # Default options or a warning if an unsupported compiler is found
-    error(ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+    error(STATUS "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
 endif()
 
 set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
@@ -112,7 +112,6 @@ add_executable(my_exe main.f90)
 target_include_directories(my_exe PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
-        message(WARNING "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
         target_compile_options(my_exe PRIVATE
                                         /c /Qopenmp
                                         $<$<CONFIG:Debug>:/Z7>
@@ -124,7 +123,6 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
                                         $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
                                 )
 elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-        message(WARNING "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
         target_compile_options(my_exe PRIVATE 
                                         -c -cpp -fopenmp -fPIC -mcmodel=medium
                                         $<$<CONFIG:Debug>:-g>

@@ -1,7 +1,7 @@
 add_library(compile_options INTERFACE)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
-        message(WARNING "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
         target_compile_options(compile_options INTERFACE "/O3" "/warn:all")
         target_compile_options(compile_options INTERFACE
                                         $<$<CONFIG:Debug>:/Z7>
@@ -16,7 +16,7 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         #                                 -c -Qopenmp -fpic
         #                         )
 elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-        message(WARNING "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+        message(STATUS "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
         target_compile_options(compile_options INTERFACE "-O3" "-Wall")
         target_compile_options(compile_options INTERFACE
                                         $<$<CONFIG:Debug>:-g>

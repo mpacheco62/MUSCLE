@@ -10,6 +10,7 @@ enable_testing()
 
 enable_language(Fortran)
 
+message(STATUS "********Lib_Umats - CMAKE_BUILD_TYPE is: ${CMAKE_BUILD_TYPE}********")
 
 # This generate a file compile_commands.json with commands use on compile
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
