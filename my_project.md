@@ -68,5 +68,12 @@ So you can get numbered equations like this:
 \begin{equation}
   PV = nRT
 \end{equation}
+
+\begin{align} 
+    \pmb{\dot\varepsilon}^p &= \gamma \frac{\partial f\left(\pmb{\sigma}, \pmb{q}\right)}{\partial\pmb{\sigma}} \\
+    \pmb{\dot \alpha} &= \gamma \frac{\partial f\left(\pmb{\sigma}, \pmb{q}\right)}{\partial\pmb{q}} 
+    % \pmb{\dot q} &= -\gamma \mathbb{D} \frac{\partial f\left(\pmb{\sigma}, \pmb{q}\right)}{\partial\pmb{q}}
+\end{align}
+
 So let your imagination run wild. As you can tell, I'm more or less just
 filling in space now. This will be the last sentence.
