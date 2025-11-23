@@ -27,8 +27,7 @@ elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
                         $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
                         )
 else()
-    # Default options or a warning if an unsupported compiler is found
-    error(ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+    message(FATAL_ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
 endif()
 
 
@@ -70,6 +69,10 @@ target_link_libraries(test_closest_point PRIVATE umatlib compile_options)
 target_include_directories(test_closest_point PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(NAME test_closest_point COMMAND test_closest_point)
 
+add_executable(test_closest_point_2 test_closest_point_2.f90)
+target_link_libraries(test_closest_point_2 PRIVATE umatlib compile_options)
+target_include_directories(test_closest_point_2 PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
+add_test(NAME test_closest_point_2 COMMAND test_closest_point_2)
 
 add_executable(test_basic_operations test_basic_operations.f90)
 target_link_libraries(test_basic_operations PRIVATE umatlib compile_options)
