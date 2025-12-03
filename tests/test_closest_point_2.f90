@@ -1,18 +1,21 @@
 program test_closest_point_2
-    implicit none
+	implicit none
     logical :: passed
-
+	
     call test_closest_point_vonmises_uniaxial_tensile(passed)
     if (.not. passed) STOP 1
-
+	print*, "END - test_closest_point_vonmises_uniaxial_tensile - test 1"
+		
     call test_closest_point_vonmises_zero_strain(passed)
     if (.not. passed) STOP 2
-
+	print*, "END - test_closest_point_vonmises_zero_strain - test 2"
+		
     call test_closest_point_vonmises_elastic_strain(passed)
     if (.not. passed) STOP 3
-
+	print*, "END - test_closest_point_vonmises_elastic_strain - test 3"
+	 
     print*, "Passed!", passed
-    ! STOP 1
+
 end program test_closest_point_2
 
 subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
@@ -44,7 +47,7 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
     strain_pf = 0D0
     error = .False.
     
-
+	print*, "test_closest_point_vonmises_uniaxial_tensile - test 1"
     call expected_stress%init(xx=90D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
     expected_strain_effective = 0.3485784401D0
     call expected_strain_plastic%init(xx=expected_strain_effective,        &
@@ -94,12 +97,9 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
                              "Status code: ", status
     if(.not. passed) return
 
-
+		
     return
 end subroutine
-
-
-
 
 subroutine test_closest_point_vonmises_zero_strain(passed)
     use tensors_types
@@ -138,8 +138,11 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
 
-    call closest_point2(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
-                       stress=stress, strain_pf=strain_pf, strain_p=strain_p, status=error)
+	
+	print*, "test_closest_point_vonmises_zero_strain - test 2"
+	call closest_point2(strain, elas, sw, vm, stress, strain_pf, strain_p, error)					   
+    !call closest_point2(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
+    !                   stress=stress, strain_pf=strain_pf, strain_p=strain_p, status=error)	
 
     passed = stress .isequal. expected_stress
     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
@@ -164,8 +167,6 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
 
     return
 end subroutine
-
-
 
 subroutine test_closest_point_vonmises_elastic_strain(passed)
     use tensors_types
@@ -203,9 +204,12 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
     call strain_p%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
-
-    call closest_point2(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
-                       stress=stress, strain_pf=strain_pf, strain_p=strain_p, status=error)
+	
+	print*, "test_closest_point_vonmises_elastic_strain - test 3"
+    call closest_point2(strain, elas, sw, vm, stress, strain_pf, strain_p, error)
+					   
+	!call closest_point2(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
+    !                   stress=stress, strain_pf=strain_pf, strain_p=strain_p, status=error)
 
     passed = stress .isequal. expected_stress
     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
@@ -229,4 +233,4 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
     if (.not. passed) return
 
     return
-end subroutine
+	end subroutine

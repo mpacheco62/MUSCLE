@@ -1,4 +1,4 @@
-module mod_closest_point_2
+module mod_closest_point
     use tensors_types
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_hardening_law, only : Base_hardening_law
