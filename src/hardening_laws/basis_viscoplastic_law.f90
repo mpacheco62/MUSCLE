@@ -60,13 +60,23 @@ module mod_basis_viscoplastic_law
     public :: basis_viscoplastic_law
 
     type, abstract :: basis_viscoplastic_law
+    !! Abstract Base Type for Viscoplastic Laws
+    !! ========================================
+    !!
+    !! Defines the base type that combines the **hardening law** (static component) with
+    !! **strain-rate dependent** behavior (viscoplastic component). This enables
+    !! polymorphic handling of different viscoplastic models.
         class(Base_hardening_law), pointer :: hard_law => null()
+        !! Pointer to the hardening law object (from mod_hardening_law).
+        !! Must be explicitly allocated and associated before use.
     contains
         procedure(flow_stress_interface), deferred :: flow_stress
     end type basis_viscoplastic_law
 
     abstract interface
         pure function flow_stress_interface(self, ep, epd) result(res)
+        !! Interface for the `flow_stress` procedure.
+        !! Must be implemented by concrete subtypes of `basis_viscoplastic_law`.
             use, intrinsic :: iso_fortran_env
             import basis_viscoplastic_law
             class(basis_viscoplastic_law), intent(in) :: self

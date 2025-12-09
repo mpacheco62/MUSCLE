@@ -1,4 +1,20 @@
 module mod_MRK_viscoplastic
+    !! Module mod_MRK_viscoplastic
+    !! ===========================
+    !!
+    !! Implements the **Modified Rusinek-Klepaczko (MRK)** Viscoplastic Flow Stress Law.
+    !!
+    !! **CONTEXT NOTE:** The MRK model is a complex constitutive formulation, often referred to as a 
+    !! **Modified Rusinek-Klepaczko Model**, developed as an extension of the original RK model 
+    !! to better capture the nonlinear rate and strain dependence in materials like polymers and 
+    !! glassy systems under high strain rates.
+    !!
+    !! This module defines the flow stress ($\sigma_{flow}$) based on the accumulated plastic
+    !! strain ($\epsilon_p$) and the equivalent plastic strain rate ($\dot{\epsilon}_p$).
+    !!
+    !! The final flow stress is calculated as: $\sigma_{flow} = \sigma_{a} + \sigma_u$, where
+    !! $\sigma_u$ is the ultimate stress (or back stress) and $\sigma_{a}$ is the rate-modified
+    !! hardening component.
     use, intrinsic :: iso_fortran_env
     use mod_basis_viscoplastic_law
     implicit none
@@ -6,6 +22,12 @@ module mod_MRK_viscoplastic
     public :: MRK_viscoplastic
 
     type, extends(basis_viscoplastic_law) :: MRK_viscoplastic
+    !! MRK Viscoplastic Law Implementation (Modified Rusinek-Klepaczko)
+    !! ===============================================================
+    !!
+    !! Implements the complex viscoplastic model MRK. This model calculates its own
+    !! hardening internally, hence it does not rely on the inherited `hard_law` pointer
+    !! for the main hardening component.
         real(real64) :: B01    
         real(real64) :: B02    
         real(real64) :: epdmax 
@@ -24,6 +46,9 @@ module mod_MRK_viscoplastic
 contains
 
     pure function flow_MRK(self, ep, epd) result(res)
+        !! flow_MRK - Calculates the viscoplastic flow stress according to the MRK model.
+        !!
+        !! Computes $\sigma_{flow} = (\text{Rate\_Factor})^{\frac{1}{\chi_2}} \cdot \sigma_{0,a}(\epsilon_p, \dot{\epsilon}_p) + \sigma_u$.
         class(MRK_viscoplastic), intent(in) :: self
         real(real64), intent(in) :: ep, epd
         real(real64) :: res
