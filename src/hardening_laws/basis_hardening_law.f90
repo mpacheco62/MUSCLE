@@ -1,4 +1,4 @@
-module mod_hardening_law
+module mod_basis_hardening_law
     !! Module mod_hardening_law
     !! ========================
     !!

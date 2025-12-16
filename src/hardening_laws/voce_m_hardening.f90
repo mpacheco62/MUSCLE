@@ -35,7 +35,7 @@ module mod_voce_m_hardening
     !! * `stress => stress_voce_mod`: Calculates the hardening stress $\sigma(\epsilon_p)$.
     !!
     use, intrinsic :: iso_fortran_env
-    use mod_hardening_law
+    use mod_basis_hardening_law
     implicit none
     private
     public :: Voce_modified_hardening
@@ -44,6 +44,8 @@ module mod_voce_m_hardening
         !! Voce Modified Hardening Law
         !! ===========================
         !! Implements the Voce hardening law with an additional linear term.
+        real(real64) :: Sy
+            !! Linear hardening modulus ($Sy$).
         real(real64) :: k 
             !! Linear hardening modulus ($k$).
         real(real64) :: q 
@@ -52,6 +54,8 @@ module mod_voce_m_hardening
             !! Saturation rate exponent ($n$).
         contains
             procedure :: stress => stress_voce_mod
+            procedure :: dstress_dep   => dstress_dep_voce_mod
+            procedure :: ddstress_ddep => ddstress_ddep_voce_mod
             !! Implements the stress calculation $\sigma(\epsilon_p)$.
     end type Voce_modified_hardening
 
@@ -66,7 +70,20 @@ contains
            !! ep Equivalent plastic strain ($\epsilon_p$).
        real(real64) :: res
            !! Output hardening stress $\sigma$.
-       res = self%k*ep + self%q * (1.0 - exp(-self%n*ep))
+       res = self%Sy + self%k*ep + self%q * (1.0 - exp(-self%n*ep))
     end function stress_voce_mod
+    pure function dstress_dep_voce_mod(self, ep) result(res)
+        class(Voce_modified_hardening), intent(in) :: self
+        real(real64), intent(in) :: ep
+        real(real64) :: res
+        res = self%k + self%q*self%n*exp(-self%n*ep)
+    end function dstress_dep_voce_mod
+
+    pure function ddstress_ddep_voce_mod(self, ep) result(res)
+        class(Voce_modified_hardening), intent(in) :: self
+        real(real64), intent(in) :: ep
+        real(real64) :: res
+        res = -self%q*self%n*self%n*exp(-self%n*ep)
+    end function ddstress_ddep_voce_mod
 
 end module mod_voce_m_hardening

@@ -35,10 +35,10 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/tensors_types.f90
                   CACHE INTERNAL "")
 
-set(HARDENING_LAWS   hardening_laws/basis_hardening_law.f90
-                     hardening_laws/swift_hardening.f90
-                     hardening_laws/bilinear_hardening.f90
-                     CACHE INTERNAL "")
+# set(HARDENING_LAWS   hardening_laws/basis_hardening_law.f90
+#                      hardening_laws/swift_hardening.f90
+#                      hardening_laws/bilinear_hardening.f90
+#                      CACHE INTERNAL "")
 
 set(YIELD_CRITERIA   yield_criteria/basis_yield_criteria.f90
                      yield_criteria/vonMises.f90
@@ -59,6 +59,7 @@ set(OPERATORS   operators/basic_operations.f90
                CACHE INTERNAL "")
 
       #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
+add_subdirectory(hardening_laws)
 add_library(umatlib 
                      ${TENSORS_TYPES}
                      ${HARDENING_LAWS}
@@ -67,6 +68,8 @@ add_library(umatlib
                      ${RETURN_MAPPING}
                      ${OPERATORS}
                      )
+
+
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")

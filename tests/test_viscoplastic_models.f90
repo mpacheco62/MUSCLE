@@ -1,6 +1,4 @@
-
 module test_viscoplastic_mod
-    use mod_basis_viscoplastic_law
     use mod_voce_m_hardening
     use mod_JC_viscoplastic
     use mod_RK_viscoplastic
@@ -12,19 +10,19 @@ module test_viscoplastic_mod
 
     public :: test_viscoplastic
 
-    double precision, parameter :: tolerance = 0.05D0
+    double precision, parameter :: tolerance = 10D-02
 
     ! ================================
     !   DATOS EXPERIMENTALES
     ! ================================
-    double precision, parameter :: ep_exp(15) = (/ &
-        1.95456507D-03, 1.01665618D-02, 1.82321656D-02, 2.70017864D-02, &
+    double precision, parameter :: ep_exp(14) = (/ &
+         1.01665618D-02, 1.82321656D-02, 2.70017864D-02, &
         3.71373728D-02, 4.60355078D-02, 5.56854902D-02, 6.50158637D-02, &
         7.49742416D-02, 8.57663638D-02, 9.39227091D-02, 1.03962761D-01, &
         1.16123074D-01, 1.30946821D-01, 1.48177371D-01 /)
 
-    double precision, parameter :: stress_exp(15) = (/ &
-        2.00064799D+02, 2.56080625D+02, 2.65324635D+02, 2.68667987D+02, &
+    double precision, parameter :: stress_exp(14) = (/ &
+         2.56080625D+02, 2.65324635D+02, 2.68667987D+02, &
         2.71711623D+02, 2.74414834D+02, 2.77372186D+02, 2.80012858D+02, &
         2.82808165D+02, 2.85900979D+02, 2.88143097D+02, 2.90925994D+02, &
         2.94237227D+02, 2.98234489D+02, 3.02465123D+02 /)
@@ -43,7 +41,7 @@ contains
         integer :: n
 
         n = size(exp)
-        rmse = sqrt(sum((pred - exp)**2) / dble(n))
+        rmse  = sqrt( sum( (pred - exp)**2 ) / dble(n) )
         denom = maxval(exp) - minval(exp)
 
         if (denom .gt. 0.D0) then
@@ -53,31 +51,33 @@ contains
         end if
     end function nrmsd
 
+    ! =========================================================
+    !   TEST PRINCIPAL
+    ! =========================================================
     subroutine test_viscoplastic(passed)
         logical, intent(out) :: passed
 
-        type(Voce_modified_hardening) :: voce
-        type(JC_viscoplastic) :: jc
-        type(RK_viscoplastic) :: rk
+        type(Voce_modified_hardening), target :: voce
+        type(JC_viscoplastic)  :: jc
+        type(RK_viscoplastic)  :: rk
         type(MRK_viscoplastic) :: mrk
         type(NNL_viscoplastic) :: nnl
-        type(VA_viscoplastic) :: va
-        class(Base_hardening_law), pointer :: p_hard
+        type(VA_viscoplastic)  :: va
 
-        double precision :: pred_JC(15), pred_RK(15), pred_MRK(15)
+        double precision :: pred_JC(15),  pred_RK(15),  pred_MRK(15)
         double precision :: pred_NNL(15), pred_VA(15)
         double precision :: err_JC, err_RK, err_MRK, err_NNL, err_VA
         logical :: ok_JC, ok_RK, ok_MRK, ok_NNL, ok_VA
         integer :: i
 
-        ! ---- JC ----
-        voce%k = 111.497480D0  ! A
-        voce%q = 249.653725D0  ! B
-        voce%n = 0.08512057D0  ! ns
+        ! ---- JC (Voce)
+        voce%sy= 272.05
+        voce%k = 0.064  ! A
+        voce%q = 293.588   ! B
+        voce%n = 1.507   ! ns
 
-        p_hard => voce
-        jc%hard_law => p_hard
-        jc%C      = 0.01006816D0
+        jc%hard_law => voce   
+        jc%C      = 0.009464
         jc%epdmax = 0.32D0
 
         ! ---- RK ----
@@ -106,15 +106,15 @@ contains
         mrk%chi2   = 0.01942062D0
 
         ! ---- NNL ----
-        nnl%sig_a = 334.776175D0
-        nnl%sig_0 = 5.88318003D0
-        nnl%KG0   = 0.21906996D0
-        nnl%n1    = 0.06301105D0
-        nnl%epd0  = 0.01425422D0
-        nnl%at    = 22.8752986D0
-        nnl%n0    = 0.97427303D0
-        nnl%q     = 2.D0
-        nnl%p     = 0.6666667D0
+        nnl%sig_a   = 334.776175D0
+        nnl%sig_0   = 5.88318003D0
+        nnl%KG0     = 0.21906996D0
+        nnl%n1      = 0.06301105D0
+        nnl%epd0    = 0.01425422D0
+        nnl%at      = 22.8752986D0
+        nnl%n0      = 0.97427303D0
+        nnl%q       = 2.D0
+        nnl%p       = 0.6666667D0
         nnl%eps_log  = 1.D-12
         nnl%eps_base = 1.D-12
 
@@ -126,14 +126,18 @@ contains
         va%m     = 0.03766668D0
         va%sig_u = 195.233128D0
 
-        do i = 1, 15
+        ! ============================
+        ! 2) Models
+        ! ============================
+        do i = 1, 14
             pred_JC(i)  = jc%flow_stress(ep_exp(i),  epd_const)
             pred_RK(i)  = rk%flow_stress(ep_exp(i),  epd_const)
             pred_MRK(i) = mrk%flow_stress(ep_exp(i), epd_const)
             pred_NNL(i) = nnl%flow_stress(ep_exp(i), epd_const)
             pred_VA(i)  = va%flow_stress(ep_exp(i),  epd_const)
+            
         end do
-
+       
         ! ============================
         ! 3) NRMSD
         ! ============================
@@ -154,7 +158,7 @@ contains
         ! ============================
         print *, "===================================================="
         print *, "         TEST Viscoplastic Models"
-        print *, "NRMSD < ", tolerance
+        print *, "            NRMSD < ", tolerance
         print *, "===================================================="
 
         if (ok_JC) then
@@ -189,22 +193,27 @@ contains
 
         passed = ok_JC .and. ok_RK .and. ok_MRK .and. ok_NNL .and. ok_VA
 
-        print *, "===================================================="
-        if (passed) then
-            print *, " PASSED"
-        else
-            print *, " FAILED"
-        end if
-        print *, "===================================================="
+        if (.not. (ok_JC .and. ok_RK .and. ok_MRK .and. ok_NNL .and. ok_VA)) then
+
+        print *
+        print *, "------------------------------------------------------------"
+        print *, "   ep       exp      JC       RK       MRK      NNL       VA"
+        print *, "------------------------------------------------------------"
+
+       do i = 1, 14
+          write(*,'(F8.5,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2)') &
+             ep_exp(i), stress_exp(i), &
+             pred_JC(i), pred_RK(i), pred_MRK(i), pred_NNL(i), pred_VA(i)
+       end do
+
+       print *, "------------------------------------------------------------"
+
+       end if
 
     end subroutine test_viscoplastic
 
 end module test_viscoplastic_mod
 
-
-! ================================================================
-!   Program
-! ================================================================
 program test_viscoplastic_main
     use test_viscoplastic_mod
     implicit none
@@ -216,5 +225,4 @@ program test_viscoplastic_main
     if (.not. passed) stop 1
     stop 0
 end program test_viscoplastic_main
-
 

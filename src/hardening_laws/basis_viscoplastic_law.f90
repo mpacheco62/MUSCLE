@@ -54,7 +54,7 @@ module mod_basis_viscoplastic_law
     !! end module mod_my_visco_law
     !! ```  
     use, intrinsic :: iso_fortran_env
-    use mod_hardening_law
+    use mod_basis_hardening_law
     implicit none
     private
     public :: basis_viscoplastic_law
