@@ -8,3 +8,5 @@ doc/
 Theory/**
 !Theory/**/
 !*.tex
+*.obj
+*.mod
