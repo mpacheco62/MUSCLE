@@ -41,6 +41,8 @@ set(HARDENING_LAWS   plasticity/hardening_laws/basis_hardening_law.f90
                      plasticity/hardening_laws/bilinear_hardening.f90
                      CACHE INTERNAL "")
 
+add_subdirectory(plasticity)
+
 set(VISCO_HARDENING_LAWS   plasticity/viscohardening_laws/basis_visco_hardening_law.f90
                      	   plasticity/viscohardening_laws/JohnsonCook_full_visco_hardening.f90
                      	   plasticity/viscohardening_laws/JohnsonCook_visco_hardening.f90
@@ -53,11 +55,6 @@ set(YIELD_CRITERIA   yield_criteria/basis_yield_criteria.f90
 
 set(ELASTICITY       elasticity/basis_elasticity.f90
                      elasticity/elasticity_linear.f90
-                     CACHE INTERNAL "")
-
-set(RETURN_MAPPING   plasticity/return_mapping/cutting_plane.f90
-                     plasticity/return_mapping/closest_point.f90
-		     plasticity/return_mapping/closest_point2.f90
                      CACHE INTERNAL "")
 
 set(OPERATORS   operators/basic_operations.f90
