@@ -1,11 +1,11 @@
 module mod_VA_viscoplastic
     use, intrinsic :: iso_fortran_env
-    use mod_basis_viscoplastic_law
+    use mod_viscoplastic_law
     implicit none
     private
     public :: VA_viscoplastic
 
-    type, extends(basis_viscoplastic_law) :: VA_viscoplastic
+    type, extends(Base_viscoplastic_law) :: VA_viscoplastic
         real(real64) :: B    
         real(real64) :: n    
         real(real64) :: B1   

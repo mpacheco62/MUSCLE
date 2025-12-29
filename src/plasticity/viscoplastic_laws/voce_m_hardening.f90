@@ -35,7 +35,7 @@ module mod_voce_m_hardening
     !! * `stress => stress_voce_mod`: Calculates the hardening stress $\sigma(\epsilon_p)$.
     !!
     use, intrinsic :: iso_fortran_env
-    use mod_basis_hardening_law
+    use mod_hardening_law
     implicit none
     private
     public :: Voce_modified_hardening
