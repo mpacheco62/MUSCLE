@@ -62,6 +62,7 @@ add_library(umatlib
                      ${RETURN_MAPPING}
                      ${OPERATORS}
                      ${VISCOHARDENING_LAWS}
+		     ${VISCOPLASTIC_LAWS}
                      )
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")

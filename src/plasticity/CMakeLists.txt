@@ -16,11 +16,11 @@ set(VISCOHARDENING_LAWS   plasticity/viscohardening_laws/basis_visco_hardening_l
                           CACHE INTERNAL "")
 						  
 # viscoplastic models				  
-set(HARDENING_LAWS   plasticity/viscoplastic_laws/basis_viscoplastic_law.f90
-                     plasticity/viscoplastic_laws/JC_model.f90
-                     plasticity/viscoplastic_laws/MRK_model.f90
-                     plasticity/viscoplastic_laws/NNL_model.f90
-                     plasticity/viscoplastic_laws/RK_model.f90
-                     plasticity/viscoplastic_laws/VA_model.f90
-                     plasticity/viscoplastic_laws/voce_m_hardening.f90
-                     CACHE INTERNAL "")
+set(VISCOPLASTIC_LAWS   plasticity/viscoplastic_laws/basis_viscoplastic_law.f90
+                     	plasticity/viscoplastic_laws/JC_model.f90
+                     	plasticity/viscoplastic_laws/MRK_model.f90
+                     	plasticity/viscoplastic_laws/NNL_model.f90
+                     	plasticity/viscoplastic_laws/RK_model.f90
+                     	plasticity/viscoplastic_laws/VA_model.f90
+                     	plasticity/viscoplastic_laws/voce_m_hardening.f90
+                     	CACHE INTERNAL "")
