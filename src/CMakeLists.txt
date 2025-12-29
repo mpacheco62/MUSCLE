@@ -35,9 +35,19 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/tensors_types.f90
                   CACHE INTERNAL "")
 
-set(HARDENING_LAWS   hardening_laws/basis_hardening_law.f90
-                     hardening_laws/swift_hardening.f90
-                     hardening_laws/bilinear_hardening.f90
+#set(HARDENING_LAWS   hardening_laws/basis_hardening_law.f90
+#                     hardening_laws/swift_hardening.f90
+#                     hardening_laws/bilinear_hardening.f90
+#                     CACHE INTERNAL "")
+
+set(HARDENING_LAWS   plasticity/hardening_laws/basis_hardening_law.f90
+                     plasticity/hardening_laws/swift_hardening.f90
+                     plasticity/hardening_laws/bilinear_hardening.f90
+                     CACHE INTERNAL "")
+
+set(VISCO_HARDENING_LAWS   plasticity/viscohardening_laws/basis_visco_hardening_law.f90
+                     	   plasticity/viscohardening_laws/JohnsonCook_full_visco_hardening.f90
+                     	   plasticity/viscohardening_laws/JohnsonCook_visco_hardening.f90
                      CACHE INTERNAL "")
 
 set(YIELD_CRITERIA   yield_criteria/basis_yield_criteria.f90
@@ -49,13 +59,19 @@ set(ELASTICITY       elasticity/basis_elasticity.f90
                      elasticity/elasticity_linear.f90
                      CACHE INTERNAL "")
 
-set(RETURN_MAPPING   return_mapping/cutting_plane.f90
-                     return_mapping/closest_point.f90
+#set(RETURN_MAPPING   return_mapping/cutting_plane.f90
+#                     return_mapping/closest_point.f90
+#                     CACHE INTERNAL "")
+
+set(RETURN_MAPPING   plasticity/return_mapping/cutting_plane.f90
+                     plasticity/return_mapping/closest_point.f90
+		     plasticity/return_mapping/closest_point2.f90
                      CACHE INTERNAL "")
 
 set(OPERATORS   operators/basic_operations.f90
                 operators/inverses_mat.f90
                 operators/derivatives.f90
+		operators/lin_solvers.f90
                CACHE INTERNAL "")
 
       #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
