@@ -61,7 +61,6 @@ add_library(umatlib
                      ${ELASTICITY}
                      ${RETURN_MAPPING}
                      ${OPERATORS}
-                     ${VISCOHARDENING_LAWS}
 		     ${VISCOPLASTIC_LAWS}
                      )
 
