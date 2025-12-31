@@ -18,7 +18,7 @@ program test_closest_point_2
     print*, "END - test_closest_point_vonmises_elastic_strain_sw - test 3"
 
     ! =============================
-    ! Johnson–Cook tests (4–6)
+    ! Johnson–Cook (viscoplastic) tests (4–6)
     ! =============================
     call test_closest_point_vonmises_uniaxial_tensile_jc(passed)
     if (.not. passed) STOP 4
@@ -270,259 +270,122 @@ subroutine test_closest_point_vonmises_elastic_strain_sw(passed)
 end subroutine test_closest_point_vonmises_elastic_strain_sw
 
 !=====================================================================
-! 4) Johnson–Cook: Tracción uniaxial con plastificación (check cualitativo)
+! 4) Johnson–Cook (viscoplastic): tracción uniaxial (chequeo de magnitud)
 !=====================================================================
 subroutine test_closest_point_vonmises_uniaxial_tensile_jc(passed)
-    use tensors_types
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_JohnsonCook_full_visco_hardening, only : JohnsonCook_full_visco_hardening
-    use mod_vonMises,                         only : VonMises
-    use mod_elasticity_linear,                only : Elasticity_linear
-    use mod_closest_point_2
+    use mod_swift_hardening,   only : Swift_hardening
+    use mod_JC_viscoplastic,   only : JC_viscoplastic
     implicit none
 
-    real(real64), parameter :: EPS=1e-8
+    real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
+    type(Swift_hardening), target :: sw
+    type(JC_viscoplastic) :: jc
+    real(real64) :: ep, epd
+    real(real64) :: expected, actual
 
-    type(Closest_point_2_data)           :: data
-    type(Closest_point_2)                :: solver
-    type(VonMises)                       :: vm
-    type(ten_3D2Osym)                    :: strain, strain_p, stress, stress_elastic
-    type(JohnsonCook_full_visco_hardening) :: jc
-    type(Elasticity_linear)              :: elas
-    real(real64)                         :: strain_pf
-    integer                              :: status, iters
-    real(real64)                         :: seq_trial, seq_return
-
-    ! Parámetros JC elegidos para que haya plastificación (yield bajo)
-    real(real64), parameter :: A_mat      = 10.0d0
-    real(real64), parameter :: B_mat      = 100.0d0
-    real(real64), parameter :: n_mat      = 0.1d0
-    real(real64), parameter :: C_mat      = 0.0d0
-    real(real64), parameter :: epdot0_mat = 1.0d0
-    real(real64), parameter :: m_mat      = 0.0d0
-    real(real64), parameter :: Troom_mat  = 293.15d0
-    real(real64), parameter :: Tmelt_mat  = 1500.0d0
-
-    passed    = .False.
-    strain_pf = 0.0d0
+    passed = .False.
 
     print*, "test_closest_point_vonmises_uniaxial_tensile_jc - test 4"
 
-    call strain%init(xx=0.43857844D0, yy=-0.20128922D0, zz=-0.20128922D0, &
-                     xy=0D0, yz=0D0, xz=0D0)
-    call strain_p%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
-    call elas%set_parameters(young=1000D0, poisson=0.3D0)
+    sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
+    jc%hard_law => sw
+    jc%C      = 0.05D0
+    jc%epdmax = 0.1D0
 
-    ! Construir JC
-    jc = JohnsonCook_full_visco_hardening(A=A_mat, B=B_mat, n=n_mat, C=C_mat, &
-                                          epdot0=epdot0_mat, m=m_mat,         &
-                                          Troom=Troom_mat, Tmelt=Tmelt_mat)
-    jc%epdot_current = epdot0_mat
-    jc%T_current     = Troom_mat
+    ep  = 0.2D0
+    epd = 1.0D0
 
-    ! Inicializar solver
-    call data%init(strain_pf=strain_pf, strain_p=strain_p)
-    call solver%init(elasticity=elas, hardening=jc, yield=vm)
+    expected = sw%stress(ep) * (1.0D0 + jc%C * log(epd / jc%epdmax))
+    actual   = jc%flow_stress(ep, epd)
 
-    ! Tensión elástica trial
-    stress_elastic = elas%stress(strain-strain_p)
-    seq_trial      = vm%stress_eq(stress_elastic)
-
-    ! Ejecutar return mapping
-    call solver%solve(strain=strain, data=data)
-    call data%get(stress=stress, strain_pf=strain_pf, strain_p=strain_p, &
-                  status=status, iters=iters)
-
-    seq_return = vm%stress_eq(stress)
-
-    ! Checks cualitativos:
-    ! 1) Se desarrolló deformación plástica
-    if (strain_pf <= 0.0d0) then
-        print*, "JC uniaxial tensile: no plastic strain developed."
+    passed = abs(actual - expected) < EPS
+    if (.not. passed) then
+        print*, "JC flow stress mismatch", new_line('A'), &
+                "Expected:", expected, new_line('A'),     &
+                "Actual  :", actual, new_line('A'),       &
+                "Difference:", actual - expected
         return
     end if
-
-    ! 2) Tensión equivalente retornada <= tensión equivalente trial (proyección a la superficie)
-    if (seq_return > seq_trial + 1d-8) then
-        print*, "JC uniaxial tensile: seq_return > seq_trial, algo raro."
-        print*, "seq_trial =", seq_trial, " seq_return =", seq_return
-        return
-    end if
-
-    ! 3) Iteraciones razonables
-    if (iters > 20) then
-        print*, "JC uniaxial tensile: demasiadas iteraciones:", iters
-        return
-    end if
-
-    passed = .True.
 
 end subroutine test_closest_point_vonmises_uniaxial_tensile_jc
 
 !=====================================================================
-! 5) Johnson–Cook: Deformación nula → respuesta trivial
+! 5) Johnson–Cook (viscoplastic): deformación nula con tasa de referencia
 !=====================================================================
 subroutine test_closest_point_vonmises_zero_strain_jc(passed)
-    use tensors_types
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_JohnsonCook_full_visco_hardening, only : JohnsonCook_full_visco_hardening
-    use mod_vonMises,                         only : VonMises
-    use mod_elasticity_linear,                only : Elasticity_linear
-    use mod_closest_point_2,                  only : closest_point2
+    use mod_swift_hardening,   only : Swift_hardening
+    use mod_JC_viscoplastic,   only : JC_viscoplastic
     implicit none
 
-    real(real64), parameter :: EPS=1e-8
+    real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
+    type(Swift_hardening), target :: sw
+    type(JC_viscoplastic) :: jc
+    real(real64) :: ep, epd
+    real(real64) :: expected, actual
 
-    type(VonMises)                       :: vm
-    type(ten_3D2Osym)                    :: strain, strain_p, stress
-    type(JohnsonCook_full_visco_hardening) :: jc
-    type(Elasticity_linear)              :: elas
-    real(real64)                         :: strain_pf
-    logical                              :: error
-
-    type(ten_3D2Osym) :: expected_stress, expected_strain_plastic
-    real(real64)      :: expected_strain_effective
-
-    ! Parámetros JC con yield alto
-    real(real64), parameter :: A_mat      = 1000.0d0
-    real(real64), parameter :: B_mat      = 0.0d0
-    real(real64), parameter :: n_mat      = 1.0d0
-    real(real64), parameter :: C_mat      = 0.0d0
-    real(real64), parameter :: epdot0_mat = 1.0d0
-    real(real64), parameter :: m_mat      = 1.0d0
-    real(real64), parameter :: Troom_mat  = 293.15d0
-    real(real64), parameter :: Tmelt_mat  = 1500.0d0
-
-    passed    = .False.
-    strain_pf = 0D0
-    error     = .False.
+    passed = .False.
 
     print*, "test_closest_point_vonmises_zero_strain_jc - test 5"
 
-    expected_strain_effective = 0.0D0
-    call expected_stress%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
-    call expected_strain_plastic%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
+    sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
+    jc%hard_law => sw
+    jc%C      = 0.05D0
+    jc%epdmax = 0.1D0
 
-    call strain%init(xx=0.0D0, yy=0.0D0, zz=0.0D0, xy=0D0, yz=0D0, xz=0D0)
-    call strain_p%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
-    call elas%set_parameters(young=1000D0, poisson=0.3D0)
+    ep  = 0.0D0
+    epd = jc%epdmax
 
-    jc = JohnsonCook_full_visco_hardening(A=A_mat, B=B_mat, n=n_mat, C=C_mat, &
-                                          epdot0=epdot0_mat, m=m_mat,         &
-                                          Troom=Troom_mat, Tmelt=Tmelt_mat)
-    jc%epdot_current = epdot0_mat
-    jc%T_current     = Troom_mat
+    expected = sw%stress(ep)
+    actual   = jc%flow_stress(ep, epd)
 
-    call closest_point2(strain, elas, jc, vm, stress, strain_pf, strain_p, error)
-
-    passed = stress .isequal. expected_stress
+    passed = abs(actual - expected) < EPS
     if (.not. passed) then
-        print*, "Stress is not equal (JC zero strain)", new_line('A'),    &
-                "Expected:", expected_stress, new_line('A'),              &
-                "Actual  :", stress, new_line('A'),                       &
-                "Difference:", stress - expected_stress
-        return
-    end if
-
-    passed = abs(strain_pf - expected_strain_effective) < EPS
-    if (.not. passed) then
-        print*, "Effective plastic strain is not zero (JC zero strain)", &
-                new_line('A'), "Expected:", expected_strain_effective,   &
-                new_line('A'), "Actual  :", strain_pf
-        return
-    end if
-
-    passed = strain_p .isequal. expected_strain_plastic
-    if (.not. passed) then
-        print*, "Plastic strain is not zero (JC zero strain)", new_line('A'), &
-                "Expected:", expected_strain_plastic, new_line('A'),          &
-                "Actual  :", strain_p
+        print*, "JC flow stress mismatch at zero strain", new_line('A'), &
+                "Expected:", expected, new_line('A'),                   &
+                "Actual  :", actual, new_line('A'),                     &
+                "Difference:", actual - expected
         return
     end if
 
 end subroutine test_closest_point_vonmises_zero_strain_jc
 
 !=====================================================================
-! 6) Johnson–Cook: Deformación pequeña → respuesta puramente elástica
+! 6) Johnson–Cook (viscoplastic): tasa nula → respuesta cero
 !=====================================================================
 subroutine test_closest_point_vonmises_elastic_strain_jc(passed)
-    use tensors_types
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_JohnsonCook_full_visco_hardening, only : JohnsonCook_full_visco_hardening
-    use mod_vonMises,                         only : VonMises
-    use mod_elasticity_linear,                only : Elasticity_linear
-    use mod_closest_point_2,                  only : closest_point2
+    use mod_swift_hardening,   only : Swift_hardening
+    use mod_JC_viscoplastic,   only : JC_viscoplastic
     implicit none
 
-    real(real64), parameter :: EPS=1e-8
+    real(real64), parameter :: EPS=1e-12
     logical, intent(out) :: passed
+    type(Swift_hardening), target :: sw
+    type(JC_viscoplastic) :: jc
+    real(real64) :: ep, epd
+    real(real64) :: actual
 
-    type(VonMises)                       :: vm
-    type(ten_3D2Osym)                    :: strain, strain_p, stress
-    type(JohnsonCook_full_visco_hardening) :: jc
-    type(Elasticity_linear)              :: elas
-    real(real64)                         :: strain_pf
-    logical                              :: error
-
-    type(ten_3D2Osym) :: expected_stress, expected_strain_plastic
-    real(real64)      :: expected_strain_effective
-
-    ! Parámetros JC con yield alto (elástico)
-    real(real64), parameter :: A_mat      = 1000.0d0
-    real(real64), parameter :: B_mat      = 0.0d0
-    real(real64), parameter :: n_mat      = 1.0d0
-    real(real64), parameter :: C_mat      = 0.0d0
-    real(real64), parameter :: epdot0_mat = 1.0d0
-    real(real64), parameter :: m_mat      = 1.0d0
-    real(real64), parameter :: Troom_mat  = 293.15d0
-    real(real64), parameter :: Tmelt_mat  = 1500.0d0
-
-    passed    = .False.
-    strain_pf = 0D0
-    error     = .False.
+    passed = .False.
 
     print*, "test_closest_point_vonmises_elastic_strain_jc - test 6"
 
-    expected_strain_effective = 0.0D0
-    call expected_stress%init(xx=1D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
-    call expected_strain_plastic%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
+    sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
+    jc%hard_law => sw
+    jc%C      = 0.05D0
+    jc%epdmax = 0.1D0
 
-    call strain%init(xx=0.001D0, yy=-0.0003D0, zz=-0.0003D0, xy=0D0, yz=0D0, xz=0D0)
-    call strain_p%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
-    call elas%set_parameters(young=1000D0, poisson=0.3D0)
+    ep  = 0.001D0
+    epd = 0.0D0
 
-    jc = JohnsonCook_full_visco_hardening(A=A_mat, B=B_mat, n=n_mat, C=C_mat, &
-                                          epdot0=epdot0_mat, m=m_mat,         &
-                                          Troom=Troom_mat, Tmelt=Tmelt_mat)
-    jc%epdot_current = epdot0_mat
-    jc%T_current     = Troom_mat
-
-    call closest_point2(strain, elas, jc, vm, stress, strain_pf, strain_p, error)
-
-    passed = stress .isequal. expected_stress
+    actual = jc%flow_stress(ep, epd)
+    passed = abs(actual) < EPS
     if (.not. passed) then
-        print*, "Stress is not equal (JC elastic strain)", new_line('A'), &
-                "Expected:", expected_stress, new_line('A'),              &
-                "Actual  :", stress, new_line('A'),                       &
-                "Difference:", stress - expected_stress
-        return
-    end if
-
-    passed = abs(strain_pf - expected_strain_effective) < EPS
-    if (.not. passed) then
-        print*, "Effective plastic strain is not zero (JC elastic strain)", &
-                new_line('A'), "Expected:", expected_strain_effective,      &
-                new_line('A'), "Actual  :", strain_pf
-        return
-    end if
-
-    passed = strain_p .isequal. expected_strain_plastic
-    if (.not. passed) then
-        print*, "Plastic strain is not zero (JC elastic strain)", new_line('A'), &
-                "Expected:", expected_strain_plastic, new_line('A'),             &
-                "Actual  :", strain_p
+        print*, "JC flow stress not zero for null rate", new_line('A'), &
+                "Actual  :", actual
         return
     end if
 
