@@ -22,6 +22,10 @@ endif()
 # set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${FVERSION}")
 
+
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
+
 # Source code
 add_subdirectory(src)
 add_subdirectory(tests)

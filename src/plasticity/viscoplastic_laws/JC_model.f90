@@ -5,7 +5,7 @@ module mod_JC_viscoplastic
     !! Implements the strain-rate dependent component of the **Johnson-Cook (JC) Viscoplastic Flow Stress Model**.
     !!
     !! This module defines the concrete derived type `JC_viscoplastic`, which extends the
-    !! abstract base type `basis_viscoplastic_law`. The Johnson-Cook model defines the flow stress
+    !! abstract base type `Base_viscoplastic_law`. The Johnson-Cook model defines the flow stress
     !! ($\sigma_{flow}$) as a product of three independent factors:
     !!
     !! 1. Hardening (strain dependency)
@@ -27,7 +27,7 @@ module mod_JC_viscoplastic
     !! ### Derived Type:
     !!
     !! - `JC_viscoplastic`: Concrete type implementing the Johnson-Cook strain-rate dependency.
-    !!     - Inherits Component: `hard_law` (from `basis_viscoplastic_law`) - The delegated hardening law ($\sigma_{hard}$).
+    !!     - Inherits Component: `hard_law` (from `Base_viscoplastic_law`) - The delegated hardening law ($\sigma_{hard}$).
     !!     - Component: `C :: real(real64)` - The Johnson-Cook strain rate sensitivity parameter.
     !!     - Component: `epdmax :: real(real64)` - The reference equivalent plastic strain rate ($\dot{\epsilon}_{p0}$).
     !!     - Implements Procedure: `flow_stress => flow_JC` - Computes the total flow stress including hardening and rate effects.
@@ -42,16 +42,16 @@ module mod_JC_viscoplastic
     !!       - `epd` (`real(real64)`): Equivalent plastic strain rate ($\dot{\epsilon}_p$).
     !!     - **Output:** `res` (`real(real64)`): The flow stress $\sigma_{flow}$.
     use, intrinsic :: iso_fortran_env
-    use mod_basis_viscoplastic_law
+    use mod_viscoplastic_law
     implicit none
     private
     public :: JC_viscoplastic
 
-    type, extends(basis_viscoplastic_law) :: JC_viscoplastic
+    type, extends(Base_viscoplastic_law) :: JC_viscoplastic
     !! Johnson-Cook Viscoplastic Law Implementation
     !! ===========================================
     !!
-    !! Extends the `basis_viscoplastic_law` to implement the specific rate-dependent
+    !! Extends the `Base_viscoplastic_law` to implement the specific rate-dependent
     !! component of the Johnson-Cook model.
         real(real64) :: C     
         real(real64) :: epdmax

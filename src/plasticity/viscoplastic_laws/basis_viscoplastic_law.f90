@@ -1,4 +1,4 @@
-module mod_basis_viscoplastic_law
+module mod_viscoplastic_law
     !! Module mod_basis_viscoplastic_law
     !! =================================
     !!
@@ -53,13 +53,15 @@ module mod_basis_viscoplastic_law
     !!   ...
     !! end module mod_my_visco_law
     !! ```  
-    use, intrinsic :: iso_fortran_env
-    use mod_basis_hardening_law
+    !! use, intrinsic :: iso_fortran_env
+    !! use mod_hardening_law
+	use, intrinsic :: iso_fortran_env, only: real64
+    use mod_hardening_law, only: Base_hardening_law
     implicit none
     private
-    public :: basis_viscoplastic_law
+    public :: Base_viscoplastic_law
 
-    type, abstract :: basis_viscoplastic_law
+    type, abstract :: Base_viscoplastic_law
     !! Abstract Base Type for Viscoplastic Laws
     !! ========================================
     !!
@@ -71,19 +73,19 @@ module mod_basis_viscoplastic_law
         !! Must be explicitly allocated and associated before use.
     contains
         procedure(flow_stress_interface), deferred :: flow_stress
-    end type basis_viscoplastic_law
+    end type Base_viscoplastic_law
 
     abstract interface
         pure function flow_stress_interface(self, ep, epd) result(res)
         !! Interface for the `flow_stress` procedure.
         !! Must be implemented by concrete subtypes of `basis_viscoplastic_law`.
             use, intrinsic :: iso_fortran_env
-            import basis_viscoplastic_law
-            class(basis_viscoplastic_law), intent(in) :: self
+            import Base_viscoplastic_law
+            class(Base_viscoplastic_law), intent(in) :: self
             real(real64), intent(in) :: ep    
             real(real64), intent(in) :: epd   
             real(real64) :: res               
         end function flow_stress_interface
     end interface
 
-end module mod_basis_viscoplastic_law
+end module mod_viscoplastic_law

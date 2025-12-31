@@ -5,6 +5,8 @@ modFiles/
 output/
 doc/
 
-Theory/**
+!Theory/**
 !Theory/**/
 !*.tex
+*.obj
+*.mod
