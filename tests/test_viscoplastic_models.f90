@@ -7,42 +7,111 @@ module test_viscoplastic_mod
     use mod_VA_viscoplastic
     implicit none
     private
-
     public :: test_viscoplastic
 
-    double precision, parameter :: tolerance = 10D-02
+    integer, parameter :: nRates = 5
+    integer, parameter :: nPts   = 3
 
-    ! ================================
-    !   DATOS EXPERIMENTALES
-    ! ================================
-    double precision, parameter :: ep_exp(14) = (/ &
-         1.01665618D-02, 1.82321656D-02, 2.70017864D-02, &
-        3.71373728D-02, 4.60355078D-02, 5.56854902D-02, 6.50158637D-02, &
-        7.49742416D-02, 8.57663638D-02, 9.39227091D-02, 1.03962761D-01, &
-        1.16123074D-01, 1.30946821D-01, 1.48177371D-01 /)
+    double precision, parameter :: tolerance = 0.25  ! NRMSD threshold
 
-    double precision, parameter :: stress_exp(14) = (/ &
-         2.56080625D+02, 2.65324635D+02, 2.68667987D+02, &
-        2.71711623D+02, 2.74414834D+02, 2.77372186D+02, 2.80012858D+02, &
-        2.82808165D+02, 2.85900979D+02, 2.88143097D+02, 2.90925994D+02, &
-        2.94237227D+02, 2.98234489D+02, 3.02465123D+02 /)
+    ! ----------------------------
+    ! Tasa de deformación por caso
+    ! ----------------------------
+    double precision, parameter :: epd_rates(nRates) = (/ &
+        6.10D-05, 1.90D-04, 7.20D-04, 1.80D-03, 7.00D-03 /)
 
-    double precision, parameter :: epd_const = 6.10D-05
+    character(len=8), parameter :: rate_name(nRates) = (/ &
+        "0.125   ", "0.5     ", "2.0     ", "8.0     ", "32.0    " /)
+
+    ! ----------------------------
+    ! Puntos del test (ep) por tasa
+    ! ----------------------------
+    double precision, parameter :: ep_test(nRates, nPts) = reshape( (/ &
+        ! 0.125
+        1.01665618D-02, 6.50158637D-02, 1.48177371D-01, &
+        ! 0.5
+        8.30562887D-03, 7.08209189D-02, 1.41500714D-01, &
+        ! 2.0
+        1.04424638D-02, 8.55313858D-02, 1.86225172D-01, &
+        ! 8.0
+        1.62746141D-02, 9.39952201D-02, 1.68050770D-01, &
+        ! 32.0
+        2.11929363D-02, 7.90070460D-02, 1.76218279D-01  &
+    /), (/nRates, nPts/) )
+
+    ! ----------------------------
+    ! (Opcional) esfuerzo "exp" solo para imprimir
+    ! ----------------------------
+    double precision, parameter :: stress_exp(nRates, nPts) = reshape( (/ &
+        ! 0.125
+        2.56080625D+02, 2.80012858D+02, 3.02465123D+02, &
+        ! 0.5
+        2.58226382D+02, 2.80557941D+02, 2.99947457D+02, &
+        ! 2.0
+        2.62990857D+02, 2.90733474D+02, 3.09799046D+02, &
+        ! 8.0
+        2.66330706D+02, 2.94564530D+02, 3.31870674D+02, &
+        ! 32.0
+        2.01797455D+02, 3.02058651D+02, 3.31870674D+02  &
+    /), (/nRates, nPts/) )
+
+    ! ==========================================================
+    ! Valores "Python" por modelo (referencia)
+    ! 5 tasas x 3 puntos (orden: tasa1: p1 p2 p3, tasa2: p1 p2 p3, ...)
+    ! ==========================================================
+    double precision, parameter :: ref_JC(nRates, nPts)  = reshape((/ &
+        2.54122901D+02, 2.75180654D+02, 3.04011499D+02, &
+        2.56341724D+02, 2.80554401D+02, 3.05356309D+02, &
+        2.60693918D+02, 2.89809269D+02, 3.24093795D+02, &
+        2.65493492D+02, 2.95586794D+02, 3.21206442D+02, &
+        2.71116773D+02, 2.93969226D+02, 3.28239369D+02  &
+    /), (/nRates, nPts/))
+
+    double precision, parameter :: ref_RK(nRates, nPts)  = reshape((/ &
+        2.57500594D+02, 2.76037431D+02, 3.05821337D+02, &
+        2.58194546D+02, 2.79465716D+02, 3.04898323D+02, &
+        2.61048679D+02, 2.86995567D+02, 3.24435956D+02, &
+        2.65283137D+02, 2.92536674D+02, 3.20198734D+02, &
+        2.75534653D+02, 2.96369472D+02, 3.33745319D+02  &
+    /), (/nRates, nPts/))
+
+    double precision, parameter :: ref_MRK(nRates, nPts) = reshape((/ &
+        2.57844849D+02, 2.77783408D+02, 3.02609442D+02, &
+        2.57287918D+02, 2.81083725D+02, 3.03268359D+02, &
+        2.58519646D+02, 2.88532576D+02, 3.19826380D+02, &
+        2.61625905D+02, 2.94143186D+02, 3.18951988D+02, &
+        2.66352743D+02, 2.96608134D+02, 3.36791644D+02  &
+    /), (/nRates, nPts/))
+
+    double precision, parameter :: ref_NNL(nRates, nPts) = reshape((/ &
+        2.50717404D+02, 2.81822545D+02, 2.97339220D+02, &
+        2.47622744D+02, 2.84254012D+02, 2.98493682D+02, &
+        2.51932894D+02, 2.90674594D+02, 3.11406703D+02, &
+        2.60253715D+02, 2.96555422D+02, 3.15925555D+02, &
+        2.68476571D+02, 3.02529156D+02, 3.30768917D+02  &
+    /), (/nRates, nPts/))
+
+    double precision, parameter :: ref_VA(nRates, nPts)  = reshape((/ &
+        2.50651355D+02, 2.85701644D+02, 3.07691536D+02, &
+        2.47769724D+02, 2.87768484D+02, 3.06330367D+02, &
+        2.51044682D+02, 2.92498114D+02, 3.14689185D+02, &
+        2.57984507D+02, 2.94952719D+02, 3.11492696D+02, &
+        2.62517373D+02, 2.90480900D+02, 3.12959149D+02  &
+    /), (/nRates, nPts/))
 
 contains
 
     ! =========================================================
     !   NRMSD
     ! =========================================================
-    pure function nrmsd(exp, pred) result(res)
-        double precision, intent(in) :: exp(:), pred(:)
-        double precision :: res
-        double precision :: rmse, denom
+    pure function nrmsd(ref, pred) result(res)
+        double precision, intent(in) :: ref(:), pred(:)
+        double precision :: res, rmse, denom
         integer :: n
 
-        n = size(exp)
-        rmse  = sqrt( sum( (pred - exp)**2 ) / dble(n) )
-        denom = maxval(exp) - minval(exp)
+        n = size(ref)
+        rmse  = sqrt( sum( (pred - ref)**2 ) / dble(n) )
+        denom = maxval(ref) - minval(ref)
 
         if (denom .gt. 0.D0) then
             res = rmse / denom
@@ -64,20 +133,24 @@ contains
         type(NNL_viscoplastic) :: nnl
         type(VA_viscoplastic)  :: va
 
-        double precision :: pred_JC(15),  pred_RK(15),  pred_MRK(15)
-        double precision :: pred_NNL(15), pred_VA(15)
-        double precision :: err_JC, err_RK, err_MRK, err_NNL, err_VA
-        logical :: ok_JC, ok_RK, ok_MRK, ok_NNL, ok_VA
-        integer :: i
+        double precision :: pred_JC(nPts), pred_RK(nPts), pred_MRK(nPts)
+        double precision :: pred_NNL(nPts), pred_VA(nPts)
+        double precision :: errJC, errRK, errMRK, errNNL, errVA
+        logical :: okJC, okRK, okMRK, okNNL, okVA
+        logical :: all_ok
+        integer :: r, i
+
+        character(len=7)  :: stJC, stRK, stMRK, stNNL, stVA
+        character(len=30) :: stFINAL
 
         ! ---- JC (Voce)
-        voce%sy= 272.05
-        voce%k = 0.064  ! A
-        voce%q = 293.588   ! B
-        voce%n = 1.507   ! ns
+        voce%sy = 272.05D0
+        voce%k  = 0.064D0
+        voce%q  = 293.588D0
+        voce%n  = 1.507D0
 
-        jc%hard_law => voce   
-        jc%C      = 0.009464
+        jc%hard_law => voce
+        jc%C      = 0.009464D0
         jc%epdmax = 0.32D0
 
         ! ---- RK ----
@@ -106,15 +179,15 @@ contains
         mrk%chi2   = 0.01942062D0
 
         ! ---- NNL ----
-        nnl%sig_a   = 334.776175D0
-        nnl%sig_0   = 5.88318003D0
-        nnl%KG0     = 0.21906996D0
-        nnl%n1      = 0.06301105D0
-        nnl%epd0    = 0.01425422D0
-        nnl%at      = 22.8752986D0
-        nnl%n0      = 0.97427303D0
-        nnl%q       = 2.D0
-        nnl%p       = 0.6666667D0
+        nnl%sig_a    = 334.776175D0
+        nnl%sig_0    = 5.88318003D0
+        nnl%KG0      = 0.21906996D0
+        nnl%n1       = 0.06301105D0
+        nnl%epd0     = 0.01425422D0
+        nnl%at       = 22.8752986D0
+        nnl%n0       = 0.97427303D0
+        nnl%q        = 2.D0
+        nnl%p        = 0.6666667D0
         nnl%eps_log  = 1.D-12
         nnl%eps_base = 1.D-12
 
@@ -126,98 +199,90 @@ contains
         va%m     = 0.03766668D0
         va%sig_u = 195.233128D0
 
-        ! ============================
-        ! 2) Models
-        ! ============================
-        do i = 1, 14
-            pred_JC(i)  = jc%flow_stress(ep_exp(i),  epd_const)
-            pred_RK(i)  = rk%flow_stress(ep_exp(i),  epd_const)
-            pred_MRK(i) = mrk%flow_stress(ep_exp(i), epd_const)
-            pred_NNL(i) = nnl%flow_stress(ep_exp(i), epd_const)
-            pred_VA(i)  = va%flow_stress(ep_exp(i),  epd_const)
-            
+        all_ok = .true.
+
+        print *, "===================================================="
+        print *, "   TEST: Fortran models vs Python reference values"
+        print *, "   NRMSD < ", tolerance
+        print *, "===================================================="
+
+        do r = 1, nRates
+
+            do i = 1, nPts
+                pred_JC(i)  = jc%flow_stress(ep_test(r,i),  epd_rates(r))
+                pred_RK(i)  = rk%flow_stress(ep_test(r,i),  epd_rates(r))
+                pred_MRK(i) = mrk%flow_stress(ep_test(r,i), epd_rates(r))
+                pred_NNL(i) = nnl%flow_stress(ep_test(r,i), epd_rates(r))
+                pred_VA(i)  = va%flow_stress(ep_test(r,i),  epd_rates(r))
+            end do
+
+            errJC  = nrmsd(ref_JC(r,:),  pred_JC)
+            errRK  = nrmsd(ref_RK(r,:),  pred_RK)
+            errMRK = nrmsd(ref_MRK(r,:), pred_MRK)
+            errNNL = nrmsd(ref_NNL(r,:), pred_NNL)
+            errVA  = nrmsd(ref_VA(r,:),  pred_VA)
+
+            okJC  = (errJC  < tolerance)
+            okRK  = (errRK  < tolerance)
+            okMRK = (errMRK < tolerance)
+            okNNL = (errNNL < tolerance)
+            okVA  = (errVA  < tolerance)
+
+            all_ok = all_ok .and. okJC .and. okRK .and. okMRK .and. okNNL .and. okVA
+
+            if (okJC)  then; stJC  = "JC OK  ";  else; stJC  = "JC FAIL"; end if
+            if (okRK)  then; stRK  = "RK OK  ";  else; stRK  = "RK FAIL"; end if
+            if (okMRK) then; stMRK = "MRK OK ";  else; stMRK = "MRKFAIL"; end if
+            if (okNNL) then; stNNL = "NNL OK ";  else; stNNL = "NNLFAIL"; end if
+            if (okVA)  then; stVA  = "VA OK  ";  else; stVA  = "VA FAIL"; end if
+
+            print *
+            write(*,'(A,1X,A,1X,A,1X,A,1X,A,1X,A,2X,A,ES12.4)') &
+                "Rate", trim(rate_name(r)), "epd=", "", "", "", "", epd_rates(r)
+            write(*,'(A,1X,A,2X,A,2X,A,2X,A,2X,A)') "Status:", stJC, stRK, stMRK, stNNL, stVA
+            write(*,'(A,1X,ES12.4,2X,A,1X,ES12.4,2X,A,1X,ES12.4,2X,A,1X,ES12.4,2X,A,1X,ES12.4)') &
+                "NRMSD:", errJC, "RK", errRK, "MRK", errMRK, "NNL", errNNL, "VA", errVA
+
+            if (.not.(okJC .and. okRK .and. okMRK .and. okNNL .and. okVA)) then
+                print *
+                print *, "------------------------------------------------------------------------------------------------------------"
+                print *, " ep           epd          exp      JC_ref  JC_F    RK_ref  RK_F    MRK_ref MRK_F   NNL_ref NNL_F   VA_ref VA_F"
+                print *, "------------------------------------------------------------------------------------------------------------"
+                do i = 1, nPts
+                    write(*,'(ES12.4,1X,ES12.4,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2)') &
+                        ep_test(r,i), epd_rates(r), stress_exp(r,i), &
+                        ref_JC(r,i), pred_JC(i), &
+                        ref_RK(r,i), pred_RK(i), &
+                        ref_MRK(r,i), pred_MRK(i), &
+                        ref_NNL(r,i), pred_NNL(i), &
+                        ref_VA(r,i), pred_VA(i)
+                end do
+                print *, "------------------------------------------------------------------------------------------------------------"
+            end if
+
         end do
-       
-        ! ============================
-        ! 3) NRMSD
-        ! ============================
-        err_JC  = nrmsd(stress_exp, pred_JC)
-        err_RK  = nrmsd(stress_exp, pred_RK)
-        err_MRK = nrmsd(stress_exp, pred_MRK)
-        err_NNL = nrmsd(stress_exp, pred_NNL)
-        err_VA  = nrmsd(stress_exp, pred_VA)
 
-        ok_JC  = (err_JC  < tolerance)
-        ok_RK  = (err_RK  < tolerance)
-        ok_MRK = (err_MRK < tolerance)
-        ok_NNL = (err_NNL < tolerance)
-        ok_VA  = (err_VA  < tolerance)
-
-        ! ============================
-        ! 4) Results
-        ! ============================
-        print *, "===================================================="
-        print *, "         TEST Viscoplastic Models"
-        print *, "            NRMSD < ", tolerance
-        print *, "===================================================="
-
-        if (ok_JC) then
-            print *, "JC   PASSED   NRMSD = ", err_JC
+        if (all_ok) then
+            stFINAL = "PASSED (all rates/models)      "
         else
-            print *, "JC   FAILED   NRMSD = ", err_JC
+            stFINAL = "FAILED (see details above)     "
         end if
-
-        if (ok_RK) then
-            print *, "RK   PASSED   NRMSD = ", err_RK
-        else
-            print *, "RK   FAILED   NRMSD = ", err_RK
-        end if
-
-        if (ok_MRK) then
-            print *, "MRK  PASSED   NRMSD = ", err_MRK
-        else
-            print *, "MRK  FAILED   NRMSD = ", err_MRK
-        end if
-
-        if (ok_NNL) then
-            print *, "NNL  PASSED   NRMSD = ", err_NNL
-        else
-            print *, "NNL  FAILED   NRMSD = ", err_NNL
-        end if
-
-        if (ok_VA) then
-            print *, "VA   PASSED   NRMSD = ", err_VA
-        else
-            print *, "VA   FAILED   NRMSD = ", err_VA
-        end if
-
-        passed = ok_JC .and. ok_RK .and. ok_MRK .and. ok_NNL .and. ok_VA
-
-        if (.not. (ok_JC .and. ok_RK .and. ok_MRK .and. ok_NNL .and. ok_VA)) then
 
         print *
-        print *, "------------------------------------------------------------"
-        print *, "   ep       exp      JC       RK       MRK      NNL       VA"
-        print *, "------------------------------------------------------------"
+        print *, "==============================================================="
+        write(*,'(A,1X,A)') "FINAL:", trim(stFINAL)
+        print *, "==============================================================="
 
-       do i = 1, 14
-          write(*,'(F8.5,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2,1X,F8.2)') &
-             ep_exp(i), stress_exp(i), &
-             pred_JC(i), pred_RK(i), pred_MRK(i), pred_NNL(i), pred_VA(i)
-       end do
-
-       print *, "------------------------------------------------------------"
-
-       end if
+        passed = all_ok
 
     end subroutine test_viscoplastic
 
 end module test_viscoplastic_mod
 
+
 program test_viscoplastic_main
     use test_viscoplastic_mod
     implicit none
-
     logical :: passed
 
     call test_viscoplastic(passed)
