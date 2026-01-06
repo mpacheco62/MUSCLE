@@ -78,3 +78,8 @@ add_executable(test_basic_operations test_basic_operations.f90)
 target_link_libraries(test_basic_operations PRIVATE umatlib compile_options)
 target_include_directories(test_basic_operations PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(NAME test_basic_operations COMMAND test_basic_operations)
+
+add_executable(test_viscoplastic_models test_viscoplastic_models.f90)
+target_link_libraries(test_viscoplastic_models PRIVATE umatlib compile_options)
+target_include_directories(test_viscoplastic_models PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
+add_test(NAME test_viscoplastic_models COMMAND test_viscoplastic_models)
