@@ -3,6 +3,7 @@ module test_derivatives_mod
     implicit none
     private
     public :: fun_scalar_test1, fun_scalar_test2, fun_scalar_test3, energy_hooke
+    public :: fun_tens_x, fun_tens_2x, fun_tens_tenx, fun_nonlinear_tens
     type, public :: mytype_test
         real(real64) :: a
         contains
@@ -97,6 +98,44 @@ contains
             strain2 = strain%square()
             energy = mu*sum(strain2%vals(1:3)) + lam/2D0*sum(strain%vals(1:3))**2
     end function
+
+
+    pure function fun_tens_x(x) result(res)
+        use tensors_types, only : ten_3D2Osym
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: res
+        res = x
+    end function
+
+    pure function fun_tens_2x(x) result(res)
+        use tensors_types, only : ten_3D2Osym, operator(*)
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: res
+        res = 2D0*x
+    end function
+
+    pure function fun_tens_tenx(x) result(res)
+        use tensors_types, only : ten_3D2Osym, ten_3D4O3sym, operator(*), operator(.ddot.)
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: res
+        type(ten_3D4O3sym) :: C
+        call C%init((/1D0,2D0,3D0,4D0,5D0,6D0,7D0,8D0,9D0,10D0,11D0,12D0,13D0,14D0,15D0,16D0,17D0,18D0,19D0,20D0,21D0/))
+        res = C.ddot.x
+    end function
+
+    ! f(x) = tr(x) * x
+    pure function fun_nonlinear_tens(x) result(res)
+        use tensors_types, only : ten_3D2Osym
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: res
+        real(real64) :: trace        
+        trace = x%vals(1) + x%vals(2) + x%vals(3)
+        res%vals = trace * x%vals
+    end function
 end module test_derivatives_mod
 
 
@@ -107,19 +146,22 @@ program test_derivatives
     
     logical :: passed
 
-    call test_derivate(passed)
+    call test_derivate_scalar_ten(passed)
     if (.not. passed) STOP 1
 
-    call test_object_derivate(passed)
+    call test_derivate_ten_ten(passed)
+    if (.not. passed) STOP 1
+
+    call test_object_derivate_scalar_ten(passed)
     if (.not. passed) STOP 2
 
-    call test_derivate2O(passed)
+    call test_derivate2O_scalar_ten(passed)
     if (.not. passed) STOP 1
 
     STOP 0
 end program test_derivatives
 
-subroutine test_derivate(passed)
+subroutine test_derivate_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
     use derivatives
     use tensors_types
@@ -166,9 +208,107 @@ subroutine test_derivate(passed)
 end subroutine
 
 
+subroutine test_derivate_ten_ten(passed)
+    use, intrinsic :: iso_fortran_env
+    use derivatives
+    use tensors_types
+    use test_derivatives_mod
+    implicit none
+    
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym) :: to_test
+    type(iden_4O4T) :: I4O4T
+    type(iden_2O) :: I2O
+    type(ten_3D4O2sym) :: expected, result
+
+    call to_test%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
+    expected = I4O4T
+    result = derivative(fun_tens_x, to_test)
+    passed = expected .isequal. result
+
+    if (.not. passed) print*, "Case 1 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test%vals = (/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/)
+    expected = I4O4T
+    result = derivative(fun_tens_x, to_test)
+    passed = expected .isequal. result
+
+    if (.not. passed) print*, "Case 2 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
 
 
-subroutine test_object_derivate(passed)
+    call to_test%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
+    expected = 2D0*I4O4T
+    result = derivative(fun_tens_2x, to_test)
+    passed = expected .isequal. result
+
+    if (.not. passed) print*, "Case 3 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test%vals = (/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/)
+    expected = 2D0*I4O4T
+    result = derivative(fun_tens_2x, to_test) 
+    passed = expected .isequal. result
+
+    if (.not. passed) print*, "Case 4 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+
+    call expected%init(xxxx=1D0,   yyyy=2D0,   zzzz=3D0,  &
+                       xyxy=4D0,   yzyz=5D0,   xzxz=6D0,  &
+                       xxyy=7D0,   yyzz=8D0,              &
+                       yyxx=7D0,   zzyy=8D0,              &
+                       zzxy=9D0,   xyyz=10D0,  yzxz=11D0, &
+                       xyzz=9D0,   yzxy=10D0,  xzyz=11D0, &
+                       xxzz=12D0,                         &
+                       zzxx=12D0,                         &
+                       yyxy=13D0,  zzyz=14D0,  xyxz=15D0, &
+                       xyyy=13D0,  yzzz=14D0,  xzxy=15D0, &
+                       xxxy=16D0,  yyyz=17D0,  zzxz=18D0, &
+                       xyxx=16D0,  yzyy=17D0,  xzzz=18D0, &
+                       xxyz=19D0,  yyxz=20D0,  xxxz=21D0, &
+                       yzxx=19D0,  xzyy=20D0,  xzxx=21D0  &
+                       )
+    result = derivative(fun_tens_tenx, to_test)
+    passed = expected .isequal. result
+
+    if (.not. passed) print*, "Case 5 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+
+    expected = sum(to_test%vals(1:3))*I4O4T 
+    expected = expected + (to_test .tdot. I2O)  ! TODO suma de I4O3TS y I4O4TS
+    result = derivative(fun_nonlinear_tens, to_test)
+    passed = expected .isequal. result
+
+    if (.not. passed) print*, "Case 6 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+end subroutine
+
+
+
+subroutine test_object_derivate_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     use test_derivatives_mod
@@ -198,7 +338,7 @@ end subroutine
 
 
 
-subroutine test_derivate2O(passed)
+subroutine test_derivate2O_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
     use derivatives
     use tensors_types

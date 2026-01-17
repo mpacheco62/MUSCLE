@@ -13,18 +13,22 @@ module mod_operator_I4O4TS_3D4O2sym
     !  | (2311) (2322) (2333) (2312) (2323) (2313) |
     !  | (1311) (1322) (1333) (1312) (1323) (1313) |
 
-    ! public :: operator(+)
-    ! interface operator (+)
-    !     module procedure sum_3D4O3sym_I4O4TS
-    !     module procedure sum_I4O4TS_3D4O3sym
-    ! end interface
+    public :: operator(+)
+    interface operator (+)
+        module procedure sum_3D4O2sym_I4O4TS
+        module procedure sum_I4O4TS_3D4O2sym
+    end interface
 
-    ! public :: operator(-)
-    ! interface operator (-)
-    !     module procedure sub_3D4O3sym_I4O4TS
-    !     module procedure sub_I4O4TS_3D4O3sym
-    ! end interface
-    
+    public :: operator(-)
+    interface operator (-)
+        module procedure sub_3D4O2sym_I4O4TS
+        module procedure sub_I4O4TS_3D4O2sym
+    end interface
+
+    public :: assignment(=)
+    interface assignment(=)
+        module procedure assign_3D4O2sym_I4O4TS
+    end interface
     contains
 
 
@@ -83,4 +87,17 @@ module mod_operator_I4O4TS_3D4O2sym
         res%vals(5,5) = res%vals(5,5) - 0.5D0*I2%val
         res%vals(6,6) = res%vals(6,6) - 0.5D0*I2%val
     end function sub_3D4O2sym_I4O4TS
+
+    pure subroutine assign_3D4O2sym_I4O4TS(a, I2)
+        implicit none
+        class(iden_4O4TS), intent(in) :: I2
+        type(ten_3D4O2sym), intent(out) :: a
+        a%vals = 0D0
+        a%vals(1,1) = I2%val
+        a%vals(2,2) = I2%val
+        a%vals(3,3) = I2%val
+        a%vals(4,4) = 0.5D0*I2%val
+        a%vals(5,5) = 0.5D0*I2%val
+        a%vals(6,6) = 0.5D0*I2%val
+    end subroutine assign_3D4O2sym_I4O4TS
 end module mod_operator_I4O4TS_3D4O2sym

@@ -4,6 +4,7 @@ module derivatives
     interface derivative
         module procedure derivative_scalar_3D2O
         module procedure derivative_scalar_3D2Osym
+        module procedure derivative_3D2Osym_3D2Osym
     end interface
 
     public :: derivative2O
@@ -27,6 +28,14 @@ module derivatives
             type(ten_3D2Osym), intent(in) :: x
             real(real64) :: f_scalar_3D2Osym
         end function f_scalar_3D2Osym
+
+        pure function f_3D2Osym_3D2Osym(x)
+            use tensors_types, only : ten_3D2Osym
+            use, intrinsic :: iso_fortran_env
+            implicit none
+            type(ten_3D2Osym), intent(in) :: x
+            type(ten_3D2Osym) :: f_3D2Osym_3D2Osym
+        end function f_3D2Osym_3D2Osym
     end interface
 
     contains
@@ -273,5 +282,76 @@ module derivatives
         return
     end function derivative2O_scalar_3D2Osym
     
+
+    pure function derivative_3D2Osym_3D2Osym(func, mat, eps)
+        use tensors_types, only : ten_3D2Osym, ten_3D4O2sym, &
+                                  operator(+), operator(-), operator(*), operator(/), assignment(=)
+        use, intrinsic :: iso_fortran_env
+        implicit none
+
+        procedure(f_3D2Osym_3D2Osym) :: func
+        type(ten_3D2Osym), intent(in) :: mat
+        real(real64), intent(in), optional :: eps
+        type(ten_3D4O2sym) :: derivative_3D2Osym_3D2Osym
+        
+        type(ten_3D2Osym) :: mat_var, tmp, val_func
+        type(ten_3D2Osym) :: val_func_forw, val_func_back
+        real(real64) :: epsr, norm_a
+
+        real(real64), parameter :: DIVEPS = 1D-7, MAX_EPS=1D-40  !! Relative and minimum absolute step size
+
+
+
+
+        if (present(eps)) then
+            epsr = eps
+        else
+            val_func = func(mat)
+            norm_a =   abs(val_func%vals(1)) + abs(val_func%vals(2)) + abs(val_func%vals(3)) &
+                   + 2*abs(val_func%vals(4)) + 2*abs(val_func%vals(5)) + 2*abs(val_func%vals(6))
+      
+            epsr = max(abs(norm_a*DIVEPS), MAX_EPS)
+        end if
+
+        derivative_3D2Osym_3D2Osym%vals = 0.0D0
+
+        mat_var = mat
+        mat_var%vals(1) = mat%vals(1) + epsr; val_func_forw = func(mat_var)
+        mat_var%vals(1) = mat%vals(1) - epsr; val_func_back = func(mat_var)
+        tmp = (val_func_forw - val_func_back)/(2D0*epsr)
+        derivative_3D2Osym_3D2Osym%vals(:,1) = tmp%vals
+        mat_var%vals(1) = mat%vals(1)
+
+        mat_var%vals(2) = mat%vals(2) + epsr; val_func_forw = func(mat_var)
+        mat_var%vals(2) = mat%vals(2) - epsr; val_func_back = func(mat_var)
+        tmp = (val_func_forw - val_func_back)/(2D0*epsr)
+        derivative_3D2Osym_3D2Osym%vals(:,2) = tmp%vals
+        mat_var%vals(2) = mat%vals(2)
+
+        mat_var%vals(3) = mat%vals(3) + epsr; val_func_forw = func(mat_var)
+        mat_var%vals(3) = mat%vals(3) - epsr; val_func_back = func(mat_var)
+        tmp = (val_func_forw - val_func_back)/(2D0*epsr)
+        derivative_3D2Osym_3D2Osym%vals(:,3) = tmp%vals
+        mat_var%vals(3) = mat%vals(3)
+
+        mat_var%vals(4) = mat%vals(4) + epsr/2D0; val_func_forw = func(mat_var)
+        mat_var%vals(4) = mat%vals(4) - epsr/2D0; val_func_back = func(mat_var)
+        tmp = (val_func_forw - val_func_back)/(2D0*epsr)
+        derivative_3D2Osym_3D2Osym%vals(:,4) = tmp%vals
+        mat_var%vals(4) = mat%vals(4)
+
+        mat_var%vals(5) = mat%vals(5) + epsr/2D0; val_func_forw = func(mat_var)
+        mat_var%vals(5) = mat%vals(5) - epsr/2D0; val_func_back = func(mat_var)
+        tmp = (val_func_forw - val_func_back)/(2D0*epsr)
+        derivative_3D2Osym_3D2Osym%vals(:,5) = tmp%vals
+        mat_var%vals(5) = mat%vals(5)
+
+        mat_var%vals(6) = mat%vals(6) + epsr/2D0; val_func_forw = func(mat_var)
+        mat_var%vals(6) = mat%vals(6) - epsr/2D0; val_func_back = func(mat_var)
+        tmp = (val_func_forw - val_func_back)/(2D0*epsr)
+        derivative_3D2Osym_3D2Osym%vals(:,6) = tmp%vals
+        mat_var%vals(6) = mat%vals(6)
+
+    end function derivative_3D2Osym_3D2Osym
 
 end module

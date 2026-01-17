@@ -29,6 +29,12 @@ module mod_operator_I2O_3D2Osym
         module procedure ddot_3D2Osym_I2O
     end interface
 
+    public :: operator(.tdot.)
+    interface operator (.tdot.)
+        module procedure tdot_3D2Osym_I2O
+        module procedure tdot_I2O_3D2Osym
+    end interface
+
     contains
 
     pure function ddot_I2O_3D2Osym(I2, b) result(res)
@@ -98,4 +104,28 @@ module mod_operator_I2O_3D2Osym
         type(ten_3D2Osym) :: res
         res%vals = a%vals
     end function mul_3D2Osym_I2O
+
+    pure function tdot_3D2Osym_I2O(a, I2) result(res)
+        use mod_ten_3D4O2sym
+        implicit none
+        class(iden_2O), intent(in) :: I2
+        type(ten_3D2Osym), intent(in) :: a
+        type(ten_3D4O2sym) :: res
+        res%vals = 0D0
+        res%vals(:,1) = a%vals
+        res%vals(:,2) = a%vals
+        res%vals(:,3) = a%vals
+    end function tdot_3D2Osym_I2O
+
+    pure function tdot_I2O_3D2Osym(I2, a) result(res)
+        use mod_ten_3D4O2sym
+        implicit none
+        class(iden_2O), intent(in) :: I2
+        type(ten_3D2Osym), intent(in) :: a
+        type(ten_3D4O2sym) :: res
+        res%vals = 0D0
+        res%vals(1,:) = a%vals
+        res%vals(2,:) = a%vals
+        res%vals(3,:) = a%vals
+    end function tdot_I2O_3D2Osym
 end module mod_operator_I2O_3D2Osym
