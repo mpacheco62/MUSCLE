@@ -25,6 +25,10 @@ module mod_operator_I4O4T_3D4O2sym
         module procedure sub_I4O4T_3D4O2sym
     end interface
     
+    public :: assignment(=)
+    interface assignment(=)
+        module procedure assign_3D4O2sym_I4O4T
+    end interface
 
     contains
 
@@ -84,4 +88,17 @@ module mod_operator_I4O4T_3D4O2sym
         res%vals(5,5) = res%vals(5,5) - 0.5D0
         res%vals(6,6) = res%vals(6,6) - 0.5D0
     end function sub_3D4O2sym_I4O4T
+
+    pure subroutine assign_3D4O2sym_I4O4T(a, I2)
+        implicit none
+        class(iden_4O4T), intent(in) :: I2
+        type(ten_3D4O2sym), intent(out) :: a
+        a%vals = 0D0
+        a%vals(1,1) = 1D0
+        a%vals(2,2) = 1D0
+        a%vals(3,3) = 1D0
+        a%vals(4,4) = 0.5D0
+        a%vals(5,5) = 0.5D0
+        a%vals(6,6) = 0.5D0
+    end subroutine assign_3D4O2sym_I4O4T
 end module mod_operator_I4O4T_3D4O2sym
