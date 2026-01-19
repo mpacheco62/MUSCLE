@@ -110,7 +110,7 @@ module mod_operator_3D4O2sym_3D4O3sym
     end function ddot_3D4O3sym_3D4O3sym
 
 
-    subroutine assign_3D4O2sym_3D4O3sym(self, b)
+    pure subroutine assign_3D4O2sym_3D4O3sym(self, b)
         implicit none
         class(ten_3D4O2sym), intent(inout) :: self
         class(ten_3D4O3sym), intent(in) :: b

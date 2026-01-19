@@ -10,9 +10,8 @@ program test_closest_point
 
     call test_closest_point_vonmises_elastic_strain(passed)
     if (.not. passed) STOP 3
-
+ 
     print*, "Passed!", passed
-    ! STOP 1
 end program test_closest_point
 
 subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
@@ -39,6 +38,7 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
     type(ten_3D2Osym) :: expected_stress, expected_strain_plastic
     real(real64) :: expected_strain_effective
     integer :: status, iters
+    type(ten_3D4O2sym) :: tangent, numerical_tangent
 
     passed = .False.
     strain_pf = 0D0
@@ -95,10 +95,19 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
     if(.not. passed) return
 
 
+    call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
+    call solver%tangent(strain=strain, data=data, tangent=tangent)
+
+    passed = tangent .isequal. numerical_tangent
+    if (.not. passed) print*, "Tangent is no equal", new_line('A'),          &
+                              "Analitical:", tangent, new_line('A'),  &
+                              "Numerical:", numerical_tangent, new_line('A'),       &
+                              "Difference", tangent - numerical_tangent
+    if (.not. passed) return
+
+
     return
 end subroutine
-
-
 
 
 subroutine test_closest_point_vonmises_zero_strain(passed)
@@ -107,12 +116,14 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
     use mod_elasticity_linear, only : Elasticity_linear
-    use mod_closest_point, only : closest_point2
+    use mod_closest_point, only : Closest_point, Closest_point_data
     implicit none
 
     real(real64), parameter :: EPS=1e-8
     logical, intent(out) :: passed
 
+    type(Closest_point_data) :: data
+    type(Closest_point) :: solver
     type(VonMises) :: vm
     type(ten_3D2Osym) :: strain, strain_p, stress
     type(Swift_hardening) :: sw
@@ -122,6 +133,7 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
 
     type(ten_3D2Osym) :: expected_stress, expected_strain_plastic
     real(real64) :: expected_strain_effective
+    type(ten_3D4O2sym) :: tangent, numerical_tangent
 
 
     passed = .False.
@@ -138,8 +150,13 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
 
-    call closest_point2(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
-                       stress=stress, strain_pf=strain_pf, strain_p=strain_p, status=error)
+    call data%init(strain_pf=strain_pf, strain_p=strain_p)
+    call solver%init(elasticity=elas, hardening=sw, yield=vm)
+    call solver%solve(strain=strain, data=data)
+    call data%get(stress=stress,        & 
+                  strain_pf=strain_pf,  &
+                  strain_p=strain_p     &
+                  )
 
     passed = stress .isequal. expected_stress
     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
@@ -162,6 +179,18 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
                               "Difference:", strain_p - expected_strain_plastic
     if (.not. passed) return
 
+
+    call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
+    call solver%tangent(strain=strain, data=data, tangent=tangent)
+
+    passed = tangent .isequal. numerical_tangent
+    if (.not. passed) print*, "Tangent is no equal", new_line('A'),          &
+                              "Analitical:", tangent, new_line('A'),  &
+                              "Numerical:", numerical_tangent, new_line('A'),       &
+                              "Difference", tangent - numerical_tangent
+    if (.not. passed) return
+    
+
     return
 end subroutine
 
@@ -173,12 +202,14 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
     use mod_elasticity_linear, only : Elasticity_linear
-    use mod_closest_point, only : closest_point2
+    use mod_closest_point, only : Closest_point, Closest_point_data
     implicit none
 
     real(real64), parameter :: EPS=1e-8
     logical, intent(out) :: passed
 
+    type(Closest_point_data) :: data
+    type(Closest_point) :: solver
     type(VonMises) :: vm
     type(ten_3D2Osym) :: strain, strain_p, stress
     type(Swift_hardening) :: sw
@@ -188,6 +219,7 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
 
     type(ten_3D2Osym) :: expected_stress, expected_strain_plastic
     real(real64) :: expected_strain_effective
+    type(ten_3D4O2sym) :: tangent, numerical_tangent
 
 
     passed = .False.
@@ -204,8 +236,13 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
 
-    call closest_point2(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
-                       stress=stress, strain_pf=strain_pf, strain_p=strain_p, status=error)
+    call data%init(strain_pf=strain_pf, strain_p=strain_p)
+    call solver%init(elasticity=elas, hardening=sw, yield=vm)
+    call solver%solve(strain=strain, data=data)
+    call data%get(stress=stress,        & 
+                  strain_pf=strain_pf,  &
+                  strain_p=strain_p     &
+                  )
 
     passed = stress .isequal. expected_stress
     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
@@ -226,6 +263,17 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
                               "Expected:", expected_strain_plastic, new_line('A'), &
                               "Actual Value:", strain_p, new_line('A'),            & 
                               "Difference:", strain_p - expected_strain_plastic
+    if (.not. passed) return
+
+
+    call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
+    call solver%tangent(strain=strain, data=data, tangent=tangent)
+
+    passed = tangent .isequal. numerical_tangent
+    if (.not. passed) print*, "Tangent is no equal", new_line('A'),          &
+                              "Analitical:", tangent, new_line('A'),  &
+                              "Numerical:", numerical_tangent, new_line('A'),       &
+                              "Difference", tangent - numerical_tangent
     if (.not. passed) return
 
     return
