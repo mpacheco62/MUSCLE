@@ -36,12 +36,14 @@ module mod_closest_point
         procedure, public :: init => closest_point_init
         procedure, private :: iter => closest_point_iter
         procedure, public :: solve => closest_point_solve
+        procedure, public :: tangent => closest_point_tangent
+        procedure, public :: tangent_numerical => closest_point_tangent_numerical
     end type Closest_point
 
     public :: closest_point2
 
     contains
-        subroutine closest_point_data_init(self, strain_pf, strain_p)
+        pure subroutine closest_point_data_init(self, strain_pf, strain_p)
             implicit none
             class(Closest_point_data), intent(inout) :: self
             type(ten_3D2Osym), intent(in) :: strain_p
@@ -53,7 +55,7 @@ module mod_closest_point
             self%strain_p_iter = strain_p
         end subroutine closest_point_data_init
 
-        subroutine closest_point_data_set(self,                            &
+        pure subroutine closest_point_data_set(self,                            &
                                           strain_pf_init, strain_pf_iter,  &
                                           strain_p_init, strain_p_iter,    &
                                           dgamma, ddgamma,                 &
@@ -76,13 +78,13 @@ module mod_closest_point
             if(present(stress)) self%stress=stress
         end subroutine closest_point_data_set
 
-        subroutine closest_point_data_get(self,                            &
-                                          strain_pf_init, strain_pf,  &
-                                          strain_p_init, strain_p,    &
-                                          dgamma, ddgamma,                 &
-                                          stress,                          &
-                                          status, iters                     &
-                                          )
+        pure subroutine closest_point_data_get(self,                            &
+                                               strain_pf_init, strain_pf,       &
+                                               strain_p_init, strain_p,         &
+                                               dgamma, ddgamma,                 &
+                                               stress,                          &
+                                               status, iters                    &
+                                               )
             implicit none
             class(Closest_point_data), intent(in) :: self
             real(real64), intent(out), optional :: strain_pf_init, strain_pf
@@ -102,7 +104,7 @@ module mod_closest_point
             if(present(iters)) iters=self%iters
         end subroutine closest_point_data_get
 
-        subroutine closest_point_init(self, elasticity, hardening, yield)
+        pure subroutine closest_point_init(self, elasticity, hardening, yield)
             implicit none
             class(Closest_point), intent(inout) :: self
             class(Base_elasticity), intent(in) :: elasticity
@@ -113,7 +115,7 @@ module mod_closest_point
             self%yield = yield
         end subroutine closest_point_init
 
-        subroutine closest_point_iter(self, strain, data)
+        pure subroutine closest_point_iter(self, strain, data)
             implicit none
             class(Closest_point), intent(in) :: self
             type(ten_3D2Osym), intent(in) :: strain
@@ -179,7 +181,7 @@ module mod_closest_point
             data%status = STATUS_ITER_NONCONVERGED  !  not converged
         end subroutine closest_point_iter
 
-        subroutine closest_point_solve(self, strain, data)
+        pure subroutine closest_point_solve(self, strain, data)
             implicit none
             class(Closest_point), intent(in) :: self
             type(ten_3D2Osym), intent(in) :: strain
@@ -215,6 +217,79 @@ module mod_closest_point
                 ! if (data%status .eq. STATUS) continue  ! not converged
             end do
         end subroutine closest_point_solve
+
+
+
+        pure subroutine closest_point_tangent(self, strain, data, tangent)
+            implicit none
+            class(Closest_point), intent(in) :: self
+            type(ten_3D2Osym), intent(in) :: strain
+            type(Closest_point_data), intent(inout) :: data
+            type(ten_3D4O2sym), intent(out) :: tangent
+
+            ! closest_point_data
+            real(real64) :: dgamma, ddgamma, strain_pf
+            type(ten_3D2Osym) :: strain_p
+
+            type(ten_3D2Osym) :: df, residual1, stress
+            type(ten_3D4O3sym) :: elas_tan, hess, ddf
+            real(real64) :: hard, dhard, f
+            ! type(ten_3D4O2sym) :: test
+
+            if (data%status .eq. STATUS_ELASTIC_CASE) then  ! Elastic Case
+                tangent = self%elasticity%dstress_dstrain(strain-strain_p)
+                return
+            end if
+
+
+            dgamma = data%dgamma
+            strain_pf = data%strain_pf_iter
+            strain_p = data%strain_p_iter
+
+            elas_tan = self%elasticity%dstress_dstrain(strain-strain_p)  ! constant
+
+            !*** Start algorithm ***
+            stress = self%elasticity%stress(strain-strain_p)
+            hard = self%hardening%stress(strain_pf)
+            f = self%yield%stress_eq(stress) - hard
+            
+            dhard = self%hardening%dstress_dep(strain_pf)
+            df = self%yield%dstressEq_dstress(stress)
+
+            ddf = self%yield%ddstressEq_ddstress(stress)
+            hess = .inv. ((.inv. elas_tan) + dgamma*ddf)
+
+            tangent = hess - ((hess .ddot. df) .tdot. (df .ddot. hess))/((df .ddot. hess .ddot. df) + dhard)
+        end subroutine closest_point_tangent
+
+        subroutine closest_point_tangent_numerical(self, strain, data, tangent)
+            use derivatives
+            implicit none
+            class(Closest_point), intent(in) :: self
+            type(ten_3D2Osym), intent(in) :: strain
+            type(Closest_point_data), intent(in) :: data
+            type(ten_3D4O2sym), intent(out) :: tangent
+
+
+            tangent = derivative(wrapper, strain)
+            
+            contains
+            pure function wrapper(x)
+                implicit none
+                type(ten_3D2Osym), intent(in) :: x
+                type(ten_3D2Osym) :: wrapper
+                type(Closest_point_data) :: data_local
+                
+                data_local = data
+                data_local%status = STATUS_UNDEFINED
+
+                call self%solve(x, data_local)
+                wrapper = data_local%stress
+            end function wrapper
+
+        end subroutine closest_point_tangent_numerical   
+
+        
 
         subroutine closest_point2(strain, elasticity, hardening, yield, strain_pf, strain_p, status, stress)
             implicit none
