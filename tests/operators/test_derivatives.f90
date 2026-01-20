@@ -2,6 +2,7 @@ module test_derivatives_mod
     use, intrinsic :: iso_fortran_env
     implicit none
     private
+    public :: fun_scalar_scalar_test1, fun_scalar_scalar_test2, fun_scalar_scalar_test3
     public :: fun_scalar_test1, fun_scalar_test2, fun_scalar_test3, energy_hooke
     public :: fun_tens_x, fun_tens_2x, fun_tens_tenx, fun_nonlinear_tens
     type, public :: mytype_test
@@ -12,6 +13,7 @@ module test_derivatives_mod
     end type
 
 contains
+
     pure function fun_object_scalar_test1(self, x) result(res)
         use, intrinsic :: iso_fortran_env
         use tensors_types, only : ten_3D2Osym
@@ -47,6 +49,32 @@ contains
     end function
 
 
+    pure function fun_scalar_scalar_test1(x) result(res)
+        use, intrinsic :: iso_fortran_env
+        implicit none
+        real(real64) :: res
+        real(real64), intent(in) :: x
+
+        res = abs(x)
+    end function
+
+    pure function fun_scalar_scalar_test2(x) result(res)
+        use, intrinsic :: iso_fortran_env
+        implicit none
+        real(real64) :: res
+        real(real64), intent(in) :: x
+
+        res = 3*abs(x)
+    end function
+
+    pure function fun_scalar_scalar_test3(x) result(res)
+        use, intrinsic :: iso_fortran_env
+        implicit none
+        real(real64) :: res
+        real(real64), intent(in) :: x
+
+        res = sin(x)
+    end function
 
     pure function fun_scalar_test1(x) result(res)
         use, intrinsic :: iso_fortran_env
@@ -146,20 +174,134 @@ program test_derivatives
     
     logical :: passed
 
+    call test_derivative_scalar_scalar(passed)
+    if (.not. passed) STOP 1
+
     call test_derivate_scalar_ten(passed)
-    if (.not. passed) STOP 1
-
-    call test_derivate_ten_ten(passed)
-    if (.not. passed) STOP 1
-
-    call test_object_derivate_scalar_ten(passed)
     if (.not. passed) STOP 2
 
+    call test_derivate_ten_ten(passed)
+    if (.not. passed) STOP 3
+
+    call test_object_derivate_scalar_ten(passed)
+    if (.not. passed) STOP 4
+
     call test_derivate2O_scalar_ten(passed)
-    if (.not. passed) STOP 1
+    if (.not. passed) STOP 5
 
     STOP 0
 end program test_derivatives
+
+
+subroutine test_derivative_scalar_scalar(passed)
+    use, intrinsic :: iso_fortran_env
+    use derivatives
+    use test_derivatives_mod
+    implicit none
+    
+    logical, intent(out) :: passed
+
+    real(real64) :: to_test
+    real(real64) :: expected, result
+    real(real64) :: pi
+    pi = 4.0D0 * atan(1.0D0)
+    
+
+    to_test = 5D0
+    expected = 1.0D0
+    result = derivative(fun_scalar_scalar_test1, to_test)
+
+    passed = abs(expected - result) < 1.0D-7
+
+    if (.not. passed) print*, "Case 1 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test = -5D0
+    expected = -1.0D0
+    result = derivative(fun_scalar_scalar_test1, to_test)
+
+    passed = abs(expected - result) < 1.0D-7
+
+    if (.not. passed) print*, "Case 2 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test = 5D0
+    expected = 3D0
+    result = derivative(fun_scalar_scalar_test2, to_test)
+
+    passed = abs(expected - result) < 1.0D-7
+
+    if (.not. passed) print*, "Case 3 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test = -5D0
+    expected = -3D0
+    result = derivative(fun_scalar_scalar_test2, to_test)
+
+    passed = abs(expected - result) < 1.0D-7
+
+    if (.not. passed) print*, "Case 4 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test = pi
+    expected = -1D0
+    result = derivative(fun_scalar_scalar_test3, to_test)
+
+    passed = abs(expected - result) < 1.0D-7
+
+    if (.not. passed) print*, "Case 5 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+
+    to_test = 0
+    expected = 1D0
+    result = derivative(fun_scalar_scalar_test3, to_test)
+
+    passed = abs(expected - result) < 1.0D-7
+
+    if (.not. passed) print*, "Case 6 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    ! call expected%init(vals=(/2D0, 2D0, 2D0, 2D0, 2D0, 2D0/))
+    ! result = derivative(fun_scalar_test2, to_test)
+    ! passed = expected .isequal. result
+
+    ! if (.not. passed) print*, "Case 2 Derivate",  new_line('A'), &
+    !                           "The eigenvalues obtained is different from the expected one", new_line('A'), &
+    !                           "The values obtained are:", result, new_line('A'), &
+    !                           "The expected are:", expected
+    ! if (.not. passed) return
+
+
+    ! call expected%init(vals=(/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
+    ! result = derivative(fun_scalar_test3, to_test)
+    ! passed = expected .isequal. result
+
+    ! if (.not. passed) print*, "Case 3 Derivate",  new_line('A'), &
+    !                           "The eigenvalues obtained is different from the expected one", new_line('A'), &
+    !                           "The values obtained are:", result, new_line('A'), &
+    !                           "The expected are:", expected
+    ! if (.not. passed) return
+end subroutine
+
 
 subroutine test_derivate_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
@@ -349,7 +491,7 @@ subroutine test_derivate2O_scalar_ten(passed)
     logical, intent(out) :: passed
 
     type(ten_3D2Osym):: to_test
-    type(ten_3D4O3sym) :: expected, result, temp
+    type(ten_3D4O3sym) :: expected, result
     real(real64) :: E, nu, lam, mu
 
     call to_test%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))

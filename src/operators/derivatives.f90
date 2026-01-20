@@ -2,6 +2,7 @@ module derivatives
     private
     public :: derivative
     interface derivative
+        module procedure derivative_scalar_scalar
         module procedure derivative_scalar_3D2O
         module procedure derivative_scalar_3D2Osym
         module procedure derivative_3D2Osym_3D2Osym
@@ -13,6 +14,13 @@ module derivatives
     end interface
 
     interface
+        pure function f_scalar_scalar(x)
+            use, intrinsic :: iso_fortran_env
+            implicit none
+            real(real64), intent(in) :: x
+            real(real64) :: f_scalar_scalar
+        end function f_scalar_scalar
+        
         pure function f_scalar_3D2O(x)
             use tensors_types, only : ten_3D2O
             use, intrinsic :: iso_fortran_env
@@ -40,6 +48,35 @@ module derivatives
 
     contains
 
+    pure function derivative_scalar_scalar(func, x, eps)
+        use, intrinsic :: iso_fortran_env
+        implicit none
+
+        procedure(f_scalar_scalar) :: func
+        real(real64), intent(in) :: x
+        real(real64), intent(in), optional :: eps
+        real(real64) :: derivative_scalar_scalar
+        
+        real(real64), parameter :: DIVEPS = 1D-7, MAX_EPS=1D-40  !! Relative and minimum absolute step size
+        real(real64) :: x_var_forw, x_var_back
+        real(real64) :: func_forw, func_back, func_val
+        real(real64) :: epsr
+
+        if (present(eps)) then
+            epsr = eps
+        else
+            func_val = func(x)
+            epsr = max(abs(x*DIVEPS), MAX_EPS)
+        end if
+
+        derivative_scalar_scalar = 0.0D0
+        x_var_forw = x + epsr
+        func_forw = func(x_var_forw)
+        x_var_back = x - epsr
+        func_back = func(x_var_back)
+        derivative_scalar_scalar = (func_forw - func_back)/(2D0*epsr)
+    end function derivative_scalar_scalar
+
     pure function derivative_scalar_3D2O(func, mat, eps)
         use tensors_types, only : ten_3D2O
         use, intrinsic :: iso_fortran_env
@@ -52,15 +89,15 @@ module derivatives
         
         real(real64), parameter :: DIVEPS = 1D-7, MAX_EPS=1D-40  !! Relative and minimum absolute step size
         type(ten_3D2O) :: mat_var_forw, mat_var_back
-        real(real64) :: val_func_forw, val_func_back, val_func
+        real(real64) :: val_func_forw, val_func_back, mat_norm
         real(real64) :: epsr
         integer :: i
 
         if (present(eps)) then
             epsr = eps
         else
-            val_func = func(mat)
-            epsr = max(abs(val_func*DIVEPS), MAX_EPS)
+            mat_norm = mat%norm()
+            epsr = max(abs(mat_norm*DIVEPS), MAX_EPS)
         end if
 
         derivative_scalar_3D2O%vals = 0.0D0
@@ -85,16 +122,16 @@ module derivatives
         real(real64), intent(in), optional :: eps
         type(ten_3D2Osym) :: derivative_scalar_3D2OSym
         
-        real(real64), parameter :: DIVEPS = 1D-7, MAX_EPS=1D-40  !! Relative and minimum absolute step size
+        real(real64), parameter :: DIVEPS = 1D-6, MAX_EPS=1D-40  !! Relative and minimum absolute step size
         type(ten_3D2Osym) :: mat_var
-        real(real64) :: val_func_forw, val_func_back, val_func
+        real(real64) :: val_func_forw, val_func_back, mat_norm
         real(real64) :: epsr
 
         if (present(eps)) then
             epsr = eps
         else
-            val_func = func(mat)
-            epsr = max(abs(val_func*DIVEPS), MAX_EPS)
+            mat_norm = mat%norm()
+            epsr = max(abs(mat_norm*DIVEPS), MAX_EPS)
         end if
 
         derivative_scalar_3D2OSym%vals = 0.0D0
@@ -146,14 +183,14 @@ module derivatives
         type(ten_3D2Osym) :: mat_var
         integer :: i,j
         real(real64), parameter :: DIVEPS = 1D-4, MAX_EPS=1D-40  !! Relative and minimum absolute step size
-        real(real64) :: val_func, val_func_forw, val_func_back
+        real(real64) :: mat_norm, val_func_forw, val_func_back
         real(real64) :: epsr,f_pp, f_pm, f_mp, f_mm
 
         if (present(eps)) then
             epsr = eps
         else
-            val_func = func(mat)
-            epsr = max(abs(val_func*DIVEPS), MAX_EPS)
+            mat_norm = mat%norm()
+            epsr = max(abs(mat_norm*DIVEPS), MAX_EPS)
         end if
         !  Voigt Matrix Layout (I, J):
         !  | (1,1) (1,2) (1,3) (1,4) (1,5) (1,6) |   <- xxxx, xxyy, xxzz, xxxy, xxyz, xxxz
@@ -294,23 +331,18 @@ module derivatives
         real(real64), intent(in), optional :: eps
         type(ten_3D4O2sym) :: derivative_3D2Osym_3D2Osym
         
-        type(ten_3D2Osym) :: mat_var, tmp, val_func
+        type(ten_3D2Osym) :: mat_var, tmp
         type(ten_3D2Osym) :: val_func_forw, val_func_back
-        real(real64) :: epsr, norm_a
+        real(real64) :: epsr, mat_norm
 
-        real(real64), parameter :: DIVEPS = 1D-7, MAX_EPS=1D-40  !! Relative and minimum absolute step size
-
-
-
+        real(real64), parameter :: DIVEPS = 1D-4, MAX_EPS=1D-35  !! Relative and minimum absolute step size
+        
 
         if (present(eps)) then
             epsr = eps
         else
-            val_func = func(mat)
-            norm_a =   abs(val_func%vals(1)) + abs(val_func%vals(2)) + abs(val_func%vals(3)) &
-                   + 2*abs(val_func%vals(4)) + 2*abs(val_func%vals(5)) + 2*abs(val_func%vals(6))
-      
-            epsr = max(abs(norm_a*DIVEPS), MAX_EPS)
+            mat_norm = mat%norm()
+            epsr = max(abs(mat_norm*DIVEPS), MAX_EPS)
         end if
 
         derivative_3D2Osym_3D2Osym%vals = 0.0D0

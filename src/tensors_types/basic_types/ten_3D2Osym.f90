@@ -139,6 +139,9 @@ module mod_ten_3D2Osym
             procedure, public :: xz
                 !! Accessor for the xz (1,3) component.
             procedure, public :: square => square_3D2Osym
+                !! Computes the square of the tensor.
+            procedure, public :: norm => norm_3D2Osym
+                !! Computes the norm of the tensor.
     end type ten_3D2Osym
 
     public :: operator(.isequal.)
@@ -213,6 +216,19 @@ contains
         real(real64), intent(in) :: xx, yy, zz, xy, yz, xz
         self%vals = (/xx, yy, zz, xy, yz, xz/)
     end subroutine
+
+    pure function norm_3D2Osym(a) result(res)
+        !! Computes the norm of a ten_3D2Osym tensor.
+        !! Uses a modified L1 norm (shear components weighted by 2) with relative
+        !! and absolute tolerances (EPS, EPS_ABS).
+        !! norm(a) = |a_11| + |a_22| + |a_33| + 2|a_12| + 2|a_23| + 2|a_13|
+        implicit none
+        class(ten_3D2Osym), intent(in) :: a
+        real(real64) :: res
+
+        res =   abs(a%vals(1)) + abs(a%vals(2)) + abs(a%vals(3)) &
+              + 2*abs(a%vals(4)) + 2*abs(a%vals(5)) + 2*abs(a%vals(6))
+    end function norm_3D2Osym
 
     pure function isequal_3D2Osym(a, b) result(res)
         !! `.isequal.` Compares two ten_3D2Osym tensors for approximate equality.

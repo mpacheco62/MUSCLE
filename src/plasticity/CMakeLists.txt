@@ -6,6 +6,7 @@ set(HARDENING_LAWS   plasticity/hardening_laws/basis_hardening_law.f90
 
 set(RETURN_MAPPING   plasticity/return_mapping/cutting_plane.f90
                      plasticity/return_mapping/closest_point.f90
+                     plasticity/return_mapping/closest_point_time.f90
                      plasticity/return_mapping/closest_point_2.f90
                      CACHE INTERNAL "")
 

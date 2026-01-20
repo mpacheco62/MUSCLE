@@ -55,8 +55,10 @@ module mod_JC_viscoplastic
     !! component of the Johnson-Cook model.
         real(real64) :: C     
         real(real64) :: epdmax
+        real(real64) :: epmin=1.0D-7  ! minimum strain rate to avoid log(0)
     contains
         procedure :: flow_stress => flow_JC
+        procedure :: dstress_dep => dstress_dep_JC
     end type JC_viscoplastic
 
 contains
@@ -71,28 +73,68 @@ contains
         real(real64), intent(in) :: ep, epd
         !! ep: Equivalent plastic strain.
         !! epd: Equivalent plastic strain rate.
+        real(real64) :: epd_tmp
         real(real64) :: res
         !! Output flow stress $\sigma_{flow}$.
         real(real64) :: sigma0, factor_rate
 
-        if (epd <= 0.0) then
+        epd_tmp = epd
+        if (epd <= self%epmin) then
             !! Handles zero or negative strain rate to avoid issues with log(0).
-            res = 0.0
-            return
+            epd_tmp = self%epmin
         end if
 
         if (.not. associated(self%hard_law)) then
             !! Hardening law must be defined (associated).
-            res = 0.0
+            res = 0.0  ! TODO Decir que es error!!!
             return
         end if
 
         ! 1. Get Hardening Stress ($\sigma_{hard}$)
         sigma0 = self%hard_law%stress(ep)
         ! 2. Calculate Strain Rate Factor
-        factor_rate = 1.0 + self%C * log(epd / self%epdmax)
+        factor_rate = 1.0 + self%C * log(epd_tmp / self%epdmax)
         ! 3. Combine to get Flow Stress
         res = sigma0 * factor_rate
     end function flow_JC
+
+
+    pure function dstress_dep_JC(self, ep, epd, dt) result(res)
+    !! flow_JC - Calculates the flow stress using the Johnson-Cook rate term.
+    !!
+    !! Calculates the total viscoplastic flow stress:
+    !! $\sigma_{flow} = \sigma_{hard} \cdot (1 + C \ln(\dot{\epsilon}_p / \dot{\epsilon}_{p0}))$.
+        class(JC_viscoplastic), intent(in) :: self
+        !! self The JC_viscoplastic object (containing C and epdmax)
+        real(real64), intent(in) :: ep, epd, dt
+        !! ep: Equivalent plastic strain.
+        !! epd: Equivalent plastic strain rate.
+        real(real64) :: res
+        !! Output flow stress $\sigma_{flow}$.
+        real(real64) :: sigma0, dsigma0
+        real(real64) :: factor_rate, dfactor_rate
+        real(real64) :: epd_tmp
+
+        epd_tmp = epd
+        if (epd <= self%epmin) then
+            !! Handles zero or negative strain rate to avoid issues with log(0).
+            epd_tmp = self%epmin
+        end if
+
+        if (.not. associated(self%hard_law)) then
+            !! Hardening law must be defined (associated).
+            res = 0.0  ! TODO Decir que es error!!!
+            return
+        end if
+
+        ! 1. Get Hardening Stress ($\sigma_{hard}$)
+        sigma0 = self%hard_law%stress(ep)
+        dsigma0 = self%hard_law%dstress_dep(ep)
+        ! 2. Calculate Strain Rate Factor
+        factor_rate = 1.0 + self%C * log(epd_tmp / self%epdmax)
+        dfactor_rate = self%C / epd_tmp 
+        ! 3. Combine to get Flow Stress
+        res = dsigma0 * factor_rate + sigma0 * dfactor_rate / dt
+    end function dstress_dep_JC
 
 end module mod_JC_viscoplastic
