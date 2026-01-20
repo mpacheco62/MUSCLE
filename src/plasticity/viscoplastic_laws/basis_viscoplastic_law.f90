@@ -68,9 +68,6 @@ module mod_viscoplastic_law
     !! Defines the base type that combines the **hardening law** (static component) with
     !! **strain-rate dependent** behavior (viscoplastic component). This enables
     !! polymorphic handling of different viscoplastic models.
-        class(Base_hardening_law), pointer :: hard_law => null()
-        !! Pointer to the hardening law object (from mod_hardening_law).
-        !! Must be explicitly allocated and associated before use.
     contains
         procedure(flow_stress_interface), deferred :: flow_stress
         procedure :: dstress_dep => dstress_dep_numeric

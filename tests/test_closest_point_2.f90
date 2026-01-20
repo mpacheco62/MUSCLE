@@ -290,9 +290,7 @@ subroutine test_closest_point_vonmises_uniaxial_tensile_jc(passed)
     print*, "test_closest_point_vonmises_uniaxial_tensile_jc - test 4"
 
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
-    jc%hard_law => sw
-    jc%C      = 0.05D0
-    jc%epdmax = 0.1D0
+    jc = JC_viscoplastic(hard_law=sw, C=0.05D0, epdmax=0.1D0)
 
     ep  = 0.2D0
     epd = 1.0D0
@@ -332,9 +330,7 @@ subroutine test_closest_point_vonmises_zero_strain_jc(passed)
     print*, "test_closest_point_vonmises_zero_strain_jc - test 5"
 
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
-    jc%hard_law => sw
-    jc%C      = 0.05D0
-    jc%epdmax = 0.1D0
+    jc = JC_viscoplastic(hard_law=sw, C=0.05D0, epdmax=0.1D0)
 
     ep  = 0.0D0
     epd = jc%epdmax

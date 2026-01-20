@@ -138,9 +138,7 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
 
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
-    jc%hard_law => sw
-    jc%C = 1D-1
-    jc%epdmax = 1.0D-3
+    jc = JC_viscoplastic(hard_law=sw, C=1D-1, epdmax=1.0D-3)
 
     call data%init(strain_pf=strain_pf, strain_p=strain_p, dt=1.0D+2)
     call solver%init(elasticity=elas, hardening=jc, yield=vm)

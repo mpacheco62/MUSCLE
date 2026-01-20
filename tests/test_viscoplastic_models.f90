@@ -100,7 +100,7 @@ contains
     subroutine test_viscoplastic(passed)
         logical, intent(out) :: passed
 
-        type(Voce_modified_hardening), target :: voce
+        type(Voce_modified_hardening) :: voce
         type(JC_viscoplastic)  :: jc
         type(RK_viscoplastic)  :: rk
         type(MRK_viscoplastic) :: mrk
@@ -118,52 +118,27 @@ contains
         character(len=30) :: stFINAL
 
         ! ---- JC
-        voce%sy = 272.075784D0
-        voce%k  = 0.04230655D0
-        voce%q  = 297.603923D0
-        voce%n  = 1.48375781D0
-
-        jc%hard_law => voce
-        jc%C      = 0.00946101D0
-        jc%epdmax = 0.32D0
+        voce = Voce_modified_hardening(sy=272.075784D0, k=0.04230655D0, q=297.603923D0, n=1.48375781D0)
+        jc = JC_viscoplastic(hard_law=voce, C=0.00946101D0, epdmax=0.32D0)
 
         ! ---- RK ----
-        rk%B0     = 18.5805384D0
-        rk%epdmax = 0.01D0
-        rk%nu     = 0.02014578D0
-        rk%ep0    = 2.36959316D0
-        rk%n0     = 3.05066530D0
-        rk%D2     = 1.5302D-08
-        rk%D1     = 0.41425354D0
-        rk%epdmin = 1.0D-06
-        rk%sig0   = 1.1693D-05
-        rk%m      = 0.94914871D0
+        rk = RK_viscoplastic(B0 = 18.5805384D0, epdmax = 0.01D0, nu = 0.02014578D0, &
+                             ep0 = 2.36959316D0, n0 = 3.05066530D0, D2 = 1.5302D-08, D1 = 0.41425354D0, &
+                             epdmin = 1.0D-06, sig0 = 1.1693D-05, m = 0.94914871D0)
 
         ! ---- MRK ----
-        mrk%B01    = 100.020701D0
-        mrk%B02    = 100.0D0
-        mrk%epdmax = 0.01D0
-        mrk%nu1    = 0.01439459D0
-        mrk%nu2    = 0.14313556D0
-        mrk%n0     = 3.95295384D0
-        mrk%D2     = 5.6375D-12
-        mrk%epdmin = 1.0D-05
-        mrk%sig_u  = 253.772550D0
-        mrk%chi1   = 9.1503D-04
-        mrk%chi2   = 0.01942062D0
+        mrk = MRK_viscoplastic(B01=100.020701D0, B02=100.0D0, epdmax=0.01D0, &
+                               nu1=0.01439459D0, nu2=0.14313556D0, n0=3.95295384D0, D2=5.6375D-12, &
+                               epdmin=1.0D-05, sig_u=253.772550D0, chi1=9.1503D-04, chi2=0.01942062D0)
 
         ! ---- NNL ----
-        nnl%sig_a    = 334.776175D0
-        nnl%sig_0    = 5.88318003D0
-        nnl%KG0      = 0.21906996D0
-        nnl%n1       = 0.06301105D0
-        nnl%epd0     = 0.01425422D0
-        nnl%at       = 22.8752986D0
-        nnl%n0       = 0.97427303D0
-        nnl%q        = 2.D0
-        nnl%p        = 0.6666667D0
+        nnl = NNL_viscoplastic(sig_a=334.776175D0, sig_0=5.88318003D0, KG0=0.21906996D0, &
+                               n1=0.06301105D0, epd0=0.01425422D0, at=22.8752986D0, &
+                               n0=0.97427303D0, q=2.D0, p=0.6666667D0)
 
         ! ---- VA ----
+        va = VA_viscoplastic(B=374.525856D0, B1=0.00331794D0, B2=0.50280316D0, &
+                             n=0.26412620D0, m=0.03766668D0, sig_u=195.233128D0)
         va%B     = 374.525856D0
         va%B1    = 0.00331794D0
         va%B2    = 0.50280316D0
