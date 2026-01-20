@@ -28,6 +28,7 @@
 module mod_JohnsonCook_full_visco_hardening
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_viscoplastic_law, only : Base_viscoplastic_law
+    use mod_hardening_law, only : Base_hardening_law
     implicit none
     private
 
@@ -41,10 +42,8 @@ module mod_JohnsonCook_full_visco_hardening
         !!       * [ 1 + C * log( epdot / epdot0 ) ]
         !!       * [ 1 - (Tstar)^m ]
         !!
-        !! Parámetros de endurecimiento (fallback si no hay hard_law):
-        real(real64) :: A      = 0.0d0    !! Límite elástico cuasiestático
-        real(real64) :: B      = 0.0d0    !! Coeficiente de endurecimiento
-        real(real64) :: n      = 0.0d0    !! Exponente de endurecimiento
+        !! hard_law: Hardening law component (static part).
+        class(Base_hardening_law), allocatable :: hard_law
         !! Parámetros viscoplásticos y térmicos:
         real(real64) :: C      = 0.0d0    !! Sensibilidad a la tasa
         real(real64) :: epdmax = 1.0d0    !! Tasa de referencia
@@ -71,11 +70,7 @@ contains
             return
         end if
 
-        if (associated(self%hard_law)) then
-            sigma0 = self%hard_law%stress(ep)
-        else
-            sigma0 = self%A + self%B * ep**self%n
-        end if
+        sigma0 = self%hard_law%stress(ep)
 
         epd_eff = max(epd, tiny(1.0d0))
         factor_rate = 1.0d0 + self%C * log(epd_eff / self%epdmax)

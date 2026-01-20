@@ -42,7 +42,8 @@ module mod_JC_viscoplastic
     !!       - `epd` (`real(real64)`): Equivalent plastic strain rate ($\dot{\epsilon}_p$).
     !!     - **Output:** `res` (`real(real64)`): The flow stress $\sigma_{flow}$.
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_law
+    use mod_viscoplastic_law, only: Base_viscoplastic_law
+    use mod_hardening_law, only: base_hardening_law
     implicit none
     private
     public :: JC_viscoplastic
@@ -53,6 +54,7 @@ module mod_JC_viscoplastic
     !!
     !! Extends the `Base_viscoplastic_law` to implement the specific rate-dependent
     !! component of the Johnson-Cook model.
+        class(base_hardening_law), allocatable :: hard_law
         real(real64) :: C     
         real(real64) :: epdmax
         real(real64) :: epmin=1.0D-7  ! minimum strain rate to avoid log(0)
@@ -84,12 +86,6 @@ contains
             epd_tmp = self%epmin
         end if
 
-        if (.not. associated(self%hard_law)) then
-            !! Hardening law must be defined (associated).
-            res = 0.0  ! TODO Decir que es error!!!
-            return
-        end if
-
         ! 1. Get Hardening Stress ($\sigma_{hard}$)
         sigma0 = self%hard_law%stress(ep)
         ! 2. Calculate Strain Rate Factor
@@ -119,12 +115,6 @@ contains
         if (epd <= self%epmin) then
             !! Handles zero or negative strain rate to avoid issues with log(0).
             epd_tmp = self%epmin
-        end if
-
-        if (.not. associated(self%hard_law)) then
-            !! Hardening law must be defined (associated).
-            res = 0.0  ! TODO Decir que es error!!!
-            return
         end if
 
         ! 1. Get Hardening Stress ($\sigma_{hard}$)
