@@ -119,7 +119,8 @@ contains
 
         ! ---- JC
         voce = Voce_modified_hardening(sy=272.075784D0, k=0.04230655D0, q=297.603923D0, n=1.48375781D0)
-        jc = JC_viscoplastic(hard_law=voce, C=0.00946101D0, epdmax=0.32D0)
+        jc = JC_viscoplastic(C=0.00946101D0, epdmax=0.32D0)
+        jc%hard_law = voce  ! Error in gfortran-12 if not assigned here
 
         ! ---- RK ----
         rk = RK_viscoplastic(B0 = 18.5805384D0, epdmax = 0.01D0, nu = 0.02014578D0, &
