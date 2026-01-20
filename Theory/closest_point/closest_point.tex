@@ -51,7 +51,7 @@ En base a lo anterior se definen los dos residuos para poder hacer Newton-Rhapso
     \pmb{R}_{n+1}^{f} &= \sigma_{eq}\left(\pmb{\sigma}_{n+1}\right) - Y\left(\bar\varepsilon^p_{n+1}\right)
 \end{align}
 
-Como $\pmb{\varepsilon}^p_{n+1}$ es constante en el algoritmo de retorno plástico, se puede obtener la siguiente expresión en las iteraciones de Newton-Rhapson:
+Como $\pmb{\varepsilon}^p_{n+1}$ es constante en el algoritmo de retorno plástico (Ya que la variación es $\Delta\pmb{\varepsilon}^p_{n+1}$), se puede obtener la siguiente expresión en las iteraciones de Newton-Rhapson:
 \[
 \left(\pmb{\sigma}_{n+1}^{(k)} + \Delta\pmb{\sigma}_{n+1}^{(k)}\right) = \mathbb{C}:\left[\pmb{\varepsilon}_{n+1} - \left(\pmb{\varepsilon}_{n+1}^{p^{(k)}} + \Delta\pmb{\varepsilon}_{n+1}^{p^{(k)}}\right)\right] \implies \Delta\pmb{\sigma}_{n+1}^{(k)} = -\mathbb{C}:\Delta\pmb{\varepsilon}_{n+1}^{p^{(k)}}
 \]\[

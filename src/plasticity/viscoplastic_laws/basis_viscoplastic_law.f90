@@ -73,6 +73,7 @@ module mod_viscoplastic_law
         !! Must be explicitly allocated and associated before use.
     contains
         procedure(flow_stress_interface), deferred :: flow_stress
+        procedure :: dstress_dep => dstress_dep_numeric
     end type Base_viscoplastic_law
 
     abstract interface
@@ -84,8 +85,38 @@ module mod_viscoplastic_law
             class(Base_viscoplastic_law), intent(in) :: self
             real(real64), intent(in) :: ep    
             real(real64), intent(in) :: epd   
-            real(real64) :: res               
+            real(real64) :: res
         end function flow_stress_interface
     end interface
+    contains
+
+        pure function dstress_dep_numeric(self, ep, epd, dt) result(res)
+        !! Numerical approximation of the derivative of the flow stress with respect to Delta strain.
+            use :: derivatives
+            class(Base_viscoplastic_law), intent(in) :: self
+            real(real64), intent(in) :: ep
+            real(real64), intent(in) :: epd
+            real(real64), intent(in) :: dt
+            real(real64) :: res
+            real(real64) :: df_dep, df_ddep
+
+            df_dep = derivative(wrapper_ep, ep)
+            df_ddep = derivative(wrapper_dep, epd)
+            res = df_dep + df_ddep/dt
+
+            contains
+            pure function wrapper_ep(ep_var) result(res_w)
+                real(real64), intent(in) :: ep_var
+                real(real64) :: res_w
+                res_w = self%flow_stress(ep_var, epd)
+            end function wrapper_ep
+
+            pure function wrapper_dep(dep_var) result(res_w)
+                real(real64), intent(in) :: dep_var
+                real(real64) :: res_w
+                res_w = self%flow_stress(ep, dep_var)
+            end function wrapper_dep
+
+        end function dstress_dep_numeric
 
 end module mod_viscoplastic_law

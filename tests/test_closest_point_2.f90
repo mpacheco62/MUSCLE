@@ -28,9 +28,9 @@ program test_closest_point_2
     if (.not. passed) STOP 5
     print*, "END - test_closest_point_vonmises_zero_strain_jc - test 5"
 
-    call test_closest_point_vonmises_elastic_strain_jc(passed)
-    if (.not. passed) STOP 6
-    print*, "END - test_closest_point_vonmises_elastic_strain_jc - test 6"
+    ! call test_closest_point_vonmises_elastic_strain_jc(passed)
+    ! if (.not. passed) STOP 6
+    ! print*, "END - test_closest_point_vonmises_elastic_strain_jc - test 6"
 
     print*, "All tests passed!", passed
 
@@ -353,40 +353,40 @@ subroutine test_closest_point_vonmises_zero_strain_jc(passed)
 
 end subroutine test_closest_point_vonmises_zero_strain_jc
 
-!=====================================================================
-! 6) Johnson–Cook (viscoplastic): tasa nula → respuesta cero
-!=====================================================================
-subroutine test_closest_point_vonmises_elastic_strain_jc(passed)
-    use, intrinsic :: iso_fortran_env, only : real64
-    use mod_swift_hardening,   only : Swift_hardening
-    use mod_JC_viscoplastic,   only : JC_viscoplastic
-    implicit none
+! !=====================================================================
+! ! 6) Johnson–Cook (viscoplastic): tasa nula → respuesta cero ! NO DEBERÍA SER CERO la tasa
+! !=====================================================================
+! subroutine test_closest_point_vonmises_elastic_strain_jc(passed)
+!     use, intrinsic :: iso_fortran_env, only : real64
+!     use mod_swift_hardening,   only : Swift_hardening
+!     use mod_JC_viscoplastic,   only : JC_viscoplastic
+!     implicit none
 
-    real(real64), parameter :: EPS=1e-12
-    logical, intent(out) :: passed
-    type(Swift_hardening), target :: sw
-    type(JC_viscoplastic) :: jc
-    real(real64) :: ep, epd
-    real(real64) :: actual
+!     real(real64), parameter :: EPS=1e-12
+!     logical, intent(out) :: passed
+!     type(Swift_hardening), target :: sw
+!     type(JC_viscoplastic) :: jc
+!     real(real64) :: ep, epd
+!     real(real64) :: actual
 
-    passed = .False.
+!     passed = .False.
 
-    print*, "test_closest_point_vonmises_elastic_strain_jc - test 6"
+!     print*, "test_closest_point_vonmises_elastic_strain_jc - test 6"
 
-    sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
-    jc%hard_law => sw
-    jc%C      = 0.05D0
-    jc%epdmax = 0.1D0
+!     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
+!     jc%hard_law => sw
+!     jc%C      = 0.05D0
+!     jc%epdmax = 0.1D0
 
-    ep  = 0.001D0
-    epd = 0.0D0
+!     ep  = 0.001D0
+!     epd = 0.0D0
 
-    actual = jc%flow_stress(ep, epd)
-    passed = abs(actual) < EPS
-    if (.not. passed) then
-        print*, "JC flow stress not zero for null rate", new_line('A'), &
-                "Actual  :", actual
-        return
-    end if
+!     actual = jc%flow_stress(ep, epd)
+!     passed = abs(actual) < EPS
+!     if (.not. passed) then
+!         print*, "JC flow stress not zero for null rate", new_line('A'), &
+!                 "Actual  :", actual
+!         return
+!     end if
 
-end subroutine test_closest_point_vonmises_elastic_strain_jc
+! end subroutine test_closest_point_vonmises_elastic_strain_jc

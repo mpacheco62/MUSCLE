@@ -69,6 +69,11 @@ target_link_libraries(test_closest_point PRIVATE umatlib compile_options)
 target_include_directories(test_closest_point PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(NAME test_closest_point COMMAND test_closest_point)
 
+add_executable(test_closest_point_time test_closest_point_time.f90)
+target_link_libraries(test_closest_point_time PRIVATE umatlib compile_options)
+target_include_directories(test_closest_point_time PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
+add_test(NAME test_closest_point_time COMMAND test_closest_point_time)
+
 add_executable(test_closest_point_2 test_closest_point_2.f90)
 target_link_libraries(test_closest_point_2 PRIVATE umatlib compile_options ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
 target_include_directories(test_closest_point_2 PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)

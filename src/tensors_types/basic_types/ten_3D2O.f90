@@ -130,6 +130,8 @@ module mod_ten_3D2O
         generic, public :: init => init_ten_3D2O, init2_ten_3D2O
             !! Generic interface for initialization.
         procedure, private :: init_ten_3D2O, init2_ten_3D2O
+        procedure, public :: norm => norm_3D2O
+            !! Computes the norm of the tensor.
     end type ten_3D2O
 
     public :: operator(.isequal.)
@@ -200,6 +202,17 @@ contains
         real(real64), intent(in) :: xx, xy, xz, yx, yy, yz, zx, zy, zz
         self%vals = (/xx, yx, zx, xy, yy, zy, xz, yz, zz/)
     end subroutine init2_ten_3D2O
+
+    pure function norm_3D2O(a) result(res)
+        !! Computes the norm of a ten_3D2O tensor.
+        implicit none
+        class(ten_3D2O), intent(in) :: a
+        real(real64) :: res
+
+        res =   abs(a%vals(1)) + abs(a%vals(2)) + abs(a%vals(3)) &
+              + abs(a%vals(4)) + abs(a%vals(5)) + abs(a%vals(6)) &
+              + abs(a%vals(7)) + abs(a%vals(8)) + abs(a%vals(9))
+    end function norm_3D2O
 
     pure function isequal_3D2O(a, b) result(res)
         !! `.isequal.` Compares two ten_3D2O tensors for approximate equality.
