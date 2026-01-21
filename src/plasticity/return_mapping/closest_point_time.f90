@@ -32,6 +32,7 @@ module mod_closest_point_time
         class(Base_elasticity), allocatable :: elasticity
         class(Base_viscoplastic_law), allocatable :: hardening
         class(Base_yield_critera), allocatable :: yield
+        integer, private :: iter_nw = 200
         
         contains
         procedure, public :: init => closest_point_init
@@ -56,6 +57,12 @@ module mod_closest_point_time
 
             self%strain_pf_iter = strain_pf
             self%strain_p_iter = strain_p
+
+            self%stress%vals = 0D0
+            self%dlambda = 0D0
+            self%ddlambda = 0D0
+            self%status = STATUS_UNDEFINED
+            self%iters = 0
         end subroutine closest_point_data_init
 
         pure subroutine closest_point_data_set(self,                            &
@@ -113,15 +120,18 @@ module mod_closest_point_time
             if(present(dt)) dt=self%dt
         end subroutine closest_point_data_get
 
-        pure subroutine closest_point_init(self, elasticity, hardening, yield)
+        pure subroutine closest_point_init(self, elasticity, hardening, yield, iter_nw)
             implicit none
             class(Closest_point), intent(inout) :: self
             class(Base_elasticity), intent(in) :: elasticity
             class(Base_viscoplastic_law), intent(in) :: hardening
             class(Base_yield_critera), intent(in) :: yield
+            integer, optional, intent(in) :: iter_nw
             self%elasticity = elasticity
             self%hardening = hardening
             self%yield = yield
+            self%iter_nw = 200
+            if (present(iter_nw)) self%iter_nw = iter_nw
         end subroutine closest_point_init
 
         pure subroutine closest_point_iter(self, strain, data)
@@ -225,14 +235,14 @@ module mod_closest_point_time
                 return
             end if
 
-            do i=1,200
+            do i=1,self%iter_nw
                 call self%iter(strain, data)
                 if (data%status .eq. STATUS_ITER_CONVERGED) then  ! converged
                     data%status = STATUS_CONVERGED
                     return
                 end if
-                ! if (data%status .eq. STATUS) continue  ! not converged
             end do
+            data%status = STATUS_NONCONVERGED  ! not converged
         end subroutine closest_point_solve
 
 
