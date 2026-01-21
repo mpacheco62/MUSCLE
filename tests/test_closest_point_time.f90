@@ -5,11 +5,14 @@ program test_closest_point_time
     call test_closest_point_time_vonmises_uniaxial_tensile(passed)
     if (.not. passed) STOP 1
 
+    call test_closest_point_time_non_converged(passed)
+    if (.not. passed) STOP 2
+
     ! call test_closest_point_time_vonmises_zero_strain(passed)
-    ! if (.not. passed) STOP 2
+    ! if (.not. passed) STOP 3
 
     ! call test_closest_point_time_vonmises_elastic_strain(passed)
-    ! if (.not. passed) STOP 3
+    ! if (.not. passed) STOP 4
  
     print*, "Passed!", passed
 end program test_closest_point_time
@@ -140,6 +143,7 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
     jc = JC_viscoplastic(C=1D-1, epdmax=1.0D-3)
     jc%hard_law = sw  ! Error in gfortran-12 if not assigned here
 
+    ! data = Closest_point_data(strain_pf=strain_pf, strain_p=strain_p, dt=1.0D+2)
     call data%init(strain_pf=strain_pf, strain_p=strain_p, dt=1.0D+2)
     call solver%init(elasticity=elas, hardening=jc, yield=vm)
     call solver%solve(strain=strain, data=data)
@@ -190,6 +194,56 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
     if (.not. passed) return
 end subroutine
 
+subroutine test_closest_point_time_non_converged(passed)
+    use tensors_types
+    use, intrinsic :: iso_fortran_env, only : real64
+    use mod_JC_viscoplastic, only : JC_viscoplastic
+    use mod_swift_hardening, only : Swift_hardening
+    use mod_vonMises, only : VonMises
+    use mod_elasticity_linear, only : Elasticity_linear
+    ! use mod_closest_point, only : closest_point2
+    use mod_closest_point_time
+    implicit none
+
+    real(real64), parameter :: EPS=1e-8
+    logical, intent(out) :: passed
+    type(Closest_point_data) :: data
+    type(Closest_point) :: solver
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: strain, strain_p
+
+    type(JC_viscoplastic) :: jc
+    type(Swift_hardening), target :: sw
+    type(Elasticity_linear) :: elas
+
+    integer :: status, iters
+
+
+    passed = .False.
+    
+
+    call strain%init(xx=0.43857844D0, yy=-0.19915993D0, zz=-0.19915993D0, xy=0D0, yz=0D0, xz=0D0)
+    call strain_p%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, yz=0D0, xz=0D0)
+    call elas%set_parameters(young=1000D0, poisson=0.3D0)
+
+    sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
+    jc = JC_viscoplastic(C=1D-1, epdmax=1.0D-3)
+    jc%hard_law = sw  ! Error in gfortran-12 if not assigned here
+
+    ! data = Closest_point_data(strain_pf=strain_pf, strain_p=strain_p, dt=1.0D+2)
+    call data%init(strain_pf=0D0, strain_p=strain_p, dt=1.0D+2)
+    call solver%init(elasticity=elas, hardening=jc, yield=vm, iter_nw=5)
+    call solver%solve(strain=strain, data=data)
+    call data%get(status=status,        &
+                  iters=iters           &
+                  )
+
+    passed = (status .eq. STATUS_NONCONVERGED)
+    if (.not. passed) print*, "Case 1 Converged when non converged must occur", new_line('A'),          &
+                              "iters:", iters, new_line('A'),  &
+                              "status:", status
+    if (.not. passed) return
+end subroutine
 
 ! subroutine test_closest_point_time_vonmises_zero_strain(passed)
 !     use tensors_types
