@@ -1,21 +1,21 @@
 add_executable(test_iden_2OS test_iden_2OS.f90)
-target_link_libraries(test_iden_2OS PRIVATE umatlib)
+target_link_libraries(test_iden_2OS PRIVATE umatlib compile_options)
 target_include_directories(test_iden_2OS PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(NAME test_iden_2OS COMMAND test_iden_2OS)
 
 add_executable(test_ten_3d2Osym test_ten_3d2Osym.f90)
-target_link_libraries(test_ten_3d2Osym PRIVATE umatlib)
+target_link_libraries(test_ten_3d2Osym PRIVATE umatlib compile_options)
 target_include_directories(test_ten_3d2Osym PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(NAME test_ten_3d2Osym COMMAND test_ten_3d2Osym)
 
 add_executable(test_ten_2d4O3sym test_ten_2d4O3sym.f90)
-target_link_libraries(test_ten_2d4O3sym PRIVATE umatlib)
+target_link_libraries(test_ten_2d4O3sym PRIVATE umatlib compile_options)
 target_include_directories(test_ten_2d4O3sym PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(NAME test_ten_2d4O3sym COMMAND test_ten_2d4O3sym)
 
 
 add_executable(test_ten_3d2O test_ten_3d2O.f90)
-target_link_libraries(test_ten_3d2O PRIVATE umatlib)
+target_link_libraries(test_ten_3d2O PRIVATE umatlib compile_options)
 target_include_directories(test_ten_3d2O PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
 add_test(NAME test_ten_3d2O COMMAND test_ten_3d2O)
 

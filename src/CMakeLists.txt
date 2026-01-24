@@ -77,10 +77,16 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         #                         )
 elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
         message(STATUS "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+
         target_compile_options(umatlib PRIVATE 
                                         -c -cpp -fopenmp -fPIC -mcmodel=medium
                                         $<$<CONFIG:Debug>:-g>
+                                        $<$<CONFIG:Profile_unittests>:-g -O0 -fprofile-arcs -ftest-coverage>
                                         $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
+                                )
+
+        target_link_options(umatlib PRIVATE
+                $<$<CONFIG:Profile_unittests>:--coverage>
                                 )
 else()
     # Default options or a warning if an unsupported compiler is found

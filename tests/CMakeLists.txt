@@ -20,10 +20,12 @@ elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
         target_compile_options(compile_options INTERFACE "-O3" "-Wall")
         target_compile_options(compile_options INTERFACE
                                         $<$<CONFIG:Debug>:-g>
+                                        $<$<CONFIG:Profile_unittests>:-g -O0 -fprofile-arcs -ftest-coverage>
                                         $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
                                 )
         target_link_options(compile_options INTERFACE 
                         $<$<CONFIG:Debug>:-g>
+                        $<$<CONFIG:Profile_unittests>:--coverage>
                         $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
                         )
 else()
