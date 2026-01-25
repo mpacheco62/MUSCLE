@@ -67,6 +67,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Profile_unittests")
             COMMENT "Procesando cobertura de codigo..."
             VERBATIM
         )
+        add_dependencies(coverage_report umatlib)
+        add_dependencies(coverage_report build_all_tests)
     else()
         message(WARNING "lcov o genhtml no encontrados. No se podra generar el reporte visual.")
     endif()
