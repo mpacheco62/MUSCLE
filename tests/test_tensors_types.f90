@@ -61,7 +61,6 @@ program test_basic_operations
     ! call test_dp_sym_6_4(passed)
     ! if (.not. passed) STOP 5
 
-    print*, "Hola!", passed
     STOP 0
 end program test_basic_operations
 
@@ -98,7 +97,7 @@ subroutine test_ten_3D2Osym_sum(passed)
     logical, intent(out) :: passed
 
     type(ten_3D2Osym) :: to_test1, to_test2
-    type(ten_3D2Osym) :: expected_result
+    type(ten_3D2Osym) :: expected
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     passed = (to_test1 + to_test1) .approx. to_test1
@@ -112,11 +111,11 @@ subroutine test_ten_3D2Osym_sum(passed)
     if (.not. passed) return
 
     call to_test1%init((/11D0, 12D0, 13D0, 14D0, 15D0, 16D0/))
-    call expected_result%init((/12D0, 14D0, 16D0, 18D0, 20D0, 22D0/))
-    passed = (to_test2 + to_test1) .approx. expected_result
+    call expected%init((/12D0, 14D0, 16D0, 18D0, 20D0, 22D0/))
+    passed = (to_test2 + to_test1) .approx. expected
     if (.not. passed) return
 
-    passed = (to_test1 + to_test2) .approx. expected_result
+    passed = (to_test1 + to_test2) .approx. expected
     if (.not. passed) return
 
 end subroutine
@@ -129,7 +128,7 @@ subroutine test_ten_3D2Osym_sub(passed)
     logical, intent(out) :: passed
 
     type(ten_3D2Osym) :: to_test1, to_test2
-    type(ten_3D2Osym) :: expected_result
+    type(ten_3D2Osym) :: expected
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     passed = (to_test1 - to_test1) .approx. to_test1
@@ -143,11 +142,11 @@ subroutine test_ten_3D2Osym_sub(passed)
     if (.not. passed) return
 
     call to_test1%init((/11D0, 12D0, 13D0, 14D0, 15D0, 16D0/))
-    call expected_result%init((/10D0, 10D0, 10D0, 10D0, 10D0, 10D0/))
-    passed = (to_test1 - to_test2) .approx. expected_result
+    call expected%init((/10D0, 10D0, 10D0, 10D0, 10D0, 10D0/))
+    passed = (to_test1 - to_test2) .approx. expected
     if (.not. passed) return
 
-    passed = (to_test2 - to_test1) .approx. (-expected_result)
+    passed = (to_test2 - to_test1) .approx. (-expected)
     if (.not. passed) return
 end subroutine
 
@@ -159,7 +158,7 @@ subroutine test_ten_3D2Osym_mul(passed)
     logical, intent(out) :: passed
 
     type(ten_3D2Osym) :: to_test1
-    type(ten_3D2Osym) :: expected_result
+    type(ten_3D2Osym) :: expected
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     passed = (10D0*to_test1) .approx. to_test1
@@ -169,18 +168,18 @@ subroutine test_ten_3D2Osym_mul(passed)
     if (.not. passed) return
 
     call to_test1%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
-    call expected_result%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    passed = (0D0*to_test1) .approx. expected_result
+    call expected%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+    passed = (0D0*to_test1) .approx. expected
     if (.not. passed) return
 
-    passed = (to_test1*0D0) .approx. expected_result
+    passed = (to_test1*0D0) .approx. expected
     if (.not. passed) return
 
-    call expected_result%init((/2D0, 4D0, 6D0, 8D0, 10D0, 12D0/))
-    passed = (2D0*to_test1) .approx. expected_result
+    call expected%init((/2D0, 4D0, 6D0, 8D0, 10D0, 12D0/))
+    passed = (2D0*to_test1) .approx. expected
     if (.not. passed) return
 
-    passed = (to_test1*2D0) .approx. expected_result
+    passed = (to_test1*2D0) .approx. expected
     if (.not. passed) return
 end subroutine
 
@@ -192,15 +191,15 @@ subroutine test_ten_3D2Osym_div(passed)
     logical, intent(out) :: passed
 
     type(ten_3D2Osym) :: to_test1
-    type(ten_3D2Osym) :: expected_result
+    type(ten_3D2Osym) :: expected
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     passed = (to_test1/2D0) .approx. to_test1
     if (.not. passed) return
 
     call to_test1%init((/2D0, 4D0, 6D0, 8D0, 10D0, 12D0/))
-    call expected_result%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
-    passed = (to_test1/2D0) .approx. expected_result
+    call expected%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
+    passed = (to_test1/2D0) .approx. expected
     if (.not. passed) return
 end subroutine
 
@@ -212,25 +211,25 @@ subroutine test_ten_3D2Osym_dev(passed)
     logical, intent(out) :: passed
 
     type(ten_3D2Osym) :: to_test1
-    type(ten_3D2Osym) :: expected_result
+    type(ten_3D2Osym) :: expected
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     passed = (.dev. to_test1) .approx. to_test1
     if (.not. passed) return
 
     call to_test1%init((/5D0, 5D0, 5D0, 0D0, 0D0, 0D0/))
-    call expected_result%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    passed = (.dev. to_test1) .approx. expected_result
+    call expected%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
+    passed = (.dev. to_test1) .approx. expected
     if (.not. passed) return
 
     call to_test1%init((/5D0, 5D0, 5D0, 1D0, 1D0, 1D0/))
-    call expected_result%init((/0D0, 0D0, 0D0, 1D0, 1D0, 1D0/))
-    passed = (.dev. to_test1) .approx. expected_result
+    call expected%init((/0D0, 0D0, 0D0, 1D0, 1D0, 1D0/))
+    passed = (.dev. to_test1) .approx. expected
     if (.not. passed) return
 
     call to_test1%init((/3D0, 0D0, 0D0, 1D0, 1D0, 1D0/))
-    call expected_result%init((/2D0, -1D0, -1D0, 1D0, 1D0, 1D0/))
-    passed = (.dev. to_test1) .approx. expected_result
+    call expected%init((/2D0, -1D0, -1D0, 1D0, 1D0, 1D0/))
+    passed = (.dev. to_test1) .approx. expected
     if (.not. passed) return
 end subroutine
 

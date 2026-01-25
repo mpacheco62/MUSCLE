@@ -201,6 +201,8 @@ module tensors_types
     
 
     public :: assignment (=)
+    public :: write(formatted)
+
 
     ! interface ! iden_4O4T
     !     module pure function sum_I4O4T_3D4O3sym(I4, a) result(res)

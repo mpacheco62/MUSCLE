@@ -21,10 +21,18 @@ set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/mixed_operators/operator_I2OS_3D2O.f90
                   tensors_types/mixed_operators/operator_I4O3T_3D4O2sym.f90
                   tensors_types/mixed_operators/operator_I4O3T_3D4O3sym.f90
+                  tensors_types/mixed_operators/operator_I4O3T_I4O4T.f90
+                  tensors_types/mixed_operators/operator_I4O3T_I4O4TS.f90
                   tensors_types/mixed_operators/operator_I4O3TS_3D4O2sym.f90
                   tensors_types/mixed_operators/operator_I4O3TS_3D4O3sym.f90
+                  tensors_types/mixed_operators/operator_I4O3TS_I4O4T.f90
+                  tensors_types/mixed_operators/operator_I4O3TS_I4O4TS.f90
+                  tensors_types/mixed_operators/operator_I4O4T_3D2O.f90
+                  tensors_types/mixed_operators/operator_I4O4T_3D2Osym.f90
                   tensors_types/mixed_operators/operator_I4O4T_3D4O2sym.f90
                   tensors_types/mixed_operators/operator_I4O4T_3D4O3sym.f90
+                  tensors_types/mixed_operators/operator_I4O4TS_3D2O.f90
+                  tensors_types/mixed_operators/operator_I4O4TS_3D2Osym.f90
                   tensors_types/mixed_operators/operator_I4O4TS_3D4O2sym.f90
                   tensors_types/mixed_operators/operator_I4O4TS_3D4O3sym.f90
                   tensors_types/mixed_operators/operator_3D2Osym_3D2O.f90
@@ -87,7 +95,7 @@ elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
 
         target_link_options(umatlib PRIVATE
                 $<$<CONFIG:Profile_unittests>:--coverage>
-                                )
+                )
 else()
     # Default options or a warning if an unsupported compiler is found
     error(STATUS "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")

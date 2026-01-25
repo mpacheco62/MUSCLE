@@ -19,7 +19,6 @@ program test_basic_operations
     ! call test_dp_sym_6_4(passed)
     ! if (.not. passed) STOP 4
 
-    ! print*, "Hola!", passed
     STOP 0
 end program test_basic_operations
 

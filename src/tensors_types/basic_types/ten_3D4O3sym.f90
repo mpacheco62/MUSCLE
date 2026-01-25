@@ -147,6 +147,7 @@ module mod_ten_3D4O3sym
                 !! Generic interface for initialization.
             procedure, private :: init_ten_3D4O3sym, init2_ten_3D4O3sym 
             procedure, public :: norm => norm_3D4O3sym
+            procedure, public :: set => set_ten3D4O3sym
     end type ten_3D4O3sym
 
     public :: operator(.approx.)
@@ -179,6 +180,11 @@ module mod_ten_3D4O3sym
     public :: operator( / )
     interface operator ( / )
         module procedure div_3D4O3sym_real64
+    end interface
+
+    public :: assignment (=)
+    interface assignment (=)
+        module procedure assign_ten_3D4O3sym_real64
     end interface
 contains
     
@@ -238,11 +244,13 @@ contains
         class(ten_3D4O3sym), intent(in) :: a, b
         logical :: res
         real(real64), parameter :: EPS=1e-7, EPS_ABS=1e-30
-        real(real64) :: norm_a, norm_b, norm_max, norm
+        real(real64) :: norm_a, norm_b, norm_max, norm, eps_check
 
         norm_a = sum(abs(a%vals(1:6))) + 2.0D0 * sum(abs(a%vals(7:21)))
         norm_b = sum(abs(b%vals(1:6))) + 2.0D0 * sum(abs(b%vals(7:21)))
         norm_max = max(max(norm_a, norm_b), EPS_ABS)
+        eps_check = norm_max * EPS
+
         
         norm = sum(abs(a%vals(1:6) - b%vals(1:6))) + 2.0D0 * sum(abs(a%vals(7:21) - b%vals(7:21)))
 
@@ -319,7 +327,6 @@ contains
         type(ten_3D4O3sym) :: res
         real(real64) :: mat_a(6,6), mat_b(6,6), v(21)
         logical :: ok
-        integer :: iok
         v = a%vals
         mat_a = reshape((/  v(1),  v(7), v(12), v(16), v(19), v(21), &
                             v(7),  v(2),  v(8), v(13), v(17), v(20), &
@@ -381,5 +388,48 @@ contains
             !  | (21:1311) (20:1322) (18:1333) (15:1312) (11:1323) ( 6:1313) |
 
     end function inv_3D4O3sym
+
+    pure subroutine assign_ten_3D4O3sym_real64(a, b)
+        implicit none
+        type(ten_3D4O3sym), intent(out) :: a
+        real(real64), intent(in) :: b
+        a%vals = b
+    end subroutine assign_ten_3D4O3sym_real64
+
+    pure subroutine set_ten3D4O3sym(a, &
+                                    xxxx, yyyy, zzzz, xyxy, yzyz, xzxz, &
+                                    xxyy, yyzz, zzxy, xyyz, yzxz, xxzz, &
+                                    yyxy, zzyz, xyxz, xxxy, yyyz, zzxz, &
+                                    xxyz, yyxz, xxxz  &
+                                    )
+        implicit none
+        class(ten_3D4O3sym), intent(inout) :: a
+        real(real64), optional, intent(in) :: xxxx, yyyy, zzzz, xyxy, yzyz, xzxz, &
+                                              xxyy, yyzz, zzxy, xyyz, yzxz, xxzz, &
+                                              yyxy, zzyz, xyxz, xxxy, yyyz, zzxz, &
+                                              xxyz, yyxz, xxxz
+
+        if (present(xxxx)) a%vals(1) = xxxx
+        if (present(yyyy)) a%vals(2) = yyyy
+        if (present(zzzz)) a%vals(3) = zzzz
+        if (present(xyxy)) a%vals(4) = xyxy
+        if (present(yzyz)) a%vals(5) = yzyz
+        if (present(xzxz)) a%vals(6) = xzxz
+        if (present(xxyy)) a%vals(7) = xxyy
+        if (present(yyzz)) a%vals(8) = yyzz
+        if (present(zzxy)) a%vals(9) = zzxy
+        if (present(xyyz)) a%vals(10) = xyyz
+        if (present(yzxz)) a%vals(11) = yzxz
+        if (present(xxzz)) a%vals(12) = xxzz
+        if (present(yyxy)) a%vals(13) = yyxy
+        if (present(zzyz)) a%vals(14) = zzyz
+        if (present(xyxz)) a%vals(15) = xyxz
+        if (present(xxxy)) a%vals(16) = xxxy
+        if (present(yyyz)) a%vals(17) = yyyz
+        if (present(zzxz)) a%vals(18) = zzxz
+        if (present(xxyz)) a%vals(19) = xxyz
+        if (present(yyxz)) a%vals(20) = yyxz
+        if (present(xxxz)) a%vals(21) = xxxz
+    end subroutine
 
 end module mod_ten_3D4O3sym

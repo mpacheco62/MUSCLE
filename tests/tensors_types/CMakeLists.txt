@@ -1,5 +1,11 @@
+add_umat_test(test_iden_2O test_iden_2O.f90)
 add_umat_test(test_iden_2OS test_iden_2OS.f90)
+add_umat_test(test_iden_4O3T test_iden_4O3T.f90)
+add_umat_test(test_iden_4O3TS test_iden_4O3TS.f90)
+add_umat_test(test_iden_4O4T test_iden_4O4T.f90)
+add_umat_test(test_iden_4O4TS test_iden_4O4TS.f90)
 add_umat_test(test_ten_3d2Osym test_ten_3d2Osym.f90)
 add_umat_test(test_ten_2d4O3sym test_ten_2d4O3sym.f90)
 add_umat_test(test_ten_3d2O test_ten_3d2O.f90)
+add_umat_test(test_ten_3d4O3sym test_ten_3d4O3sym.f90)
 

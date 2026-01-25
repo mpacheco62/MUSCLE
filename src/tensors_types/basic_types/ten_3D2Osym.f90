@@ -190,6 +190,11 @@ module mod_ten_3D2Osym
         module procedure ten_3D2Osym_real64_assign
     end interface
 
+    public :: write(formatted)
+    interface write(formatted)
+        module procedure print_ten_3D2Osym
+    end interface
+
 contains
 
     pure subroutine ten_3D2Osym_real64_assign(a, b)
@@ -386,4 +391,46 @@ contains
         res = a%vals(6)
     end function xz
 
+
+    subroutine print_ten_3D2Osym(dtv, unit, iotype, v_list, iostat, iomsg)
+        !! Custom I/O formatting for ten_3D2Osym.
+        class(ten_3D2Osym), intent(in) :: dtv
+        integer, intent(in)            :: unit
+        character(len=*), intent(in)   :: iotype
+        integer, intent(in)            :: v_list(:)
+        integer, intent(out)           :: iostat
+        character(len=*), intent(inout) :: iomsg
+        
+        character(len=100) :: fmt_string
+        integer :: w, d
+
+        w = 10 
+        d = 4  
+        iostat = 0
+        
+        if (size(v_list) >= 1) w = v_list(1)
+        if (size(v_list) >= 2) d = v_list(2)
+
+        if (iotype == "DTLIST" .or. iotype == "LIST") then
+            ! Modo lista
+            write(fmt_string, "('(A, 6(F', I0, '.', I0, ', 1X), A)')") w, d
+            write(unit, fmt_string, iostat=iostat) &
+                "[", dtv%xx(), dtv%yy(), dtv%zz(), dtv%xy(), dtv%xz(), dtv%yz(), "]"
+        else
+            ! MODO MATRIZ: Un solo formato con saltos de línea incorporados
+            ! Usamos el descriptor '/' para obligar el salto de línea entre filas.
+            ! El primer '/' asegura que empiece en una línea nueva.
+            write(fmt_string, "('(/, 3(F', I0, '.', I0, ', 2X), /, 3(F', I0, '.', I0, ', 2X), /, 3(F', I0, '.', I0, ', 2X))')") &
+                w, d, w, d, w, d
+            
+            write(unit, fmt_string, iostat=iostat) &
+                dtv%xx(), dtv%xy(), dtv%xz(), & ! Fila 1
+                dtv%xy(), dtv%yy(), dtv%yz(), & ! Fila 2
+                dtv%xz(), dtv%yz(), dtv%zz()    ! Fila 3
+        end if
+
+        if (iostat /= 0) then
+            iomsg = "Error in print_ten_3D2Osym: Failed to write to the specified unit."
+        end if
+    end subroutine print_ten_3D2Osym
 end module mod_ten_3D2Osym
