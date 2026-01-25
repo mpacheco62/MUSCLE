@@ -14,7 +14,7 @@ module mod_ten_2D4O3sym
     !! The storage order follows a specific convention (see type description).
     !!
     !! The module overloads standard arithmetic operators (+, -, *, /), a custom
-    !! equality comparison operator (.isequal.), an inverse operator (.inv.),
+    !! equality comparison operator (.approx.), an inverse operator (.inv.),
     !! and provides methods for initialization.
     !!
     !! Public Entities
@@ -29,7 +29,7 @@ module mod_ten_2D4O3sym
     !!
     !! ### Operators:
     !!
-    !! - `.isequal.`: Compares two `ten_2D4O3sym` tensors for approximate equality using a modified L1 norm.
+    !! - `.approx.`: Compares two `ten_2D4O3sym` tensors for approximate equality using a modified L1 norm.
     !! - `.inv.`: Computes the inverse of the tensor based on its ?x? symmetric Voigt matrix representation.
     !! - `+`: Adds two `ten_2D4O3sym` tensors.
     !! - `-`: Subtracts two `ten_2D4O3sym` tensors (binary) or computes the unary negation.
@@ -76,7 +76,7 @@ module mod_ten_2D4O3sym
     !!   print *, "Expected S_1111:", (lambda+mu)/(mu*(3*lambda+2*mu))
     !!
     !!   ! Comparison
-    !!   are_equal = (C_iso .isequal. C_iso)
+    !!   are_equal = (C_iso .approx. C_iso)
     !!   print *, "Is C_iso equal to itself?", are_equal
     !!
     !! end program example_ten_2D4O3sym_usage
@@ -141,9 +141,9 @@ module mod_ten_2D4O3sym
             procedure, private :: init_ten_2D4O3sym, init2_ten_2D4O3sym 
     end type ten_2D4O3sym
 
-    public :: operator(.isequal.)
-    interface operator (.isequal.)
-        module procedure isequal_2D4O3sym
+    public :: operator(.approx.)
+    interface operator (.approx.)
+        module procedure approx_2D4O3sym
     end interface
 
     ! public :: operator(.inv.)
@@ -210,8 +210,8 @@ contains
                       /)
     end subroutine
 
-    pure function isequal_2D4O3sym(a, b) result(res)
-        !! `.isequal.` Compares two ten_2D4O3sym tensors for approximate equality.
+    pure function approx_2D4O3sym(a, b) result(res)
+        !! `.approx.` Compares two ten_2D4O3sym tensors for approximate equality.
         !! Uses a modified L1 norm based on the 10 stored components, where components
         !! corresponding to off-diagonal Voigt matrix entries are weighted by 2.
         !! norm(A) = sum(|A_diag|) + 2*sum(|A_offdiag|) based on 4x4 Voigt matrix.
@@ -230,7 +230,7 @@ contains
 
         if (norm/norm_max .gt. EPS) res=.false.
         if (norm/norm_max .le. EPS) res=.true.
-    end function isequal_2D4O3sym
+    end function approx_2D4O3sym
 
     pure function sum_2D4O3sym(a, b) result(res)
         implicit none

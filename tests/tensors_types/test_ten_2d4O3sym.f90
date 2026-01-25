@@ -264,7 +264,7 @@ subroutine test_ten_2D4O3sym_ddot(passed)
                        )
     call to_test2%init(xx=1D0, yy=2D0, zz=3D0, xy=4D0)
     call expected_result%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0)
-    if ((to_test1 .ddot. to_test2) .approxexpected_result) passed = .true.
+    if ((to_test1 .ddot. to_test2) .approx. expected_result) passed = .true.
     if (.not. passed) return
 
     passed = .false.

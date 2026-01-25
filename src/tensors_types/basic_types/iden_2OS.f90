@@ -126,6 +126,10 @@ module mod_iden_2OS
         module procedure div_I2OS_real64
     end interface
 
+    public :: operator(.approx.)
+    interface operator ( .approx. )
+        module procedure approx_I2OS
+    end interface
     contains
 
     subroutine init_iden_2OS(self, val)
@@ -189,5 +193,17 @@ module mod_iden_2OS
         type(iden_2OS) :: res
         res%val = IMod%val/a 
     end function div_I2OS_real64
+
+    pure function approx_I2OS(I1, I2) result(res)
+        implicit none
+        class(iden_2OS), intent(in) :: I1
+        class(iden_2OS), intent(in) :: I2
+        logical :: res
+        real(real64), parameter :: EPS=1e-10
+        real(real64) :: tol
+
+        tol = EPS*max(1.0D0, abs(I1%val), abs(I2%val))
+        res = (abs(I1%val - I2%val)) <= tol
+    end function approx_I2OS
 
 end module mod_iden_2OS

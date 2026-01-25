@@ -11,7 +11,7 @@ module mod_ten_3D2O
     !! in column-major order: (11, 21, 31, 12, 22, 32, 13, 23, 33).
     !!
     !! The module overloads standard arithmetic operators (+, -, *, /), a custom
-    !! equality comparison operator (.isequal.), the deviatoric operator (.dev.),
+    !! equality comparison operator (.approx.), the deviatoric operator (.dev.),
     !! and the double dot product operator (.ddot.) for this tensor type.
     !! It also provides methods for initialization and assignment from a scalar.
     !!
@@ -28,7 +28,7 @@ module mod_ten_3D2O
     !!
     !! ### Operators:
     !!
-    !! - `.isequal.`: Compares two `ten_3D2O` tensors for approximate equality using an L1 norm.
+    !! - `.approx.`: Compares two `ten_3D2O` tensors for approximate equality using an L1 norm.
     !! - `+`: Adds two `ten_3D2O` tensors.
     !! - `-`: Subtracts two `ten_3D2O` tensors (binary) or computes the unary negation.
     !! - `*`: Multiplies a `ten_3D2O` tensor by a `real(real64)` scalar (or vice-versa).
@@ -70,7 +70,7 @@ module mod_ten_3D2O
     !!   dot_product = tensor_a .ddot. tensor_b
     !!
     !!   ! Comparison
-    !!   are_equal = (tensor_b .isequal. (tensor_a - tensor_c + tensor_b * 2.0D0))
+    !!   are_equal = (tensor_b .approx. (tensor_a - tensor_c + tensor_b * 2.0D0))
     !!
     !!   print *, "Tensor A(1,1):", tensor_a%vals(1)
     !!   print *, "Tensor A(2,1):", tensor_a%vals(2)
@@ -134,9 +134,9 @@ module mod_ten_3D2O
             !! Computes the norm of the tensor.
     end type ten_3D2O
 
-    public :: operator(.isequal.)
-    interface operator (.isequal.)
-        module procedure isequal_3D2O
+    public :: operator(.approx.)
+    interface operator (.approx.)
+        module procedure approx_3D2O
     end interface
 
     public :: operator(+)
@@ -214,8 +214,8 @@ contains
               + abs(a%vals(7)) + abs(a%vals(8)) + abs(a%vals(9))
     end function norm_3D2O
 
-    pure function isequal_3D2O(a, b) result(res)
-        !! `.isequal.` Compares two ten_3D2O tensors for approximate equality.
+    pure function approx_3D2O(a, b) result(res)
+        !! `.approx.` Compares two ten_3D2O tensors for approximate equality.
         !! Uses the standard L1 norm with relative and absolute tolerances (EPS, EPS_ABS).
         !! norm(a) = sum(|a_ij|) for all i,j
         !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
@@ -243,7 +243,7 @@ contains
         if (norm/norm_max .gt. EPS) res=.false.
         if (norm/norm_max .le. EPS) res=.true.
         
-    end function isequal_3D2O
+    end function approx_3D2O
 
     pure function sum_3D2O(a, b) result(res)
         implicit none

@@ -50,11 +50,11 @@ subroutine test_ten_3D2Osym_approx(passed)
     call to_test1%init(xx=1D0, yy=2D0, zz=3D0, xy=4D0, xz=5D0, yz=6D0)
     call to_test2%init(xx=1D0, yy=2D0, zz=3D0, xy=4D0, xz=5D0, yz=6D0)
 
-    passed = to_test1 .approx to_test2
+    passed = to_test1 .approx. to_test2
     if (.not. passed) return
 
     call to_test2%init(xx=1D0, yy=2D0, zz=3D0, xy=4D0, xz=5D0, yz=6.0001D0)
-    passed = .not. (to_test1 .approx to_test2)
+    passed = .not. (to_test1 .approx. to_test2)
     if (.not. passed) return
 
     call to_test1%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, xz=0D0, yz=0D0)
