@@ -14,7 +14,7 @@ module mod_ten_3D4O2sym
     !! symmetries, this 6x6 matrix is generally **not** symmetric (\(C_{IJ} \neq C_{JI}\)).
     !!
     !! The module overloads standard arithmetic operators (+, -, *, /), a custom
-    !! equality comparison operator (.isequal.), and provides an inverse function (`inv_3D4O2sym`).
+    !! equality comparison operator (.approx.), and provides an inverse function (`inv_3D4O2sym`).
     !! It also provides methods for initialization.
     !!
     !! Public Entities
@@ -30,7 +30,7 @@ module mod_ten_3D4O2sym
     !!
     !! ### Operators:
     !!
-    !! - `.isequal.`: Compares two `ten_3D4O2sym` tensors for approximate equality using an L1 norm.
+    !! - `.approx.`: Compares two `ten_3D4O2sym` tensors for approximate equality using an L1 norm.
     !! - `+`: Adds two `ten_3D4O2sym` tensors.
     !! - `-`: Subtracts two `ten_3D4O2sym` tensors (binary) or computes the unary negation.
     !! - `*`: Multiplies a `ten_3D4O2sym` tensor by a `real(real64)` scalar (or vice-versa).
@@ -74,7 +74,7 @@ module mod_ten_3D4O2sym
     !!   tensor_sum = tensor_c + tensor_d * 2.0D0
     !!
     !!   ! Comparison
-    !!   are_equal = (tensor_c .isequal. tensor_sum)
+    !!   are_equal = (tensor_c .approx. tensor_sum)
     !!
     !!   print *, "Tensor C(1,1) (C_1111):", tensor_c%vals(1,1)
     !!   print *, "Tensor C(4,4) (C_1212):", tensor_c%vals(4,4)
@@ -146,9 +146,9 @@ module mod_ten_3D4O2sym
             procedure, public :: norm => norm_3D4O2sym
     end type ten_3D4O2sym
 
-    public :: operator(.isequal.)
-    interface operator (.isequal.)
-        module procedure isequal_3D4O2sym
+    public :: operator(.approx.)
+    interface operator (.approx.)
+        module procedure approx_3D4O2sym
     end interface
 
     ! public :: operator(.inv.)
@@ -222,8 +222,8 @@ contains
         self%vals(:,6) = (/ xxxz, yyxz, zzxz, xyxz, yzxz, xzxz /)
     end subroutine
 
-    pure function isequal_3D4O2sym(a, b) result(res)
-        !! `.isequal.` Compares two ten_3D4O2sym tensors for approximate equality.
+    pure function approx_3D4O2sym(a, b) result(res)
+        !! `.approx.` Compares two ten_3D4O2sym tensors for approximate equality.
         !! Uses the L1 norm of the difference of the 6x6 Voigt matrices with relative
         !! and absolute tolerances (EPS, EPS_ABS).
         !! norm(A) = sum(|A_IJ|) for I,J=1..6
@@ -257,7 +257,7 @@ contains
 
         if (norm/norm_max .gt. EPS) res=.false.
         if (norm/norm_max .le. EPS) res=.true.
-    end function isequal_3D4O2sym
+    end function approx_3D4O2sym
 
     pure function norm_3D4O2sym(a) result(norm)
         !! Uses the L1 norm of the difference of the 6x6 Voigt matrices with relative

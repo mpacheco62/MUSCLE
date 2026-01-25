@@ -4,7 +4,7 @@ program test_basic_operations
     
     logical :: passed
 
-    call test_ten_3D2Osym_isequal(passed)
+    call test_ten_3D2Osym_approx(passed)
     if (.not. passed) STOP 1
 
     call test_ten_3D2Osym_sum(passed)
@@ -25,7 +25,7 @@ program test_basic_operations
     call test_ten_3D2Osym_ddot(passed)
     if (.not. passed) STOP 7
 
-    call test_ten_3D4O3sym_isequal(passed)
+    call test_ten_3D4O3sym_approx(passed)
     if (.not. passed) STOP 8
 
     call test_ten_3D4O3sym_sum(passed)
@@ -65,7 +65,7 @@ program test_basic_operations
     STOP 0
 end program test_basic_operations
 
-subroutine test_ten_3D2Osym_isequal(passed)
+subroutine test_ten_3D2Osym_approx(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
@@ -77,16 +77,16 @@ subroutine test_ten_3D2Osym_isequal(passed)
     call to_test1%init(xx=1D0, yy=2D0, zz=3D0, xy=4D0, xz=5D0, yz=6D0)
     call to_test2%init(xx=1D0, yy=2D0, zz=3D0, xy=4D0, xz=5D0, yz=6D0)
 
-    passed = to_test1 .isequal. to_test2
+    passed = to_test1 .approx. to_test2
     if (.not. passed) return
 
     call to_test2%init(xx=1D0, yy=2D0, zz=3D0, xy=4D0, xz=5D0, yz=6.0001D0)
-    passed = .not. (to_test1 .isequal. to_test2)
+    passed = .not. (to_test1 .approx. to_test2)
     if (.not. passed) return
 
     call to_test1%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, xz=0D0, yz=0D0)
     call to_test2%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0, xz=0D0, yz=0D0)
-    passed = to_test1 .isequal. to_test2
+    passed = to_test1 .approx. to_test2
     if (.not. passed) return
 end subroutine
 
@@ -101,22 +101,22 @@ subroutine test_ten_3D2Osym_sum(passed)
     type(ten_3D2Osym) :: expected_result
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    passed = (to_test1 + to_test1) .isequal. to_test1
+    passed = (to_test1 + to_test1) .approx. to_test1
     if (.not. passed) return
     
     call to_test2%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
-    passed = (to_test1 + to_test2) .isequal. to_test2
+    passed = (to_test1 + to_test2) .approx. to_test2
     if (.not. passed) return
 
-    passed = (to_test2 + to_test1) .isequal. to_test2
+    passed = (to_test2 + to_test1) .approx. to_test2
     if (.not. passed) return
 
     call to_test1%init((/11D0, 12D0, 13D0, 14D0, 15D0, 16D0/))
     call expected_result%init((/12D0, 14D0, 16D0, 18D0, 20D0, 22D0/))
-    passed = (to_test2 + to_test1) .isequal. expected_result
+    passed = (to_test2 + to_test1) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test1 + to_test2) .isequal. expected_result
+    passed = (to_test1 + to_test2) .approx. expected_result
     if (.not. passed) return
 
 end subroutine
@@ -132,22 +132,22 @@ subroutine test_ten_3D2Osym_sub(passed)
     type(ten_3D2Osym) :: expected_result
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    passed = (to_test1 - to_test1) .isequal. to_test1
+    passed = (to_test1 - to_test1) .approx. to_test1
     if (.not. passed) return
     
     call to_test2%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
-    passed = (to_test2 - to_test1) .isequal. to_test2
+    passed = (to_test2 - to_test1) .approx. to_test2
     if (.not. passed) return
 
-    passed = (to_test1 - to_test2) .isequal. (-to_test2)
+    passed = (to_test1 - to_test2) .approx. (-to_test2)
     if (.not. passed) return
 
     call to_test1%init((/11D0, 12D0, 13D0, 14D0, 15D0, 16D0/))
     call expected_result%init((/10D0, 10D0, 10D0, 10D0, 10D0, 10D0/))
-    passed = (to_test1 - to_test2) .isequal. expected_result
+    passed = (to_test1 - to_test2) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test2 - to_test1) .isequal. (-expected_result)
+    passed = (to_test2 - to_test1) .approx. (-expected_result)
     if (.not. passed) return
 end subroutine
 
@@ -162,25 +162,25 @@ subroutine test_ten_3D2Osym_mul(passed)
     type(ten_3D2Osym) :: expected_result
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    passed = (10D0*to_test1) .isequal. to_test1
+    passed = (10D0*to_test1) .approx. to_test1
     if (.not. passed) return
 
-    passed = (to_test1*10D0) .isequal. to_test1
+    passed = (to_test1*10D0) .approx. to_test1
     if (.not. passed) return
 
     call to_test1%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
     call expected_result%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    passed = (0D0*to_test1) .isequal. expected_result
+    passed = (0D0*to_test1) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test1*0D0) .isequal. expected_result
+    passed = (to_test1*0D0) .approx. expected_result
     if (.not. passed) return
 
     call expected_result%init((/2D0, 4D0, 6D0, 8D0, 10D0, 12D0/))
-    passed = (2D0*to_test1) .isequal. expected_result
+    passed = (2D0*to_test1) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test1*2D0) .isequal. expected_result
+    passed = (to_test1*2D0) .approx. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -195,12 +195,12 @@ subroutine test_ten_3D2Osym_div(passed)
     type(ten_3D2Osym) :: expected_result
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    passed = (to_test1/2D0) .isequal. to_test1
+    passed = (to_test1/2D0) .approx. to_test1
     if (.not. passed) return
 
     call to_test1%init((/2D0, 4D0, 6D0, 8D0, 10D0, 12D0/))
     call expected_result%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
-    passed = (to_test1/2D0) .isequal. expected_result
+    passed = (to_test1/2D0) .approx. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -215,22 +215,22 @@ subroutine test_ten_3D2Osym_dev(passed)
     type(ten_3D2Osym) :: expected_result
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    passed = (.dev. to_test1) .isequal. to_test1
+    passed = (.dev. to_test1) .approx. to_test1
     if (.not. passed) return
 
     call to_test1%init((/5D0, 5D0, 5D0, 0D0, 0D0, 0D0/))
     call expected_result%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    passed = (.dev. to_test1) .isequal. expected_result
+    passed = (.dev. to_test1) .approx. expected_result
     if (.not. passed) return
 
     call to_test1%init((/5D0, 5D0, 5D0, 1D0, 1D0, 1D0/))
     call expected_result%init((/0D0, 0D0, 0D0, 1D0, 1D0, 1D0/))
-    passed = (.dev. to_test1) .isequal. expected_result
+    passed = (.dev. to_test1) .approx. expected_result
     if (.not. passed) return
 
     call to_test1%init((/3D0, 0D0, 0D0, 1D0, 1D0, 1D0/))
     call expected_result%init((/2D0, -1D0, -1D0, 1D0, 1D0, 1D0/))
-    passed = (.dev. to_test1) .isequal. expected_result
+    passed = (.dev. to_test1) .approx. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -266,7 +266,7 @@ subroutine test_ten_3D2Osym_ddot(passed)
     if (.not. passed) return
 end subroutine
 
-subroutine test_ten_3D4O3sym_isequal(passed)
+subroutine test_ten_3D4O3sym_approx(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
@@ -280,13 +280,13 @@ subroutine test_ten_3D4O3sym_isequal(passed)
     call to_test2%init((/ 1D0,  2D0,  3D0,  4D0,  5D0,  6D0,  7D0,  8D0,  9D0, 10D0, 11D0,&
                          12D0, 13D0, 14D0, 15D0, 16D0, 17D0, 18D0, 19D0, 20D0, 21D0 /))
 
-    passed = to_test1 .isequal. to_test2
+    passed = to_test1 .approx. to_test2
     if (.not. passed) return
 
     call to_test2%init((/ 1D0,  2D0,  3D0,  4D0,  5D0,  6D0,  7D0,  8D0,  9D0, 10D0, 11D0,&
                          12D0, 13D0, 14D0, 15D0, 16D0, 17D0, 18D0, 19D0, 20D0, 0D0 /))
 
-    passed = .not. (to_test1 .isequal. to_test2)
+    passed = .not. (to_test1 .approx. to_test2)
     if (.not. passed) return
 end subroutine
 
@@ -304,17 +304,17 @@ subroutine test_ten_3D4O3sym_sum(passed)
                          0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, &
                          0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0  &
                          /))
-    passed = (to_test1 + to_test1) .isequal. to_test1
+    passed = (to_test1 + to_test1) .approx. to_test1
     if (.not. passed) return
     
     call to_test2%init((/ 1D0,  2D0,  3D0,  4D0,  5D0,  6D0,  7D0, &
                           8D0,  9D0, 10D0, 11D0, 12D0, 13D0, 14D0, &
                          15D0, 16D0, 17D0, 18D0, 19D0, 20D0, 21D0  &
                         /))
-    passed = (to_test1 + to_test2) .isequal. to_test2
+    passed = (to_test1 + to_test2) .approx. to_test2
     if (.not. passed) return
 
-    passed = (to_test2 + to_test1) .isequal. to_test2
+    passed = (to_test2 + to_test1) .approx. to_test2
     if (.not. passed) return
 
     call to_test1%init((/101D0, 102D0, 103D0, 104D0, 105D0, 106D0, 107D0, &
@@ -326,10 +326,10 @@ subroutine test_ten_3D4O3sym_sum(passed)
                                 116D0, 118D0, 120D0, 122D0, 124D0, 126D0, 128D0, &
                                 130D0, 132D0, 134D0, 136D0, 138D0, 140D0, 142D0  &
                                 /))
-    passed = (to_test2 + to_test1) .isequal. expected_result
+    passed = (to_test2 + to_test1) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test1 + to_test2) .isequal. expected_result
+    passed = (to_test1 + to_test2) .approx. expected_result
     if (.not. passed) return
 
 end subroutine
@@ -348,17 +348,17 @@ subroutine test_ten_3D4O3sym_sub(passed)
                          0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, &
                          0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0  &
                          /))
-    passed = (to_test1 - to_test1) .isequal. to_test1
+    passed = (to_test1 - to_test1) .approx. to_test1
     if (.not. passed) return
     
     call to_test2%init((/ 1D0,  2D0,  3D0,  4D0,  5D0,  6D0,  7D0, &
                           8D0,  9D0, 10D0, 11D0, 12D0, 13D0, 14D0, &
                          15D0, 16D0, 17D0, 18D0, 19D0, 20D0, 21D0  &
                         /))
-    passed = (to_test2 - to_test1) .isequal. to_test2
+    passed = (to_test2 - to_test1) .approxto_test2
     if (.not. passed) return
 
-    passed = (to_test1 - to_test2) .isequal. (-to_test2)
+    passed = (to_test1 - to_test2) .approx (-to_test2)
     if (.not. passed) return
 
     call to_test1%init((/101D0, 102D0, 103D0, 104D0, 105D0, 106D0, 107D0, &
@@ -370,10 +370,10 @@ subroutine test_ten_3D4O3sym_sub(passed)
                                 100D0, 100D0, 100D0, 100D0, 100D0, 100D0, 100D0, &
                                 100D0, 100D0, 100D0, 100D0, 100D0, 100D0, 100D0 &
                                 /))
-    passed = (to_test1 - to_test2) .isequal. expected_result
+    passed = (to_test1 - to_test2) .approx expected_result
     if (.not. passed) return
 
-    passed = (to_test2 - to_test1) .isequal. (-expected_result)
+    passed = (to_test2 - to_test1) .approx. (-expected_result)
     if (.not. passed) return
 end subroutine
 
@@ -391,10 +391,10 @@ subroutine test_ten_3D4O3sym_mul(passed)
                          0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, &
                          0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0  &
                          /))
-    passed = (10D0*to_test1) .isequal. to_test1
+    passed = (10D0*to_test1) .approx. to_test1
     if (.not. passed) return
 
-    passed = (to_test1*10D0) .isequal. to_test1
+    passed = (to_test1*10D0) .approx. to_test1
     if (.not. passed) return
 
     call to_test1%init((/ 1D0,  2D0,  3D0,  4D0,  5D0,  6D0,  7D0, &
@@ -405,20 +405,20 @@ subroutine test_ten_3D4O3sym_mul(passed)
                                 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, &
                                 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0  &
                                 /))
-    passed = (0D0*to_test1) .isequal. expected_result
+    passed = (0D0*to_test1) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test1*0D0) .isequal. expected_result
+    passed = (to_test1*0D0) .approx. expected_result
     if (.not. passed) return
 
     call expected_result%init((/ 2D0,  4D0,  6D0,  8D0, 10D0, 12D0, 14D0, &
                                 16D0, 18D0, 20D0, 22D0, 24D0, 26D0, 28D0, &
                                 30D0, 32D0, 34D0, 36D0, 38D0, 40D0, 42D0  &
                                 /))
-    passed = (2D0*to_test1) .isequal. expected_result
+    passed = (2D0*to_test1) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test1*2D0) .isequal. expected_result
+    passed = (to_test1*2D0) .approx. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -436,7 +436,7 @@ subroutine test_ten_3D4O3sym_div(passed)
                          0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, &
                          0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0  &
                          /))
-    passed = (to_test1/2D0) .isequal. to_test1
+    passed = (to_test1/2D0) .approx. to_test1
     if (.not. passed) return
 
     call to_test1%init((/ 2D0,  4D0,  6D0,  8D0, 10D0, 12D0, 14D0, &
@@ -447,7 +447,7 @@ subroutine test_ten_3D4O3sym_div(passed)
                                  8D0,  9D0, 10D0, 11D0, 12D0, 13D0, 14D0, &
                                 15D0, 16D0, 17D0, 18D0, 19D0, 20D0, 21D0  &
                                 /))
-    passed = (to_test1/2D0) .isequal. expected_result
+    passed = (to_test1/2D0) .approx. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -468,10 +468,10 @@ subroutine test_ten_3D4O3sym_3D2Osym_ddot(passed)
     call to_testO2%init((/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
     call expected_result%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
 
-    passed = (to_testO4 .ddot. to_testO2) .isequal. expected_result
+    passed = (to_testO4 .ddot. to_testO2) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_testO2 .ddot. to_testO4) .isequal. expected_result
+    passed = (to_testO2 .ddot. to_testO4) .approx. expected_result
     if (.not. passed) return
 
     call to_testO4%init((/ 1D0,  2D0,  3D0,  4D0,  5D0,  6D0,  7D0, &
@@ -480,10 +480,10 @@ subroutine test_ten_3D4O3sym_3D2Osym_ddot(passed)
                           /))
     call expected_result%init((/621D0, 549D0, 465D0, 381D0, 357D0, 417D0/))
 
-    passed = (to_testO2 .ddot. to_testO4) .isequal. expected_result
+    passed = (to_testO2 .ddot. to_testO4) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_testO4 .ddot. to_testO2) .isequal. expected_result
+    passed = (to_testO4 .ddot. to_testO2) .approx. expected_result
     if (.not. passed) return
 
 end subroutine
@@ -500,18 +500,18 @@ subroutine test_I2O_3D2Osym_sum(passed)
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     call expected_result%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
-    passed = (to_test1 + iden_2O()) .isequal. expected_result
+    passed = (to_test1 + iden_2O()) .approx. expected_result
     if (.not. passed) return
     
-    passed = (iden_2O() + to_test1) .isequal. expected_result
+    passed = (iden_2O() + to_test1) .approx. expected_result
     if (.not. passed) return
 
     call to_test1%init((/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
     call expected_result%init((/2D0, 2D0, 2D0, 1D0, 1D0, 1D0/))
-    passed = (to_test1 + iden_2O()) .isequal. expected_result
+    passed = (to_test1 + iden_2O()) .approx. expected_result
     if (.not. passed) return
     
-    passed = (iden_2O() + to_test1) .isequal. expected_result
+    passed = (iden_2O() + to_test1) .approx. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -527,18 +527,18 @@ subroutine test_I2O_3D2Osym_sub(passed)
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     call expected_result%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
-    passed = (iden_2O() - to_test1) .isequal. expected_result
+    passed = (iden_2O() - to_test1) .approx. expected_result
     if (.not. passed) return
     
-    passed = (to_test1 - iden_2O()) .isequal. (-expected_result)
+    passed = (to_test1 - iden_2O()) .approx. (-expected_result)
     if (.not. passed) return
 
     call to_test1%init((/2D0, 2D0, 2D0, 1D0, 1D0, 1D0/))
     call expected_result%init((/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
-    passed = (to_test1 - iden_2O()) .isequal. expected_result
+    passed = (to_test1 - iden_2O()) .approx. expected_result
     if (.not. passed) return
     
-    passed = (iden_2O() - to_test1) .isequal. (-expected_result)
+    passed = (iden_2O() - to_test1) .approx. (-expected_result)
     if (.not. passed) return
 end subroutine
 
@@ -552,23 +552,23 @@ subroutine test_I2_real64_mul(passed)
     type(ten_3D2Osym) :: expected_result
 
     call expected_result%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
-    passed = (1D0*iden_2O()) .isequal. expected_result
+    passed = (1D0*iden_2O()) .approx. expected_result
     if (.not. passed) return
     
-    passed = (iden_2O()*1D0) .isequal. expected_result
+    passed = (iden_2O()*1D0) .approx. expected_result
     if (.not. passed) return
 
-    passed = ((-1D0)*iden_2O()) .isequal. (-expected_result)
+    passed = ((-1D0)*iden_2O()) .approx. (-expected_result)
     if (.not. passed) return
     
-    passed = (iden_2O()*(-1D0)) .isequal. (-expected_result)
+    passed = (iden_2O()*(-1D0)) .approx. (-expected_result)
     if (.not. passed) return
     
     call expected_result%init((/2D0, 2D0, 2D0, 0D0, 0D0, 0D0/))
-    passed = (2D0*iden_2O()) .isequal. expected_result
+    passed = (2D0*iden_2O()) .approx. expected_result
     if (.not. passed) return
     
-    passed = (iden_2O()*2D0) .isequal. expected_result
+    passed = (iden_2O()*2D0) .approx. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -582,14 +582,14 @@ subroutine test_I2_real64_div(passed)
     type(ten_3D2Osym) :: expected_result
 
     call expected_result%init((/1D0, 1D0, 1D0, 0D0, 0D0, 0D0/))
-    passed = (iden_2O()/1D0) .isequal. expected_result
+    passed = (iden_2O()/1D0) .approx. expected_result
     if (.not. passed) return
     
-    passed = (iden_2O()/(-1D0)) .isequal. (-expected_result)
+    passed = (iden_2O()/(-1D0)) .approx. (-expected_result)
     if (.not. passed) return
     
     call expected_result%init((/2D0, 2D0, 2D0, 0D0, 0D0, 0D0/))
-    passed = (iden_2O()/(0.5D0)) .isequal. expected_result
+    passed = (iden_2O()/(0.5D0)) .approx. expected_result
     if (.not. passed) return
     
 end subroutine

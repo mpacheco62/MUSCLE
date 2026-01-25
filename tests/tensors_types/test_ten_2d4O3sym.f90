@@ -4,7 +4,7 @@ program test_2D4O3sym
     
     logical :: passed
 
-    call test_ten_2D4O3sym_isequal(passed)
+    call test_ten_2D4O3sym_approx(passed)
     if (.not. passed) STOP 1
 
     call test_ten_2D4O3sym_sum(passed)
@@ -27,7 +27,7 @@ program test_2D4O3sym
     STOP 0
 end program test_2D4O3sym
 
-subroutine test_ten_2D4O3sym_isequal(passed)
+subroutine test_ten_2D4O3sym_approx(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
     implicit none
@@ -46,7 +46,7 @@ subroutine test_ten_2D4O3sym_isequal(passed)
                        xxzz=8D0, yyxy=9D0,                     &
                        xxxy=10D0                               &
                        )
-    passed = to_test1 .isequal. to_test2
+    passed = to_test1 .approx. to_test2
     if (.not. passed) return
 
     call to_test2%init(xxxx=1D0, yyyy=2D0, zzzz=3D0, xyxy=4D0, &
@@ -54,7 +54,7 @@ subroutine test_ten_2D4O3sym_isequal(passed)
                        xxzz=8D0, yyxy=9D0,                     &
                        xxxy=10.001D0                           &
                        )
-    passed = .not. (to_test1 .isequal. to_test2)
+    passed = .not. (to_test1 .approx. to_test2)
     if (.not. passed) return
 
     call to_test1%init(xxxx=0D0, yyyy=0D0, zzzz=0D0, xyxy=0D0, &
@@ -67,7 +67,7 @@ subroutine test_ten_2D4O3sym_isequal(passed)
                        xxzz=0D0, yyxy=0D0,                     &
                        xxxy=0D0                                &
                        )
-    passed = to_test1 .isequal. to_test2
+    passed = to_test1 .approx. to_test2
     if (.not. passed) return
 end subroutine
 
@@ -86,7 +86,7 @@ subroutine test_ten_2D4O3sym_sum(passed)
                        xxzz=0D0, yyxy=0D0,                     &
                        xxxy=0D0                                &
                        )
-    passed = (to_test1 + to_test1) .isequal. to_test1
+    passed = (to_test1 + to_test1) .approx. to_test1
     if (.not. passed) return
     
     call to_test2%init(xxxx=1D0, yyyy=2D0, zzzz=3D0, xyxy=4D0, &
@@ -94,10 +94,10 @@ subroutine test_ten_2D4O3sym_sum(passed)
                        xxzz=8D0, yyxy=9D0,                     &
                        xxxy=10D0                               &
                        )
-    passed = (to_test1 + to_test2) .isequal. to_test2
+    passed = (to_test1 + to_test2) .approx. to_test2
     if (.not. passed) return
 
-    passed = (to_test2 + to_test1) .isequal. to_test2
+    passed = (to_test2 + to_test1) .approx. to_test2
     if (.not. passed) return
 
     call to_test1%init(xxxx=1D1, yyyy=2D1, zzzz=3D1, xyxy=4D1, &
@@ -110,10 +110,10 @@ subroutine test_ten_2D4O3sym_sum(passed)
                               xxzz=88D0, yyxy=99D0,                       &
                               xxxy=110D0                                  &
                               )
-    passed = (to_test2 + to_test1) .isequal. expected_result
+    passed = (to_test2 + to_test1) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test1 + to_test2) .isequal. expected_result
+    passed = (to_test1 + to_test2) .approx. expected_result
     if (.not. passed) return
 
 end subroutine
@@ -133,7 +133,7 @@ subroutine test_ten_2D4O3sym_sub(passed)
                        xxzz=0D0, yyxy=0D0,                     &
                        xxxy=0D0                                &
                        )
-    passed = (to_test1 - to_test1) .isequal. to_test1
+    passed = (to_test1 - to_test1) .approx. to_test1
     if (.not. passed) return
     
     call to_test2%init(xxxx=1D0, yyyy=2D0, zzzz=3D0, xyxy=4D0, &
@@ -141,10 +141,10 @@ subroutine test_ten_2D4O3sym_sub(passed)
                        xxzz=8D0, yyxy=9D0,                     &
                        xxxy=10D0                               &
                        )
-    passed = (to_test2 - to_test1) .isequal. to_test2
+    passed = (to_test2 - to_test1) .approx. to_test2
     if (.not. passed) return
 
-    passed = (to_test1 - to_test2) .isequal. (-to_test2)
+    passed = (to_test1 - to_test2) .approx. (-to_test2)
     if (.not. passed) return
 
     call to_test1%init(xxxx=11D0, yyyy=12D0, zzzz=13D0, xyxy=14D0, &
@@ -157,10 +157,10 @@ subroutine test_ten_2D4O3sym_sub(passed)
                               xxzz=10D0, yyxy=10D0,                       &
                               xxxy=10D0                                   &
                               )
-    passed = (to_test1 - to_test2) .isequal. expected_result
+    passed = (to_test1 - to_test2) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test2 - to_test1) .isequal. (-expected_result)
+    passed = (to_test2 - to_test1) .approx. (-expected_result)
     if (.not. passed) return
 end subroutine
 
@@ -179,10 +179,10 @@ subroutine test_ten_2D4O3sym_mul(passed)
                        xxzz=0D0, yyxy=0D0,                     &
                        xxxy=0D0                                &
                        )
-    passed = (10D0*to_test1) .isequal. to_test1
+    passed = (10D0*to_test1) .approx. to_test1
     if (.not. passed) return
 
-    passed = (to_test1*10D0) .isequal. to_test1
+    passed = (to_test1*10D0) .approx. to_test1
     if (.not. passed) return
 
     call to_test1%init(xxxx=1D0, yyyy=2D0, zzzz=3D0, xyxy=4D0, &
@@ -195,10 +195,10 @@ subroutine test_ten_2D4O3sym_mul(passed)
                               xxzz=0D0, yyxy=0D0,                     &
                               xxxy=0D0                                &
                               )
-    passed = (0D0*to_test1) .isequal. expected_result
+    passed = (0D0*to_test1) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test1*0D0) .isequal. expected_result
+    passed = (to_test1*0D0) .approx. expected_result
     if (.not. passed) return
 
     call expected_result%init(xxxx=2D0, yyyy=4D0, zzzz=6D0, xyxy=8D0, &
@@ -206,10 +206,10 @@ subroutine test_ten_2D4O3sym_mul(passed)
                               xxzz=16D0, yyxy=18D0,                   &
                               xxxy=20D0                               &
                               )
-    passed = (2D0*to_test1) .isequal. expected_result
+    passed = (2D0*to_test1) .approx. expected_result
     if (.not. passed) return
 
-    passed = (to_test1*2D0) .isequal. expected_result
+    passed = (to_test1*2D0) .approx. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -228,7 +228,7 @@ subroutine test_ten_2D4O3sym_div(passed)
                        xxzz=0D0, yyxy=0D0,                     &
                        xxxy=0D0                                &
                        )
-    passed = (to_test1/2D0) .isequal. to_test1
+    passed = (to_test1/2D0) .approx. to_test1
     if (.not. passed) return
 
     call to_test1%init(xxxx=2D0, yyyy=4D0, zzzz=6D0, xyxy=8D0, &
@@ -241,7 +241,7 @@ subroutine test_ten_2D4O3sym_div(passed)
                               xxzz=8D0, yyxy=9D0,                     &
                               xxxy=10D0                               &
                               )
-    passed = (to_test1/2D0) .isequal. expected_result
+    passed = (to_test1/2D0) .approx. expected_result
     if (.not. passed) return
 end subroutine
 
@@ -264,11 +264,11 @@ subroutine test_ten_2D4O3sym_ddot(passed)
                        )
     call to_test2%init(xx=1D0, yy=2D0, zz=3D0, xy=4D0)
     call expected_result%init(xx=0D0, yy=0D0, zz=0D0, xy=0D0)
-    if ((to_test1 .ddot. to_test2) .isequal. expected_result) passed = .true.
+    if ((to_test1 .ddot. to_test2) .approxexpected_result) passed = .true.
     if (.not. passed) return
 
     passed = .false.
-    if ((to_test2 .ddot. to_test1) .isequal. expected_result) passed = .true.
+    if ((to_test2 .ddot. to_test1) .approx. expected_result) passed = .true.
     if (.not. passed) return
 
     passed = .false.
@@ -278,10 +278,10 @@ subroutine test_ten_2D4O3sym_ddot(passed)
                        xxxy=10D0                                &
                        )
     call expected_result%init(xx=115D0, yy=99D0, zz=85D0, xy=81D0)
-    if ((to_test1 .ddot. to_test2) .isequal. expected_result) passed = .true.
+    if ((to_test1 .ddot. to_test2) .approx. expected_result) passed = .true.
     if (.not. passed) return
 
     passed = .false.
-    if ((to_test2 .ddot. to_test1) .isequal. expected_result) passed = .true.
+    if ((to_test2 .ddot. to_test1) .approx. expected_result) passed = .true.
     if (.not. passed) return
 end subroutine

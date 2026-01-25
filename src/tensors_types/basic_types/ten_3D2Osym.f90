@@ -10,7 +10,7 @@ module mod_ten_3D2Osym
     !! in the order (11, 22, 33, 12, 23, 13).
     !!
     !! The module overloads standard arithmetic operators (+, -, *, /), a custom
-    !! equality comparison operator (.isequal.), the deviatoric operator (.dev.),
+    !! equality comparison operator (.approx.), the deviatoric operator (.dev.),
     !! and the double dot product operator (.ddot.) for this tensor type.
     !! It also provides methods for initialization and accessing individual components.
     !!
@@ -29,7 +29,7 @@ module mod_ten_3D2Osym
     !!
     !! ### Operators:
     !!
-    !! - `.isequal.`: Compares two `ten_3D2Osym` tensors for approximate equality.
+    !! - `.approx.`: Compares two `ten_3D2Osym` tensors for approximate equality.
     !! - `+`: Adds two `ten_3D2Osym` tensors.
     !! - `-`: Subtracts two `ten_3D2Osym` tensors (binary) or computes the unary negation.
     !! - `*`: Multiplies a `ten_3D2Osym` tensor by a `real(real64)` scalar (or vice-versa).
@@ -77,7 +77,7 @@ module mod_ten_3D2Osym
     !!   print *, "Stress : Strain =", dot_product
     !!
     !!   ! Comparison
-    !!   are_equal = (stress .isequal. stress_dev)
+    !!   are_equal = (stress .approx. stress_dev)
     !!   print *, "Is stress equal to its deviatoric part?", are_equal
     !!
     !! end program example_ten_3d2osym_usage
@@ -144,9 +144,9 @@ module mod_ten_3D2Osym
                 !! Computes the norm of the tensor.
     end type ten_3D2Osym
 
-    public :: operator(.isequal.)
-    interface operator (.isequal.)
-        module procedure isequal_3D2Osym
+    public :: operator(.approx.)
+    interface operator (.approx.)
+        module procedure approx_3D2Osym
     end interface
 
     public :: operator(+)
@@ -230,8 +230,8 @@ contains
               + 2*abs(a%vals(4)) + 2*abs(a%vals(5)) + 2*abs(a%vals(6))
     end function norm_3D2Osym
 
-    pure function isequal_3D2Osym(a, b) result(res)
-        !! `.isequal.` Compares two ten_3D2Osym tensors for approximate equality.
+    pure function approx_3D2Osym(a, b) result(res)
+        !! `.approx.` Compares two ten_3D2Osym tensors for approximate equality.
         !! Uses a modified L1 norm (shear components weighted by 2) with relative
         !! and absolute tolerances (EPS, EPS_ABS).
         !! norm(a) = |a_11| + |a_22| + |a_33| + 2|a_12| + 2|a_23| + 2|a_13|
@@ -257,7 +257,7 @@ contains
         if (norm/norm_max .gt. EPS) res=.false.
         if (norm/norm_max .le. EPS) res=.true.
         
-    end function isequal_3D2Osym
+    end function approx_3D2Osym
 
     pure function sum_3D2Osym(a, b) result(res)
         implicit none

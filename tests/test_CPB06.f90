@@ -169,49 +169,49 @@ subroutine test_CPB06_stresseq_derivates_5(passed)
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%dstressEq_dstress(to_test)
     result2 = cpb%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%dstressEq_dstress(to_test)
     result2 = cpb%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     result1 = cpb%dstressEq_dstress(to_test)
     result2 = cpb%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result1 = cpb%dstressEq_dstress(to_test)
     result2 = cpb%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     result1 = cpb%dstressEq_dstress(to_test)
     result2 = cpb%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     result1 = cpb%dstressEq_dstress(to_test)
     result2 = cpb%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%dstressEq_dstress(to_test)
     result2 = cpb%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%dstressEq_dstress(to_test)
     result2 = cpb%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
 end subroutine
@@ -241,49 +241,49 @@ subroutine test_CPB06_stresseq_derivates2_6(passed)
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%ddstressEq_ddstress(to_test)
     result2 = cpb%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%ddstressEq_ddstress(to_test)
     result2 = cpb%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     result1 = cpb%ddstressEq_ddstress(to_test)
     result2 = cpb%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result1 = cpb%ddstressEq_ddstress(to_test)
     result2 = cpb%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     result1 = cpb%ddstressEq_ddstress(to_test)
     result2 = cpb%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     result1 = cpb%ddstressEq_ddstress(to_test)
     result2 = cpb%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%ddstressEq_ddstress(to_test)
     result2 = cpb%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = cpb%ddstressEq_ddstress(to_test)
     result2 = cpb%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
 end subroutine

@@ -282,7 +282,7 @@ subroutine test_derivative_scalar_scalar(passed)
 
     ! call expected%init(vals=(/2D0, 2D0, 2D0, 2D0, 2D0, 2D0/))
     ! result = derivative(fun_scalar_test2, to_test)
-    ! passed = expected .isequal. result
+    ! passed = expected .approx. result
 
     ! if (.not. passed) print*, "Case 2 Derivate",  new_line('A'), &
     !                           "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -293,7 +293,7 @@ subroutine test_derivative_scalar_scalar(passed)
 
     ! call expected%init(vals=(/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
     ! result = derivative(fun_scalar_test3, to_test)
-    ! passed = expected .isequal. result
+    ! passed = expected .approx. result
 
     ! if (.not. passed) print*, "Case 3 Derivate",  new_line('A'), &
     !                           "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -319,7 +319,7 @@ subroutine test_derivate_scalar_ten(passed)
     call expected%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
     result = derivative(fun_scalar_test1, to_test)
 
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 1 Derivate",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -329,7 +329,7 @@ subroutine test_derivate_scalar_ten(passed)
 
     call expected%init(vals=(/2D0, 2D0, 2D0, 2D0, 2D0, 2D0/))
     result = derivative(fun_scalar_test2, to_test)
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 2 Derivate",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -340,7 +340,7 @@ subroutine test_derivate_scalar_ten(passed)
 
     call expected%init(vals=(/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
     result = derivative(fun_scalar_test3, to_test)
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 3 Derivate",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -367,7 +367,7 @@ subroutine test_derivate_ten_ten(passed)
     call to_test%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
     expected = I4O4T
     result = derivative(fun_tens_x, to_test)
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 1 Derivate tensor=>tensor",  new_line('A'), &
                               "The values obtained is different from the expected one", new_line('A'), &
@@ -378,7 +378,7 @@ subroutine test_derivate_ten_ten(passed)
     to_test%vals = (/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/)
     expected = I4O4T
     result = derivative(fun_tens_x, to_test)
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 2 Derivate tensor=>tensor",  new_line('A'), &
                               "The values obtained is different from the expected one", new_line('A'), &
@@ -390,7 +390,7 @@ subroutine test_derivate_ten_ten(passed)
     call to_test%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
     expected = 2D0*I4O4T
     result = derivative(fun_tens_2x, to_test)
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 3 Derivate tensor=>tensor",  new_line('A'), &
                               "The values obtained is different from the expected one", new_line('A'), &
@@ -401,7 +401,7 @@ subroutine test_derivate_ten_ten(passed)
     to_test%vals = (/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/)
     expected = 2D0*I4O4T
     result = derivative(fun_tens_2x, to_test) 
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 4 Derivate tensor=>tensor",  new_line('A'), &
                               "The values obtained is different from the expected one", new_line('A'), &
@@ -426,7 +426,7 @@ subroutine test_derivate_ten_ten(passed)
                        yzxx=19D0,  xzyy=20D0,  xzxx=21D0  &
                        )
     result = derivative(fun_tens_tenx, to_test)
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 5 Derivate tensor=>tensor",  new_line('A'), &
                               "The values obtained is different from the expected one", new_line('A'), &
@@ -438,7 +438,7 @@ subroutine test_derivate_ten_ten(passed)
     expected = sum(to_test%vals(1:3))*I4O4T 
     expected = expected + (to_test .tdot. I2O)  ! TODO suma de I4O3TS y I4O4TS
     result = derivative(fun_nonlinear_tens, to_test)
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 6 Derivate tensor=>tensor",  new_line('A'), &
                               "The values obtained is different from the expected one", new_line('A'), &
@@ -467,7 +467,7 @@ subroutine test_object_derivate_scalar_ten(passed)
     call expected%init(vals=(/5D0, 5D0, 5D0, 5D0, 5D0, 5D0/))
     result = obj%der(to_test)
 
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 1 Derivate object",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -498,7 +498,7 @@ subroutine test_derivate2O_scalar_ten(passed)
     expected%vals = 0.0D0
     result = derivative2O(fun_scalar_test1, to_test)
 
-    passed = expected .isequal. result
+    passed = expected .approx. result
 
     if (.not. passed) print*, "Case 1 second derivative",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -521,7 +521,7 @@ subroutine test_derivate2O_scalar_ten(passed)
                        )
     result = derivative2O(energy_hooke, to_test)
 
-    passed = result .isequal. expected
+    passed = result .approx. expected
     if (.not. passed) print*, "Case 2 second derivative",  new_line('A'), &
                               "The hook law by derivative is different to analitical", new_line('A'), &
                               "The values obtained are:", new_line('A'),  &

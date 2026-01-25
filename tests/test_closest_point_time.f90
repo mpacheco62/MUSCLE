@@ -78,7 +78,7 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
     !               iters=iters           &
     !               )
 
-    ! passed = stress .isequal. expected_stress
+    ! passed = stress .approx. expected_stress
     ! if (.not. passed) print*, "Case 1 Stress is no equal", new_line('A'),          &
     !                           "Expected:", expected_stress, new_line('A'),  &
     !                           "Actual Value:", stress, new_line('A'),       &
@@ -92,7 +92,7 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
     !                           "Difference", strain_pf - expected_strain_effective
     ! if (.not. passed) return
 
-    ! passed = strain_p .isequal. expected_strain_plastic
+    ! passed = strain_p .approx. expected_strain_plastic
     ! if (.not. passed) print*, "Case 3 Plastic Strain is not equal", new_line('A'), &
     !                           "Expected:", expected_strain_plastic, new_line('A'), &
     !                           "Actual Value:", strain_p, new_line('A'),            & 
@@ -109,7 +109,7 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
     ! call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
     ! call solver%tangent(strain=strain, data=data, tangent=tangent)
 
-    ! passed = tangent .isequal. numerical_tangent
+    ! passed = tangent .approx. numerical_tangent
     ! if (.not. passed) print*, "Case 5 Tangent is no equal", new_line('A'),          &
     !                           "Analitical:", tangent, new_line('A'),  &
     !                           "Numerical:", numerical_tangent, new_line('A'),       &
@@ -154,7 +154,7 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
                   iters=iters           &
                   )
 
-    passed = stress .isequal. expected_stress
+    passed = stress .approx. expected_stress
     print*, "strain_pf", strain_pf, sw%stress(strain_pf), jc%flow_stress(strain_pf, strain_pf/1D+2)
     if (.not. passed) print*, "Case 6 Stress is no equal", new_line('A'),          &
                               "Expected:", expected_stress, new_line('A'),  &
@@ -169,7 +169,7 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
                               "Difference", strain_pf - expected_strain_effective
     if (.not. passed) return
 
-    passed = strain_p .isequal. expected_strain_plastic
+    passed = strain_p .approx. expected_strain_plastic
     if (.not. passed) print*, "Case 8 Plastic Strain is not equal", new_line('A'), &
                               "Expected:", expected_strain_plastic, new_line('A'), &
                               "Actual Value:", strain_p, new_line('A'),            & 
@@ -186,7 +186,7 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
     call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
     call solver%tangent(strain=strain, data=data, tangent=tangent)
 
-    passed = tangent .isequal. numerical_tangent
+    passed = tangent .approx. numerical_tangent
     if (.not. passed) print*, "Case 10 Tangent is no equal", new_line('A'),          &
                               "Analitical:", tangent, new_line('A'),  &
                               "Numerical:", numerical_tangent, new_line('A'),       &
@@ -293,7 +293,7 @@ end subroutine
 !                   strain_p=strain_p     &
 !                   )
 
-!     passed = stress .isequal. expected_stress
+!     passed = stress .approx. expected_stress
 !     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
 !                               "Expected:", expected_stress, new_line('A'),  &
 !                               "Actual Value:", stress, new_line('A'),       &
@@ -307,7 +307,7 @@ end subroutine
 !                               "Difference", strain_pf - expected_strain_effective
 !     if (.not. passed) return
 
-!     passed = strain_p .isequal. expected_strain_plastic
+!     passed = strain_p .approx. expected_strain_plastic
 !     if (.not. passed) print*, "Plastic Strain is not equal", new_line('A'), &
 !                               "Expected:", expected_strain_plastic, new_line('A'), &
 !                               "Actual Value:", strain_p, new_line('A'),            & 
@@ -318,7 +318,7 @@ end subroutine
 !     call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
 !     call solver%tangent(strain=strain, data=data, tangent=tangent)
 
-!     passed = tangent .isequal. numerical_tangent
+!     passed = tangent .approx. numerical_tangent
 !     if (.not. passed) print*, "Tangent is no equal", new_line('A'),          &
 !                               "Analitical:", tangent, new_line('A'),  &
 !                               "Numerical:", numerical_tangent, new_line('A'),       &
@@ -379,7 +379,7 @@ end subroutine
 !                   strain_p=strain_p     &
 !                   )
 
-!     passed = stress .isequal. expected_stress
+!     passed = stress .approx. expected_stress
 !     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
 !                               "Expected:", expected_stress, new_line('A'),  &
 !                               "Actual Value:", stress, new_line('A'),       &
@@ -393,7 +393,7 @@ end subroutine
 !                               "Difference", strain_pf - expected_strain_effective
 !     if (.not. passed) return
 
-!     passed = strain_p .isequal. expected_strain_plastic
+!     passed = strain_p .approx. expected_strain_plastic
 !     if (.not. passed) print*, "Plastic Strain is not equal", new_line('A'), &
 !                               "Expected:", expected_strain_plastic, new_line('A'), &
 !                               "Actual Value:", strain_p, new_line('A'),            & 
@@ -404,7 +404,7 @@ end subroutine
 !     call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
 !     call solver%tangent(strain=strain, data=data, tangent=tangent)
 
-!     passed = tangent .isequal. numerical_tangent
+!     passed = tangent .approx. numerical_tangent
 !     if (.not. passed) print*, "Tangent is no equal", new_line('A'),          &
 !                               "Analitical:", tangent, new_line('A'),  &
 !                               "Numerical:", numerical_tangent, new_line('A'),       &

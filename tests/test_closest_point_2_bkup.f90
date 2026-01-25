@@ -70,7 +70,7 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
                   iters=iters           &
                   )
 
-    passed = stress .isequal. expected_stress
+    passed = stress .approx. expected_stress
     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
                               "Expected:", expected_stress, new_line('A'),  &
                               "Actual Value:", stress, new_line('A'),       &
@@ -84,7 +84,7 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
                               "Difference", strain_pf - expected_strain_effective
     if (.not. passed) return
 
-    passed = strain_p .isequal. expected_strain_plastic
+    passed = strain_p .approx. expected_strain_plastic
     if (.not. passed) print*, "Plastic Strain is not equal", new_line('A'), &
                               "Expected:", expected_strain_plastic, new_line('A'), &
                               "Actual Value:", strain_p, new_line('A'),            & 
@@ -144,7 +144,7 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
     !call closest_point2(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
     !                   stress=stress, strain_pf=strain_pf, strain_p=strain_p, status=error)	
 
-    passed = stress .isequal. expected_stress
+    passed = stress .approx. expected_stress
     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
                               "Expected:", expected_stress, new_line('A'),  &
                               "Actual Value:", stress, new_line('A'),       &
@@ -158,7 +158,7 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
                               "Difference", strain_pf - expected_strain_effective
     if (.not. passed) return
 
-    passed = strain_p .isequal. expected_strain_plastic
+    passed = strain_p .approx. expected_strain_plastic
     if (.not. passed) print*, "Plastic Strain is not equal", new_line('A'), &
                               "Expected:", expected_strain_plastic, new_line('A'), &
                               "Actual Value:", strain_p, new_line('A'),            & 
@@ -211,7 +211,7 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
 	!call closest_point2(strain=strain, elasticity=elas, hardening=sw, yield=vm,    &
     !                   stress=stress, strain_pf=strain_pf, strain_p=strain_p, status=error)
 
-    passed = stress .isequal. expected_stress
+    passed = stress .approx. expected_stress
     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
                               "Expected:", expected_stress, new_line('A'),  &
                               "Actual Value:", stress, new_line('A'),       &
@@ -225,7 +225,7 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
                               "Difference", strain_pf - expected_strain_effective
     if (.not. passed) return
 
-    passed = strain_p .isequal. expected_strain_plastic
+    passed = strain_p .approx. expected_strain_plastic
     if (.not. passed) print*, "Plastic Strain is not equal", new_line('A'), &
                               "Expected:", expected_strain_plastic, new_line('A'), &
                               "Actual Value:", strain_p, new_line('A'),            & 

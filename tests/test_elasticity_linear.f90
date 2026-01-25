@@ -44,7 +44,7 @@ subroutine test_tensile_nu0_3D(passed)
     call expected_result%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     call strain%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -54,7 +54,7 @@ subroutine test_tensile_nu0_3D(passed)
     call expected_result%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     call strain%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -64,7 +64,7 @@ subroutine test_tensile_nu0_3D(passed)
     call expected_result%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     call strain%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -74,7 +74,7 @@ subroutine test_tensile_nu0_3D(passed)
     call expected_result%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     call strain%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -84,7 +84,7 @@ subroutine test_tensile_nu0_3D(passed)
     call expected_result%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     call strain%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -94,7 +94,7 @@ subroutine test_tensile_nu0_3D(passed)
     call expected_result%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     call strain%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -121,7 +121,7 @@ subroutine test_tensile_nu0_2D(passed)
     call expected_result%init((/1D0, 0D0, 0D0, 0D0/))
     call strain%init((/1D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -131,7 +131,7 @@ subroutine test_tensile_nu0_2D(passed)
     call expected_result%init((/0D0, 1D0, 0D0, 0D0/))
     call strain%init((/0D0, 1D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -141,7 +141,7 @@ subroutine test_tensile_nu0_2D(passed)
     call expected_result%init((/0D0, 0D0, 1D0, 0D0/))
     call strain%init((/0D0, 0D0, 1D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -151,7 +151,7 @@ subroutine test_tensile_nu0_2D(passed)
     call expected_result%init((/0D0, 0D0, 0D0, 1D0/))
     call strain%init((/0D0, 0D0, 0D0, 1D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) print*, "Stress is not equal", new_line('A'),         &
                               "Expected:", expected_result, new_line('A'),  &
                               "Actual Value:", result, new_line('A'),       &
@@ -179,25 +179,25 @@ subroutine test_tensile_3D(passed)
     call expected_result%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     call strain%init((/1D0, -0.3D0, -0.3D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
     
     call expected_result%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     call strain%init((/-0.3D0, 1D0, -0.3D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
     call expected_result%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     call strain%init((/-0.3D0, -0.3D0, 1D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
     call expected_result%init((/0D0, 0D0, 0D0, 0.769230769D0, 0D0, 0D0/))
     call strain%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
 end subroutine
@@ -222,25 +222,25 @@ subroutine test_tensile_2D(passed)
     call expected_result%init((/1D0, 0D0, 0D0, 0D0/))
     call strain%init((/1D0, -0.3D0, -0.3D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
     
     call expected_result%init((/0D0, 1D0, 0D0, 0D0/))
     call strain%init((/-0.3D0, 1D0, -0.3D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
     call expected_result%init((/0D0, 0D0, 1D0, 0D0/))
     call strain%init((/-0.3D0, -0.3D0, 1D0, 0D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
     call expected_result%init((/0D0, 0D0, 0D0, 0.769230769D0/))
     call strain%init((/0D0, 0D0, 0D0, 1D0/))
     result = el%stress(strain=strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
 end subroutine
@@ -269,7 +269,7 @@ subroutine test_dsigma_dstrain_3D(passed)
                               xxxy=0D0, yyyz=0D0, zzxz=0D0,       &
                               xxyz=0D0, yyxz=0D0, xxxz=0D0)
     result = el%dstress_dstrain(strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
 
@@ -283,7 +283,7 @@ subroutine test_dsigma_dstrain_3D(passed)
                               xxxy=0D0, yyyz=0D0, zzxz=0D0,       &
                               xxyz=0D0, yyxz=0D0, xxxz=0D0)
     result = el%dstress_dstrain(strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
 end subroutine
@@ -310,7 +310,7 @@ subroutine test_dsigma_dstrain_2D(passed)
                               xxxy=0D0                            & 
                               )
     result = el%dstress_dstrain(strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
 
@@ -322,7 +322,7 @@ subroutine test_dsigma_dstrain_2D(passed)
                               xxxy=0D0                                                                         &
                               )
     result = el%dstress_dstrain(strain)
-    passed = result .isequal. expected_result
+    passed = result .approx. expected_result
     if (.not. passed) return
 
 end subroutine

@@ -158,49 +158,49 @@ subroutine test_vonMises_stresseq_derivates(passed)
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
 end subroutine
@@ -223,49 +223,49 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approxresult2
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .isequal. result2
+    passed = result1 .approx. result2
     if (.not. passed) return
 
 end subroutine

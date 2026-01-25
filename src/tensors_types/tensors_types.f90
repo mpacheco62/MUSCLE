@@ -85,7 +85,7 @@ module tensors_types
     !! - `-`: Subtraction (e.g., `tensor - tensor`).
     !! - `*`: Multiplication (scalar * tensor, tensor * scalar, potentially tensor * tensor depending on definitions).
     !! - `/`: Division (tensor / scalar).
-    !! - `.isequal.`: Custom equality comparison for tensors (checks for approximate equality of components).
+    !! - `.approx.`: Custom equality comparison for tensors (checks for approximate equality of components).
     !! - `.dev.`: Deviatoric part of a second-order tensor.
     !! - `.ddot.`: Double dot product (e.g., `tensor4 : tensor2`, `tensor2 : tensor2`).
     !! - `.tdot.`: Tensor dot product (specific definition depends on implementation, often \( (A \otimes B)_{ijkl} = A_{ij} B_{kl} \) for second order).
@@ -182,7 +182,7 @@ module tensors_types
     ! iden_4O4TS ! val*(\delta_ik\delta_jl + \delta_il\delta_jk)/2
     
 
-    public :: operator(.isequal.)
+    public :: operator(.approx.)
     public :: operator(+)
     public :: operator(-)
     public :: operator(*)
