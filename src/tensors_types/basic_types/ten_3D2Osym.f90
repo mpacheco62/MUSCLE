@@ -142,6 +142,8 @@ module mod_ten_3D2Osym
                 !! Computes the square of the tensor.
             procedure, public :: norm => norm_3D2Osym
                 !! Computes the norm of the tensor.
+            procedure, public :: is_approx => is_approx_3D2Osym
+                !! Compares two tensors for approximate equality.
     end type ten_3D2Osym
 
     public :: operator(.approx.)
@@ -235,6 +237,25 @@ contains
               + 2*abs(a%vals(4)) + 2*abs(a%vals(5)) + 2*abs(a%vals(6))
     end function norm_3D2Osym
 
+    pure function is_approx_3D2Osym(a, b, tol) result(res)
+        implicit none
+        class(ten_3D2Osym), intent(in) :: a, b
+        real(real64), optional, intent(in) :: tol
+        logical :: res
+        real(real64), parameter :: EPS_ABS=1e-30
+        real(real64) :: eps_check
+        real(real64) :: tol2
+        real(real64) :: max_val
+
+        tol2 = 1E-12
+        if (present(tol)) tol2 = tol
+        max_val = max(maxval(abs(a%vals)), maxval(abs(b%vals)), EPS_ABS)
+        eps_check = tol2 * max_val
+
+        res = all(abs(a%vals - b%vals) .le. eps_check)
+        return
+    end function is_approx_3D2Osym
+
     pure function approx_3D2Osym(a, b) result(res)
         !! `.approx.` Compares two ten_3D2Osym tensors for approximate equality.
         !! Uses a modified L1 norm (shear components weighted by 2) with relative
@@ -244,24 +265,8 @@ contains
         implicit none
         class(ten_3D2Osym), intent(in) :: a, b
         logical :: res
-
-        real(real64), parameter :: EPS=1e-7, EPS_ABS=1e-30
-        real(real64) :: norm_a, norm_b, norm_max, norm
-
-        norm_a =   abs(a%vals(1)) + abs(a%vals(2)) + abs(a%vals(3)) &
-                 + 2*abs(a%vals(4)) + 2*abs(a%vals(5)) + 2*abs(a%vals(6))
-        norm_b =   abs(b%vals(1)) + abs(b%vals(2)) + abs(b%vals(3)) &
-                 + 2*abs(b%vals(4)) + 2*abs(b%vals(5)) + 2*abs(b%vals(6))
-
-        norm_max = max(max(norm_a, norm_b), EPS_ABS)
-
-        norm =     abs(a%vals(1)-b%vals(1)) +   abs(a%vals(2)-b%vals(2)) +   abs(a%vals(3)-b%vals(3)) &
-               + 2*abs(a%vals(4)-b%vals(4)) + 2*abs(a%vals(5)-b%vals(5)) + 2*abs(a%vals(6)-b%vals(6))
-
         
-        if (norm/norm_max .gt. EPS) res=.false.
-        if (norm/norm_max .le. EPS) res=.true.
-        
+        res = a%is_approx(b)
     end function approx_3D2Osym
 
     pure function sum_3D2Osym(a, b) result(res)
@@ -404,7 +409,7 @@ contains
         character(len=100) :: fmt_string
         integer :: w, d
 
-        w = 10 
+        w = 11 
         d = 4  
         iostat = 0
         
@@ -413,14 +418,14 @@ contains
 
         if (iotype == "DTLIST" .or. iotype == "LIST") then
             ! Modo lista
-            write(fmt_string, "('(A, 6(F', I0, '.', I0, ', 1X), A)')") w, d
+            write(fmt_string, "('(A, 6(ES', I0, '.', I0, ', 1X), A)')") w, d
             write(unit, fmt_string, iostat=iostat) &
                 "[", dtv%xx(), dtv%yy(), dtv%zz(), dtv%xy(), dtv%xz(), dtv%yz(), "]"
         else
             ! MODO MATRIZ: Un solo formato con saltos de línea incorporados
             ! Usamos el descriptor '/' para obligar el salto de línea entre filas.
             ! El primer '/' asegura que empiece en una línea nueva.
-            write(fmt_string, "('(/, 3(F', I0, '.', I0, ', 2X), /, 3(F', I0, '.', I0, ', 2X), /, 3(F', I0, '.', I0, ', 2X))')") &
+            write(fmt_string, "('(/, 3(ES', I0, '.', I0, ', 2X), /, 3(ES', I0, '.', I0, ', 2X), /, 3(ES', I0, '.', I0, ', 2X))')") &
                 w, d, w, d, w, d
             
             write(unit, fmt_string, iostat=iostat) &

@@ -130,6 +130,11 @@ module mod_iden_2OS
     interface operator ( .approx. )
         module procedure approx_I2OS
     end interface
+
+    public :: write(formatted)
+    interface write(formatted)
+        module procedure print_ten_I2OS
+    end interface
     contains
 
     subroutine init_iden_2OS(self, val)
@@ -205,5 +210,47 @@ module mod_iden_2OS
         tol = EPS*max(1.0D0, abs(I1%val), abs(I2%val))
         res = (abs(I1%val - I2%val)) <= tol
     end function approx_I2OS
+
+    subroutine print_ten_I2OS(dtv, unit, iotype, v_list, iostat, iomsg)
+        !! Custom I/O formatting for iden_2OS.
+        class(iden_2OS), intent(in)      :: dtv
+        integer, intent(in)              :: unit
+        character(len=*), intent(in)     :: iotype
+        integer, intent(in)              :: v_list(:)
+        integer, intent(out)             :: iostat
+        character(len=*), intent(inout)  :: iomsg
+        
+        character(len=100) :: fmt_string
+        integer :: w, d
+
+        w = 10 
+        d = 4  
+        iostat = 0
+        
+        if (size(v_list) >= 1) w = v_list(1)
+        if (size(v_list) >= 2) d = v_list(2)
+
+        if (iotype == "DTLIST" .or. iotype == "LIST") then
+            ! Modo lista
+            write(fmt_string, "('(A, 1(F', I0, '.', I0, ', 1X), A)')") w, d
+            write(unit, fmt_string, iostat=iostat) &
+                "[", dtv%val, "]"
+        else
+            ! MODO MATRIZ: Un solo formato con saltos de línea incorporados
+            ! Usamos el descriptor '/' para obligar el salto de línea entre filas.
+            ! El primer '/' asegura que empiece en una línea nueva.
+            write(fmt_string, "('(/, 3(F', I0, '.', I0, ', 2X), /, 3(F', I0, '.', I0, ', 2X), /, 3(F', I0, '.', I0, ', 2X))')") &
+                w, d, w, d, w, d
+            
+            write(unit, fmt_string, iostat=iostat) &
+                dtv%val, 0D0, 0D0, & ! Fila 1
+                0D0, dtv%val, 0D0, & ! Fila 2
+                0D0, 0D0, dtv%val    ! Fila 3
+        end if
+
+        if (iostat /= 0) then
+            iomsg = "Error in print_ten_3D2Osym: Failed to write to the specified unit."
+        end if
+    end subroutine print_ten_I2OS
 
 end module mod_iden_2OS

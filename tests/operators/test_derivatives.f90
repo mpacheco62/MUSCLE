@@ -318,29 +318,30 @@ subroutine test_derivate_scalar_ten(passed)
     call to_test%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
     call expected%init(vals=(/1D0, 1D0, 1D0, 1D0, 1D0, 1D0/))
     result = derivative(fun_scalar_test1, to_test)
-
-    passed = expected .approx. result
+    passed = result%is_approx(expected, tol=1.0D-10)
 
     if (.not. passed) print*, "Case 1 Derivate",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
                               "The values obtained are:", result, new_line('A'), &
-                              "The expected are:", expected
+                              "The expected are:", expected, new_line('A'), &
+                              "The differences:", result - expected
     if (.not. passed) return
 
     call expected%init(vals=(/2D0, 2D0, 2D0, 2D0, 2D0, 2D0/))
     result = derivative(fun_scalar_test2, to_test)
-    passed = expected .approx. result
+    passed = result%is_approx(expected, tol=1.0D-10)
 
     if (.not. passed) print*, "Case 2 Derivate",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
                               "The values obtained are:", result, new_line('A'), &
-                              "The expected are:", expected
+                              "The expected are:", expected, new_line('A'), &
+                              "The differences:", result - expected
     if (.not. passed) return
 
 
     call expected%init(vals=(/1D0, 2D0, 3D0, 4D0, 5D0, 6D0/))
     result = derivative(fun_scalar_test3, to_test)
-    passed = expected .approx. result
+    passed = result%is_approx(expected, tol=1.0D-10)
 
     if (.not. passed) print*, "Case 3 Derivate",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -467,7 +468,8 @@ subroutine test_object_derivate_scalar_ten(passed)
     call expected%init(vals=(/5D0, 5D0, 5D0, 5D0, 5D0, 5D0/))
     result = obj%der(to_test)
 
-    passed = expected .approx. result
+    passed = result%is_approx(expected, tol=1.0D-10)
+
 
     if (.not. passed) print*, "Case 1 Derivate object",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -498,7 +500,7 @@ subroutine test_derivate2O_scalar_ten(passed)
     expected%vals = 0.0D0
     result = derivative2O(fun_scalar_test1, to_test)
 
-    passed = expected .approx. result
+    passed = expected%is_approx(result, tol=1.0D-8)
 
     if (.not. passed) print*, "Case 1 second derivative",  new_line('A'), &
                               "The eigenvalues obtained is different from the expected one", new_line('A'), &
@@ -521,7 +523,7 @@ subroutine test_derivate2O_scalar_ten(passed)
                        )
     result = derivative2O(energy_hooke, to_test)
 
-    passed = result .approx. expected
+    passed = expected%is_approx(result, tol=1.0D-8)
     if (.not. passed) print*, "Case 2 second derivative",  new_line('A'), &
                               "The hook law by derivative is different to analitical", new_line('A'), &
                               "The values obtained are:", new_line('A'),  &

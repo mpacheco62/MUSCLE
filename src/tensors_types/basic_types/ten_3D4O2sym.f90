@@ -143,6 +143,7 @@ module mod_ten_3D4O2sym
             generic, public :: init => init_ten_3D4O2sym, init2_ten_3D4O2sym
                 !! Generic interface for initialization.
             procedure, private :: init_ten_3D4O2sym, init2_ten_3D4O2sym 
+            procedure, public :: is_approx => is_approx_3D4O2sym
             procedure, public :: norm => norm_3D4O2sym
     end type ten_3D4O2sym
 
@@ -222,6 +223,28 @@ contains
         self%vals(:,6) = (/ xxxz, yyxz, zzxz, xyxz, yzxz, xzxz /)
     end subroutine
 
+    pure function is_approx_3D4O2sym(a, b, tol) result(res)
+        !! `.approx.` Compares two ten_3D4O2sym tensors for approximate equality.
+        !! Uses the L1 norm of the difference of the 6x6 Voigt matrices with relative
+        !! and absolute tolerances (EPS, EPS_ABS).
+        !! norm(A) = sum(|A_IJ|) for I,J=1..6
+        !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
+        implicit none
+        class(ten_3D4O2sym), intent(in) :: a, b
+        real(real64), optional, intent(in) :: tol
+        logical :: res
+        real(real64), parameter :: EPS_ABS=1e-30
+        real(real64) :: max_val, eps_check, tol2
+
+        tol2 = 1E-8
+        if (present(tol)) tol2 = tol
+        max_val = max(maxval(abs(a%vals)), maxval(abs(b%vals)), EPS_ABS)
+        eps_check = tol2 * max_val
+
+        res = all(abs(a%vals - b%vals) .le. eps_check)
+        return
+    end function is_approx_3D4O2sym
+
     pure function approx_3D4O2sym(a, b) result(res)
         !! `.approx.` Compares two ten_3D4O2sym tensors for approximate equality.
         !! Uses the L1 norm of the difference of the 6x6 Voigt matrices with relative
@@ -230,33 +253,9 @@ contains
         !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
         implicit none
         class(ten_3D4O2sym), intent(in) :: a, b
-        type(ten_3D4O2sym) :: temp
         logical :: res
-        real(real64), parameter :: EPS=1e-7, EPS_ABS=1e-30
-        real(real64) :: norm_a, norm_b, norm_max, norm
-        integer :: i, j
 
-        norm_a = 0D0
-        norm_b = 0D0
-        do i=1,6
-            do j=1,6
-                norm_a = norm_a + abs(a%vals(i,j))
-                norm_b = norm_b + abs(b%vals(i,j))
-            end do
-        end do
-
-        norm_max = max(max(norm_a, norm_b), EPS_ABS)
-
-        temp = a - b
-        norm = 0D0
-        do i=1,6
-            do j=1,6
-                norm = norm + abs(temp%vals(i,j))
-            end do
-        end do
-
-        if (norm/norm_max .gt. EPS) res=.false.
-        if (norm/norm_max .le. EPS) res=.true.
+        res = a%is_approx(b)
     end function approx_3D4O2sym
 
     pure function norm_3D4O2sym(a) result(norm)

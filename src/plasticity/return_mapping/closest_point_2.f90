@@ -171,7 +171,7 @@ module mod_closest_point_2
 		    !C
             elas_tan = self%elasticity%dstress_dstrain(strain-strain_p)  ! constant
 			
-			print*, "!*** Start algorithm ***"			
+			! print*, "!*** Start algorithm ***"			
             !*** Start algorithm ***
             stress = self%elasticity%stress(strain-strain_p)
             hard = self%hardening%stress(strain_pf)
@@ -247,9 +247,9 @@ module mod_closest_point_2
 			call mklsolve(A, b, x, tolmkl, maxit, its, info)
 			
 			if (info == 0) then
-				print *, "Solucion x:"
-				print '(3(f12.6,1x))', x
-				print *, "its =", its
+				! print *, "Solucion x:"
+				! print '(3(f12.6,1x))', x
+				! print *, "its =", its
 				
 				! 1) Pasar x al formato tensorial
 				dstrain_p = ten_3D2Osym(x(1:6))   ! constructor de tu tipo
@@ -297,7 +297,7 @@ module mod_closest_point_2
             
 			!! CASO ELASTICO
 			if (f/hard - 1D0 .le. -TOL2) then  ! Elastic Case			
-				print*,"Elastic Case"
+				! print*,"Elastic Case"
                 data%status = STATUS_ELASTIC_CASE				
                 data%stress = stress
 				return
@@ -305,7 +305,7 @@ module mod_closest_point_2
 			
 			!!! ACA COMIENZA LA ITERACION DE NEWTON RAPHSON
             do i=1,self%iter_nw 
-				print*,i
+				! print*,i
                 call self%iter(strain, data)
                 if (data%status .eq. STATUS_ITER_CONVERGED) then  ! converged
                     data%status = STATUS_CONVERGED

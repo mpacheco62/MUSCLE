@@ -148,6 +148,7 @@ module mod_ten_3D4O3sym
             procedure, private :: init_ten_3D4O3sym, init2_ten_3D4O3sym 
             procedure, public :: norm => norm_3D4O3sym
             procedure, public :: set => set_ten3D4O3sym
+            procedure, public :: is_approx => is_approx_3D4O3sym
     end type ten_3D4O3sym
 
     public :: operator(.approx.)
@@ -234,6 +235,26 @@ contains
                       /)
     end subroutine
 
+    pure function is_approx_3D4O3sym(a, b, tol) result(res)
+        implicit none
+        class(ten_3D4O3sym), intent(in) :: a, b
+        real(real64), optional, intent(in) :: tol
+        logical :: res
+        real(real64), parameter :: EPS_ABS=1e-30
+        real(real64) :: eps_check
+        real(real64) :: tol2
+        real(real64) :: max_val
+
+        tol2 = 1E-12
+        if (present(tol)) tol2 = tol
+        max_val = max(maxval(abs(a%vals)), maxval(abs(b%vals)), EPS_ABS)
+        eps_check = tol2 * max_val
+
+        res = all(abs(a%vals - b%vals) .le. eps_check)
+        return
+    end function is_approx_3D4O3sym
+
+
     pure function approx_3D4O3sym(a, b) result(res)
         !! `.approx.` Compares two ten_3D4O3sym tensors for approximate equality.
         !! Uses a modified L1 norm based on the 21 stored components, where components
@@ -243,19 +264,10 @@ contains
         implicit none
         class(ten_3D4O3sym), intent(in) :: a, b
         logical :: res
-        real(real64), parameter :: EPS=1e-7, EPS_ABS=1e-30
-        real(real64) :: norm_a, norm_b, norm_max, norm, eps_check
+ 
+        res = a%is_approx(b)
 
-        norm_a = sum(abs(a%vals(1:6))) + 2.0D0 * sum(abs(a%vals(7:21)))
-        norm_b = sum(abs(b%vals(1:6))) + 2.0D0 * sum(abs(b%vals(7:21)))
-        norm_max = max(max(norm_a, norm_b), EPS_ABS)
-        eps_check = norm_max * EPS
-
-        
-        norm = sum(abs(a%vals(1:6) - b%vals(1:6))) + 2.0D0 * sum(abs(a%vals(7:21) - b%vals(7:21)))
-
-        if (norm/norm_max .gt. EPS) res=.false.
-        if (norm/norm_max .le. EPS) res=.true.
+        return
     end function approx_3D4O3sym
 
     pure function norm_3D4O3sym(a) result(norms)

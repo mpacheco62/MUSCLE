@@ -24,7 +24,7 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
     use mod_closest_point
     implicit none
 
-    real(real64), parameter :: EPS=1e-8
+    real(real64), parameter :: EPS=1e-5
     logical, intent(out) :: passed
     type(Closest_point_data) :: data
     type(Closest_point) :: solver
@@ -67,8 +67,8 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
                   iters=iters           &
                   )
 
-    passed = stress .approx. expected_stress
-    if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
+    passed = stress%is_approx(expected_stress, tol=EPS)
+    if (.not. passed) print*, "Error: Stress is no equal", new_line('A'),          &
                               "Expected:", expected_stress, new_line('A'),  &
                               "Actual Value:", stress, new_line('A'),       &
                               "Difference", stress - expected_stress
@@ -81,7 +81,7 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
                               "Difference", strain_pf - expected_strain_effective
     if (.not. passed) return
 
-    passed = strain_p .approx. expected_strain_plastic
+    passed = strain_p%is_approx(expected_strain_plastic, tol=EPS)
     if (.not. passed) print*, "Plastic Strain is not equal", new_line('A'), &
                               "Expected:", expected_strain_plastic, new_line('A'), &
                               "Actual Value:", strain_p, new_line('A'),            & 

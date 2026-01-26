@@ -154,53 +154,54 @@ subroutine test_vonMises_stresseq_derivates(passed)
     type(ten_3D2Osym) :: to_test
 
     type(ten_3D2Osym) :: result1, result2
+    real(real64), parameter :: TOL = 1D-10
 
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .approx. result2
+    passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .approx. result2
+    passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .approx. result2
+    passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .approx. result2
+    passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .approx. result2
+    passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .approx. result2
+    passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .approx. result2
+    passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%dstressEq_dstress(to_test)
     result2 = vm%dstressEq_dstress_numeric(to_test)
-    passed = result1 .approx. result2
+    passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
 end subroutine
@@ -212,7 +213,6 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     use mod_vonMises
     implicit none
     
-    real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
     type(VonMises) :: vm
@@ -223,50 +223,122 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .approx. result2
-    if (.not. passed) return
+    passed = result1%is_approx(result2, tol=1D-7) 
+    if (.not. passed) then
+        print*, "1.- Error: ddstressEq_ddstress failed"
+        print*, "Numerical:"
+        print*, result2
+        print*, "Analytical:"
+        print*, result1
+        print*, "differences:"
+        print*, result2-result1
+        return
+    end if
 
     call to_test%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .approx. result2
-    if (.not. passed) return
+    passed = result1%is_approx(result2, tol=1D-7) 
+    if (.not. passed) then
+        print*, "2.- Error: ddstressEq_ddstress failed"
+        print*, "Numerical:"
+        print*, result2
+        print*, "Analytical:"
+        print*, result1
+        print*, "differences:"
+        print*, result2-result1
+        return
+    end if
 
     call to_test%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .approx. result2
-    if (.not. passed) return
+    passed = result1%is_approx(result2, tol=1D-7) 
+    if (.not. passed) then
+        print*, "3.- Error: ddstressEq_ddstress failed"
+        print*, "Numerical:"
+        print*, result2
+        print*, "Analytical:"
+        print*, result1
+        print*, "differences:"
+        print*, result2-result1
+        return
+    end if
 
     call to_test%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .approx. result2
-    if (.not. passed) return
+    passed = result1%is_approx(result2, tol=1D-7) 
+    if (.not. passed) then
+        print*, "4.- Error: ddstressEq_ddstress failed"
+        print*, "Numerical:"
+        print*, result2
+        print*, "Analytical:"
+        print*, result1
+        print*, "differences:"
+        print*, result2-result1
+        return
+    end if
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .approx. result2
-    if (.not. passed) return
+    passed = result1%is_approx(result2, tol=1D-7) 
+    if (.not. passed) then
+        print*, "5.- Error: ddstressEq_ddstress failed"
+        print*, "Numerical:"
+        print*, result2
+        print*, "Analytical:"
+        print*, result1
+        print*, "differences:"
+        print*, result2-result1
+        return
+    end if
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .approx. result2
-    if (.not. passed) return
+    passed = result1%is_approx(result2, tol=1D-7) 
+    if (.not. passed) then
+        print*, "6.- Error: ddstressEq_ddstress failed"
+        print*, "Numerical:"
+        print*, result2
+        print*, "Analytical:"
+        print*, result1
+        print*, "differences:"
+        print*, result2-result1
+        return
+    end if
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .approx. result2
-    if (.not. passed) return
+    passed = result1%is_approx(result2, tol=1D-7) 
+    if (.not. passed) then
+        print*, "7.- Error: ddstressEq_ddstress failed"
+        print*, "Numerical:"
+        print*, result2
+        print*, "Analytical:"
+        print*, result1
+        print*, "differences:"
+        print*, result2-result1
+        return
+    end if
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = vm%ddstressEq_ddstress(to_test)
     result2 = vm%ddstressEq_ddstress_numeric(to_test)
-    passed = result1 .approx. result2
-    if (.not. passed) return
+    passed = result1%is_approx(result2, tol=1D-7) 
+    if (.not. passed) then
+        print*, "8.- Error: ddstressEq_ddstress failed"
+        print*, "Numerical:"
+        print*, result2
+        print*, "Analytical:"
+        print*, result1
+        print*, "differences:"
+        print*, result2-result1
+        return
+    end if
 
 end subroutine
 

@@ -175,30 +175,50 @@ subroutine test_tensile_3D(passed)
 
     call el%set_parameters(young=1D0, poisson=0.3D0)
     
-    
     call expected_result%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     call strain%init((/1D0, -0.3D0, -0.3D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
     passed = result .approx. expected_result
-    if (.not. passed) return
+    if (.not. passed) then
+        print*, "1.- Error: Linear tensile result is not expected", new_line('A'), &
+                "Expected:", expected_result, new_line('A'), &
+                "Actual:", result
+        return
+    end if
     
     call expected_result%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
     call strain%init((/-0.3D0, 1D0, -0.3D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
     passed = result .approx. expected_result
-    if (.not. passed) return
+    if (.not. passed) then
+        print*, "2.- Error: Linear tensile result is not expected", new_line('A'), &
+                "Expected:", expected_result, new_line('A'), &
+                "Actual:", result
+        return
+    end if
 
     call expected_result%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
     call strain%init((/-0.3D0, -0.3D0, 1D0, 0D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
     passed = result .approx. expected_result
-    if (.not. passed) return
+    if (.not. passed) then
+        print*, "3.- Error: Linear tensile result is not expected", new_line('A'), &
+                "Expected:", expected_result, new_line('A'), &
+                "Actual:", result
+        return
+    end if
 
-    call expected_result%init((/0D0, 0D0, 0D0, 0.769230769D0, 0D0, 0D0/))
+    call expected_result%init((/0D0, 0D0, 0D0, 0.7692307692307692D0, 0D0, 0D0/))
     call strain%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result = el%stress(strain=strain)
     passed = result .approx. expected_result
-    if (.not. passed) return
+    if (.not. passed) then
+        print*, "4.- Error: Linear tensile result is not expected", new_line('A'), &
+                "Expected:", expected_result, new_line('A'), &
+                "Actual:", result, new_line('A'), &
+                "Diference:", result - expected_result
+        return
+    end if
 
 end subroutine
 
