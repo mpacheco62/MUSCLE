@@ -348,7 +348,7 @@ contains
                            v(21), v(20), v(18), v(15), v(11),  v(6)  &
                         /), (/6,6/))
 
-        call M66INV(mat_a, mat_b, ok)
+        call M66INV2(mat_a, mat_b, ok)
 
 
         ! call FINDInv(mat_a, mat_b, 6, iok)

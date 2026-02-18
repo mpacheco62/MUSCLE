@@ -283,6 +283,7 @@ module mod_closest_point_2
             real(real64), parameter :: TOL2=1D-16
             type(ten_3D2Osym) :: stress, strain_p
             real(real64) :: strain_pf, hard, f
+            real(real64) :: stress_eq
 
             integer :: i
 			
@@ -293,10 +294,11 @@ module mod_closest_point_2
             !*** Check Elastic Case ***
             stress = self%elasticity%stress(strain-strain_p)
             hard = self%hardening%stress(strain_pf)
-            f = self%yield%stress_eq(stress) - hard
+            stress_eq = self%yield%stress_eq(stress)
+            f = stress_eq - hard
             
 			!! CASO ELASTICO
-			if (f/hard - 1D0 .le. -TOL2) then  ! Elastic Case			
+			if (stress_eq/hard - 1D0 .le. -TOL2) then  ! Elastic Case			
 				! print*,"Elastic Case"
                 data%status = STATUS_ELASTIC_CASE				
                 data%stress = stress
