@@ -336,7 +336,7 @@ contains
         logical :: ok
         mat_a = a%vals
 
-        call M66INV(mat_a, mat_b, ok)
+        call M66INV2(mat_a, mat_b, ok)
         ! TODO: Add error handling if 'ok' is .false.
 
         ! Apply scaling factors for consistency with Voigt operations

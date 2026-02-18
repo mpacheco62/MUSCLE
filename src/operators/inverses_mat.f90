@@ -13,7 +13,49 @@ module inverses_mat
 !  AINV    = output 6x6 inverse of matrix A
 !  OK_FLAG = (output) .TRUE. if the input matrix could be inverted, and .FALSE. if the input matrix is singular.
 !***********************************************************************************************************************************
+   PURE SUBROUTINE M66INV2(A, AINV, OK_FLAG)
+        implicit none
+        REAL(real64), INTENT(IN)  :: A(6,6)
+        REAL(real64), INTENT(OUT) :: AINV(6,6)
+        LOGICAL, INTENT(OUT) :: OK_FLAG
+        INTEGER, PARAMETER :: N = 6
+        REAL(real64)  :: work(N)
+        integer :: ipiv(N)
+        integer :: info
+        
+        INTERFACE
+          PURE SUBROUTINE DGETRF(M, N, A, LDA, IPIV, INFO)
+              INTEGER, INTENT(IN) :: M, N, LDA
+              DOUBLE PRECISION, DIMENSION(*), INTENT(INOUT) :: A
+              INTEGER, DIMENSION(*), INTENT(OUT) :: IPIV
+              INTEGER, INTENT(OUT) :: INFO
+          END SUBROUTINE DGETRF
 
+          PURE SUBROUTINE DGETRI(N, A, LDA, IPIV, WORK, LWORK, INFO)
+              INTEGER, INTENT(IN) :: N, LDA, LWORK
+              DOUBLE PRECISION, intent(inout), DIMENSION(*) :: A, WORK
+              INTEGER, intent(inout), DIMENSION(*) :: IPIV
+              INTEGER, INTENT(OUT) :: INFO
+          END SUBROUTINE DGETRI
+        END INTERFACE
+       
+        AINV = A
+        CALL DGETRF(N, N, AINV, N, ipiv, info)
+
+        IF (info /= 0) THEN
+            OK_FLAG = .FALSE.
+            RETURN
+        END IF
+
+        CALL DGETRI(N, AINV, N, ipiv, work, N, info)
+
+        if (info /= 0) THEN
+            OK_FLAG = .FALSE.
+            RETURN
+        END IF
+        OK_FLAG = .TRUE.
+    END SUBROUTINE M66INV2
+    
     PURE SUBROUTINE M66INV (A, AINV, OK_FLAG)
 
         IMPLICIT NONE
