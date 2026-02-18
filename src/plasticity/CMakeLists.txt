@@ -1,6 +1,7 @@
 set(HARDENING_LAWS   plasticity/hardening_laws/basis_hardening_law.f90
                      plasticity/hardening_laws/swift_hardening.f90
                      plasticity/hardening_laws/bilinear_hardening.f90
+					 plasticity/hardening_laws/ludwik_hardening.f90
                      CACHE INTERNAL "")
 
 
