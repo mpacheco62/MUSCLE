@@ -214,6 +214,7 @@ module mod_closest_point_time
             type(ten_3D2Osym) :: stress, strain_p
             real(real64) :: strain_pf, hard, f, dt
             real(real64) :: strain_pf_dot
+            real(real64) :: stress_eq
 
             integer :: i
 
@@ -227,9 +228,10 @@ module mod_closest_point_time
             !*** Check Elastic Case ***
             stress = self%elasticity%stress(strain-strain_p)
             hard = self%hardening%flow_stress(strain_pf, strain_pf_dot)
-            f = self%yield%stress_eq(stress) - hard
+            stress_eq = self%yield%stress_eq(stress)
+            f = stress_eq - hard
             
-            if (f/hard - 1D0 .le. -TOL2) then  ! Elastic Case
+            if (stress_eq/hard - 1D0 .le. -TOL2) then  ! Elastic Case
                 data%status = STATUS_ELASTIC_CASE
                 data%stress = stress
                 return
