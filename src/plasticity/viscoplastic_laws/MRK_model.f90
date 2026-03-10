@@ -41,6 +41,7 @@ module mod_MRK_viscoplastic
         real(real64) :: sig_u 
     contains
         procedure :: flow_stress => flow_MRK
+        procedure :: dstress_dep => dstress_dep_MRK
     end type MRK_viscoplastic
 
 contains
@@ -84,4 +85,43 @@ contains
         res = sig_a + self%sig_u
     end function flow_MRK
 
+    pure function dstress_dep_MRK(self, ep, epd, dt) result(res)
+        class(MRK_viscoplastic), intent(in) :: self
+        real(real64), intent(in) :: ep, epd, dt
+        real(real64) :: res
+        real(real64) :: n_val, B1_val, B2_val, sig0_a, factor_rate
+        real(real64) :: dsig0_dep, dsig0_depd, dfactor_depd, dn_depd, dB1_depd, dB2_depd
+        real(real64) :: log_arg, inv_ln10, epd_eff
+
+        if (epd <= 1.0d-12) then
+            res = 0.0d0 
+            return
+        end if
+
+        epd_eff = epd
+        inv_ln10 = 1.0d0 / log(10.0d0)
+        log_arg = max(1.0d-10, log10(self%epdmax / epd_eff))
+
+       
+        n_val  = self%n0 * max(0.0d0, 1.0d0 - self%D2 * log10(epd_eff / self%epdmin))
+        B1_val = self%B01 * log_arg**(-self%nu1)
+        B2_val = self%B02 * log_arg**(-self%nu2)
+        sig0_a = B1_val * ep + B2_val * (1.0d0 - exp(-ep * n_val))
+        factor_rate = max(1.0d-10, 1.0d0 - self%chi1 * log_arg) 
+       
+        dsig0_dep = B1_val + B2_val * n_val * exp(-ep * n_val)
+        
+        dn_depd  = -self%n0 * self%D2 * inv_ln10 / epd_eff
+        dB1_depd = self%nu1 * B1_val / (log_arg * epd_eff * log(10.0d0))
+        dB2_depd = self%nu2 * B2_val / (log_arg * epd_eff * log(10.0d0))
+        
+        dsig0_depd = dB1_depd * ep + dB2_depd * (1.0d0 - exp(-ep * n_val)) &
+                     + B2_val * (ep * exp(-ep * n_val) * dn_depd)
+
+        dfactor_depd = (1.0d0 / self%chi2) * (factor_rate**(1.0d0 / self%chi2 - 1.0d0)) &
+                       * (self%chi1 * inv_ln10 / epd_eff)
+
+        res = (factor_rate**(1.0d0 / self%chi2)) * dsig0_dep + &
+              ((dfactor_depd * sig0_a) + (factor_rate**(1.0d0 / self%chi2)) * dsig0_depd) / dt
+    end function dstress_dep_MRK
 end module mod_MRK_viscoplastic
