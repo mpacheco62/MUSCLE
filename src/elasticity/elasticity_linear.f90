@@ -6,45 +6,60 @@ module mod_elasticity_linear
     !!
     !! This module provides the `Elasticity_linear` derived type, which represents a
     !! standard linear isotropic elastic material model. It extends the abstract
-    !! `Base_elasticity` type defined in `mod_base_elasticity`.
+    !! `Base_elasticity` type defined in [[mod_base_elasticity]].
     !!
     !! The model calculates stress based on Hooke's law for isotropic materials using
     !! Young's modulus (E) and Poisson's ratio (nu). It also provides the constant
     !! fourth-order elasticity tensor (tangent modulus) corresponding to these parameters.
+    !!
+    !! This type overrides the deviatoric procedures `stress_dev_3D` and
+    !! `dstress_dstrain_dev_3D` inherited from `Base_elasticity` with direct analytic
+    !! implementations that avoid the general projector computation.
     !!
     !! Public Entities
     !! ---------------
     !!
     !! ### Derived Type:
     !!
-    !! - `Elasticity_linear`: Concrete type representing a linear isotropic elastic material.
+    !! - `Elasticity_linear`: Concrete type for linear isotropic elasticity.
     !!     - Extends: `Base_elasticity`.
-    !!     - Private Components: Stores Young's modulus (`young`), Poisson's ratio (`poisson`),
-    !!       derived elastic constants (`e1`, `e2`, `e3`), the pre-calculated tangent
-    !!       modulus (`tan`), and a flag indicating if the tangent is initialized (`tan_init`).
-    !!     - Procedure: `set_parameters(young, poisson, [calc_tan])` - Initializes the material
-    !!       properties (Young's modulus and Poisson's ratio). Optionally pre-calculates
-    !!       and stores the tangent modulus tensor if `calc_tan` is present and `.true.` (default).
-    !!     - Procedure: `stress(strain)` - Calculates the stress tensor (`ten_3D2Osym`)
-    !!       corresponding to the input `strain` tensor (`ten_3D2Osym`) using Hooke's law.
-    !!     - Procedure: `dstress_dstrain(strain)` - Returns the constant linear elastic
-    !!       tangent modulus tensor (`ten_3D4O3sym`) for the defined material properties.
-    !!       The input `strain` is ignored as the tangent is constant for linear elasticity.
+    !!     - Components: Lamé parameters (`lambda`, `mu`), the diagonal constant
+    !!       `e1 = lambda + 2*mu`, pre-cached stiffness tensors (`tan_3D`, `tan_2D`),
+    !!       and flags indicating whether each cache is populated.
+    !!     - `set_parameters(young, poisson, [calc_tan_3D], [calc_tan_2D])` — initialises
+    !!       the material and optionally pre-calculates the stiffness tensors (default: yes).
+    !!     - `stress_3D(strain)` — full 3-D stress via Hooke's law.
+    !!     - `stress_2D(strain)` — full 2-D stress via Hooke's law.
+    !!     - `stress_dev_3D(strain)` — deviatoric 3-D stress, analytically computed
+    !!       as \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\delta_{ij} \).
+    !!       **Overrides** the default in `Base_elasticity`.
+    !!     - `dstress_dstrain_3D(strain)` — full 3-D tangent modulus (constant).
+    !!     - `dstress_dstrain_2D(strain)` — full 2-D tangent modulus (constant).
+    !!     - `dstress_dstrain_dev_3D(strain)` — deviatoric 3-D tangent modulus, analytically
+    !!       computed as \( C^{\mathrm{dev}}_{ijkl} = 2\mu\left(\mathbb{I}^S_{ijkl} -
+    !!       \tfrac{1}{3}\delta_{ij}\delta_{kl}\right) \).
+    !!       **Overrides** the default in `Base_elasticity`.
     !!
     !! Mathematical Background
     !! -----------------------
     !!
-    !! The stress (\(\sigma\)) is calculated from strain (\(\epsilon\)) using Hooke's Law:
-    !! \[ \sigma_{ij} = \lambda \delta_{ij} \epsilon_{kk} + 2 \mu \epsilon_{ij} \]
-    !! where \(\lambda\) and \(\mu\) are Lamé's parameters, derived from Young's modulus \(E\)
-    !! and Poisson's ratio \(\nu\):
-    !! \[ \lambda = \frac{E \nu}{(1+\nu)(1-2\nu)} \]
-    !! \[ \mu = G = \frac{E}{2(1+\nu)} \]
-    !! The implementation uses equivalent constants `e1`, `e2`, `e3` derived from E and nu.
+    !! Hooke's law for isotropic media:
+    !! \[ \sigma_{ij} = \lambda\,\delta_{ij}\,\varepsilon_{kk} + 2\mu\,\varepsilon_{ij} \]
     !!
-    !! The fourth-order elasticity tensor \(C_{ijkl} = \frac{\partial \sigma_{ij}}{\partial \epsilon_{kl}}\) is constant:
-    !! \[ C_{ijkl} = \lambda \delta_{ij} \delta_{kl} + \mu (\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk}) \]
-    !! This tensor is stored internally in Voigt notation (`ten_3D4O3sym`).
+    !! Lamé parameters from engineering constants:
+    !! \[ \lambda = \frac{E\nu}{(1+\nu)(1-2\nu)}, \qquad \mu = \frac{E}{2(1+\nu)} \]
+    !!
+    !! The deviatoric stress is:
+    !! \[ s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \]
+    !!
+    !! The full tangent modulus:
+    !! \[ C_{ijkl} = \lambda\,\delta_{ij}\delta_{kl} + \mu(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk}) \]
+    !!
+    !! The deviatoric tangent modulus:
+    !! \[ C^{\mathrm{dev}}_{ijkl} = 2\mu\left(\mathbb{I}^S_{ijkl} - \tfrac{1}{3}\delta_{ij}\delta_{kl}\right) \]
+    !!
+    !! In Voigt notation this gives diagonal normal components \( 4\mu/3 \),
+    !! off-diagonal normal components \( -2\mu/3 \), and shear components \( \mu \).
     !!
     !! Usage
     !! -----
@@ -57,36 +72,22 @@ module mod_elasticity_linear
     !!   implicit none
     !!
     !!   type(Elasticity_linear) :: steel_material
-    !!   type(ten_3D2Osym) :: strain_tensor, stress_tensor
-    !!   type(ten_3D4O3sym) :: stiffness_tensor
+    !!   type(ten_3D2Osym) :: strain_tensor, stress_tensor, stress_dev_tensor
+    !!   type(ten_3D4O3sym) :: stiffness_tensor, stiffness_dev_tensor
     !!   real(real64) :: E, nu
     !!
-    !!   ! Define material properties
-    !!   E = 200000.0D0 ! Young's Modulus (e.g., MPa)
-    !!   nu = 0.3       ! Poisson's Ratio
+    !!   E  = 200000.0D0   ! Young's Modulus [MPa]
+    !!   nu = 0.3D0        ! Poisson's Ratio
     !!
-    !!   ! Initialize the material model (tangent is calculated by default)
     !!   call steel_material%set_parameters(young=E, poisson=nu)
     !!
-    !!   ! Define a strain state
-    !!   call strain_tensor%init(xx=0.001, yy=-0.0003, zz=-0.0003, xy=0.0005, yz=0.0, xz=0.0)
+    !!   call strain_tensor%init(xx=0.001D0, yy=-0.0003D0, zz=-0.0003D0, &
+    !!                           xy=0.0005D0, yz=0.0D0, xz=0.0D0)
     !!
-    !!   ! Calculate stress
-    !!   stress_tensor = steel_material%stress(strain_tensor)
-    !!
-    !!   ! Get the tangent modulus (stiffness)
-    !!   stiffness_tensor = steel_material%dstress_dstrain(strain_tensor) ! strain is ignored here
-    !!
-    !!   print *, "Steel Properties:"
-    !!   print *, "  Young's Modulus (E) =", E
-    !!   print *, "  Poisson's Ratio (nu) =", nu
-    !!   print *, "Calculated Stress:"
-    !!   print *, "  Stress XX =", stress_tensor%xx()
-    !!   print *, "  Stress XY =", stress_tensor%xy()
-    !!   print *, "Stiffness Tensor:"
-    !!   print *, "  C_1111 =", stiffness_tensor%vals(1)
-    !!   print *, "  C_1122 =", stiffness_tensor%vals(7)
-    !!   print *, "  C_1212 =", stiffness_tensor%vals(4)
+    !!   stress_tensor     = steel_material%stress(strain_tensor)
+    !!   stress_dev_tensor = steel_material%stress_dev(strain_tensor)
+    !!   stiffness_tensor  = steel_material%dstress_dstrain(strain_tensor)
+    !!   stiffness_dev_tensor = steel_material%dstress_dstrain_dev(strain_tensor)
     !!
     !! end program example_linear_elasticity_usage
     !! ```
@@ -103,204 +104,315 @@ module mod_elasticity_linear
     PUBLIC :: Elasticity_linear
     type, extends(Base_elasticity) :: Elasticity_linear
         !! Concrete type for Linear Isotropic Elasticity.
-        !! Extends `Base_elasticity` and implements the stress and tangent modulus calculations
-        !! based on Young's modulus and Poisson's ratio.
-        real(real64), private :: young        !! Young's Modulus (E)
-        real(real64), private :: poisson      !! Poisson's Ratio (nu)
-        real(real64), private :: e1, e2, e3   !! Derived elastic constants related to Lame parameters
-        type(ten_3D4O3sym), private :: tan_3D    !! Pre-calculated tangent modulus tensor (stiffness)
-        type(ten_2D4O3sym), private :: tan_2D    !! Pre-calculated tangent modulus tensor (stiffness)
-        logical, private :: tan_init_3D=.FALSE.  !! Flag indicating if 'tan' has been calculated
-        logical, private :: tan_init_2D=.FALSE.  !! Flag indicating if 'tan' has been calculated
+        !!
+        !! Extends `Base_elasticity` and provides analytic implementations for all
+        !! stress and tangent modulus evaluations, including direct deviatoric variants
+        !! that override the general projector-based defaults of `Base_elasticity`.
+        real(real64), private :: lambda = 0.0D0
+            !! Lamé's first parameter \( \lambda = E\nu/[(1+\nu)(1-2\nu)] \).
+        real(real64), private :: mu = 0.0D0
+            !! Shear modulus \( \mu = E/[2(1+\nu)] \).
+        real(real64), private :: e1 = 0.0D0
+            !! Diagonal constant \( e_1 = \lambda + 2\mu \) used in Hooke's law.
+        type(ten_3D4O3sym), private :: tan_3D
+            !! Pre-cached 3-D full stiffness tensor \( \mathbf{C} \).
+            !! Populated by `set_parameters` when `calc_tan_3D = .TRUE.` (default).
+        type(ten_2D4O3sym), private :: tan_2D
+            !! Pre-cached 2-D full stiffness tensor \( \mathbf{C} \).
+            !! Populated by `set_parameters` when `calc_tan_2D = .TRUE.` (default).
+        logical, private :: tan_init_3D = .FALSE.
+            !! `.TRUE.` if `tan_3D` has been populated and can be returned directly.
+        logical, private :: tan_init_2D = .FALSE.
+            !! `.TRUE.` if `tan_2D` has been populated and can be returned directly.
     contains
-        procedure :: dstress_dstrain_3D => dstress_dstrain_linear_3D
-            !! Calculates the constant tangent modulus tensor.
-        procedure :: dstress_dstrain_2D => dstress_dstrain_linear_2D
-            !! Calculates the constant tangent modulus tensor.
-        procedure :: stress_3D => stress_linear_3D
-            !! Calculates stress using Hooke's law.
-        procedure :: stress_2D => stress_linear_2D
-            !! Calculates stress using Hooke's law.
         procedure :: set_parameters
-            !! Sets the material parameters (E, nu) and optionally pre-calculates the tangent.
+            !! Initialises \( \lambda \), \( \mu \), and optionally pre-caches the
+            !! stiffness tensors. Must be called before any stress evaluation.
+        procedure :: stress_3D          => stress_linear_3D
+            !! Pure function. Full 3-D Cauchy stress via Hooke's law.
+        procedure :: stress_2D          => stress_linear_2D
+            !! Pure function. Full 2-D Cauchy stress via Hooke's law.
+        procedure :: stress_dev_3D      => stress_linear_dev_3D
+            !! Pure function. Deviatoric 3-D stress computed analytically.
+            !! Overrides the `.dev.`-based default of `Base_elasticity`.
+        procedure :: dstress_dstrain_3D  => dstress_dstrain_linear_3D
+            !! Pure function. Full 3-D tangent modulus (constant for linear elasticity).
+        procedure :: dstress_dstrain_2D  => dstress_dstrain_linear_2D
+            !! Pure function. Full 2-D tangent modulus (constant for linear elasticity).
+        procedure :: dstress_dstrain_dev_3D => dstress_dstrain_dev_linear_3D
+            !! Pure function. Deviatoric 3-D tangent modulus computed analytically.
+            !! Overrides the projector-based default of `Base_elasticity`.
     end type Elasticity_linear
 
-    contains
+contains
+
     pure subroutine set_parameters(self, young, poisson, calc_tan_3D, calc_tan_2D)
-        !! Sets the material parameters (Young's modulus, Poisson's ratio) for the linear elastic model.
-        !! Optionally pre-calculates the tangent modulus tensor.
+        !! Initialises the linear elastic material with Young's modulus and Poisson's ratio.
+        !!
+        !! Computes the Lamé parameters \( \lambda \) and \( \mu \), the derived constant
+        !! \( e_1 = \lambda + 2\mu \), and optionally pre-calculates and caches the full
+        !! isotropic stiffness tensors for 3-D and 2-D problems.
+        !!
+        !! Pre-calculation is enabled by default (`calc_tan_3D = .TRUE.`,
+        !! `calc_tan_2D = .TRUE.`) and is recommended when `dstress_dstrain` or
+        !! `dstress_dstrain_dev` will be called repeatedly, since it avoids redundant
+        !! assembly of the stiffness tensor at each call.
         implicit none
-        logical, optional, intent(in) :: calc_tan_3D, calc_tan_2D
-            !! If present and .TRUE. (default), pre-calculates and stores the tangent modulus.
         class(Elasticity_linear), intent(inout) :: self
-            !! The linear elasticity model object
+            !! The linear elasticity model object to initialise.
         real(real64), intent(in) :: young
-            !! Young's Modulus (E).
+            !! Young's modulus \( E \).
         real(real64), intent(in) :: poisson
-            !! Poisson's Ratio (nu).
-        real(real64) :: e1, e2, e3
+            !! Poisson's ratio \( \nu \).
+        logical, optional, intent(in) :: calc_tan_3D
+            !! If `.TRUE.` (default), pre-calculates and caches the 3-D stiffness tensor.
+        logical, optional, intent(in) :: calc_tan_2D
+            !! If `.TRUE.` (default), pre-calculates and caches the 2-D stiffness tensor.
+        real(real64) :: e1, lambda, mu
         logical :: ccalc_tan_3D, ccalc_tan_2D
-        
-        ccalc_tan_3D = .True.
+
+        ccalc_tan_3D = .TRUE.
         if (present(calc_tan_3D)) ccalc_tan_3D = calc_tan_3D
 
-        ccalc_tan_2D = .True.
+        ccalc_tan_2D = .TRUE.
         if (present(calc_tan_2D)) ccalc_tan_2D = calc_tan_2D
 
-        self%young = young
-        self%poisson = poisson
+        ! Compute Lamé parameters
+        lambda = young * poisson / ((1.0D0 + poisson) * (1.0D0 - 2.0D0 * poisson))
+        mu     = 0.5D0 * young / (1.0D0 + poisson)
 
-        ! Calculate derived constants (related to Lame parameters lambda and mu)
-        ! e1 = lambda + 2*mu
-        ! e2 = lambda
-        ! e3 = mu (Shear Modulus G)
-        e1 = young*(1D0-poisson)/((1D0+poisson)*(1D0-2D0*poisson))
-        e2 = young*poisson/((1D0+poisson)*(1D0-2D0*poisson))
-        e3 = 0.5D0*young/(1D0+poisson)
-        self%e1 = e1
-        self%e2 = e2
-        self%e3 = e3
+        self%lambda = lambda
+        self%mu     = mu
+        self%e1     = lambda + 2.0D0 * mu   ! = lambda + 2*mu
 
+        ! Pre-cache 3-D full stiffness tensor C
         self%tan_init_3D = ccalc_tan_3D
         if (ccalc_tan_3D) then
-            call self%tan_3D%init( xxxx= e1, yyyy= e1, zzzz= e1,  &
-                                   xxyy= e2, yyzz= e2, xxzz= e2,  &
-                                   xxxy=0D0, xxyz=0D0, xxxz=0D0,  &
-                                   yyxy=0D0, yyyz=0D0, yyxz=0D0,  &
-                                   zzxy=0D0, zzyz=0D0, zzxz=0D0,  &
-                                   xyxy= e3, yzyz= e3, xzxz= e3,  &
-                                   xyyz=0D0, yzxz=0D0, xyxz=0D0   &
-                                   )
-        end if
-        
-        if (ccalc_tan_2D) then
-            call self%tan_2D%init( xxxx= e1, yyyy= e1, zzzz= e1,  &
-                                   xxyy= e2, yyzz= e2, xxzz= e2,  &
-                                   xxxy=0D0, yyxy=0D0, zzxy=0D0,  &
-                                   xyxy= e3                       &
-                                   )
+            e1 = self%e1
+            call self%tan_3D%init( xxxx=e1,     yyyy=e1,     zzzz=e1,      &
+                                   xxyy=lambda, yyzz=lambda, xxzz=lambda,  &
+                                   xxxy=0.0D0,  xxyz=0.0D0,  xxxz=0.0D0,  &
+                                   yyxy=0.0D0,  yyyz=0.0D0,  yyxz=0.0D0,  &
+                                   zzxy=0.0D0,  zzyz=0.0D0,  zzxz=0.0D0,  &
+                                   xyxy=mu,     yzyz=mu,     xzxz=mu,      &
+                                   xyyz=0.0D0,  yzxz=0.0D0,  xyxz=0.0D0   )
         end if
 
-    end subroutine
+        ! Pre-cache 2-D full stiffness tensor C
+        self%tan_init_2D = ccalc_tan_2D
+        if (ccalc_tan_2D) then
+            e1 = self%e1
+            call self%tan_2D%init( xxxx=e1,     yyyy=e1,     zzzz=e1,      &
+                                   xxyy=lambda, yyzz=lambda, xxzz=lambda,  &
+                                   xxxy=0.0D0,  yyxy=0.0D0,  zzxy=0.0D0,  &
+                                   xyxy=mu                                  )
+        end if
+    end subroutine set_parameters
+
+
+    ! =========================================================================
+    ! Full stress
+    ! =========================================================================
 
     pure function stress_linear_3D(self, strain) result(res)
-        !! Calculates the stress tensor using Hooke's law for linear isotropic elasticity.
-        !! sigma = C : epsilon
+        !! Computes the full 3-D Cauchy stress tensor using Hooke's law:
+        !! \[ \sigma_{ij} = \lambda\,\varepsilon_{kk}\,\delta_{ij} + 2\mu\,\varepsilon_{ij} \]
         implicit none
         class(Elasticity_linear), intent(in) :: self
-            !! The linear elasticity model object containing material parameters.
+            !! The linear elasticity model object (read-only).
         class(ten_3D2Osym), intent(in) :: strain
-            !! Input strain tensor (`ten_3D2Osym`).
+            !! Input second-order symmetric strain tensor (`ten_3D2Osym`).
         type(ten_3D2Osym) :: res
-            !! Output stress tensor (`ten_3D2Osym`).
-        real(real64) :: e1, e2, e3, xx, yy, zz, xy, yz, xz
+            !! Output second-order symmetric Cauchy stress tensor (`ten_3D2Osym`).
+        real(real64) :: e1, lam, mu, tr
 
-        ! Retrieve derived elastic constants
-        e1 = self%e1 ! lambda + 2*mu
-        e2 = self%e2 ! lambda
-        e3 = self%e3 ! mu
+        e1  = self%e1       ! lambda + 2*mu
+        lam = self%lambda
+        mu  = self%mu
 
-        ! Calculate stress components using Hooke's law
-        xx = e1*strain%xx() + e2*(strain%yy()+strain%zz())
-        yy = e1*strain%yy() + e2*(strain%zz()+strain%xx())
-        zz = e1*strain%zz() + e2*(strain%xx()+strain%yy())
-        xy = 2*e3*strain%xy()  ! Note: 2*mu*epsilon_xy
-        yz = 2*e3*strain%yz()  ! Note: 2*mu*epsilon_xy
-        xz = 2*e3*strain%xz()  ! Note: 2*mu*epsilon_xy
+        tr = strain%xx() + strain%yy() + strain%zz()   ! volumetric strain
 
-        ! Initialize the result tensor
-        call res%init(xx=xx, yy=yy, zz=zz, xy=xy, yz=yz, xz=xz)
-        return 
+        call res%init( xx = e1*strain%xx() + lam*(strain%yy() + strain%zz()), &
+                       yy = e1*strain%yy() + lam*(strain%zz() + strain%xx()), &
+                       zz = e1*strain%zz() + lam*(strain%xx() + strain%yy()), &
+                       xy = 2.0D0*mu*strain%xy(), &
+                       yz = 2.0D0*mu*strain%yz(), &
+                       xz = 2.0D0*mu*strain%xz()  )
     end function stress_linear_3D
 
+
     pure function stress_linear_2D(self, strain) result(res)
-        !! Calculates the stress tensor using Hooke's law for linear isotropic elasticity.
-        !! sigma = C : epsilon
+        !! Computes the full 2-D Cauchy stress tensor using Hooke's law.
+        !! See `stress_linear_3D` for the mathematical description.
         implicit none
         class(Elasticity_linear), intent(in) :: self
-            !! The linear elasticity model object containing material parameters.
+            !! The linear elasticity model object (read-only).
         class(ten_2D2Osym), intent(in) :: strain
-            !! Input strain tensor (`ten_2D2Osym`).
+            !! Input second-order symmetric strain tensor (`ten_2D2Osym`).
         type(ten_2D2Osym) :: res
-            !! Output stress tensor (`ten_2D2Osym`).
-        real(real64) :: e1, e2, e3, xx, yy, zz, xy
+            !! Output second-order symmetric Cauchy stress tensor (`ten_2D2Osym`).
+        real(real64) :: e1, lam, mu
 
-        ! Retrieve derived elastic constants
-        e1 = self%e1 ! lambda + 2*mu
-        e2 = self%e2 ! lambda
-        e3 = self%e3 ! mu
+        e1  = self%e1
+        lam = self%lambda
+        mu  = self%mu
 
-        ! Calculate stress components using Hooke's law
-        xx = e1*strain%xx() + e2*(strain%yy()+strain%zz())
-        yy = e1*strain%yy() + e2*(strain%zz()+strain%xx())
-        zz = e1*strain%zz() + e2*(strain%xx()+strain%yy())
-        xy = 2*e3*strain%xy()  ! Note: 2*mu*epsilon_xy
-
-        ! Initialize the result tensor
-        call res%init(xx=xx, yy=yy, zz=zz, xy=xy)
-        return 
+        call res%init( xx = e1*strain%xx() + lam*(strain%yy() + strain%zz()), &
+                       yy = e1*strain%yy() + lam*(strain%zz() + strain%xx()), &
+                       zz = e1*strain%zz() + lam*(strain%xx() + strain%yy()), &
+                       xy = 2.0D0*mu*strain%xy() )
     end function stress_linear_2D
 
-    pure function dstress_dstrain_linear_3D(self, strain) result(res)
-        !! Returns the constant tangent modulus (stiffness) tensor for linear isotropic elasticity.
-        !! C_ijkl = d(sigma_ij) / d(epsilon_kl)
+
+    ! =========================================================================
+    ! Deviatoric stress — analytic override
+    ! =========================================================================
+
+    pure function stress_linear_dev_3D(self, strain) result(res)
+        !! Computes the deviatoric part of the 3-D Cauchy stress analytically:
+        !!
+        !! \[ s_{ij} = 2\mu\,\varepsilon_{ij}
+        !!            - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \]
+        !!
+        !! This is equivalent to \( \mathrm{dev}(\boldsymbol{\sigma}) \) for an
+        !! isotropic linear elastic material, since the volumetric part of \( \boldsymbol{\sigma} \)
+        !! is \( \lambda\,\varepsilon_{kk}\,\mathbf{I} \), which is purely spherical.
+        !!
+        !! Overrides the default `.dev.`-based implementation in `Base_elasticity`
+        !! with a direct evaluation that avoids computing the full stress first.
         implicit none
         class(Elasticity_linear), intent(in) :: self
-            !! The linear elasticity model object.
+            !! The linear elasticity model object (read-only).
         class(ten_3D2Osym), intent(in) :: strain
-            !! Input strain tensor (`ten_3D2Osym`). Ignored for linear elasticity as the tangent is constant.
+            !! Input second-order symmetric strain tensor (`ten_3D2Osym`).
+        type(ten_3D2Osym) :: res
+            !! Output deviatoric stress tensor (`ten_3D2Osym`).
+        real(real64) :: mu, two_mu, tr_comp
+
+        mu      = self%mu
+        two_mu  = 2.0D0 * mu
+        tr_comp = two_mu / 3.0D0 * (strain%xx() + strain%yy() + strain%zz())
+            ! = (2mu/3) * tr(eps) — subtracted from each normal component
+
+        call res%init( xx = two_mu*strain%xx() - tr_comp, &
+                       yy = two_mu*strain%yy() - tr_comp, &
+                       zz = two_mu*strain%zz() - tr_comp, &
+                       xy = two_mu*strain%xy(),            &
+                       yz = two_mu*strain%yz(),            &
+                       xz = two_mu*strain%xz()             )
+    end function stress_linear_dev_3D
+
+
+    ! =========================================================================
+    ! Full tangent modulus
+    ! =========================================================================
+
+    pure function dstress_dstrain_linear_3D(self, strain) result(res)
+        !! Returns the full 3-D isotropic tangent modulus (constant for linear elasticity):
+        !! \[ C_{ijkl} = \lambda\,\delta_{ij}\delta_{kl}
+        !!              + \mu(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk}) \]
+        !!
+        !! Returns the pre-cached tensor `tan_3D` if available (populated by
+        !! `set_parameters`); otherwise assembles it on the fly.
+        !!
+        !! The input `strain` is ignored since the tangent is strain-independent.
+        implicit none
+        class(Elasticity_linear), intent(in) :: self
+            !! The linear elasticity model object (read-only).
+        class(ten_3D2Osym), intent(in) :: strain
+            !! Input strain tensor. Ignored; retained for interface consistency.
         type(ten_3D4O3sym) :: res
-            !! Output tangent modulus tensor (`ten_3D4O3sym`).
-        real(real64) :: e1, e2, e3
+            !! Output fourth-order tangent modulus tensor (`ten_3D4O3sym`).
+        real(real64) :: e1, lam, mu
 
         if (self%tan_init_3D) then
-            ! Return the pre-calculated tangent if available
             res = self%tan_3D
             return
-        else
-            ! Calculate the tangent on the fly if not pre-calculated
-            e1 = self%e1
-            e2 = self%e2
-            e3 = self%e3
-            call res%init( xxxx= e1, yyyy= e1, zzzz= e1,  &
-                           xxyy= e2, yyzz= e2, xxzz= e2,  &
-                           xxxy=0D0, xxyz=0D0, xxxz=0D0,  &
-                           yyxy=0D0, yyyz=0D0, yyxz=0D0,  &
-                           zzxy=0D0, zzyz=0D0, zzxz=0D0,  &
-                           xyxy= e3, yzyz= e3, xzxz= e3,  &
-                           xyyz=0D0, yzxz=0D0, xyxz=0D0   &
-                          )
-            return
         end if
+
+        e1  = self%e1
+        lam = self%lambda
+        mu  = self%mu
+        call res%init( xxxx=e1,   yyyy=e1,   zzzz=e1,    &
+                       xxyy=lam,  yyzz=lam,  xxzz=lam,   &
+                       xxxy=0.0D0, xxyz=0.0D0, xxxz=0.0D0, &
+                       yyxy=0.0D0, yyyz=0.0D0, yyxz=0.0D0, &
+                       zzxy=0.0D0, zzyz=0.0D0, zzxz=0.0D0, &
+                       xyxy=mu,   yzyz=mu,   xzxz=mu,    &
+                       xyyz=0.0D0, yzxz=0.0D0, xyxz=0.0D0  )
     end function dstress_dstrain_linear_3D
 
+
     pure function dstress_dstrain_linear_2D(self, strain) result(res)
-        !! Returns the constant tangent modulus (stiffness) tensor for linear isotropic elasticity.
-        !! C_ijkl = d(sigma_ij) / d(epsilon_kl)
+        !! Returns the full 2-D isotropic tangent modulus.
+        !! See `dstress_dstrain_linear_3D` for the mathematical description.
+        !!
+        !! Returns the pre-cached tensor `tan_2D` if available; otherwise assembles
+        !! it on the fly. The input `strain` is ignored.
         implicit none
         class(Elasticity_linear), intent(in) :: self
-            !! The linear elasticity model object.
+            !! The linear elasticity model object (read-only).
         class(ten_2D2Osym), intent(in) :: strain
-            !! Input strain tensor (`ten_3D2Osym`). Ignored for linear elasticity as the tangent is constant.
+            !! Input strain tensor. Ignored; retained for interface consistency.
         type(ten_2D4O3sym) :: res
-            !! Output tangent modulus tensor (`ten_3D4O3sym`).
-        real(real64) :: e1, e2, e3
+            !! Output fourth-order tangent modulus tensor (`ten_2D4O3sym`).
+        real(real64) :: e1, lam, mu
 
         if (self%tan_init_2D) then
-            ! Return the pre-calculated tangent if available
             res = self%tan_2D
             return
-        else
-            ! Calculate the tangent on the fly if not pre-calculated
-            e1 = self%e1
-            e2 = self%e2
-            e3 = self%e3
-            call res%init( xxxx= e1, yyyy= e1, zzzz= e1,  &
-                           xxyy= e2, yyzz= e2, xxzz= e2,  &
-                           xxxy=0D0, yyxy=0D0, zzxy=0D0,  &
-                           xyxy= e3                       &
-                          )
-            return
         end if
+
+        e1  = self%e1
+        lam = self%lambda
+        mu  = self%mu
+        call res%init( xxxx=e1,   yyyy=e1,   zzzz=e1,   &
+                       xxyy=lam,  yyzz=lam,  xxzz=lam,  &
+                       xxxy=0.0D0, yyxy=0.0D0, zzxy=0.0D0, &
+                       xyxy=mu                             )
     end function dstress_dstrain_linear_2D
+
+
+    ! =========================================================================
+    ! Deviatoric tangent modulus — analytic override
+    ! =========================================================================
+
+    pure function dstress_dstrain_dev_linear_3D(self, strain) result(res)
+        !! Returns the deviatoric part of the 3-D isotropic tangent modulus analytically:
+        !!
+        !! \[ C^{\mathrm{dev}}_{ijkl} = 2\mu\left(\mathbb{I}^S_{ijkl}
+        !!    - \tfrac{1}{3}\,\delta_{ij}\delta_{kl}\right) \]
+        !!
+        !! In Voigt notation this gives:
+        !! - Normal diagonal components \( (C^{\mathrm{dev}}_{iiii}) \): \( 4\mu/3 \)
+        !! - Normal off-diagonal components \( (C^{\mathrm{dev}}_{iijj},\,i\neq j) \): \( -2\mu/3 \)
+        !! - Shear components \( (C^{\mathrm{dev}}_{ijij},\,i\neq j) \): \( \mu \)
+        !!
+        !! Overrides the projector-based default of `Base_elasticity` with a direct
+        !! evaluation. The pre-cached `tan_3D` is NOT used here because it stores the
+        !! full (non-deviatoric) stiffness.
+        !!
+        !! The input `strain` is ignored since the tangent is strain-independent.
+        implicit none
+        class(Elasticity_linear), intent(in) :: self
+            !! The linear elasticity model object (read-only).
+        class(ten_3D2Osym), intent(in) :: strain
+            !! Input strain tensor. Ignored; retained for interface consistency.
+        type(ten_3D4O3sym) :: res
+            !! Output deviatoric fourth-order tangent modulus tensor (`ten_3D4O3sym`).
+        real(real64) :: mu, c_diag, c_off
+
+        mu     = self%mu
+        c_diag =  4.0D0/3.0D0 * mu   ! normal diagonal:     4mu/3
+        c_off  = -2.0D0/3.0D0 * mu   ! normal off-diagonal: -2mu/3
+
+        call res%init( xxxx=c_diag, yyyy=c_diag, zzzz=c_diag,  &
+                       xxyy=c_off,  yyzz=c_off,  xxzz=c_off,   &
+                       xxxy=0.0D0,  xxyz=0.0D0,  xxxz=0.0D0,   &
+                       yyxy=0.0D0,  yyyz=0.0D0,  yyxz=0.0D0,   &
+                       zzxy=0.0D0,  zzyz=0.0D0,  zzxz=0.0D0,   &
+                       xyxy=mu,     yzyz=mu,     xzxz=mu,       &
+                       xyyz=0.0D0,  yzxz=0.0D0,  xyxz=0.0D0    )
+    end function dstress_dstrain_dev_linear_3D
+
 end module
