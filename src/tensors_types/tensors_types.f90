@@ -153,7 +153,7 @@ module tensors_types
     use mod_operator_I4O3T_3D4O2sym
     use mod_operator_I4O4T_3D4O2sym
     use mod_operator_I4O4TS_3D4O2sym
-
+    use mod_operator_I4O3TS_I4O4T
     implicit None
 
     public :: ten_3D2O

@@ -145,6 +145,7 @@ module mod_ten_3D4O2sym
             procedure, private :: init_ten_3D4O2sym, init2_ten_3D4O2sym 
             procedure, public :: is_approx => is_approx_3D4O2sym
             procedure, public :: norm => norm_3D4O2sym
+            procedure, public :: convert_3sym
     end type ten_3D4O2sym
 
     public :: operator(.approx.)
@@ -349,5 +350,26 @@ contains
         call res%init(mat_b)
 
     end function inv_3D4O2sym
+
+    pure function convert_3sym(self) result(res)
+        use, intrinsic :: iso_fortran_env
+        use inverses_mat
+        use mod_ten_3D4O3sym
+        implicit none
+        class(ten_3D4O2sym), intent(in) :: self
+        type(ten_3D4O3sym) :: res
+        real(real64) :: vals(21)
+
+        vals = (/ self%vals(1,1), self%vals(2,2), self%vals(3,3), self%vals(4,4), self%vals(5,5), self%vals(6,6),  &
+                  self%vals(1,2), self%vals(2,3), self%vals(3,4), self%vals(4,5), self%vals(5,6),                  &
+                  self%vals(1,3), self%vals(2,4), self%vals(3,5), self%vals(4,6),                                  &
+                  self%vals(1,4), self%vals(2,5), self%vals(3,6),                                                  &
+                  self%vals(1,5), self%vals(2,6),                                                                  &
+                  self%vals(1,6)                                                                                   &
+                /)
+        
+        call res%init(vals)
+
+    end function convert_3sym
 
 end module mod_ten_3D4O2sym
