@@ -22,6 +22,7 @@ module mod_closest_point_time
         type(ten_3D2Osym), private :: stress = ten_3D2Osym((/0d0, 0d0, 0d0, 0d0, 0d0, 0d0/))
         type(integer), private :: status=STATUS_UNDEFINED, iters=0
         real(real64), private :: dt=0D0
+        real(real64), private :: omega=1D0
         contains
         procedure, public :: init => closest_point_data_init
         procedure, public :: set => closest_point_data_set
@@ -192,7 +193,20 @@ module mod_closest_point_time
             ! Creo que residual2 siempre es cero en estos casos
             !ddlambda = (f-(df .ddot. hess .ddot. residual1) - dhard*residual2)/((df .ddot. hess .ddot. df) + dhard)
             ddlambda = (f-(df .ddot. hess .ddot. residual1))/((df .ddot. hess .ddot. df) + dhard)
-            dlambda = dlambda + ddlambda
+            dlambda = dlambda + ddlambda*data%omega
+            if (dlambda < 0D0) then 
+                dlambda = 0D0  ! Ensure non-negative plastic multiplier
+                data%omega = data%omega * 0.75D0  ! Reduce relaxation factor if we hit the boundary
+            end if
+            if (data%iters .eq. 10) then
+                data%omega = data%omega * 0.75D0  ! Reduce relaxation factor if we have many iterations
+            else if (data%iters .eq. 20) then
+                data%omega = data%omega * 0.75D0  ! Further reduce relaxation factor if we still have many iterations
+            else if (data%iters .eq. 30) then
+                data%omega = data%omega * 0.75D0  ! Further reduce relaxation factor if we still have many iterations
+            else if (data%iters .eq. 40) then
+                data%omega = data%omega * 0.75D0  ! Further reduce relaxation factor if we still have many iterations
+            end if
             strain_pf = strain_pf_init + dlambda
                 ! strain_p = strain_p_init + dlambda*df
             dstrain_p = (((.inv. elas_tan) .ddot. hess) .ddot. (residual1 + ddlambda*df))
@@ -231,7 +245,7 @@ module mod_closest_point_time
             stress_eq = self%yield%stress_eq(stress)
             f = stress_eq - hard
             
-            if (stress_eq/hard - 1D0 .le. -TOL2) then  ! Elastic Case
+            if (stress_eq/hard - 1D0 .le. TOL2) then  ! Elastic Case
                 data%status = STATUS_ELASTIC_CASE
                 data%stress = stress
                 return

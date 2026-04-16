@@ -47,7 +47,11 @@ module mod_JC_viscoplastic
     implicit none
     private
     public :: JC_viscoplastic
+    ! real(real64), parameter :: small=1.0D-11
+    real(real64), parameter :: small=1.0D-9   ! parameter to smooth the transition around minimum strain rate to avoid problems with Newton iterations
+       ! parameter to smooth the transition around minimum strain rate to avoid problems with Newton iterations
 
+    
     type, extends(Base_viscoplastic_law) :: JC_viscoplastic
     !! Johnson-Cook Viscoplastic Law Implementation
     !! ===========================================
@@ -79,17 +83,16 @@ contains
         real(real64) :: res
         !! Output flow stress $\sigma_{flow}$.
         real(real64) :: sigma0, factor_rate
+        real(real64) :: x_min, x, new_x
 
-        epd_tmp = epd
-        if (epd <= self%epmin) then
-            !! Handles zero or negative strain rate to avoid issues with log(0).
-            epd_tmp = self%epmin
-        end if
+        x_min = self%epmin / self%epdmax
+        x = epd / self%epdmax
+        new_x = (x+x_min + sqrt((x-x_min)**2 + small)) / 2.0D0
 
         ! 1. Get Hardening Stress ($\sigma_{hard}$)
         sigma0 = self%hard_law%stress(ep)
         ! 2. Calculate Strain Rate Factor
-        factor_rate = 1.0 + self%C * log(epd_tmp / self%epdmax)
+        factor_rate = 1.0 + self%C * log(new_x)
         ! 3. Combine to get Flow Stress
         res = sigma0 * factor_rate
     end function flow_JC
@@ -110,19 +113,19 @@ contains
         real(real64) :: sigma0, dsigma0
         real(real64) :: factor_rate, dfactor_rate
         real(real64) :: epd_tmp
+        real(real64) :: x_min, x, new_x, dnew_x
 
-        epd_tmp = epd
-        if (epd <= self%epmin) then
-            !! Handles zero or negative strain rate to avoid issues with log(0).
-            epd_tmp = self%epmin
-        end if
+        x_min = self%epmin / self%epdmax
+        x = epd / self%epdmax
+        new_x = (x+x_min + sqrt((x-x_min)**2 + small)) / 2.0D0
+        dnew_x = 0.5D0 * (1.0D0 + (x-x_min) / sqrt((x-x_min)**2 + small))
 
         ! 1. Get Hardening Stress ($\sigma_{hard}$)
         sigma0 = self%hard_law%stress(ep)
         dsigma0 = self%hard_law%dstress_dep(ep)
         ! 2. Calculate Strain Rate Factor
-        factor_rate = 1.0 + self%C * log(epd_tmp / self%epdmax)
-        dfactor_rate = self%C / epd_tmp 
+        factor_rate = 1.0 + self%C * log(new_x)
+        dfactor_rate = self%C * dnew_x / new_x / self%epdmax
         ! 3. Combine to get Flow Stress
         res = dsigma0 * factor_rate + sigma0 * dfactor_rate / dt
     end function dstress_dep_JC

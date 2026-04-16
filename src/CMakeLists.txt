@@ -98,7 +98,7 @@ elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
                 )
 else()
     # Default options or a warning if an unsupported compiler is found
-    error(STATUS "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
+    message(FATAL_ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
 endif()
 
 set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
