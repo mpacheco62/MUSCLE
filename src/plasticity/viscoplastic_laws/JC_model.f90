@@ -85,9 +85,15 @@ contains
         real(real64) :: sigma0, factor_rate
         real(real64) :: x_min, x, new_x
 
-        x_min = self%epmin / self%epdmax
-        x = epd / self%epdmax
-        new_x = (x+x_min + sqrt((x-x_min)**2 + small)) / 2.0D0
+        new_x = epd/self%epdmax
+        if (epd <= self%epmin) then
+            !! Handles zero or negative strain rate to avoid issues with log(0).
+            new_x = self%epmin/self%epdmax
+        end if
+
+        ! x_min = self%epmin / self%epdmax
+        ! x = epd / self%epdmax
+        ! new_x = (x+x_min + sqrt((x-x_min)**2 + small)) / 2.0D0
 
         ! 1. Get Hardening Stress ($\sigma_{hard}$)
         sigma0 = self%hard_law%stress(ep)
@@ -115,10 +121,18 @@ contains
         real(real64) :: epd_tmp
         real(real64) :: x_min, x, new_x, dnew_x
 
-        x_min = self%epmin / self%epdmax
-        x = epd / self%epdmax
-        new_x = (x+x_min + sqrt((x-x_min)**2 + small)) / 2.0D0
-        dnew_x = 0.5D0 * (1.0D0 + (x-x_min) / sqrt((x-x_min)**2 + small))
+        new_x = epd/self%epdmax
+        dnew_x = 1D0
+        if (epd <= self%epmin) then
+            !! Handles zero or negative strain rate to avoid issues with log(0).
+            new_x = self%epmin/self%epdmax
+            dnew_x = 0D0
+        end if
+
+        ! x_min = self%epmin / self%epdmax
+        ! x = epd / self%epdmax
+        ! new_x = (x+x_min + sqrt((x-x_min)**2 + small)) / 2.0D0
+        ! dnew_x = 0.5D0 * (1.0D0 + (x-x_min) / sqrt((x-x_min)**2 + small))
 
         ! 1. Get Hardening Stress ($\sigma_{hard}$)
         sigma0 = self%hard_law%stress(ep)
