@@ -49,6 +49,7 @@ add_subdirectory(plasticity)
 set(YIELD_CRITERIA   yield_criteria/basis_yield_criteria.f90
                      yield_criteria/vonMises.f90
                      yield_criteria/CPB06.f90
+                     yield_criteria/hill48.f90
                      CACHE INTERNAL "")
 
 set(ELASTICITY       elasticity/basis_elasticity.f90

@@ -48,6 +48,7 @@ add_subdirectory(tensors_types)
 add_subdirectory(operators)
 
 add_umat_test(test_vonMises test_vonMises.f90)
+add_umat_test(test_hill48 test_hill48.f90)
 add_umat_test(test_CPB06 test_CPB06.f90)
 add_umat_test(test_swift_law test_swift_law.f90)
 add_umat_test(test_bilinear_hardening test_bilinear_hardening.f90)
