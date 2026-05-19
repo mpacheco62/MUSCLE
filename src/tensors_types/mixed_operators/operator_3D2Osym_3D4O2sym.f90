@@ -1,10 +1,33 @@
 module mod_operator_3D2Osym_3D4O2sym
+    !! Module mod_operator_3D2Osym_3D4O2sym
+    !! ====================================
+    !!
+    !! Defines mixed algebraic operations involving 3D symmetric second-order 
+    !! tensors (`ten_3D2Osym`) and 3D fourth-order tensors with only minor 
+    !! symmetries (`ten_3D4O2sym`).
+    !!
+    !! Since `ten_3D4O2sym` lacks major symmetry (its 6x6 Voigt matrix is not
+    !! necessarily symmetric), the order of operands in contractions matters.
+    !! This module provides correct and optimized implementations for these operations.
+    !!
+    !! Overloaded Operators
+    !! --------------------
+    !!
+    !! - `.ddot.` : Double tensor contraction.
+    !!   - \(\mathbf{C} = \mathbb{A} : \mathbf{B}\) (`3D4O2sym .ddot. 3D2Osym` -> `3D2Osym`)
+    !!   - \(\mathbf{C} = \mathbf{B} : \mathbb{A}\) (`3D2Osym .ddot. 3D4O2sym` -> `3D2Osym`)
+    !!
+    !! - `.tdot.` : Dyadic tensor product (Outer product).
+    !!   - \(\mathbb{C} = \mathbf{a} \otimes \mathbf{b}\) (`3D2Osym .tdot. 3D2Osym` -> `3D4O2sym`)
+    !!     *The result correctly has only minor symmetries.*
+    !!
+    !! For tensor type definitions, see [[tensors_types]].
+
     use, intrinsic :: iso_fortran_env
     use mod_ten_3D2Osym
     use mod_ten_3D4O2sym
     implicit none
     private
-
 
     public :: operator(.ddot.)
     interface operator (.ddot.)
@@ -12,43 +35,102 @@ module mod_operator_3D2Osym_3D4O2sym
         module procedure ddot_3D2Osym_3D4O2sym
     end interface
 
-    contains
+    public :: operator(.tdot.)
+    interface operator (.tdot.)
+        module procedure tdot_3D2Osym_3D2Osym
+    end interface
+
+contains
+
+    ! =========================================================================
+    ! DOUBLE CONTRACTION
+    ! =========================================================================
 
     pure function ddot_3D4O2sym_3D2Osym(a, b) result(res)
-        !
-        !  | (1111) (1122) (1133) (1112) (1123) (1113) |
-        !  | (2211) (2222) (2233) (2212) (2223) (2213) |
-        !  | (3311) (3322) (3333) (3312) (3323) (3313) |
-        !  | (1211) (1222) (1233) (1212) (1223) (1213) |
-        !  | (2311) (2322) (2333) (2312) (2323) (2313) |
-        !  | (1311) (1322) (1333) (1312) (1323) (1313) |
+        !! Computes the double contraction product: \(\mathbf{res} = \mathbb{A} : \mathbf{b}\).
+        !!
+        !! Mathematically: \(res_{ij} = A_{ijkl} b_{kl}\).
+        !! In Voigt notation, this is a matrix-vector product: \([\text{res}]_I = [\mathbb{A}]_{IJ} [\mathbf{b}]_J\).
+        !! Shear components of \(\mathbf{b}\) (indices 4, 5, 6) are weighted by a factor of 2
+        !! in the contraction.
+        !!
+        !! This implementation is highly efficient as it performs a column-wise sum,
+        !! which aligns with Fortran's column-major memory layout.
         implicit none
-        class(ten_3D4O2sym), intent(in) :: a
-        class(ten_3D2Osym), intent(in) :: b
+        type(ten_3D4O2sym), intent(in) :: a
+            !! The fourth-order minor-symmetric tensor \(\mathbb{A}\) (stored as a 6x6 matrix).
+        type(ten_3D2Osym), intent(in) :: b
+            !! The second-order symmetric tensor \(\mathbf{b}\) (stored as a 6-component vector).
         type(ten_3D2Osym) :: res
-        
+            !! The resulting second-order symmetric tensor \(\mathbf{res}\).
         
         res%vals(:) =   a%vals(:,1)*b%vals(1) + a%vals(:,2)*b%vals(2) + a%vals(:,3)*b%vals(3) +    &
-                      2*a%vals(:,4)*b%vals(4) + 2*a%vals(:,5)*b%vals(5) + 2*a%vals(:,6)*b%vals(6)
+                      2.0D0*a%vals(:,4)*b%vals(4) + 2.0D0*a%vals(:,5)*b%vals(5) + 2.0D0*a%vals(:,6)*b%vals(6)
         
     end function ddot_3D4O2sym_3D2Osym
 
     pure function ddot_3D2Osym_3D4O2sym(b, a) result(res)
-        !
-        !  | (1111) (1122) (1133) (1112) (1123) (1113) |
-        !  | (2211) (2222) (2233) (2212) (2223) (2213) |
-        !  | (3311) (3322) (3333) (3312) (3323) (3313) |
-        !  | (1211) (1222) (1233) (1212) (1223) (1213) |
-        !  | (2311) (2322) (2333) (2312) (2323) (2313) |
-        !  | (1311) (1322) (1333) (1312) (1323) (1313) |
+        !! Computes the double contraction product: \(\mathbf{res} = \mathbf{b} : \mathbb{A}\).
+        !!
+        !! Mathematically: \(res_{ij} = b_{kl} A_{klij}\).
+        !! In Voigt notation, this is a vector-matrix product: \([\text{res}]_I = [\mathbf{b}]_J [\mathbb{A}]_{JI}\).
+        !! This is implemented using the intrinsic `matmul` for optimal performance,
+        !! which typically maps to a highly optimized BLAS DGEMV routine.
+        !! Shear components of \(\mathbf{b}\) (indices 4, 5, 6) are weighted by 2.
+        !!
         implicit none
-        class(ten_3D2Osym), intent(in) :: b
-        class(ten_3D4O2sym), intent(in) :: a
+        type(ten_3D2Osym), intent(in) :: b
+            !! The second-order symmetric tensor \(\mathbf{b}\) (stored as a 6-component vector).
+        type(ten_3D4O2sym), intent(in) :: a
+            !! The fourth-order minor-symmetric tensor \(\mathbb{A}\) (stored as a 6x6 matrix).
         type(ten_3D2Osym) :: res
-
-        res%vals(:) =   a%vals(:,1)*b%vals(1) + a%vals(:,2)*b%vals(2) + a%vals(:,3)*b%vals(3) +    &
-                      2*a%vals(:,4)*b%vals(4) + 2*a%vals(:,5)*b%vals(5) + 2*a%vals(:,6)*b%vals(6)
+            !! The resulting second-order symmetric tensor \(\mathbf{res}\).
         
+        real(real64), dimension(6) :: b_weighted
+        
+        ! Create the weighted Voigt vector for contraction.
+        b_weighted(1:3) = b%vals(1:3)
+        b_weighted(4:6) = 2.0D0 * b%vals(4:6)
+
+        ! Perform vector-matrix multiplication using matmul.
+        ! matmul(vector, matrix) performs v * A, which is the correct operation here.
+        res%vals = matmul(b_weighted, a%vals)
+
     end function ddot_3D2Osym_3D4O2sym
+
+    ! =========================================================================
+    ! DYADIC PRODUCT (.tdot.)
+    ! =========================================================================
+    
+    pure function tdot_3D2Osym_3D2Osym(a, b) result(res)
+        !! Computes the dyadic (outer) tensor product: \(\mathbb{C} = \mathbf{a} \otimes \mathbf{b}\).
+        !!
+        !! Mathematically: \( C_{ijkl} = a_{ij} b_{kl} \).
+        !!
+        !! The result is a fourth-order tensor that only has minor symmetries, even if
+        !! \(\mathbf{a}\) and \(\mathbf{b}\) are symmetric. Major symmetry (\(C_{ijkl} = C_{klij}\))
+        !! is only guaranteed if \(\mathbf{a}\) and \(\mathbf{b}\) are proportional.
+        !! The result is therefore correctly returned as a `ten_3D4O2sym` type.
+        !!
+        !! In Voigt notation, this operation constructs a 6x6 matrix by taking the
+        !! outer product of the 6-component Voigt vectors of \(\mathbf{a}\) and \(\mathbf{b}\).
+        !!
+        implicit none
+        type(ten_3D2Osym), intent(in) :: a  
+            !! The first second-order symmetric tensor \(\mathbf{a}\).
+        type(ten_3D2Osym), intent(in) :: b  
+            !! The second second-order symmetric tensor \(\mathbf{b}\).
+        type(ten_3D4O2sym) :: res         
+            !! The resulting fourth-order tensor with minor symmetries \(\mathbb{C}\).
+
+        ! Build the 6x6 Voigt matrix C_IJ = a_I * b_J by constructing each row.
+        res%vals(1,:) = a%vals(1) * b%vals(:)
+        res%vals(2,:) = a%vals(2) * b%vals(:)
+        res%vals(3,:) = a%vals(3) * b%vals(:)
+        res%vals(4,:) = a%vals(4) * b%vals(:)
+        res%vals(5,:) = a%vals(5) * b%vals(:)
+        res%vals(6,:) = a%vals(6) * b%vals(:)
+
+    end function tdot_3D2Osym_3D2Osym
 
 end module mod_operator_3D2Osym_3D4O2sym

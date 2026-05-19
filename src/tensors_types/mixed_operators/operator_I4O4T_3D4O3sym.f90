@@ -1,92 +1,99 @@
 module mod_operator_I4O4T_3D4O3sym
+    !! Module mod_operator_I4O4T_3D4O3sym
+    !! ==================================
+    !!
+    !! Defines mixed algebraic operations between the standard 3D fourth-order 
+    !! symmetric identity tensor (`iden_4O4T`, \(\mathbb{I}^S\)) and 3D 
+    !! fully symmetric fourth-order tensors (`ten_3D4O3sym`).
+    !!
+    !! The `ten_3D4O3sym` type uses a compressed 21-component storage.
+    !! In this format, the identity \(\mathbb{I}^S\) affects only the first 
+    !! six components (the diagonal of the 6x6 Voigt matrix):
+    !! - Components 1, 2, 3 (Normal): + 1.0
+    !! - Components 4, 5, 6 (Shear):  + 0.5
+    !!
+    !! This module provides overloads for addition and subtraction.
+
     use, intrinsic :: iso_fortran_env
     use mod_iden_4O4T
     use mod_ten_3D4O3sym
     implicit none
     private
     
-    !
-    !  | ( 1:1111) ( 7:1122) (12:1133) (16:1112) (19:1123) (21:1113) |
-    !  | ( 7:2211) ( 2:2222) ( 8:2233) (13:2212) (17:2223) (20:2213) |
-    !  | (12:3311) ( 8:3322) ( 3:3333) ( 9:3312) (14:3323) (18:3313) |
-    !  | (16:1211) (13:1222) ( 9:1233) ( 4:1212) (10:1223) (15:1213) |
-    !  | (19:2311) (17:2322) (14:2333) (10:2312) ( 5:2323) (11:2313) |
-    !  | (21:1311) (20:1322) (18:1333) (15:1312) (11:1323) ( 6:1313) |
-
     public :: operator(+)
     interface operator (+)
-        module procedure sum_3D4O3sym_I4O4T
         module procedure sum_I4O4T_3D4O3sym
+        module procedure sum_3D4O3sym_I4O4T
     end interface
 
     public :: operator(-)
     interface operator (-)
-        module procedure sub_3D4O3sym_I4O4T
         module procedure sub_I4O4T_3D4O3sym
+        module procedure sub_3D4O3sym_I4O4T
     end interface
-    
-    ! public :: operator(.ddot.)
-    ! interface operator (.ddot.)
-    !     module procedure ddot_I4O4T_3D4O3sym
-    !     module procedure ddot_3D4O3sym_I4O4T
-    ! end interface
 
-    contains
+contains
 
-    ! pure function ddot_I4O4T_3D4O3sym(I2, b) result(res)
-    !     implicit none
-    !     class(iden_4O4T), intent(in) :: I2
-    !     class(ten_3D4O3sym), intent(in) :: b
-    !     real(real64) :: res
-    !     res = b%vals(1) + b%vals(2) + b%vals(3)
-    ! end function ddot_I4O4T_3D4O3sym
+    ! =========================================================================
+    ! ADDITION
+    ! =========================================================================
 
-    ! pure function ddot_3D4O3sym_I4O4T(b, I2) result(res)
-    !     implicit none
-    !     class(iden_4O4T), intent(in) :: I2
-    !     class(ten_3D4O3sym), intent(in) :: b
-    !     real(real64) :: res
-    !     res = b%vals(1) + b%vals(2) + b%vals(3)
-    ! end function ddot_3D4O3sym_I4O4T
-
-    pure function sum_I4O4T_3D4O3sym(I2, a) result(res)
+    pure function sum_I4O4T_3D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}^S + \mathbf{A}\).
         implicit none
-        class(iden_4O4T), intent(in) :: I2
+        type(iden_4O4T),    intent(in) :: I4
+            !! Standard fourth-order symmetric identity tensor.
         type(ten_3D4O3sym), intent(in) :: a
-        type(ten_3D4O3sym) :: res
-        res%vals(1:3) = a%vals(1:3) + 1D0
-        res%vals(4:6) = a%vals(4:6) + 0.5D0
-        res%vals(7:21) = a%vals(7:21)
-        ! no se cuentan 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21
+            !! Fully symmetric fourth-order tensor (21 components).
+        type(ten_3D4O3sym)             :: res
+
+        res%vals = a%vals
+        ! Add 1.0 to normal diagonals (11, 22, 33)
+        res%vals(1:3) = res%vals(1:3) + 1.0D0
+        ! Add 0.5 to shear diagonals (44, 55, 66 in Voigt-notation indices)
+        res%vals(4:6) = res%vals(4:6) + 0.5D0
     end function sum_I4O4T_3D4O3sym
 
-    pure function sum_3D4O3sym_I4O4T(a, I2) result(res)
+    pure function sum_3D4O3sym_I4O4T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbf{A} + \mathbb{I}^S\).
         implicit none
-        class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a
-        type(ten_3D4O3sym) :: res
-        res%vals(1:3) = a%vals(1:3) + 1D0
-        res%vals(4:6) = a%vals(4:6) + 0.5D0
-        res%vals(7:21) = a%vals(7:21)
+        type(iden_4O4T),    intent(in) :: I4
+        type(ten_3D4O3sym)             :: res
+        
+        ! Delegate to ensure identical behavior and enable compiler inlining
+        res = sum_I4O4T_3D4O3sym(I4, a)
     end function sum_3D4O3sym_I4O4T
 
-    pure function sub_I4O4T_3D4O3sym(I2, a) result(res)
+    ! =========================================================================
+    ! SUBTRACTION
+    ! =========================================================================
+
+    pure function sub_I4O4T_3D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}^S - \mathbf{A}\).
         implicit none
-        class(iden_4O4T), intent(in) :: I2
+        type(iden_4O4T),    intent(in) :: I4
         type(ten_3D4O3sym), intent(in) :: a
-        type(ten_3D4O3sym) :: res
-        res%vals(1:3) = -a%vals(1:3) + 1D0
-        res%vals(4:6) = -a%vals(4:6) + 0.5D0
-        res%vals(7:21) = -a%vals(7:21)
+        type(ten_3D4O3sym)             :: res
+
+        ! Compute -A
+        res%vals = -a%vals
+        ! Add Identity components: res = I + (-A)
+        res%vals(1:3) = res%vals(1:3) + 1.0D0
+        res%vals(4:6) = res%vals(4:6) + 0.5D0
     end function sub_I4O4T_3D4O3sym
 
-    pure function sub_3D4O3sym_I4O4T(a, I2) result(res)
+    pure function sub_3D4O3sym_I4O4T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbf{A} - \mathbb{I}^S\).
         implicit none
-        class(iden_4O4T), intent(in) :: I2
         type(ten_3D4O3sym), intent(in) :: a
-        type(ten_3D4O3sym) :: res
-        res%vals(1:3) = a%vals(1:3) - 1D0
-        res%vals(4:6) = a%vals(4:6) - 0.5D0
-        res%vals(7:21) = a%vals(7:21)
+        type(iden_4O4T),    intent(in) :: I4
+        type(ten_3D4O3sym)             :: res
+
+        res%vals = a%vals
+        ! Subtract identity components from diagonal
+        res%vals(1:3) = res%vals(1:3) - 1.0D0
+        res%vals(4:6) = res%vals(4:6) - 0.5D0
     end function sub_3D4O3sym_I4O4T
+
 end module mod_operator_I4O4T_3D4O3sym
