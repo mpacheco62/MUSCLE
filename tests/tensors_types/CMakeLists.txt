@@ -8,4 +8,5 @@ add_umat_test(test_ten_3d2Osym test_ten_3d2Osym.f90)
 add_umat_test(test_ten_2d4O3sym test_ten_2d4O3sym.f90)
 add_umat_test(test_ten_3d2O test_ten_3d2O.f90)
 add_umat_test(test_ten_3d4O3sym test_ten_3d4O3sym.f90)
+add_umat_test(test_operator_3d2osym_3d4o3sym test_operator_3d2osym_3d4o3sym.f90)
 

@@ -197,6 +197,7 @@ module tensors_types
     ! end interface
 
     public :: operator(.tdot.)
+    public :: operator(.tdotsym.)
     public :: operator(.inv.)
     
 

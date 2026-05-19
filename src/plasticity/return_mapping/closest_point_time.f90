@@ -305,7 +305,7 @@ module mod_closest_point_time
             ddf = self%yield%ddstressEq_ddstress(stress)
             hess = .inv. ((.inv. elas_tan) + dlambda*ddf)
 
-            tangent = hess - ((hess .ddot. df) .tdot. (df .ddot. hess))/((df .ddot. hess .ddot. df) + dhard)
+            tangent = hess - (.tdotsym. (df .ddot. hess))/((df .ddot. hess .ddot. df) + dhard)
         end subroutine closest_point_tangent
 
         subroutine closest_point_tangent_numerical(self, strain, data, tangent)
