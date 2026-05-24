@@ -1,9 +1,4 @@
-! --- INICIO DEL ARCHIVO CORREGIDO: operator_I2OS_3D2Osym.f90 ---
-
 module mod_operator_I2OS_3D2Osym
-    !! author: MPacheco
-    !! version: 1.1 - Added FORD documentation and micro-optimizations.
-    !!
     !! Module mod_operator_I2OS_3D2Osym
     !! ======================================
     !!
@@ -45,6 +40,11 @@ module mod_operator_I2OS_3D2Osym
     interface operator (.ddot.)
         module procedure ddot_I2OS_3D2Osym
         module procedure ddot_3D2Osym_I2OS
+    end interface
+
+    public :: assignment (=)
+    interface assignment (=)
+        module procedure assign_3D2Osym_I2OS
     end interface
 
 contains
@@ -109,5 +109,24 @@ contains
         res%vals = a%vals
         res%vals(1:3) = res%vals(1:3) - I2%val
     end function sub_3D2Osym_I2OS
+
+    pure subroutine assign_3D2Osym_I2OS(a, b)
+        !! Explicit assignment from a scaled second order identity to a 3D symmetric tensor.
+        !! 
+        !! This is necessary to allow statements like `a = I2` where `a` is a `ten_3D2Osym` and `I2` is an `iden_2OS`.
+        !! The resulting tensor `a` will have its diagonal components set to the scale factor and off-diagonal components set to 0.
+        implicit none
+        type(ten_3D2Osym), intent(out) :: a
+            !! The target symmetric tensor to be overwritten.
+        type(iden_2OS), intent(in) :: b
+            !! The source scaled second-order identity tensor.
+
+        a%vals(1) = b%val ! xx
+        a%vals(2) = b%val ! yy
+        a%vals(3) = b%val ! zz
+        a%vals(4) = 0.0D0 ! xy
+        a%vals(5) = 0.0D0 ! yz
+        a%vals(6) = 0.0D0 ! xz
+    end subroutine assign_3D2Osym_I2OS
 
 end module mod_operator_I2OS_3D2Osym

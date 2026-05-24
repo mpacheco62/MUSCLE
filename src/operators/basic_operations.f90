@@ -254,7 +254,7 @@ module basic_operations
         d = ((d1 .ddot. d1) / (d2 .ddot. d2))**0.5D0
 
         J2_sqrt = J2**0.5D0
-        if ((1D0-d) .le. EPS) then
+        if (abs(1D0-d) .le. EPS) then
           eigenvals_3x3sym(1) = J2_sqrt
           eigenvals_3x3sym(2) = 0
           eigenvals_3x3sym(3) = -eigenvals_3x3sym(1)
@@ -262,7 +262,7 @@ module basic_operations
           return
         end if
 
-        sj = int((1D0-d)/abs(1D0-d))
+        sj = int(sign(1D0,(1D0-d)))
         alpha = 2D0/3D0 * datan(d**sj)
         cd = sj*s*cos(alpha)
         lam_a = 2D0*cd

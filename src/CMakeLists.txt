@@ -60,6 +60,7 @@ set(OPERATORS   operators/basic_operations.f90
                 operators/inverses_mat.f90
                 operators/derivatives.f90
                 operators/lin_solvers.f90
+                operators/spectral_derivatives.f90
                CACHE INTERNAL "")
 
 #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
