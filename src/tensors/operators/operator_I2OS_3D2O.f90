@@ -25,18 +25,6 @@ module mod_operator_I2OS_3D2O
     implicit none
     private
     
-    public :: operator(+)
-    interface operator (+)
-        module procedure sum_3D2O_I2OS
-        module procedure sum_I2OS_3D2O
-    end interface
-
-    public :: operator(-)
-    interface operator (-)
-        module procedure sub_3D2O_I2OS
-        module procedure sub_I2OS_3D2O
-    end interface
-    
     public :: operator(*)
     interface operator (*)
         module procedure mul_3D2O_I2OS
@@ -71,54 +59,6 @@ contains
         real(real64) :: res
         res = I2%val * (b%vals(1) + b%vals(5) + b%vals(9))
     end function ddot_3D2O_I2OS
-
-    pure function sum_I2OS_3D2O(I2, a) result(res)
-        !! Computes the sum \(\mathbf{res} = c\mathbf{I} + \mathbf{A}\).
-        implicit none
-        type(iden_2OS), intent(in) :: I2
-        type(ten_3D2O), intent(in) :: a
-        type(ten_3D2O) :: res
-        res%vals = a%vals
-        res%vals(1) = res%vals(1) + I2%val
-        res%vals(5) = res%vals(5) + I2%val
-        res%vals(9) = res%vals(9) + I2%val
-    end function sum_I2OS_3D2O
-
-    pure function sum_3D2O_I2OS(a, I2) result(res)
-        !! Computes the sum \(\mathbf{res} = \mathbf{A} + c\mathbf{I}\).
-        implicit none
-        type(iden_2OS), intent(in) :: I2
-        type(ten_3D2O), intent(in) :: a
-        type(ten_3D2O) :: res
-        res%vals = a%vals
-        res%vals(1) = res%vals(1) + I2%val
-        res%vals(5) = res%vals(5) + I2%val
-        res%vals(9) = res%vals(9) + I2%val
-    end function sum_3D2O_I2OS
-
-    pure function sub_I2OS_3D2O(I2, a) result(res)
-        !! Computes the subtraction \(\mathbf{res} = c\mathbf{I} - \mathbf{A}\).
-        implicit none
-        type(iden_2OS), intent(in) :: I2
-        type(ten_3D2O), intent(in) :: a
-        type(ten_3D2O) :: res
-        res%vals = -a%vals
-        res%vals(1) = I2%val + res%vals(1)
-        res%vals(5) = I2%val + res%vals(5)
-        res%vals(9) = I2%val + res%vals(9)
-    end function sub_I2OS_3D2O
-
-    pure function sub_3D2O_I2OS(a, I2) result(res)
-        !! Computes the subtraction \(\mathbf{res} = \mathbf{A} - c\mathbf{I}\).
-        implicit none
-        type(iden_2OS), intent(in) :: I2
-        type(ten_3D2O), intent(in) :: a
-        type(ten_3D2O) :: res
-        res%vals = a%vals
-        res%vals(1) = res%vals(1) - I2%val
-        res%vals(5) = res%vals(5) - I2%val
-        res%vals(9) = res%vals(9) - I2%val
-    end function sub_3D2O_I2OS
 
     pure function mul_I2OS_3D2O(I2, a) result(res)
         !! Computes the scaled contraction \(\mathbf{res} = c\mathbf{I} \cdot \mathbf{A} = c\mathbf{A}\).

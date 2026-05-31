@@ -17,18 +17,10 @@ target_sources(umatlib PRIVATE
                    operators/operator_I2OS_3D2Osym.f90
                    operators/operator_I2OS_2D2Osym.f90
                    operators/operator_I2OS_3D2O.f90
-                   operators/operator_I4O3T_3D4O2sym.f90
-                   operators/operator_I4O3T_3D4O3sym.f90
-                   operators/operator_I4O3T_I4O4T.f90
-                   operators/operator_I4O3T_I4O4TS.f90
-                   operators/operator_I4O3TS_3D4O2sym.f90
                    operators/operator_I4O3TS_3D4O3sym.f90
-                   operators/operator_I4O3TS_I4O4T.f90
-                   operators/operator_I4O3TS_I4O4TS.f90
                    operators/operator_I4O4T_3D2O.f90
                    operators/operator_I4O4T_3D2Osym.f90
                    operators/operator_I4O4T_3D4O2sym.f90
-                   operators/operator_I4O4T_3D4O3sym.f90
                    operators/operator_I4O4TS_3D2O.f90
                    operators/operator_I4O4TS_3D2Osym.f90
                    operators/operator_I4O4TS_3D4O2sym.f90
@@ -39,4 +31,5 @@ target_sources(umatlib PRIVATE
                    operators/operator_2D2Osym_2D4O3sym.f90
                    operators/operator_3D4O2sym_3D4O3sym.f90
                    tensors.f90
+                   operators/ops_addition_subtraction.f90
                    )

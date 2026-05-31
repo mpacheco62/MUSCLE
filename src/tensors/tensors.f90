@@ -141,19 +141,16 @@ module tensors_types
     use mod_operator_I2OS_3D2Osym
     use mod_operator_I2OS_2D2Osym
     use mod_operator_I2OS_3D2O
-    use mod_operator_I4O3T_3D4O3sym
     use mod_operator_I4O3TS_3D4O3sym
-    use mod_operator_I4O4T_3D4O3sym
     use mod_operator_I4O4TS_3D4O3sym
     use mod_operator_3D2Osym_3D2O
     use mod_operator_3D2Osym_3D4O3sym
     use mod_operator_2D2Osym_2D4O3sym
     use mod_operator_3D4O2sym_3D4O3sym
     use mod_operator_3D2Osym_3D4O2sym
-    use mod_operator_I4O3T_3D4O2sym
     use mod_operator_I4O4T_3D4O2sym
     use mod_operator_I4O4TS_3D4O2sym
-    use mod_operator_I4O3TS_I4O4T
+    use mod_ops_addition_subtraction
     implicit None
 
     public :: ten_3D2O
