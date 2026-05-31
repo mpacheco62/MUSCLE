@@ -1,45 +1,3 @@
-set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
-                  tensors_types/basic_types/ten_3D2Osym.f90
-                  tensors_types/basic_types/ten_2D2Osym.f90
-                  tensors_types/basic_types/ten_3D4O3sym.f90
-                  tensors_types/basic_types/ten_2D4O3sym.f90
-                  tensors_types/basic_types/ten_3D4O2sym.f90
-                  tensors_types/basic_types/iden_2OS.f90
-                  tensors_types/basic_types/iden_2O.f90
-                  tensors_types/basic_types/iden_4O3TS.f90
-                  tensors_types/basic_types/iden_4O3T.f90
-                  tensors_types/basic_types/iden_4O4TS.f90
-                  tensors_types/basic_types/iden_4O4T.f90
-                  tensors_types/mixed_operators/operator_I2O_3D2Osym.f90
-                  tensors_types/mixed_operators/operator_I2O_2D2Osym.f90
-                  tensors_types/mixed_operators/operator_I2O_3D2O.f90
-                  tensors_types/mixed_operators/operator_I2OS_3D2Osym.f90
-                  tensors_types/mixed_operators/operator_I2OS_2D2Osym.f90
-                  tensors_types/mixed_operators/operator_I2OS_3D2O.f90
-                  tensors_types/mixed_operators/operator_I4O3T_3D4O2sym.f90
-                  tensors_types/mixed_operators/operator_I4O3T_3D4O3sym.f90
-                  tensors_types/mixed_operators/operator_I4O3T_I4O4T.f90
-                  tensors_types/mixed_operators/operator_I4O3T_I4O4TS.f90
-                  tensors_types/mixed_operators/operator_I4O3TS_3D4O2sym.f90
-                  tensors_types/mixed_operators/operator_I4O3TS_3D4O3sym.f90
-                  tensors_types/mixed_operators/operator_I4O3TS_I4O4T.f90
-                  tensors_types/mixed_operators/operator_I4O3TS_I4O4TS.f90
-                  tensors_types/mixed_operators/operator_I4O4T_3D2O.f90
-                  tensors_types/mixed_operators/operator_I4O4T_3D2Osym.f90
-                  tensors_types/mixed_operators/operator_I4O4T_3D4O2sym.f90
-                  tensors_types/mixed_operators/operator_I4O4T_3D4O3sym.f90
-                  tensors_types/mixed_operators/operator_I4O4TS_3D2O.f90
-                  tensors_types/mixed_operators/operator_I4O4TS_3D2Osym.f90
-                  tensors_types/mixed_operators/operator_I4O4TS_3D4O2sym.f90
-                  tensors_types/mixed_operators/operator_I4O4TS_3D4O3sym.f90
-                  tensors_types/mixed_operators/operator_3D2Osym_3D2O.f90
-                  tensors_types/mixed_operators/operator_3D2Osym_3D4O2sym.f90
-                  tensors_types/mixed_operators/operator_3D2Osym_3D4O3sym.f90
-                  tensors_types/mixed_operators/operator_2D2Osym_2D4O3sym.f90
-                  tensors_types/mixed_operators/operator_3D4O2sym_3D4O3sym.f90
-                  tensors_types/tensors_types.f90
-                  CACHE INTERNAL "")
-
 add_subdirectory(plasticity)
 
 
@@ -55,7 +13,6 @@ set(ELASTICITY       elasticity/basis_elasticity.f90
 
 #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 add_library(umatlib 
-                     ${TENSORS_TYPES}
                      ${HARDENING_LAWS}
                      ${YIELD_CRITERIA}
                      ${ELASTICITY}
@@ -66,6 +23,7 @@ add_library(umatlib
 set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
 
 add_subdirectory(math)
+add_subdirectory(tensors)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
