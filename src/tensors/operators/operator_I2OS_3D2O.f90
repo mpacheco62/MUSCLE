@@ -31,34 +31,7 @@ module mod_operator_I2OS_3D2O
         module procedure mul_I2OS_3D2O
     end interface
 
-    public :: operator(.ddot.)
-    interface operator (.ddot.)
-        module procedure ddot_I2OS_3D2O
-        module procedure ddot_3D2O_I2OS
-    end interface
-
 contains
-
-    pure function ddot_I2OS_3D2O(I2, b) result(res)
-        !! Computes the scaled double contraction \(c\mathbf{I} : \mathbf{B} = c \cdot \text{tr}(\mathbf{B})\).
-        implicit none
-        type(iden_2OS), intent(in) :: I2
-            !! Scaled identity tensor \(c\mathbf{I}\).
-        type(ten_3D2O), intent(in) :: b
-            !! General 2nd-order tensor \(\mathbf{B}\).
-        real(real64) :: res
-            !! Scalar result.
-        res = I2%val * (b%vals(1) + b%vals(5) + b%vals(9))
-    end function ddot_I2OS_3D2O
-
-    pure function ddot_3D2O_I2OS(b, I2) result(res)
-        !! Computes the scaled double contraction \(\mathbf{B} : c\mathbf{I} = c \cdot \text{tr}(\mathbf{B})\).
-        implicit none
-        type(iden_2OS), intent(in) :: I2
-        type(ten_3D2O), intent(in) :: b
-        real(real64) :: res
-        res = I2%val * (b%vals(1) + b%vals(5) + b%vals(9))
-    end function ddot_3D2O_I2OS
 
     pure function mul_I2OS_3D2O(I2, a) result(res)
         !! Computes the scaled contraction \(\mathbf{res} = c\mathbf{I} \cdot \mathbf{A} = c\mathbf{A}\).

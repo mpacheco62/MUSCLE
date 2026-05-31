@@ -33,12 +33,6 @@ module mod_operator_I2O_3D2Osym
         module procedure mul_I2O_3D2Osym
     end interface
 
-    public :: operator(.ddot.)
-    interface operator (.ddot.)
-        module procedure ddot_I2O_3D2Osym
-        module procedure ddot_3D2Osym_I2O
-    end interface
-
     public :: operator(.tdot.)
     interface operator (.tdot.)
         module procedure tdot_3D2Osym_I2O
@@ -57,24 +51,6 @@ module mod_operator_I2O_3D2Osym
     end interface
 
 contains
-
-    pure function ddot_I2O_3D2Osym(I2, b) result(res)
-        !! Computes the double contraction \(\text{tr}(\mathbf{B}) = \mathbf{I} : \mathbf{B}\).
-        implicit none
-        type(iden_2O), intent(in) :: I2
-        type(ten_3D2Osym), intent(in) :: b
-        real(real64) :: res
-        res = b%vals(1) + b%vals(2) + b%vals(3)
-    end function ddot_I2O_3D2Osym
-
-    pure function ddot_3D2Osym_I2O(b, I2) result(res)
-        !! Computes the double contraction \(\text{tr}(\mathbf{B}) = \mathbf{B} : \mathbf{I}\).
-        implicit none
-        type(iden_2O), intent(in) :: I2
-        type(ten_3D2Osym), intent(in) :: b
-        real(real64) :: res
-        res = b%vals(1) + b%vals(2) + b%vals(3)
-    end function ddot_3D2Osym_I2O
 
     pure function mul_I2O_3D2Osym(I2, a) result(res)
         !! Computes the single contraction \(\mathbf{res} = \mathbf{I} \cdot \mathbf{A} = \mathbf{A}\).

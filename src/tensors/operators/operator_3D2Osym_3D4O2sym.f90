@@ -29,75 +29,12 @@ module mod_operator_3D2Osym_3D4O2sym
     implicit none
     private
 
-    public :: operator(.ddot.)
-    interface operator (.ddot.)
-        module procedure ddot_3D4O2sym_3D2Osym
-        module procedure ddot_3D2Osym_3D4O2sym
-    end interface
-
     public :: operator(.tdot.)
     interface operator (.tdot.)
         module procedure tdot_3D2Osym_3D2Osym
     end interface
 
 contains
-
-    ! =========================================================================
-    ! DOUBLE CONTRACTION
-    ! =========================================================================
-
-    pure function ddot_3D4O2sym_3D2Osym(a, b) result(res)
-        !! Computes the double contraction product: \(\mathbf{res} = \mathbb{A} : \mathbf{b}\).
-        !!
-        !! Mathematically: \(res_{ij} = A_{ijkl} b_{kl}\).
-        !! In Voigt notation, this is a matrix-vector product: \([\text{res}]_I = [\mathbb{A}]_{IJ} [\mathbf{b}]_J\).
-        !! Shear components of \(\mathbf{b}\) (indices 4, 5, 6) are weighted by a factor of 2
-        !! in the contraction.
-        !!
-        !! This implementation is highly efficient as it performs a column-wise sum,
-        !! which aligns with Fortran's column-major memory layout.
-        implicit none
-        type(ten_3D4O2sym), intent(in) :: a
-            !! The fourth-order minor-symmetric tensor \(\mathbb{A}\) (stored as a 6x6 matrix).
-        type(ten_3D2Osym), intent(in) :: b
-            !! The second-order symmetric tensor \(\mathbf{b}\) (stored as a 6-component vector).
-        type(ten_3D2Osym) :: res
-            !! The resulting second-order symmetric tensor \(\mathbf{res}\).
-        
-        res%vals(:) =   a%vals(:,1)*b%vals(1) + a%vals(:,2)*b%vals(2) + a%vals(:,3)*b%vals(3) +    &
-                      2.0D0*a%vals(:,4)*b%vals(4) + 2.0D0*a%vals(:,5)*b%vals(5) + 2.0D0*a%vals(:,6)*b%vals(6)
-        
-    end function ddot_3D4O2sym_3D2Osym
-
-    pure function ddot_3D2Osym_3D4O2sym(b, a) result(res)
-        !! Computes the double contraction product: \(\mathbf{res} = \mathbf{b} : \mathbb{A}\).
-        !!
-        !! Mathematically: \(res_{ij} = b_{kl} A_{klij}\).
-        !! In Voigt notation, this is a vector-matrix product: \([\text{res}]_I = [\mathbf{b}]_J [\mathbb{A}]_{JI}\).
-        !! This is implemented using the intrinsic `matmul` for optimal performance,
-        !! which typically maps to a highly optimized BLAS DGEMV routine.
-        !! Shear components of \(\mathbf{b}\) (indices 4, 5, 6) are weighted by 2.
-        !!
-        implicit none
-        type(ten_3D2Osym), intent(in) :: b
-            !! The second-order symmetric tensor \(\mathbf{b}\) (stored as a 6-component vector).
-        type(ten_3D4O2sym), intent(in) :: a
-            !! The fourth-order minor-symmetric tensor \(\mathbb{A}\) (stored as a 6x6 matrix).
-        type(ten_3D2Osym) :: res
-            !! The resulting second-order symmetric tensor \(\mathbf{res}\).
-        
-        real(real64), dimension(6) :: b_weighted
-        
-        ! Create the weighted Voigt vector for contraction.
-        b_weighted(1:3) = b%vals(1:3)
-        b_weighted(4:6) = 2.0D0 * b%vals(4:6)
-
-        ! Perform vector-matrix multiplication using matmul.
-        ! matmul(vector, matrix) performs v * A, which is the correct operation here.
-        res%vals = matmul(b_weighted, a%vals)
-
-    end function ddot_3D2Osym_3D4O2sym
-
     ! =========================================================================
     ! DYADIC PRODUCT (.tdot.)
     ! =========================================================================

@@ -58,12 +58,6 @@ module mod_operator_3D2Osym_3D2O
         module procedure sub_3D2Osym_3D2O
     end interface
 
-    public :: operator(.ddot.)
-    interface operator (.ddot.)
-        module procedure ddot_3D2O_3D2Osym
-        module procedure ddot_3D2Osym_3D2O
-    end interface
-
     public :: assignment (=)
     interface assignment (=)
         module procedure assign_3D2O_3D2Osym
@@ -278,54 +272,6 @@ contains
         res%vals(8) = a%vals(5) - b%vals(8) ! yz
         res%vals(9) = a%vals(3) - b%vals(9) ! zz
     end function sub_3D2Osym_3D2O
-
-
-    ! =========================================================================
-    ! DOUBLE CONTRACTION (FROBENIUS INNER PRODUCT)
-    ! =========================================================================
-
-    pure function ddot_3D2O_3D2Osym(a, b) result(res)
-        !! Computes the double contraction between a general and a symmetric tensor.
-        !!
-        !! Mathematically: \( \alpha = A_{ij} B_{ij} \)
-        !! Result is a scalar `real(real64)`.
-        !!
-        !! Since B is symmetric (\(B_{ij} = B_{ji}\)), we can group terms:
-        !! \(\mathbf{A}:\mathbf{B} = A_{11} B_{11} + A_{22} B_{22} + A_{33} B_{33} 
-        !!     + (A_{12} + A_{21}) B_{12} + (A_{23} + A_{32}) B_{23} + (A_{13} + A_{31}) B_{13}\)
-        implicit none
-        type(ten_3D2O), intent(in) :: a     
-            !! General second-order tensor \(\mathbf{A}\)
-        type(ten_3D2Osym), intent(in) :: b  
-            !! Symmetric second-order tensor \(\mathbf{B}\)
-        real(real64) :: res
-            !! Scalar result \(\alpha\)
-        
-        res = a%vals(1)*b%vals(1) + a%vals(5)*b%vals(2) + a%vals(9)*b%vals(3) &
-            + (a%vals(4) + a%vals(2))*b%vals(4) &  ! (xy + yx) * xy_sym
-            + (a%vals(8) + a%vals(6))*b%vals(5) &  ! (yz + zy) * yz_sym
-            + (a%vals(7) + a%vals(3))*b%vals(6)    ! (xz + zx) * xz_sym
-    end function ddot_3D2O_3D2Osym
-
-    pure function ddot_3D2Osym_3D2O(a, b) result(res)
-        !! Computes the double contraction between a symmetric and a general tensor.
-        !!
-        !! Mathematically: \( \alpha = A_{ij} B_{ij} \)
-        !! Due to the commutative property of the inner product, this is identical
-        !! to the computation in `ddot_3D2O_3D2Osym`.
-        implicit none
-        type(ten_3D2Osym), intent(in) :: a  
-            !! Symmetric second-order tensor \(\mathbf{A}\)
-        type(ten_3D2O), intent(in) :: b     
-            !! General second-order tensor \(\mathbf{B}\)
-        real(real64) :: res
-            !! Scalar result \(\alpha\)
-        
-        res = a%vals(1)*b%vals(1) + a%vals(2)*b%vals(5) + a%vals(3)*b%vals(9) &
-            + a%vals(4)*(b%vals(4) + b%vals(2)) &  ! xy_sym * (xy + yx)
-            + a%vals(5)*(b%vals(8) + b%vals(6)) &  ! yz_sym * (yz + zy)
-            + a%vals(6)*(b%vals(7) + b%vals(3))    ! xz_sym * (xz + zx)
-    end function ddot_3D2Osym_3D2O
 
 
     ! =========================================================================

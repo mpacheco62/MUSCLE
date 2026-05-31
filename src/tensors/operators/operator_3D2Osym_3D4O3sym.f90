@@ -34,12 +34,6 @@ module mod_operator_3D2Osym_3D4O3sym
     implicit none
     private
 
-    public :: operator(.ddot.)
-    interface operator (.ddot.)
-        module procedure ddot_3D4O3sym_3D2Osym
-        module procedure ddot_3D2Osym_3D4O3sym
-    end interface
-
     public :: operator(.tdotsym.)
     interface operator (.tdotsym.)
         module procedure tdotsym_3D2Osym_3D2Osym
@@ -47,82 +41,6 @@ module mod_operator_3D2Osym_3D4O3sym
     end interface
 
 contains
-
-    ! =========================================================================
-    ! DOUBLE CONTRACTION
-    ! =========================================================================
-
-    pure function ddot_3D4O3sym_3D2Osym(a, b) result(res)
-        !! Computes the double contraction product: res = A : b.
-        !! This is a manually unrolled matrix-vector multiplication in Voigt space
-        !! to avoid temporary array allocation and maximize performance.
-        implicit none
-        class(ten_3D4O3sym), intent(in) :: a
-            !! The fully symmetric 4th-order tensor A (21 components).
-        class(ten_3D2Osym), intent(in) :: b
-            !! The symmetric 2nd-order tensor b (6 components).
-        type(ten_3D2Osym) :: res
-            !! The resulting symmetric 2nd-order tensor.
-        
-        real(real64) :: b1, b2, b3, b4, b5, b6
-
-        ! Use weighted components for shear terms to account for the factor of 2
-        b1 = b%vals(1); b2 = b%vals(2); b3 = b%vals(3)
-        b4 = 2.0D0 * b%vals(4)
-        b5 = 2.0D0 * b%vals(5)
-        b6 = 2.0D0 * b%vals(6)
-        
-        ! Explicit matrix-vector product using the 21-component storage scheme
-        ! res(1) = A(1,J) * b(J)
-        res%vals(1) = a%vals(1)*b1 + a%vals(7)*b2 + a%vals(12)*b3 + a%vals(16)*b4 + a%vals(19)*b5 + a%vals(21)*b6
-        ! res(2) = A(2,J) * b(J)
-        res%vals(2) = a%vals(7)*b1 + a%vals(2)*b2 + a%vals(8)*b3  + a%vals(13)*b4 + a%vals(17)*b5 + a%vals(20)*b6
-        ! res(3) = A(3,J) * b(J)
-        res%vals(3) = a%vals(12)*b1+ a%vals(8)*b2 + a%vals(3)*b3  + a%vals(9)*b4  + a%vals(14)*b5 + a%vals(18)*b6
-        ! res(4) = A(4,J) * b(J)
-        res%vals(4) = a%vals(16)*b1+ a%vals(13)*b2+ a%vals(9)*b3  + a%vals(4)*b4  + a%vals(10)*b5 + a%vals(15)*b6
-        ! res(5) = A(5,J) * b(J)
-        res%vals(5) = a%vals(19)*b1+ a%vals(17)*b2+ a%vals(14)*b3 + a%vals(10)*b4 + a%vals(5)*b5  + a%vals(11)*b6
-        ! res(6) = A(6,J) * b(J)
-        res%vals(6) = a%vals(21)*b1+ a%vals(20)*b2+ a%vals(18)*b3 + a%vals(15)*b4 + a%vals(11)*b5 + a%vals(6)*b6
-
-    end function ddot_3D4O3sym_3D2Osym
-
-    pure function ddot_3D2Osym_3D4O3sym(b, a) result(res)
-        !! Computes the double contraction product: res = b : A.
-        !! This is a manually unrolled matrix-vector multiplication in Voigt space
-        !! to avoid temporary array allocation and maximize performance.
-        implicit none
-        class(ten_3D4O3sym), intent(in) :: a
-            !! The fully symmetric 4th-order tensor A (21 components).
-        class(ten_3D2Osym), intent(in) :: b
-            !! The symmetric 2nd-order tensor b (6 components).
-        type(ten_3D2Osym) :: res
-            !! The resulting symmetric 2nd-order tensor.
-        
-        real(real64) :: b1, b2, b3, b4, b5, b6
-
-        ! Use weighted components for shear terms to account for the factor of 2
-        b1 = b%vals(1); b2 = b%vals(2); b3 = b%vals(3)
-        b4 = 2.0D0 * b%vals(4)
-        b5 = 2.0D0 * b%vals(5)
-        b6 = 2.0D0 * b%vals(6)
-        
-        ! Explicit matrix-vector product using the 21-component storage scheme
-        ! res(1) = A(1,J) * b(J)
-        res%vals(1) = a%vals(1)*b1 + a%vals(7)*b2 + a%vals(12)*b3 + a%vals(16)*b4 + a%vals(19)*b5 + a%vals(21)*b6
-        ! res(2) = A(2,J) * b(J)
-        res%vals(2) = a%vals(7)*b1 + a%vals(2)*b2 + a%vals(8)*b3  + a%vals(13)*b4 + a%vals(17)*b5 + a%vals(20)*b6
-        ! res(3) = A(3,J) * b(J)
-        res%vals(3) = a%vals(12)*b1+ a%vals(8)*b2 + a%vals(3)*b3  + a%vals(9)*b4  + a%vals(14)*b5 + a%vals(18)*b6
-        ! res(4) = A(4,J) * b(J)
-        res%vals(4) = a%vals(16)*b1+ a%vals(13)*b2+ a%vals(9)*b3  + a%vals(4)*b4  + a%vals(10)*b5 + a%vals(15)*b6
-        ! res(5) = A(5,J) * b(J)
-        res%vals(5) = a%vals(19)*b1+ a%vals(17)*b2+ a%vals(14)*b3 + a%vals(10)*b4 + a%vals(5)*b5  + a%vals(11)*b6
-        ! res(6) = A(6,J) * b(J)
-        res%vals(6) = a%vals(21)*b1+ a%vals(20)*b2+ a%vals(18)*b3 + a%vals(15)*b4 + a%vals(11)*b5 + a%vals(6)*b6
-
-    end function ddot_3D2Osym_3D4O3sym
 
     ! =========================================================================
     ! SYMMETRIZED DYADIC PRODUCT (.tdotsym.)
