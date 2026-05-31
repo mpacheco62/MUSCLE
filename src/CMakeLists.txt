@@ -1,6 +1,3 @@
-# set(OPERATORS tensors_types/mixed_operators/operator_I2O_3D2Osym.f90
-#               CACHE INTERNAL "")
-
 set(TENSORS_TYPES tensors_types/basic_types/ten_3D2O.f90
                   tensors_types/basic_types/ten_3D2Osym.f90
                   tensors_types/basic_types/ten_2D2Osym.f90
@@ -56,13 +53,6 @@ set(ELASTICITY       elasticity/basis_elasticity.f90
                      elasticity/elasticity_linear.f90
                      CACHE INTERNAL "")
 
-set(OPERATORS   operators/basic_operations.f90
-                operators/inverses_mat.f90
-                operators/derivatives.f90
-                operators/lin_solvers.f90
-                operators/spectral_derivatives.f90
-               CACHE INTERNAL "")
-
 #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 add_library(umatlib 
                      ${TENSORS_TYPES}
@@ -70,9 +60,12 @@ add_library(umatlib
                      ${YIELD_CRITERIA}
                      ${ELASTICITY}
                      ${RETURN_MAPPING}
-                     ${OPERATORS}
 		     ${VISCOPLASTIC_LAWS}
                      )
+
+set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
+
+add_subdirectory(math)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
@@ -103,7 +96,7 @@ else()
     message(FATAL_ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
 endif()
 
-set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
+
 install(TARGETS umatlib EXPORT umatlib-targets LIBRARY)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib/ TYPE INCLUDE)
 
