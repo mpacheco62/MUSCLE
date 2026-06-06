@@ -136,10 +136,7 @@ module tensors_types
     use mod_iden_4O4TS
     use mod_iden_4O4T
     use mod_operator_I2O_3D2Osym
-    use mod_operator_I2O_2D2Osym
-    use mod_operator_I2O_3D2O
     use mod_operator_I2OS_3D2Osym
-    use mod_operator_I2OS_3D2O
     use mod_operator_I4O3TS_3D4O3sym
     use mod_operator_I4O4TS_3D4O3sym
     use mod_operator_3D2Osym_3D2O
@@ -149,6 +146,7 @@ module tensors_types
     use mod_ops_addition_subtraction
     use mod_ops_contraction_double
     use mod_ops_dyadic
+    use mod_ops_contraction_single
     implicit None
 
     public :: ten_3D2O

@@ -12,10 +12,7 @@ target_sources(umatlib PRIVATE
                    types/iden_4O4TS.f90
                    types/iden_4O4T.f90
                    operators/operator_I2O_3D2Osym.f90
-                   operators/operator_I2O_2D2Osym.f90
-                   operators/operator_I2O_3D2O.f90
                    operators/operator_I2OS_3D2Osym.f90
-                   operators/operator_I2OS_3D2O.f90
                    operators/operator_I4O3TS_3D4O3sym.f90
                    operators/operator_I4O4T_3D4O2sym.f90
                    operators/operator_I4O4TS_3D4O2sym.f90
@@ -26,4 +23,5 @@ target_sources(umatlib PRIVATE
                    operators/ops_addition_subtraction.f90
                    operators/ops_contraction_double.f90
                    operators/ops_dyadic.f90
+                   operators/ops_contraction_single.f90
                    )

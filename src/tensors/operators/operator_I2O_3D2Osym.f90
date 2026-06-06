@@ -26,12 +26,6 @@ module mod_operator_I2O_3D2Osym
     use mod_ten_3D4O3sym
     implicit none
     private
-    
-    public :: operator(*)
-    interface operator (*)
-        module procedure mul_3D2Osym_I2O
-        module procedure mul_I2O_3D2Osym
-    end interface
 
     public :: assignment (=)
     interface assignment (=)
@@ -39,24 +33,6 @@ module mod_operator_I2O_3D2Osym
     end interface
 
 contains
-
-    pure function mul_I2O_3D2Osym(I2, a) result(res)
-        !! Computes the single contraction \(\mathbf{res} = \mathbf{I} \cdot \mathbf{A} = \mathbf{A}\).
-        implicit none
-        type(iden_2O), intent(in) :: I2
-        type(ten_3D2Osym), intent(in) :: a
-        type(ten_3D2Osym) :: res
-        res%vals = a%vals
-    end function mul_I2O_3D2Osym
-
-    pure function mul_3D2Osym_I2O(a, I2) result(res)
-        !! Computes the single contraction \(\mathbf{res} = \mathbf{A} \cdot \mathbf{I} = \mathbf{A}\).
-        implicit none
-        type(iden_2O), intent(in) :: I2
-        type(ten_3D2Osym), intent(in) :: a
-        type(ten_3D2Osym) :: res
-        res%vals = a%vals
-    end function mul_3D2Osym_I2O
     
     pure subroutine assign_3D2Osym_I2O(a, b)
         !! Explicit assignment from a second order identity to a 3D symmetric tensor.
