@@ -46,18 +46,6 @@ module mod_operator_3D2Osym_3D2O
         module procedure dot_3D2Osym_3D2O
     end interface
 
-    public :: operator(+)
-    interface operator (+)
-        module procedure sum_3D2O_3D2Osym
-        module procedure sum_3D2Osym_3D2O
-    end interface
-
-    public :: operator(-)
-    interface operator (-)
-        module procedure sub_3D2O_3D2Osym
-        module procedure sub_3D2Osym_3D2O
-    end interface
-
     public :: assignment (=)
     interface assignment (=)
         module procedure assign_3D2O_3D2Osym
@@ -166,113 +154,6 @@ contains
         res%vals(8) = a%vals(4)*b%vals(7) + a%vals(2)*b%vals(8) + a%vals(5)*b%vals(9)
         res%vals(9) = a%vals(6)*b%vals(7) + a%vals(5)*b%vals(8) + a%vals(3)*b%vals(9)
     end function dot_3D2Osym_3D2O
-
-
-    ! =========================================================================
-    ! ADDITION
-    ! =========================================================================
-
-    pure function sum_3D2O_3D2Osym(a, b) result(res)
-        !! Computes the addition of a general and a symmetric 2nd-order tensor.
-        !!
-        !! Mathematically: \( res_{ij} = A_{ij} + B_{ij} \)
-        !! The symmetric tensor components are expanded to match the column-major 
-        !! layout of the general tensor.
-        implicit none
-        type(ten_3D2O), intent(in) :: a
-            !! General second-order tensor \(\mathbf{A}\)
-        type(ten_3D2Osym), intent(in) :: b
-            !! Symmetric second-order tensor \(\mathbf{B}\)
-        type(ten_3D2O) :: res
-            !! Resulting general second-order tensor \(\mathbf{res}\)
-        
-        res%vals(1) = a%vals(1) + b%vals(1) ! xx
-        res%vals(2) = a%vals(2) + b%vals(4) ! yx (sym: xy)
-        res%vals(3) = a%vals(3) + b%vals(6) ! zx (sym: xz)
-        res%vals(4) = a%vals(4) + b%vals(4) ! xy
-        res%vals(5) = a%vals(5) + b%vals(2) ! yy
-        res%vals(6) = a%vals(6) + b%vals(5) ! zy (sym: yz)
-        res%vals(7) = a%vals(7) + b%vals(6) ! xz
-        res%vals(8) = a%vals(8) + b%vals(5) ! yz
-        res%vals(9) = a%vals(9) + b%vals(3) ! zz
-    end function sum_3D2O_3D2Osym
-
-    pure function sum_3D2Osym_3D2O(a, b) result(res)
-        !! Computes the addition of a symmetric and a general 2nd-order tensor.
-        !!
-        !! Mathematically: \( res_{ij} = A_{ij} + B_{ij} \)
-        !! The symmetric tensor components are expanded to match the column-major 
-        !! layout of the general tensor.
-        implicit none
-        type(ten_3D2Osym), intent(in) :: a
-            !! Symmetric second-order tensor \(\mathbf{A}\)
-        type(ten_3D2O), intent(in) :: b
-            !! General second-order tensor \(\mathbf{B}\)
-        type(ten_3D2O) :: res
-            !! Resulting general second-order tensor \(\mathbf{res}\)
-        
-        res%vals(1) = a%vals(1) + b%vals(1) ! xx
-        res%vals(2) = a%vals(4) + b%vals(2) ! yx (sym: xy)
-        res%vals(3) = a%vals(6) + b%vals(3) ! zx (sym: xz)
-        res%vals(4) = a%vals(4) + b%vals(4) ! xy
-        res%vals(5) = a%vals(2) + b%vals(5) ! yy
-        res%vals(6) = a%vals(5) + b%vals(6) ! zy (sym: yz)
-        res%vals(7) = a%vals(6) + b%vals(7) ! xz
-        res%vals(8) = a%vals(5) + b%vals(8) ! yz
-        res%vals(9) = a%vals(3) + b%vals(9) ! zz
-    end function sum_3D2Osym_3D2O
-
-
-    ! =========================================================================
-    ! SUBTRACTION
-    ! =========================================================================
-
-    pure function sub_3D2O_3D2Osym(a, b) result(res)
-        !! Computes the subtraction of a symmetric tensor from a general tensor.
-        !!
-        !! Mathematically: \( res_{ij} = A_{ij} - B_{ij} \)
-        implicit none
-        type(ten_3D2O), intent(in) :: a     
-            !! General second-order tensor \(\mathbf{A}\)
-        type(ten_3D2Osym), intent(in) :: b  
-            !! Symmetric second-order tensor \(\mathbf{B}\)
-        type(ten_3D2O) :: res
-            !! Resulting general second-order tensor \(\mathbf{res}\)
-        
-        res%vals(1) = a%vals(1) - b%vals(1) ! xx
-        res%vals(2) = a%vals(2) - b%vals(4) ! yx - xy
-        res%vals(3) = a%vals(3) - b%vals(6) ! zx - xz
-        res%vals(4) = a%vals(4) - b%vals(4) ! xy
-        res%vals(5) = a%vals(5) - b%vals(2) ! yy
-        res%vals(6) = a%vals(6) - b%vals(5) ! zy - yz
-        res%vals(7) = a%vals(7) - b%vals(6) ! xz
-        res%vals(8) = a%vals(8) - b%vals(5) ! yz
-        res%vals(9) = a%vals(9) - b%vals(3) ! zz
-    end function sub_3D2O_3D2Osym
-
-    pure function sub_3D2Osym_3D2O(a, b) result(res)
-        !! Computes the subtraction of a general tensor from a symmetric tensor.
-        !!
-        !! Mathematically: \( res_{ij} = A_{ij} - B_{ij} \)
-        implicit none
-        type(ten_3D2Osym), intent(in) :: a  
-            !! Symmetric second-order tensor \(\mathbf{A}\)
-        type(ten_3D2O), intent(in) :: b     
-            !! General second-order tensor \(\mathbf{B}\)
-        type(ten_3D2O) :: res
-            !! Resulting general second-order tensor \(\mathbf{res}\)
-        
-        res%vals(1) = a%vals(1) - b%vals(1) ! xx
-        res%vals(2) = a%vals(4) - b%vals(2) ! yx (sym: xy)
-        res%vals(3) = a%vals(6) - b%vals(3) ! zx (sym: xz)
-        res%vals(4) = a%vals(4) - b%vals(4) ! xy
-        res%vals(5) = a%vals(2) - b%vals(5) ! yy
-        res%vals(6) = a%vals(5) - b%vals(6) ! zy (sym: yz)
-        res%vals(7) = a%vals(6) - b%vals(7) ! xz
-        res%vals(8) = a%vals(5) - b%vals(8) ! yz
-        res%vals(9) = a%vals(3) - b%vals(9) ! zz
-    end function sub_3D2Osym_3D2O
-
 
     ! =========================================================================
     ! ASSIGNMENT
