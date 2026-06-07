@@ -69,9 +69,9 @@ contains
         !!  | (10:1211) ( 9:1222) ( 7:1233) ( 4:1212) |
         !! ```
         implicit none
-        class(ten_2D2Osym), intent(in) :: a
+        type(ten_2D2Osym), intent(in) :: a
             !! First second-order symmetric tensor \(\mathbf{a}\)
-        class(ten_2D2Osym), intent(in) :: b
+        type(ten_2D2Osym), intent(in) :: b
             !! Second second-order symmetric tensor \(\mathbf{b}\)
         type(ten_2D4O3sym) :: res
             !! Resulting fourth-order fully symmetric tensor \(\mathbb{C}\)
@@ -159,8 +159,8 @@ contains
         !! The result is always a fully symmetric 4th-order tensor (`ten_3D4O3sym`).
         !! When called as `a .tdotsym. a`, a modern compiler will optimize this to `a ⊗ a`.
         implicit none
-        class(ten_3D2Osym), intent(in) :: a
-        class(ten_3D2Osym), intent(in) :: b
+        type(ten_3D2Osym), intent(in) :: a
+        type(ten_3D2Osym), intent(in) :: b
         type(ten_3D4O3sym) :: res
         
         res%vals(1)  = 0.5D0 * (a%vals(1)*b%vals(1) + b%vals(1)*a%vals(1))
@@ -192,7 +192,7 @@ contains
         !! This function provides a syntactically "unary" way to perform the dyadic product.
         !! Mathematically: \( C_{ijkl} = a_{ij} a_{kl} \).
         implicit none
-        class(ten_3D2Osym), intent(in) :: a
+        type(ten_3D2Osym), intent(in) :: a
             !! The symmetric 2nd-order tensor to be multiplied by itself.
         type(ten_3D4O3sym) :: res
             !! The resulting fully symmetric 4th-order tensor.

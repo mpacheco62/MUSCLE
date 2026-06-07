@@ -413,9 +413,9 @@ contains
         !!  | (10:1211) ( 9:1222) ( 7:1233) ( 4:1212) |
         !! ```
         implicit none
-        class(ten_2D4O3sym), intent(in) :: a
+        type(ten_2D4O3sym), intent(in) :: a
             !! Fourth-order fully symmetric tensor \(\mathbb{A}\)
-        class(ten_2D2Osym), intent(in) :: b
+        type(ten_2D2Osym), intent(in) :: b
             !! Second-order symmetric tensor \(\mathbf{b}\)
         type(ten_2D2Osym) :: res
             !! Resulting second-order symmetric tensor \(\mathbf{res}\)
@@ -471,9 +471,9 @@ contains
         !!  | (10:1211) ( 9:1222) ( 7:1233) ( 4:1212) |
         !! ```
         implicit none
-        class(ten_2D2Osym), intent(in) :: b
+        type(ten_2D2Osym), intent(in) :: b
             !! Second-order symmetric tensor \(\mathbf{b}\)
-        class(ten_2D4O3sym), intent(in) :: a
+        type(ten_2D4O3sym), intent(in) :: a
             !! Fourth-order fully symmetric tensor \(\mathbb{A}\)
         type(ten_2D2Osym) :: res
             !! Resulting second-order symmetric tensor \(\mathbf{res}\)
@@ -567,9 +567,9 @@ contains
         !! This is a manually unrolled matrix-vector multiplication in Voigt space
         !! to avoid temporary array allocation and maximize performance.
         implicit none
-        class(ten_3D4O3sym), intent(in) :: a
+        type(ten_3D4O3sym), intent(in) :: a
             !! The fully symmetric 4th-order tensor A (21 components).
-        class(ten_3D2Osym), intent(in) :: b
+        type(ten_3D2Osym), intent(in) :: b
             !! The symmetric 2nd-order tensor b (6 components).
         type(ten_3D2Osym) :: res
             !! The resulting symmetric 2nd-order tensor.
@@ -603,9 +603,9 @@ contains
         !! This is a manually unrolled matrix-vector multiplication in Voigt space
         !! to avoid temporary array allocation and maximize performance.
         implicit none
-        class(ten_3D4O3sym), intent(in) :: a
+        type(ten_3D4O3sym), intent(in) :: a
             !! The fully symmetric 4th-order tensor A (21 components).
-        class(ten_3D2Osym), intent(in) :: b
+        type(ten_3D2Osym), intent(in) :: b
             !! The symmetric 2nd-order tensor b (6 components).
         type(ten_3D2Osym) :: res
             !! The resulting symmetric 2nd-order tensor.
@@ -646,8 +646,8 @@ contains
         !! and leveraging compiler optimizations like register allocation and SIMD.
         !!
         implicit none
-        class(ten_3D4O3sym), intent(in) :: aT
-        class(ten_3D4O3sym), intent(in) :: bT
+        type(ten_3D4O3sym), intent(in) :: aT
+        type(ten_3D4O3sym), intent(in) :: bT
         type(ten_3D4O2sym) :: res
         
         real(real64) :: x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19

@@ -116,9 +116,9 @@ contains
         !! Assigns a fully symmetric tensor (21 components) to a minor-symmetric
         !! tensor (36 components) by expanding it to a full 6x6 Voigt matrix.
         implicit none
-        class(ten_3D4O2sym), intent(inout) :: self
+        type(ten_3D4O2sym), intent(inout) :: self
             !! The target minor-symmetric tensor.
-        class(ten_3D4O3sym), intent(in) :: b
+        type(ten_3D4O3sym), intent(in) :: b
             !! The source fully symmetric tensor.
         self%vals(1,1)=b%vals(1) ; self%vals(1,2)=b%vals(7) ;  self%vals(1,3)=b%vals(12)
         self%vals(1,4)=b%vals(16); self%vals(1,5)=b%vals(19);  self%vals(1,6)=b%vals(21)
