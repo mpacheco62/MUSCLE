@@ -136,7 +136,7 @@ contains
     pure function sum_I2O_I2O(I2a, I2b) result(res)
         !! `+` Adds two standard identity tensors. Result is a scaled identity with value 2.0.
         implicit none
-        class(iden_2O), intent(in) :: I2a, I2b
+        type(iden_2O), intent(in) :: I2a, I2b
         type(iden_2OS) :: res
         res%val = 2D0
     end function sum_I2O_I2O
@@ -144,8 +144,8 @@ contains
     pure function sum_I2O_I2OS(I2a, I2b) result(res)
         !! `+` Adds a standard identity tensor and a scaled identity tensor.
         implicit none
-        class(iden_2O), intent(in) :: I2a
-        class(iden_2OS), intent(in) :: I2b
+        type(iden_2O), intent(in) :: I2a
+        type(iden_2OS), intent(in) :: I2b
         type(iden_2OS) :: res
         res%val = 1D0 + I2b%val
     end function sum_I2O_I2OS
@@ -153,8 +153,8 @@ contains
     pure function sum_I2OS_I2O(I2a, I2b) result(res)
         !! `+` Adds a scaled identity tensor and a standard identity tensor.
         implicit none
-        class(iden_2OS), intent(in) :: I2a
-        class(iden_2O), intent(in) :: I2b
+        type(iden_2OS), intent(in) :: I2a
+        type(iden_2O), intent(in) :: I2b
         type(iden_2OS) :: res
         res%val = I2a%val + 1D0
     end function sum_I2OS_I2O
@@ -162,7 +162,7 @@ contains
     pure function subU_I2O(I2a) result(res)
         !! `-` Unary negation of the standard identity tensor. Result is a scaled identity with value -1.0.
         implicit none
-        class(iden_2O), intent(in) :: I2a
+        type(iden_2O), intent(in) :: I2a
         type(iden_2OS) :: res
         res%val = -1D0
     end function subU_I2O
@@ -170,7 +170,7 @@ contains
     pure function sub_I2O_I2O(I2a, I2b) result(res)
         !! `-` Subtracts one standard identity tensor from another. Result is a scaled identity with value 0.0.
         implicit none
-        class(iden_2O), intent(in) :: I2a, I2b
+        type(iden_2O), intent(in) :: I2a, I2b
         type(iden_2OS) :: res
         res%val = 0D0
     end function sub_I2O_I2O
@@ -178,8 +178,8 @@ contains
     pure function sub_I2O_I2OS(I2a, I2b) result(res)
         !! `-` Subtracts a scaled identity tensor from a standard identity tensor.
         implicit none
-        class(iden_2O), intent(in) :: I2a
-        class(iden_2OS), intent(in) :: I2b
+        type(iden_2O), intent(in) :: I2a
+        type(iden_2OS), intent(in) :: I2b
         type(iden_2OS) :: res
         res%val = 1D0 - I2b%val
     end function sub_I2O_I2OS
@@ -187,8 +187,8 @@ contains
     pure function sub_I2OS_I2O(I2a, I2b) result(res)
         !! `-` Subtracts a standard identity tensor from a scaled identity tensor.
         implicit none
-        class(iden_2OS), intent(in) :: I2a
-        class(iden_2O), intent(in) :: I2b
+        type(iden_2OS), intent(in) :: I2a
+        type(iden_2O), intent(in) :: I2b
         type(iden_2OS) :: res
         res%val = I2a%val - 1D0
     end function sub_I2OS_I2O
@@ -196,7 +196,7 @@ contains
     pure function mul_I2O_real64(I2, a) result(res)
         !! `*` Multiplies the standard identity tensor by a scalar. Result is a scaled identity.
         implicit none
-        class(iden_2O), intent(in) :: I2
+        type(iden_2O), intent(in) :: I2
         real(real64), intent(in) :: a
         type(iden_2OS) :: res
         res%val = a 
@@ -205,7 +205,7 @@ contains
     pure function mul_real64_I2O(a, I2) result(res)
         !! `*` Multiplies a scalar by the standard identity tensor. Result is a scaled identity.
         implicit none
-        class(iden_2O), intent(in) :: I2
+        type(iden_2O), intent(in) :: I2
         real(real64), intent(in) :: a
         type(iden_2OS) :: res
         res%val = a 
@@ -214,14 +214,14 @@ contains
     pure function mul_I2O_I2O(I2a, I2b) result(res)
         !! `\cdot` Multiplies two standard identity tensors. Conceptually I*I = I. Result is the standard identity
         implicit none
-        class(iden_2O), intent(in) :: I2a, I2b
+        type(iden_2O), intent(in) :: I2a, I2b
         type(iden_2O) :: res
     end function mul_I2O_I2O
 
     pure function div_I2O_real64(I2, a) result(res)
         !! Divides the standard identity tensor by a scalar. Result is a scaled identity.
         implicit none
-        class(iden_2O), intent(in) :: I2
+        type(iden_2O), intent(in) :: I2
         real(real64), intent(in) :: a
         type(iden_2OS) :: res
         res%val = 1D0/a

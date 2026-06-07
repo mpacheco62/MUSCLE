@@ -95,7 +95,7 @@ module mod_iden_4O3TS
 
     pure function mul_I4O3TS_real64(IMod, a) result(res)
         implicit none
-        class(iden_4O3TS), intent(in) :: IMod
+        type(iden_4O3TS), intent(in) :: IMod
         real(real64), intent(in) :: a
         type(iden_4O3TS) :: res
         res%val = IMod%val * a 
@@ -103,7 +103,7 @@ module mod_iden_4O3TS
 
     pure function mul_real64_I4O3TS(a, IMod) result(res)
         implicit none
-        class(iden_4O3TS), intent(in) :: IMod
+        type(iden_4O3TS), intent(in) :: IMod
         real(real64), intent(in) :: a
         type(iden_4O3TS) :: res
         res%val = IMod%val * a 
@@ -111,7 +111,7 @@ module mod_iden_4O3TS
 
     pure function div_I4O3TS_real64(IMod, a) result(res)
         implicit none
-        class(iden_4O3TS), intent(in) :: IMod
+        type(iden_4O3TS), intent(in) :: IMod
         real(real64), intent(in) :: a
         type(iden_4O3TS) :: res
         res%val = IMod%val/a 

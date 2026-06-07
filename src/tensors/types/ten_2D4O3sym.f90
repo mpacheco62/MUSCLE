@@ -217,7 +217,7 @@ contains
         !! norm(A) = sum(|A_diag|) + 2*sum(|A_offdiag|) based on 4x4 Voigt matrix.
         !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
         implicit none
-        class(ten_2D4O3sym), intent(in) :: a, b
+        type(ten_2D4O3sym), intent(in) :: a, b
         logical :: res
         real(real64), parameter :: EPS=1e-7, EPS_ABS=1e-30
         real(real64) :: norm_a, norm_b, norm_max, norm
@@ -234,21 +234,21 @@ contains
 
     pure function sum_2D4O3sym(a, b) result(res)
         implicit none
-        class(ten_2D4O3sym), intent(in) :: a, b
+        type(ten_2D4O3sym), intent(in) :: a, b
         type(ten_2D4O3sym) :: res
         res%vals = a%vals + b%vals
     end function sum_2D4O3sym
 
     pure function sub_2D4O3sym(a, b) result(res)
         implicit none
-        class(ten_2D4O3sym), intent(in) :: a, b
+        type(ten_2D4O3sym), intent(in) :: a, b
         type(ten_2D4O3sym) :: res
         res%vals = a%vals - b%vals
     end function sub_2D4O3sym
 
     pure function subU_2D4O3sym(a) result(res)
         implicit none
-        class(ten_2D4O3sym), intent(in) :: a
+        type(ten_2D4O3sym), intent(in) :: a
         type(ten_2D4O3sym) :: res
         res%vals = -a%vals
     end function subU_2D4O3sym
@@ -256,7 +256,7 @@ contains
     pure function mul_real64_2D4O3sym(a, b) result(res)
         implicit none
         real(real64), intent(in) :: a
-        class(ten_2D4O3sym), intent(in) :: b
+        type(ten_2D4O3sym), intent(in) :: b
         type(ten_2D4O3sym) :: res
         res%vals = a * b%vals
     end function mul_real64_2D4O3sym
@@ -264,7 +264,7 @@ contains
     pure function mul_2D4O3sym_real64(b, a) result(res)
         implicit none
         real(real64), intent(in) :: a
-        class(ten_2D4O3sym), intent(in) :: b
+        type(ten_2D4O3sym), intent(in) :: b
         type(ten_2D4O3sym) :: res
         res%vals = a * b%vals
     end function mul_2D4O3sym_real64
@@ -272,7 +272,7 @@ contains
     pure function div_2D4O3sym_real64(b, a) result(res)
         implicit none
         real(real64), intent(in) :: a
-        class(ten_2D4O3sym), intent(in) :: b
+        type(ten_2D4O3sym), intent(in) :: b
         type(ten_2D4O3sym) :: res
         res%vals = b%vals/a
     end function div_2D4O3sym_real64

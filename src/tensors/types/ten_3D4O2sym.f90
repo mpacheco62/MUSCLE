@@ -253,7 +253,7 @@ contains
         !! norm(A) = sum(|A_IJ|) for I,J=1..6
         !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
         implicit none
-        class(ten_3D4O2sym), intent(in) :: a, b
+        type(ten_3D4O2sym), intent(in) :: a, b
         logical :: res
 
         res = a%is_approx(b)
@@ -277,21 +277,21 @@ contains
 
     pure function sum_3D4O2sym(a, b) result(res)
         implicit none
-        class(ten_3D4O2sym), intent(in) :: a, b
+        type(ten_3D4O2sym), intent(in) :: a, b
         type(ten_3D4O2sym) :: res
         res%vals = a%vals + b%vals
     end function sum_3D4O2sym
 
     pure function sub_3D4O2sym(a, b) result(res)
         implicit none
-        class(ten_3D4O2sym), intent(in) :: a, b
+        type(ten_3D4O2sym), intent(in) :: a, b
         type(ten_3D4O2sym) :: res
         res%vals = a%vals - b%vals
     end function sub_3D4O2sym
 
     pure function subU_3D4O2sym(a) result(res)
         implicit none
-        class(ten_3D4O2sym), intent(in) :: a
+        type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         res%vals = -a%vals
     end function subU_3D4O2sym
@@ -299,7 +299,7 @@ contains
     pure function mul_real64_3D4O2sym(a, b) result(res)
         implicit none
         real(real64), intent(in) :: a
-        class(ten_3D4O2sym), intent(in) :: b
+        type(ten_3D4O2sym), intent(in) :: b
         type(ten_3D4O2sym) :: res
         res%vals = a * b%vals
     end function mul_real64_3D4O2sym
@@ -307,7 +307,7 @@ contains
     pure function mul_3D4O2sym_real64(b, a) result(res)
         implicit none
         real(real64), intent(in) :: a
-        class(ten_3D4O2sym), intent(in) :: b
+        type(ten_3D4O2sym), intent(in) :: b
         type(ten_3D4O2sym) :: res
         res%vals = a * b%vals
     end function mul_3D4O2sym_real64
@@ -315,7 +315,7 @@ contains
     pure function div_3D4O2sym_real64(b, a) result(res)
         implicit none
         real(real64), intent(in) :: a
-        class(ten_3D4O2sym), intent(in) :: b
+        type(ten_3D4O2sym), intent(in) :: b
         type(ten_3D4O2sym) :: res
         res%vals = b%vals/a
     end function div_3D4O2sym_real64
@@ -331,7 +331,7 @@ contains
         use, intrinsic :: iso_fortran_env
         use inverses_mat
         implicit none
-        class(ten_3D4O2sym), intent(in) :: a
+        type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
         real(real64) :: mat_a(6,6), mat_b(6,6)
         logical :: ok

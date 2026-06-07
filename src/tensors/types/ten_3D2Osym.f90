@@ -263,7 +263,7 @@ contains
         !! norm(a) = |a_11| + |a_22| + |a_33| + 2|a_12| + 2|a_23| + 2|a_13|
         !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
         implicit none
-        class(ten_3D2Osym), intent(in) :: a, b
+        type(ten_3D2Osym), intent(in) :: a, b
         logical :: res
         
         res = a%is_approx(b)
@@ -271,21 +271,21 @@ contains
 
     pure function sum_3D2Osym(a, b) result(res)
         implicit none
-        class(ten_3D2Osym), intent(in) :: a, b
+        type(ten_3D2Osym), intent(in) :: a, b
         type(ten_3D2Osym) :: res
         res%vals = a%vals + b%vals
     end function sum_3D2Osym
 
     pure function sub_3D2Osym(a, b) result(res)
         implicit none
-        class(ten_3D2Osym), intent(in) :: a, b
+        type(ten_3D2Osym), intent(in) :: a, b
         type(ten_3D2Osym) :: res
         res%vals = a%vals - b%vals
     end function sub_3D2Osym
 
     pure function subU_3D2Osym(a) result(res)
         implicit none
-        class(ten_3D2Osym), intent(in) :: a
+        type(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
         res%vals = -a%vals
     end function subU_3D2Osym
@@ -293,7 +293,7 @@ contains
     pure function mul_real64_3D2Osym(a, b) result(res)
         implicit none
         real(real64), intent(in) :: a
-        class(ten_3D2Osym), intent(in) :: b
+        type(ten_3D2Osym), intent(in) :: b
         type(ten_3D2Osym) :: res
         res%vals = a * b%vals
     end function mul_real64_3D2Osym
@@ -301,7 +301,7 @@ contains
     pure function mul_3D2Osym_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
-        class(ten_3D2Osym), intent(in) :: a
+        type(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
         res%vals =  a%vals * b
     end function mul_3D2Osym_real64
@@ -309,14 +309,14 @@ contains
     pure function div_3D2Osym_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
-        class(ten_3D2Osym), intent(in) :: a
+        type(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
         res%vals = a%vals/b
     end function div_3D2Osym_real64
 
     pure function ddot_3D2Osym_3D2Osym(a, b) result(res)
         implicit none
-        class(ten_3D2Osym), intent(in) :: a, b
+        type(ten_3D2Osym), intent(in) :: a, b
         real(real64) :: res
         res =   a%vals(1)*b%vals(1) &
                              + a%vals(2)*b%vals(2) &
@@ -328,7 +328,7 @@ contains
 
     pure function dev_3D2Osym(a) result(res)
         implicit none
-        class(ten_3D2Osym), intent(in) :: a
+        type(ten_3D2Osym), intent(in) :: a
         type(ten_3D2Osym) :: res
         real(real64) :: hydro
         hydro = (a%vals(1) + a%vals(2) + a%vals(3))/3D0

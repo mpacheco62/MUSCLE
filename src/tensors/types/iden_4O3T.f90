@@ -99,7 +99,7 @@ contains
 
     pure function mul_I4O3T_real64(I2, a) result(res)
         implicit none
-        class(iden_4O3T), intent(in) :: I2
+        type(iden_4O3T), intent(in) :: I2
         real(real64), intent(in) :: a
         type(iden_4O3TS) :: res
         res%val = a 
@@ -107,7 +107,7 @@ contains
 
     pure function mul_real64_I4O3T(a, I2) result(res)
         implicit none
-        class(iden_4O3T), intent(in) :: I2
+        type(iden_4O3T), intent(in) :: I2
         real(real64), intent(in) :: a
         type(iden_4O3TS) :: res
         res%val = a 
@@ -115,7 +115,7 @@ contains
 
     pure function div_I4O3T_real64(I2, a) result(res)
         implicit none
-        class(iden_4O3T), intent(in) :: I2
+        type(iden_4O3T), intent(in) :: I2
         real(real64), intent(in) :: a
         type(iden_4O3TS) :: res
         res%val = 1D0/a

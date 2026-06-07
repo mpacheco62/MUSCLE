@@ -215,7 +215,7 @@ contains
         !! norm(a) = |a_11| + |a_22| + |a_33| + 2|a_12|
         !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
         implicit none
-        class(ten_2D2Osym), intent(in) :: a, b
+        type(ten_2D2Osym), intent(in) :: a, b
         logical :: res
 
         real(real64), parameter :: EPS=1e-7, EPS_ABS=1e-30
@@ -239,21 +239,21 @@ contains
 
     pure function sum_2D2Osym(a, b) result(res)
         implicit none
-        class(ten_2D2Osym), intent(in) :: a, b
+        type(ten_2D2Osym), intent(in) :: a, b
         type(ten_2D2Osym) :: res
         res%vals = a%vals + b%vals
     end function sum_2D2Osym
 
     pure function sub_2D2Osym(a, b) result(res)
         implicit none
-        class(ten_2D2Osym), intent(in) :: a, b
+        type(ten_2D2Osym), intent(in) :: a, b
         type(ten_2D2Osym) :: res
         res%vals = a%vals - b%vals
     end function sub_2D2Osym
 
     pure function subU_2D2Osym(a) result(res)
         implicit none
-        class(ten_2D2Osym), intent(in) :: a
+        type(ten_2D2Osym), intent(in) :: a
         type(ten_2D2Osym) :: res
         res%vals = -a%vals
     end function subU_2D2Osym
@@ -261,7 +261,7 @@ contains
     pure function mul_real64_2D2Osym(a, b) result(res)
         implicit none
         real(real64), intent(in) :: a
-        class(ten_2D2Osym), intent(in) :: b
+        type(ten_2D2Osym), intent(in) :: b
         type(ten_2D2Osym) :: res
         res%vals = a * b%vals
     end function mul_real64_2D2Osym
@@ -269,7 +269,7 @@ contains
     pure function mul_2D2Osym_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
-        class(ten_2D2Osym), intent(in) :: a
+        type(ten_2D2Osym), intent(in) :: a
         type(ten_2D2Osym) :: res
         res%vals =  a%vals * b
     end function mul_2D2Osym_real64
@@ -277,14 +277,14 @@ contains
     pure function div_2D2Osym_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
-        class(ten_2D2Osym), intent(in) :: a
+        type(ten_2D2Osym), intent(in) :: a
         type(ten_2D2Osym) :: res
         res%vals = a%vals/b
     end function div_2D2Osym_real64
 
     pure function ddot_2D2Osym_2D2Osym(a, b) result(res)
         implicit none
-        class(ten_2D2Osym), intent(in) :: a, b
+        type(ten_2D2Osym), intent(in) :: a, b
         real(real64) :: res
         res =   a%vals(1)*b%vals(1) &
                              + a%vals(2)*b%vals(2) &
@@ -294,7 +294,7 @@ contains
 
     pure function dev_2D2Osym(a) result(res)
         implicit none
-        class(ten_2D2Osym), intent(in) :: a
+        type(ten_2D2Osym), intent(in) :: a
         type(ten_2D2Osym) :: res
         real(real64) :: hydro
         hydro = (a%vals(1) + a%vals(2) + a%vals(3))/3D0

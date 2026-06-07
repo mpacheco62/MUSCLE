@@ -245,7 +245,7 @@ contains
         !! norm(a) = sum(|a_ij|) for all i,j
         !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
         implicit none
-        class(ten_3D2O), intent(in) :: a, b
+        type(ten_3D2O), intent(in) :: a, b
         logical :: res
 
         res = a%is_approx(b)
@@ -254,7 +254,7 @@ contains
 
     pure function sum_3D2O(a, b) result(res)
         implicit none
-        class(ten_3D2O), intent(in) :: a, b
+        type(ten_3D2O), intent(in) :: a, b
         type(ten_3D2O) :: res
 
         res%vals = a%vals + b%vals
@@ -262,7 +262,7 @@ contains
 
     pure function sub_3D2O(a, b) result(res)
         implicit none
-        class(ten_3D2O), intent(in) :: a, b
+        type(ten_3D2O), intent(in) :: a, b
         type(ten_3D2O) :: res
 
         res%vals = a%vals - b%vals
@@ -270,7 +270,7 @@ contains
 
     pure function subU_3D2O(a) result(res)
         implicit none
-        class(ten_3D2O), intent(in) :: a
+        type(ten_3D2O), intent(in) :: a
         type(ten_3D2O) :: res
 
         res%vals = -a%vals
@@ -279,7 +279,7 @@ contains
     pure function mul_real64_3D2O(a, b) result(res)
         implicit none
         real(real64), intent(in) :: a
-        class(ten_3D2O), intent(in) :: b
+        type(ten_3D2O), intent(in) :: b
         type(ten_3D2O) :: res
 
         res%vals = a * b%vals
@@ -288,7 +288,7 @@ contains
     pure function mul_3D2O_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
-        class(ten_3D2O), intent(in) :: a
+        type(ten_3D2O), intent(in) :: a
         type(ten_3D2O) :: res
 
         res%vals =  a%vals * b
@@ -297,7 +297,7 @@ contains
     pure function div_3D2O_real64(a, b) result(res)
         implicit none
         real(real64), intent(in) :: b
-        class(ten_3D2O), intent(in) :: a
+        type(ten_3D2O), intent(in) :: a
         type(ten_3D2O) :: res
 
         res%vals = a%vals/b
@@ -305,7 +305,7 @@ contains
 
     pure function ddot_3D2O_3D2O(a, b) result(res)
         implicit none
-        class(ten_3D2O), intent(in) :: a, b
+        type(ten_3D2O), intent(in) :: a, b
         real(real64) :: res
     
         res =   a%vals(1)*b%vals(1) &
@@ -322,7 +322,7 @@ contains
 
     pure function dev_3D2O(a) result(res)
         implicit none
-        class(ten_3D2O), intent(in) :: a
+        type(ten_3D2O), intent(in) :: a
         type(ten_3D2O) :: res
 
         real(real64) :: hydro

@@ -149,35 +149,35 @@ module mod_iden_2OS
 
     pure function sum_I2OS_I2OS(I2a, I2b) result(res)
         implicit none
-        class(iden_2OS), intent(in) :: I2a, I2b
+        type(iden_2OS), intent(in) :: I2a, I2b
         type(iden_2OS) :: res
         res%val = I2a%val + I2b%val
     end function sum_I2OS_I2OS
 
     pure function subU_I2OS(I2a) result(res)
         implicit none
-        class(iden_2OS), intent(in) :: I2a
+        type(iden_2OS), intent(in) :: I2a
         type(iden_2OS) :: res
         res%val = -I2a%val
     end function subU_I2OS
 
     pure function sub_I2OS_I2OS(I2a, I2b) result(res)
         implicit none
-        class(iden_2OS), intent(in) :: I2a, I2b
+        type(iden_2OS), intent(in) :: I2a, I2b
         type(iden_2OS) :: res
         res%val = I2a%val - I2b%val
     end function sub_I2OS_I2OS
 
     pure function mul_I2OS_I2OS(I2a, I2b) result(res)
         implicit none
-        class(iden_2OS), intent(in) :: I2a, I2b
+        type(iden_2OS), intent(in) :: I2a, I2b
         type(iden_2OS) :: res
         res%val = I2a%val*I2b%val
     end function mul_I2OS_I2OS
 
     pure function mul_I2OS_real64(IMod, a) result(res)
         implicit none
-        class(iden_2OS), intent(in) :: IMod
+        type(iden_2OS), intent(in) :: IMod
         real(real64), intent(in) :: a
         type(iden_2OS) :: res
         res%val = IMod%val * a 
@@ -185,7 +185,7 @@ module mod_iden_2OS
 
     pure function mul_real64_I2OS(a, IMod) result(res)
         implicit none
-        class(iden_2OS), intent(in) :: IMod
+        type(iden_2OS), intent(in) :: IMod
         real(real64), intent(in) :: a
         type(iden_2OS) :: res
         res%val = IMod%val * a 
@@ -193,7 +193,7 @@ module mod_iden_2OS
 
     pure function div_I2OS_real64(IMod, a) result(res)
         implicit none
-        class(iden_2OS), intent(in) :: IMod
+        type(iden_2OS), intent(in) :: IMod
         real(real64), intent(in) :: a
         type(iden_2OS) :: res
         res%val = IMod%val/a 
@@ -201,8 +201,8 @@ module mod_iden_2OS
 
     pure function approx_I2OS(I1, I2) result(res)
         implicit none
-        class(iden_2OS), intent(in) :: I1
-        class(iden_2OS), intent(in) :: I2
+        type(iden_2OS), intent(in) :: I1
+        type(iden_2OS), intent(in) :: I2
         logical :: res
         real(real64), parameter :: EPS=1e-10
         real(real64) :: tol
