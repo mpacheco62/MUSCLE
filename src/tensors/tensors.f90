@@ -122,7 +122,6 @@ module tensors_types
     !! ```
 
     use, intrinsic :: iso_fortran_env
-    ! use mod_ten_3D2O, only : ten_3D2O
     use mod_ten_3D2O
     use mod_ten_3D2Osym
     use mod_ten_2D2Osym
@@ -156,17 +155,6 @@ module tensors_types
     public :: iden_4O4T
 
     private 
-    ! INCLUDE 'ten_3D4O3sym_3D2Osym/ten_3D4O3sym_3D2Osym.inc'
-
-    ! iden_4O3T ! \delta_ij\delta_kl
-
-    ! iden_4O3TS ! val*\delta_ij\delta_kl
-
-    ! type, public :: iden_4O4T ! (\delta_ik\delta_jl + \delta_il\delta_jk)/2
-    ! end type iden_4O4T
-
-    ! iden_4O4TS ! val*(\delta_ik\delta_jl + \delta_il\delta_jk)/2
-    
 
     public :: operator(.approx.)
     public :: operator(+)
