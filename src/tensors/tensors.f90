@@ -177,10 +177,6 @@ module tensors_types
     public :: operator(.dev.)
 
     public :: operator(.ddot.)
-    ! interface operator (.ddot.)
-    !     module procedure ddot_3D4O3sym_3D2Osym
-    !     module procedure ddot_3D2Osym_3D4O3sym
-    ! end interface
 
     public :: operator(.tdot.)
     public :: operator(.tdotsym.)
@@ -189,88 +185,5 @@ module tensors_types
 
     public :: assignment (=)
     public :: write(formatted)
-
-
-    ! interface ! iden_4O4T
-    !     module pure function sum_I4O4T_3D4O3sym(I4, a) result(res)
-    !         implicit none
-    !         class(iden_4O4T), intent(in) :: I4
-    !         type(ten_3D4O3sym), intent(in) :: a
-    !         type(ten_3D4O3sym) :: res
-    !     end function sum_I4O4T_3D4O3sym
-
-    !     module pure function sum_3D4O3sym_I4O4T(a, I4) result(res)
-    !         implicit none
-    !         class(iden_4O4T), intent(in) :: I4
-    !         type(ten_3D4O3sym), intent(in) :: a
-    !         type(ten_3D4O3sym) :: res
-    !     end function sum_3D4O3sym_I4O4T
-
-    !     module pure function sub_I4O4T_3D4O3sym(I4, a) result(res)
-    !         implicit none
-    !         class(iden_4O4T), intent(in) :: I4
-    !         type(ten_3D4O3sym), intent(in) :: a
-    !         type(ten_3D4O3sym) :: res
-    !     end function sub_I4O4T_3D4O3sym
-
-    !     module pure function sub_3D4O3sym_I4O4T(a, I4) result(res)
-    !         implicit none
-    !         class(iden_4O4T), intent(in) :: I4
-    !         type(ten_3D4O3sym), intent(in) :: a
-    !         type(ten_3D4O3sym) :: res
-    !     end function sub_3D4O3sym_I4O4T
-
-    !     module pure function mul_I4O4T_real64(I4, a) result(res)
-    !         implicit none
-    !         class(iden_4O4T), intent(in) :: I4
-    !         real(real64), intent(in) :: a
-    !         type(ten_3D4O3sym) :: res
-    !     end function mul_I4O4T_real64
-
-    !     module pure function mul_real64_I4O4T(a, I4) result(res)
-    !         implicit none
-    !         class(iden_4O4T), intent(in) :: I4
-    !         real(real64), intent(in) :: a
-    !         type(ten_3D4O3sym) :: res
-    !     end function mul_real64_I4O4T
-
-    !     module pure function div_I4O4T_real64(I4, a) result(res)
-    !         implicit none
-    !         class(iden_4O4T), intent(in) :: I4
-    !         real(real64), intent(in) :: a
-    !         type(ten_3D4O3sym) :: res
-    !     end function div_I4O4T_real64
-    ! end interface
-
-    ! interface  !O4 3D 3Sym
-
-    !     module pure function ddot_3D4O3sym_3D2Osym(a, b) result(res)
-    !         !
-    !         !  | ( 1:1111) ( 7:1122) (12:1133) (16:1112) (19:1123) (21:1113) |
-    !         !  | ( 7:2211) ( 2:2222) ( 8:2233) (13:2212) (17:2223) (20:2213) |
-    !         !  | (12:3311) ( 8:3322) ( 3:3333) ( 9:3312) (14:3323) (18:3313) |
-    !         !  | (16:1211) (13:1222) ( 9:1233) ( 4:1212) (10:1223) (15:1213) |
-    !         !  | (19:2311) (17:2322) (14:2333) (10:2312) ( 5:2323) (11:2313) |
-    !         !  | (21:1311) (20:1322) (18:1333) (15:1312) (11:1323) ( 6:1313) |
-    !         implicit none
-    !         class(ten_3D4O3sym), intent(in) :: a
-    !         class(ten_3D2Osym), intent(in) :: b
-    !         type(ten_3D2Osym) :: res
-    !     end function ddot_3D4O3sym_3D2Osym
-
-    !     module pure function ddot_3D2Osym_3D4O3sym(b, a) result(res)
-    !         !
-    !         !  | ( 1:1111) ( 7:1122) (12:1133) (16:1112) (19:1123) (21:1113) |
-    !         !  | ( 7:2211) ( 2:2222) ( 8:2233) (13:2212) (17:2223) (20:2213) |
-    !         !  | (12:3311) ( 8:3322) ( 3:3333) ( 9:3312) (14:3323) (18:3313) |
-    !         !  | (16:1211) (13:1222) ( 9:1233) ( 4:1212) (10:1223) (15:1213) |
-    !         !  | (19:2311) (17:2322) (14:2333) (10:2312) ( 5:2323) (11:2313) |
-    !         !  | (21:1311) (20:1322) (18:1333) (15:1312) (11:1323) ( 6:1313) |
-    !         implicit none
-    !         class(ten_3D4O3sym), intent(in) :: a
-    !         class(ten_3D2Osym), intent(in) :: b
-    !         type(ten_3D2Osym) :: res            
-    !     end function ddot_3D2Osym_3D4O3sym
-    ! end interface
 
 end module tensors_types
