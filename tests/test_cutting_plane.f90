@@ -15,7 +15,7 @@ subroutine test_cutting_plane_vonmises(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
-    use mod_elasticity_linear, only : Elasticity_linear
+    use muscle_elasticity_linear, only : Elasticity_linear
     use mod_cutting_plane, only : cutting_plane
     implicit none
 

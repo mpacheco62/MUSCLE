@@ -3,7 +3,7 @@ module mod_cutting_plane
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_hardening_laws, only : Base_hardening_laws
     use mod_yield_criteria, only : Base_yield_critera
-    use mod_base_elasticity, only : Base_elasticity
+    use muscle_elasticity_base, only : Base_elasticity
     contains
         subroutine cutting_plane(strain, elasticity, hardening, yield, strain_pf, strain_p, error, stress)
             implicit none

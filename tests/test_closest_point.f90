@@ -19,7 +19,7 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
-    use mod_elasticity_linear, only : Elasticity_linear
+    use muscle_elasticity_linear, only : Elasticity_linear
     ! use mod_closest_point, only : closest_point2
     use mod_closest_point
     implicit none
@@ -115,7 +115,7 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
-    use mod_elasticity_linear, only : Elasticity_linear
+    use muscle_elasticity_linear, only : Elasticity_linear
     use mod_closest_point, only : Closest_point, Closest_point_data
     implicit none
 
@@ -201,7 +201,7 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
-    use mod_elasticity_linear, only : Elasticity_linear
+    use muscle_elasticity_linear, only : Elasticity_linear
     use mod_closest_point, only : Closest_point, Closest_point_data
     implicit none
 

@@ -5,7 +5,7 @@ module mod_closest_point_2
     use mod_hardening_laws, only : Base_hardening_laws
 
     use mod_yield_criteria, only : Base_yield_critera
-    use mod_base_elasticity, only : Base_elasticity
+    use muscle_elasticity_base, only : Base_elasticity
 
     private
 

@@ -487,7 +487,7 @@ subroutine test_derivate2O_scalar_ten(passed)
     use muscle_math_derivatives
     use muscle_tensors
     use test_muscle_math_derivatives_mod
-    use mod_elasticity_linear
+    use muscle_elasticity_linear
     implicit none
     
     logical, intent(out) :: passed

@@ -1,12 +1,12 @@
-module mod_elasticity_linear
-    !! Module mod_elasticity_linear
+module muscle_elasticity_linear
+    !! Module muscle_elasticity_linear
     !! ============================
     !!
     !! Defines a concrete implementation for linear isotropic elasticity.
     !!
     !! This module provides the `Elasticity_linear` derived type, which represents a
     !! standard linear isotropic elastic material model. It extends the abstract
-    !! `Base_elasticity` type defined in [[mod_base_elasticity]].
+    !! `Base_elasticity` type defined in [[muscle_elasticity_base]].
     !!
     !! The model calculates stress based on Hooke's law for isotropic materials using
     !! Young's modulus (E) and Poisson's ratio (nu). It also provides the constant
@@ -66,7 +66,7 @@ module mod_elasticity_linear
     !!
     !! ```fortran
     !! program example_linear_elasticity_usage
-    !!   use mod_elasticity_linear
+    !!   use muscle_elasticity_linear
     !!   use muscle_tensors
     !!   use iso_fortran_env, only: real64
     !!   implicit none
@@ -92,12 +92,12 @@ module mod_elasticity_linear
     !! end program example_linear_elasticity_usage
     !! ```
     !!
-    !! For the base class definition see [[mod_base_elasticity]].
+    !! For the base class definition see [[muscle_elasticity_base]].
     !! For tensor type definitions see [[muscle_tensors]].
 
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
-    use mod_base_elasticity
+    use muscle_elasticity_base
     implicit none
     PRIVATE
 

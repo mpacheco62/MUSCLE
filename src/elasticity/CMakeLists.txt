@@ -1,4 +1,4 @@
 target_sources(umatlib PRIVATE
-                 basis_elasticity.f90
-                 elasticity_linear.f90
+                 muscle_elasticity_base.f90
+                 muscle_elasticity_linear.f90
                  )

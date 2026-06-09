@@ -23,7 +23,7 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
     use mod_JC_viscoplastic, only : JC_viscoplastic
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
-    use mod_elasticity_linear, only : Elasticity_linear
+    use muscle_elasticity_linear, only : Elasticity_linear
     ! use mod_closest_point, only : closest_point2
     use mod_closest_point_time
     implicit none
@@ -200,7 +200,7 @@ subroutine test_closest_point_time_non_converged(passed)
     use mod_JC_viscoplastic, only : JC_viscoplastic
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
-    use mod_elasticity_linear, only : Elasticity_linear
+    use muscle_elasticity_linear, only : Elasticity_linear
     ! use mod_closest_point, only : closest_point2
     use mod_closest_point_time
     implicit none
@@ -250,7 +250,7 @@ end subroutine
 !     use, intrinsic :: iso_fortran_env, only : real64
 !     use mod_swift_hardening, only : Swift_hardening
 !     use mod_vonMises, only : VonMises
-!     use mod_elasticity_linear, only : Elasticity_linear
+!     use muscle_elasticity_linear, only : Elasticity_linear
 !     use mod_closest_point, only : Closest_point, Closest_point_data
 !     implicit none
 
@@ -336,7 +336,7 @@ end subroutine
 !     use, intrinsic :: iso_fortran_env, only : real64
 !     use mod_swift_hardening, only : Swift_hardening
 !     use mod_vonMises, only : VonMises
-!     use mod_elasticity_linear, only : Elasticity_linear
+!     use muscle_elasticity_linear, only : Elasticity_linear
 !     use mod_closest_point, only : Closest_point, Closest_point_data
 !     implicit none
 

@@ -1,5 +1,5 @@
-module mod_base_elasticity
-    !! Module mod_base_elasticity
+module muscle_elasticity_base
+    !! Module muscle_elasticity_base
     !! ==========================
     !!
     !! Defines the abstract base types for elasticity models, including support for
@@ -132,7 +132,7 @@ module mod_base_elasticity
     !!
     !! ```fortran
     !! module mod_isotropic_elasticity
-    !!   use mod_base_elasticity
+    !!   use muscle_elasticity_base
     !!   use muscle_tensors
     !!   use iso_fortran_env, only: real64
     !!   implicit none
@@ -155,7 +155,7 @@ module mod_base_elasticity
     !!
     !! ```fortran
     !! module mod_generalized_maxwell
-    !!   use mod_base_elasticity
+    !!   use muscle_elasticity_base
     !!   use muscle_tensors
     !!   use iso_fortran_env, only: real64
     !!   implicit none
