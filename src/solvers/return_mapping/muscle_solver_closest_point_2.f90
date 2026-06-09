@@ -1,3 +1,6 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco@usach.cl>
+
 module muscle_solver_closest_point_2
 	use muscle_math_linsolvers ! con mkl
     use muscle_tensors

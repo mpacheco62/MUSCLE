@@ -1,3 +1,6 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco@usach.cl>
+
 module muscle_tensor_ops_assignment
     !! This module defines the overloaded assignment operator `=` for mixed-type conversions
     !! and safe casting between different second-order, fourth-order, and identity tensors.

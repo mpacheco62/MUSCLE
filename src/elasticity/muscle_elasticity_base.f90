@@ -1,3 +1,6 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco@usach.cl>
+
 module muscle_elasticity_base
     !! Module muscle_elasticity_base
     !! ==========================

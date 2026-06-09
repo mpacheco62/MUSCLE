@@ -1,3 +1,6 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco@usach.cl>
+
 module muscle_solver_closest_point_time
     use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64

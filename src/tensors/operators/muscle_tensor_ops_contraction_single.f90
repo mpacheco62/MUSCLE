@@ -1,3 +1,6 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco@usach.cl>
+
 module muscle_tensor_ops_contraction_single
     !! This module defines the overloaded single contraction (or matrix multiplication) operator `*`
     !! for mixed second-order and identity tensors.
