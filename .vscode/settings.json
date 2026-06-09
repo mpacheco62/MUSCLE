@@ -3,5 +3,6 @@
     // "cmake.ctest.testSuiteDelimiter": "_",
     "fortran.linter.includePaths": [
         "${workspaceFolder}/build/modules/**"
-    ]
+    ],
+    "cmake.ctest.testSuiteDelimiter": "-"
 }

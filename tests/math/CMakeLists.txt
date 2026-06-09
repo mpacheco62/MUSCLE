@@ -1,0 +1,3 @@
+add_umat_test(basic_operations test_basic_operations.f90)
+add_umat_test(derivatives test_derivatives.f90)
+add_umat_test(spectral_derivatives test_spectral_derivatives.f90)
