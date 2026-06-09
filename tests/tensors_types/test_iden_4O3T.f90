@@ -1,5 +1,5 @@
 program test_iden_4O3T
-    use mod_iden_4O3T
+    use muscle_tensor_iden_4o3t
     implicit none
     logical :: passed
 
@@ -20,8 +20,8 @@ end program test_iden_4O3T
 ! ==========================================
 subroutine test_iden_4O3T_mul(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_iden_4O3T
-    use mod_iden_4O3TS
+    use muscle_tensor_iden_4o3t
+    use muscle_tensor_iden_4o3ts
     implicit none
     logical, intent(out) :: passed
     
@@ -70,8 +70,8 @@ end subroutine test_iden_4O3T_mul
 ! ==========================================
 subroutine test_iden_4O3T_div(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_iden_4O3T
-    use mod_iden_4O3TS
+    use muscle_tensor_iden_4o3t
+    use muscle_tensor_iden_4o3ts
     implicit none
     logical, intent(out) :: passed
     

@@ -27,7 +27,7 @@ end program test_elasticity_linear
 
 subroutine test_tensile_nu0_3D(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use mod_elasticity_linear
     implicit none
     
@@ -104,7 +104,7 @@ end subroutine
 
 subroutine test_tensile_nu0_2D(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use mod_elasticity_linear
     implicit none
     
@@ -162,7 +162,7 @@ end subroutine
 
 subroutine test_tensile_3D(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use mod_elasticity_linear
     implicit none
     
@@ -225,7 +225,7 @@ end subroutine
 
 subroutine test_tensile_2D(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use mod_elasticity_linear
     implicit none
     
@@ -268,7 +268,7 @@ end subroutine
 
 subroutine test_dsigma_dstrain_3D(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use mod_elasticity_linear
     implicit none
     
@@ -311,7 +311,7 @@ end subroutine
 
 subroutine test_dsigma_dstrain_2D(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use mod_elasticity_linear
     implicit none
     

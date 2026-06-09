@@ -1,5 +1,5 @@
-module mod_iden_4O3T
-    !! Module mod_iden_4O3T
+module muscle_tensor_iden_4o3t
+    !! Module muscle_tensor_iden_4o3t
     !! ======================
     !!
     !! Defines the standard (non-scaled) 3D fourth-order identity tensor \(\delta_{ij}\delta_{kl}\).
@@ -13,7 +13,7 @@ module mod_iden_4O3T
     !! is symbolic. It does not store any numerical data and implicitly represents the
     !! \(\delta_{ij}\delta_{kl}\) structure with a scaling factor of 1.0. Operations involving
     !! this type and scalars (multiplication or division) typically yield an instance of the
-    !! corresponding scaled identity tensor type, `iden_4O3TS` (defined in `mod_iden_4O3TS`),
+    !! corresponding scaled identity tensor type, `iden_4O3TS` (defined in `muscle_tensor_iden_4o3ts`),
     !! which explicitly stores the resulting scaling factor.
     !!
     !! Public Entities
@@ -39,8 +39,8 @@ module mod_iden_4O3T
     !!
     !! ```fortran
     !! program example_iden_4O3T_usage
-    !!   use mod_iden_4O3T
-    !!   use mod_iden_4O3TS
+    !!   use muscle_tensor_iden_4o3t
+    !!   use muscle_tensor_iden_4o3ts
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -58,9 +58,9 @@ module mod_iden_4O3T
     !! end program example_iden_4O3T_usage
     !! ```
     !!
-    !! For more information see [[tensors_types]]
+    !! For more information see [[muscle_tensors]]
     use, intrinsic :: iso_fortran_env
-    use mod_iden_4O3TS
+    use muscle_tensor_iden_4o3ts
     implicit none
     private
 
@@ -80,7 +80,7 @@ module mod_iden_4O3T
         !! (like scalar multiplication/division) that typically result
         !! in a scaled identity tensor of type 3 (`iden_4O3TS`), which explicitly stores a scaling factor.
         !!
-        !! For more information see [[tensors_types]]
+        !! For more information see [[muscle_tensors]]
     end type iden_4O3T
 
 
@@ -121,4 +121,4 @@ contains
         res%val = 1D0/a
     end function div_I4O3T_real64
 
-end module mod_iden_4O3T
+end module muscle_tensor_iden_4o3t

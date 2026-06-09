@@ -1,8 +1,8 @@
-module mod_iden_2OS
+module muscle_tensor_iden_2os
     !! author: MPacheco
     !! version: 1.0 - Initial documentation
     !!
-    !! Module mod_iden_2OS
+    !! Module muscle_tensor_iden_2os
     !! ======================
     !!
     !! This module defines the scaled 3D second-order identity \(c \cdot \delta_{ij}\).
@@ -10,7 +10,7 @@ module mod_iden_2OS
     !! Denoted mathematically as \(c \delta_{ij}\), where \(c\) is a scalar value and
     !! \(\delta_{ij}\) is the Kronecker delta.
     !!
-    !! Unlike its non-scaled counterpart `iden_2O` (defined in `mod_iden_2O`),
+    !! Unlike its non-scaled counterpart `iden_2O` (defined in `muscle_tensor_iden_2o`),
     !! the `iden_2OS` type explicitly stores the scaling factor \(c\) in its `val` component.
     !! This module provides the derived type definition and overloaded operators for
     !! arithmetic operations involving these scaled identity tensors and scalars.
@@ -46,7 +46,7 @@ module mod_iden_2OS
     !!
     !! ```fortran
     !! program example_iden_2Os_usage
-    !!   use mod_iden_2OS
+    !!   use muscle_tensor_iden_2os
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -76,7 +76,7 @@ module mod_iden_2OS
     !! end program example_iden_2Os_usage
     !! ```
     !!
-    !! for more information see [[tensors_types]]
+    !! for more information see [[muscle_tensors]]
     
     use, intrinsic :: iso_fortran_env
     implicit none
@@ -93,7 +93,7 @@ module mod_iden_2OS
         !! The scaling factor \(c\) is stored explicitly in the `val` component.
         !! This contrasts with the symbolic, non-scaled `iden_2O` type.
         !!
-        !! for more information see [[tensors_types]]
+        !! for more information see [[muscle_tensors]]
         real(real64) :: val
             !! The scaling factor \(c\) for the identity tensor \(c \delta_{ij}\).
         contains
@@ -253,4 +253,4 @@ module mod_iden_2OS
         end if
     end subroutine print_ten_I2OS
 
-end module mod_iden_2OS
+end module muscle_tensor_iden_2os

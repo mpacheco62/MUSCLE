@@ -1,6 +1,6 @@
 module mod_closest_point_2
 	use muscle_math_linsolvers ! con mkl
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_hardening_laws, only : Base_hardening_laws
 

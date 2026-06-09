@@ -11,7 +11,7 @@ program test_cutting_plane
 end program test_cutting_plane
 
 subroutine test_cutting_plane_vonmises(passed)
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises

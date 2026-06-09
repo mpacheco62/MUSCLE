@@ -16,7 +16,7 @@ module muscle_math_spectral_derivs
     !!
     !! See the technical documentation for further algebraic details.
     use, intrinsic :: iso_fortran_env, only : real64
-    use tensors_types
+    use muscle_tensors
     implicit none
     private
 

@@ -25,7 +25,7 @@ end program test_muscle_math_operations
 subroutine test_eigenvalues(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_math_operations
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed

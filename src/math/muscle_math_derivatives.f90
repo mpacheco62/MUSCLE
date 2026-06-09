@@ -22,7 +22,7 @@ module muscle_math_derivatives
         end function f_scalar_scalar
         
         pure function f_scalar_3D2O(x)
-            use tensors_types, only : ten_3D2O
+            use muscle_tensors, only : ten_3D2O
             use, intrinsic :: iso_fortran_env
             implicit none
             type(ten_3D2O), intent(in) :: x
@@ -30,7 +30,7 @@ module muscle_math_derivatives
         end function f_scalar_3D2O
 
         pure function f_scalar_3D2Osym(x)
-            use tensors_types, only : ten_3D2Osym
+            use muscle_tensors, only : ten_3D2Osym
             use, intrinsic :: iso_fortran_env
             implicit none
             type(ten_3D2Osym), intent(in) :: x
@@ -38,7 +38,7 @@ module muscle_math_derivatives
         end function f_scalar_3D2Osym
 
         pure function f_3D2Osym_3D2Osym(x)
-            use tensors_types, only : ten_3D2Osym
+            use muscle_tensors, only : ten_3D2Osym
             use, intrinsic :: iso_fortran_env
             implicit none
             type(ten_3D2Osym), intent(in) :: x
@@ -78,7 +78,7 @@ module muscle_math_derivatives
     end function derivative_scalar_scalar
 
     pure function derivative_scalar_3D2O(func, mat, eps)
-        use tensors_types, only : ten_3D2O
+        use muscle_tensors, only : ten_3D2O
         use, intrinsic :: iso_fortran_env
         implicit none
 
@@ -113,7 +113,7 @@ module muscle_math_derivatives
     end function derivative_scalar_3D2O
 
     pure function derivative_scalar_3D2Osym(func, mat, eps)
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         use, intrinsic :: iso_fortran_env
         implicit none
 
@@ -171,7 +171,7 @@ module muscle_math_derivatives
 
 
     pure function derivative2O_scalar_3D2Osym(func, mat, eps) result(res)
-        use tensors_types, only : ten_3D2Osym, ten_3D4O3sym,ten_3D4O2sym
+        use muscle_tensors, only : ten_3D2Osym, ten_3D4O3sym,ten_3D4O2sym
         use, intrinsic :: iso_fortran_env
         implicit none
 
@@ -321,7 +321,7 @@ module muscle_math_derivatives
     
 
     pure function derivative_3D2Osym_3D2Osym(func, mat, eps)
-        use tensors_types, only : ten_3D2Osym, ten_3D4O2sym, &
+        use muscle_tensors, only : ten_3D2Osym, ten_3D4O2sym, &
                                   operator(+), operator(-), operator(*), operator(/), assignment(=)
         use, intrinsic :: iso_fortran_env
         implicit none

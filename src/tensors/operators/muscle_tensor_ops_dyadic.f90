@@ -1,4 +1,4 @@
-module mod_ops_dyadic
+module muscle_tensor_ops_dyadic
     !! This module defines the overloaded dyadic (outer) product operators `.tdot.`
     !! and `.tdotsym.` for mixed second-order symmetric and identity tensors.
     !!
@@ -14,12 +14,12 @@ module mod_ops_dyadic
     use, intrinsic :: iso_fortran_env, only : real64
     
     ! Import necessary types
-    use mod_iden_2O
-    use mod_ten_2D2Osym
-    use mod_ten_2D4O3sym
-    use mod_ten_3D2Osym
-    use mod_ten_3D4O2sym
-    use mod_ten_3D4O3sym
+    use muscle_tensor_iden_2o
+    use muscle_tensor_2d2osym
+    use muscle_tensor_2d4o3sym
+    use muscle_tensor_3d2osym
+    use muscle_tensor_3d4o2sym
+    use muscle_tensor_3d4o3sym
 
     implicit none
     private
@@ -125,7 +125,7 @@ contains
     pure function tdot_3D2Osym_I2O(a, I2) result(res)
         !! Computes the dyadic product \(\mathbb{C} = \mathbf{a} \otimes \mathbf{I}\).
         !! In 6x6 Voigt notation, this fills the first three columns with the vector \(\mathbf{a}\).
-        use mod_ten_3D4O2sym
+        use muscle_tensor_3d4o2sym
         implicit none
         type(iden_2O), intent(in) :: I2
         type(ten_3D2Osym), intent(in) :: a
@@ -139,7 +139,7 @@ contains
     pure function tdot_I2O_3D2Osym(I2, a) result(res)
         !! Computes the dyadic product \(\mathbb{C} = \mathbf{I} \otimes \mathbf{a}\).
         !! In 6x6 Voigt notation, this fills the first three rows with the vector \(\mathbf{a}\).
-        use mod_ten_3D4O2sym
+        use muscle_tensor_3d4o2sym
         implicit none
         type(iden_2O), intent(in) :: I2
         type(ten_3D2Osym), intent(in) :: a
@@ -294,4 +294,4 @@ contains
         res = tdotsym_3D2Osym_I2O(a, I2)
     end function tdotsym_I2O_3D2Osym
 
-end module mod_ops_dyadic
+end module muscle_tensor_ops_dyadic

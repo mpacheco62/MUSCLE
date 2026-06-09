@@ -1,5 +1,5 @@
 program test_I2O
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical :: passed
 
@@ -24,7 +24,7 @@ end program test_I2O
 
 subroutine test_iden_2O_sum(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     type(iden_2O)  :: to_test1, to_test2
@@ -74,7 +74,7 @@ end subroutine
 
 subroutine test_iden_2O_sub(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     type(iden_2O)  :: to_test1, to_test2
@@ -134,7 +134,7 @@ end subroutine
 
 subroutine test_iden_2O_mul(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     type(iden_2O)  :: to_test1, result_I2O
@@ -173,7 +173,7 @@ end subroutine
 
 subroutine test_iden_2O_div(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     type(iden_2O)  :: to_test1

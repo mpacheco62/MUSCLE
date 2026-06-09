@@ -7,7 +7,7 @@ contains
 
     pure function first_eigval(x) result(res)
         use, intrinsic :: iso_fortran_env
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         use muscle_math_operations, only : eigenvals
         implicit none
         type(ten_3D2Osym), intent(in) :: x
@@ -19,7 +19,7 @@ contains
 
     pure function second_eigval(x) result(res)
         use, intrinsic :: iso_fortran_env
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         use muscle_math_operations, only : eigenvals
         implicit none
         type(ten_3D2Osym), intent(in) :: x
@@ -32,7 +32,7 @@ contains
 
     pure function third_eigval(x) result(res)
         use, intrinsic :: iso_fortran_env
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         use muscle_math_operations, only : eigenvals
         implicit none
         type(ten_3D2Osym), intent(in) :: x
@@ -63,7 +63,7 @@ end program test_derivatives
 subroutine test_first_derivative(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_math_derivatives
-    use tensors_types
+    use muscle_tensors
     use test_muscle_math_spectral_derivs_mod
     use muscle_math_operations, only : eigenvals
     use muscle_math_spectral_derivs, only : dEigenvalues_dTensor
@@ -669,7 +669,7 @@ end subroutine
 subroutine test_second_derivative(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_math_derivatives
-    use tensors_types
+    use muscle_tensors
     use test_muscle_math_spectral_derivs_mod
     use muscle_math_operations, only : eigenvals
     use muscle_math_spectral_derivs, only : dEigenvalues_dTensor, d2Eigenvalues_dTensor2

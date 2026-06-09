@@ -1,6 +1,6 @@
 program test_operator_3d2osym_3d4o3sym
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical :: passed
 
@@ -20,7 +20,7 @@ end program test_operator_3d2osym_3d4o3sym
 subroutine test_tdotsym_unary(passed)
     !! Tests the .tdotsym. operator in its "unary-like" form: a .tdotsym. a
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     
@@ -80,7 +80,7 @@ end subroutine test_tdotsym_unary
 subroutine test_tdotsym_binary(passed)
     !! Tests the .tdotsym. operator in its binary form: a .tdotsym. b
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     

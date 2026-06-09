@@ -46,7 +46,7 @@ Where \(f\) represents the yield function and \(\gamma\) the plastic multiplier.
 
 The project is organized into several functional layers:
 
-### 1. Tensor Types (`tensors_types`)
+### 1. Tensor Types (`muscle_tensors`)
 The foundation of the library. It defines symmetric and general tensors.
 - `ten_3D2Osym`: 2nd order symmetric tensor (6 components).
 - `ten_3D4O3sym`: 4th order fully symmetric tensor (21 components).

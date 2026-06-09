@@ -129,12 +129,12 @@ module muscle_math_operations
       end function derivative_escalar_tensor3x3
 
       pure function derivative_escalar_tensor3x3sym(func, mat)
-        use tensors_types
+        use muscle_tensors
         implicit none
         interface
           pure function f_scalar_3x3(x)
             use, intrinsic :: iso_fortran_env
-            use tensors_types
+            use muscle_tensors
             implicit none
             type(ten_3D2Osym), intent(in) :: x
             real(real64) :: f_scalar_3x3
@@ -222,7 +222,7 @@ module muscle_math_operations
 
       pure function eigenvals_3x3sym(mat)
         ! based on https://doi.org/10.1002/nme.7153
-        use tensors_types
+        use muscle_tensors
         implicit none
         type(ten_3D2Osym), intent(in) :: mat
         real(real64) :: eigenvals_3x3sym(3)

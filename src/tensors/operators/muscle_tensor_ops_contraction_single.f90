@@ -1,4 +1,4 @@
-module mod_ops_contraction_single
+module muscle_tensor_ops_contraction_single
     !! This module defines the overloaded single contraction (or matrix multiplication) operator `*`
     !! for mixed second-order and identity tensors.
     !!
@@ -12,11 +12,11 @@ module mod_ops_contraction_single
     use, intrinsic :: iso_fortran_env, only : real64
     
     ! Import necessary types
-    use mod_iden_2O
-    use mod_iden_2OS
-    use mod_ten_2D2Osym
-    use mod_ten_3D2O
-    use mod_ten_3D2Osym
+    use muscle_tensor_iden_2o
+    use muscle_tensor_iden_2os
+    use muscle_tensor_2d2osym
+    use muscle_tensor_3d2o
+    use muscle_tensor_3d2osym
 
     implicit none
     private
@@ -228,4 +228,4 @@ contains
         type(ten_3D2O) :: res
         res%vals = I2%val * a%vals
     end function mul_3D2O_I2OS
-end module mod_ops_contraction_single
+end module muscle_tensor_ops_contraction_single

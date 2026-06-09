@@ -1,13 +1,13 @@
 module tests_I2OS
     use iso_fortran_env
     use iso_c_binding
-    use tensors_types
+    use muscle_tensors
     implicit none
     contains
 
 integer function test_iden_2OS_sum() result(notPassed) bind(C)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     type(iden_2OS) :: to_test1, to_test2
     type(iden_2OS) :: temp
@@ -42,7 +42,7 @@ end function
 
 ! subroutine test_iden_2OS_sub(passed)
 !     use, intrinsic :: iso_fortran_env
-!     use tensors_types
+!     use muscle_tensors
 !     implicit none
 !     logical, intent(out) :: passed
 !     type(iden_2OS) :: to_test1, to_test2
@@ -76,7 +76,7 @@ end function
 
 ! subroutine test_iden_2OS_mul(passed)
 !     use, intrinsic :: iso_fortran_env
-!     use tensors_types
+!     use muscle_tensors
 !     implicit none
 !     logical, intent(out) :: passed
 !     type(iden_2OS) :: to_test1
@@ -113,7 +113,7 @@ end function
 
 ! subroutine test_iden_2OS_div(passed)
 !     use, intrinsic :: iso_fortran_env
-!     use tensors_types
+!     use muscle_tensors
 !     implicit none
 !     logical, intent(out) :: passed
 !     type(iden_2OS) :: to_test1

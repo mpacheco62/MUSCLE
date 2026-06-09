@@ -1,8 +1,8 @@
-module mod_iden_2O
+module muscle_tensor_iden_2o
     !! author: MPacheco
     !! version: 1.0 - Initial documentation
     !!
-    !! Module mod_iden_2O
+    !! Module muscle_tensor_iden_2o
     !! =====================
     !!
     !! This module defines the standard (non-scaled) 3D second-order identity \(\delta_{ij}\).
@@ -11,7 +11,7 @@ module mod_iden_2O
     !! denoted mathematically as \(\delta_{ij}\). It represents the identity matrix.
     !! The module also provides overloaded operators for arithmetic operations involving
     !! this identity tensor, often interacting with its scaled counterpart (`iden_2OS`)
-    !! defined in `mod_iden_2OS`.
+    !! defined in `muscle_tensor_iden_2os`.
     !!
     !! The `iden_2O` type itself does not store any numerical value; it acts as a
     !! symbolic representation of the identity tensor where the implicit scaling factor is 1.0.
@@ -53,8 +53,8 @@ module mod_iden_2O
     !!
     !! ```fortran
     !! program example_iden_2O_usage
-    !!   use mod_iden_2O
-    !!   use mod_iden_2OS
+    !!   use muscle_tensor_iden_2o
+    !!   use muscle_tensor_iden_2os
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -76,9 +76,9 @@ module mod_iden_2O
     !!
     !! end program example_iden_2O_usage
     !! ```
-    !! For more information see [[tensors_types]]
+    !! For more information see [[muscle_tensors]]
     use, intrinsic :: iso_fortran_env
-    use mod_iden_2OS
+    use muscle_tensor_iden_2os
     implicit none
     private
 
@@ -95,7 +95,7 @@ module mod_iden_2O
         !! in a scaled identity tensor (`iden_2OS`), which explicitly stores a scaling factor.
         !! Multiplying two `iden_2O` types results in another `iden_2O` type (\(I \cdot I = I\)).
         !! 
-        !! For more information see [[tensors_types]]
+        !! For more information see [[muscle_tensors]]
     end type iden_2O
 
 
@@ -269,4 +269,4 @@ contains
             iomsg = "Error in print_ten_3D2Osym: Failed to write to the specified unit."
         end if
     end subroutine print_ten_I2O
-end module mod_iden_2O
+end module muscle_tensor_iden_2o

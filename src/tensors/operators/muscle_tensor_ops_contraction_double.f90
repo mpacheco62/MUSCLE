@@ -1,4 +1,4 @@
-module mod_ops_contraction_double
+module muscle_tensor_ops_contraction_double
     !! This module defines the overloaded double contraction operator `.ddot.` (tensor inner product)
     !! for mixed-type interactions in the 3D and 2D tensor engine.
     !!
@@ -13,16 +13,16 @@ module mod_ops_contraction_double
     use, intrinsic :: iso_fortran_env, only : real64
     
     ! Import necessary types
-    use mod_iden_2O
-    use mod_iden_2OS
-    use mod_iden_4O4T
-    use mod_iden_4O4TS
-    use mod_ten_2D2Osym
-    use mod_ten_2D4O3sym
-    use mod_ten_3D2O
-    use mod_ten_3D2Osym
-    use mod_ten_3D4O2sym
-    use mod_ten_3D4O3sym
+    use muscle_tensor_iden_2o
+    use muscle_tensor_iden_2os
+    use muscle_tensor_iden_4o4t
+    use muscle_tensor_iden_4o4ts
+    use muscle_tensor_2d2osym
+    use muscle_tensor_2d4o3sym
+    use muscle_tensor_3d2o
+    use muscle_tensor_3d2osym
+    use muscle_tensor_3d4o2sym
+    use muscle_tensor_3d4o3sym
 
     implicit none
     private
@@ -752,4 +752,4 @@ contains
 
     end function ddot_3D4O3sym_3D4O3sym
 
-end module mod_ops_contraction_double
+end module muscle_tensor_ops_contraction_double

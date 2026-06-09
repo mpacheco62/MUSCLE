@@ -1,4 +1,4 @@
-module mod_ops_assignment
+module muscle_tensor_ops_assignment
     !! This module defines the overloaded assignment operator `=` for mixed-type conversions
     !! and safe casting between different second-order, fourth-order, and identity tensors.
     !!
@@ -10,15 +10,15 @@ module mod_ops_assignment
     use, intrinsic :: iso_fortran_env, only : real64
     
     ! Import necessary types
-    use mod_iden_2O
-    use mod_iden_2OS
-    use mod_iden_4O3TS
-    use mod_iden_4O4T
-    use mod_iden_4O4TS
-    use mod_ten_3D2O
-    use mod_ten_3D2Osym
-    use mod_ten_3D4O2sym
-    use mod_ten_3D4O3sym
+    use muscle_tensor_iden_2o
+    use muscle_tensor_iden_2os
+    use muscle_tensor_iden_4o3ts
+    use muscle_tensor_iden_4o4t
+    use muscle_tensor_iden_4o4ts
+    use muscle_tensor_3d2o
+    use muscle_tensor_3d2osym
+    use muscle_tensor_3d4o2sym
+    use muscle_tensor_3d4o3sym
 
     implicit none
     private
@@ -199,4 +199,4 @@ contains
         a%vals(4:6) = half_c
     end subroutine assign_3D4O3sym_I4O4TS
 
-end module mod_ops_assignment
+end module muscle_tensor_ops_assignment

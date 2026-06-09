@@ -1,5 +1,5 @@
-module mod_iden_4O4TS
-    !! Module mod_iden_4O4TS
+module muscle_tensor_iden_4o4ts
+    !! Module muscle_tensor_iden_4o4ts
     !! ======================
     !!
     !! Defines the scaled 3D fourth-order symmetric identity tensor \(c \cdot \frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})\).
@@ -38,7 +38,7 @@ module mod_iden_4O4TS
     !!
     !! ```fortran
     !! program example_iden_4O4Ts_usage
-    !!   use mod_iden_4O4TS
+    !!   use muscle_tensor_iden_4o4ts
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -58,7 +58,7 @@ module mod_iden_4O4TS
     !! end program example_iden_4O4Ts_usage
     !! ```
     !!
-    !! For more information see [[tensors_types]]
+    !! For more information see [[muscle_tensors]]
     use, intrinsic :: iso_fortran_env
     implicit none
     private
@@ -76,7 +76,7 @@ module mod_iden_4O4TS
         !! The scaling factor \(c\) is stored explicitly in the `val` component.
         !! This contrasts with the symbolic, non-scaled `iden_4O4T` type.
         !!
-        !! For more information see [[tensors_types]]
+        !! For more information see [[muscle_tensors]]
         real(real64) :: val
             !! The scaling factor \(c\) for the symmetric identity tensor \(c \cdot \mathbf{I}^{sym}\).
     end type iden_4O4TS
@@ -118,4 +118,4 @@ module mod_iden_4O4TS
         res%val = IMod%val/a 
     end function div_I4O4TS_real64
 
-end module mod_iden_4O4TS
+end module muscle_tensor_iden_4o4ts

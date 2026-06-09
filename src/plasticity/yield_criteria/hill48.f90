@@ -15,7 +15,7 @@ module mod_hill48
 
     contains
     pure function stress_eq(self, stress) result(res)
-        use tensors_types
+        use muscle_tensors
         implicit None
         class(Hill48), intent(in) :: self
         class(ten_3D2Osym), intent(in) :: stress
@@ -35,7 +35,7 @@ module mod_hill48
 
   !   pure function dstressEq_dstress_vm(self, stress) result(res)
   !     ! use muscle_math_operations
-  !     use tensors_types
+  !     use muscle_tensors
   !     implicit None
   !     class(VonMises), intent(in) :: self
   !     class(ten_3D2Osym), intent(in) :: stress
@@ -55,7 +55,7 @@ module mod_hill48
   !   end function dstressEq_dstress_vm
 
   !   pure function ddstressEq_ddstress_vm(self, stress) result(res)
-  !     use tensors_types
+  !     use muscle_tensors
   !     implicit None
   !     class(VonMises), intent(in) :: self
   !     class(ten_3D2Osym), intent(in) :: stress

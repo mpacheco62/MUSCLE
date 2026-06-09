@@ -1,5 +1,5 @@
-module mod_ten_3D4O3sym
-    !! Module mod_ten_3D4O3sym
+module muscle_tensor_3d4o3sym
+    !! Module muscle_tensor_3d4o3sym
     !! =======================
     !!
     !! Defines the type for fully symmetric 3D fourth-order tensors and associated operations.
@@ -41,7 +41,7 @@ module mod_ten_3D4O3sym
     !!
     !! ```fortran
     !! program example_ten_3d4o3sym_usage
-    !!   use tensors_types ! Includes mod_ten_3D4O3sym and others
+    !!   use muscle_tensors ! Includes muscle_tensor_3d4o3sym and others
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -84,7 +84,7 @@ module mod_ten_3D4O3sym
     !! end program example_ten_3d4o3sym_usage
     !! ```
     !!
-    !! For more information see [[tensors_types]]
+    !! For more information see [[muscle_tensors]]
 
     use, intrinsic :: iso_fortran_env
     implicit none
@@ -138,7 +138,7 @@ module mod_ten_3D4O3sym
         !! array (following the storage order above) or by providing the 21 components
         !! individually (see `init2_ten_3D4O3sym` for the required input order).
         !!
-        !! For more information see [[tensors_types]]
+        !! For more information see [[muscle_tensors]]
 
         real(real64), dimension(21) :: vals
             !! Stores the 21 independent components following the compressed Voigt storage order.
@@ -444,4 +444,4 @@ contains
         if (present(xxxz)) a%vals(21) = xxxz
     end subroutine
 
-end module mod_ten_3D4O3sym
+end module muscle_tensor_3d4o3sym

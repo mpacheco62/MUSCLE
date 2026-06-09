@@ -40,7 +40,7 @@ end program test_closest_point_2
 ! 1) Swift: Tracción uniaxial con plastificación
 !=====================================================================
 subroutine test_closest_point_vonmises_uniaxial_tensile_sw(passed)
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening,      only : Swift_hardening
     use mod_vonMises,             only : VonMises
@@ -131,7 +131,7 @@ end subroutine test_closest_point_vonmises_uniaxial_tensile_sw
 ! 2) Swift: Deformación nula → respuesta elástica trivial
 !=====================================================================
 subroutine test_closest_point_vonmises_zero_strain_sw(passed)
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening,      only : Swift_hardening
     use mod_vonMises,             only : VonMises
@@ -202,7 +202,7 @@ end subroutine test_closest_point_vonmises_zero_strain_sw
 ! 3) Swift: Deformación pequeña → respuesta puramente elástica
 !=====================================================================
 subroutine test_closest_point_vonmises_elastic_strain_sw(passed)
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening,      only : Swift_hardening
     use mod_vonMises,             only : VonMises

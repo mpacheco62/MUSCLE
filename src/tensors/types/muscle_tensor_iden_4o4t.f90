@@ -1,5 +1,5 @@
-module mod_iden_4O4T
-    !! Module mod_iden_4O4T
+module muscle_tensor_iden_4o4t
+    !! Module muscle_tensor_iden_4o4t
     !! ======================
     !!
     !! Defines the standard (non-scaled) 3D fourth-order symmetric identity tensor \(\frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})\).
@@ -13,7 +13,7 @@ module mod_iden_4O4T
     !! type defined here is symbolic. It does not store any numerical data and implicitly represents the
     !! symmetric identity structure with a scaling factor of 1.0. Operations involving
     !! this type and scalars (multiplication or division) typically yield an instance of the
-    !! corresponding scaled identity tensor type, `iden_4O4TS` (defined in `mod_iden_4O4TS`),
+    !! corresponding scaled identity tensor type, `iden_4O4TS` (defined in `muscle_tensor_iden_4o4ts`),
     !! which explicitly stores the resulting scaling factor.
     !!
     !! Public Entities
@@ -39,8 +39,8 @@ module mod_iden_4O4T
     !!
     !! ```fortran
     !! program example_iden_4O4T_usage
-    !!   use mod_iden_4O4T
-    !!   use mod_iden_4O4TS
+    !!   use muscle_tensor_iden_4o4t
+    !!   use muscle_tensor_iden_4o4ts
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -58,9 +58,9 @@ module mod_iden_4O4T
     !! end program example_iden_4O4T_usage
     !! ```
     !!
-    !! For more information see [[tensors_types]]
+    !! For more information see [[muscle_tensors]]
     use, intrinsic :: iso_fortran_env
-    use mod_iden_4O4TS
+    use muscle_tensor_iden_4o4ts
     implicit none
     private
 
@@ -80,7 +80,7 @@ module mod_iden_4O4T
         !! (like scalar multiplication/division) that typically result
         !! in a scaled symmetric identity tensor (`iden_4O4TS`), which explicitly stores a scaling factor.
         !!
-        !! For more information see [[tensors_types]]
+        !! For more information see [[muscle_tensors]]
     end type iden_4O4T
 
 
@@ -121,4 +121,4 @@ contains
         res%val = 1D0/a
     end function div_I4O4T_real64
 
-end module mod_iden_4O4T
+end module muscle_tensor_iden_4o4t

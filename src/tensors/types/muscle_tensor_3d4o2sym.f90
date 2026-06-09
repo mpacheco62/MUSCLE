@@ -1,5 +1,5 @@
-module mod_ten_3D4O2sym
-    !! Module mod_ten_3D4O2sym
+module muscle_tensor_3d4o2sym
+    !! Module muscle_tensor_3d4o2sym
     !! =======================
     !!
     !! Defines the type for 3D fourth-order tensors with minor symmetries and associated operations.
@@ -42,7 +42,7 @@ module mod_ten_3D4O2sym
     !!
     !! ```fortran
     !! program example_ten_3d4o2sym_usage
-    !!   use mod_ten_3D4O2sym
+    !!   use muscle_tensor_3d4o2sym
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -89,7 +89,7 @@ module mod_ten_3D4O2sym
     !! end program example_ten_3d4o2sym_usage
     !! ```
     !!
-    !! For more information see [[tensors_types]]
+    !! For more information see [[muscle_tensors]]
 
     use, intrinsic :: iso_fortran_env
     implicit none
@@ -136,7 +136,7 @@ module mod_ten_3D4O2sym
         !! array (corresponding directly to the `vals` matrix) or by providing the 36 components
         !! individually (see `init2_ten_3D4O2sym` for the required input order).
         !!
-        !! For more information see [[tensors_types]]
+        !! For more information see [[muscle_tensors]]
         real(real64), dimension(6,6) :: vals
             !! Stores the 36 independent components as a 6x6 matrix using Voigt index mapping.
         contains
@@ -354,7 +354,7 @@ contains
     pure function convert_3sym(self) result(res)
         use, intrinsic :: iso_fortran_env
         use muscle_math_inverses
-        use mod_ten_3D4O3sym
+        use muscle_tensor_3d4o3sym
         implicit none
         class(ten_3D4O2sym), intent(in) :: self
         type(ten_3D4O3sym) :: res
@@ -372,4 +372,4 @@ contains
 
     end function convert_3sym
 
-end module mod_ten_3D4O2sym
+end module muscle_tensor_3d4o2sym

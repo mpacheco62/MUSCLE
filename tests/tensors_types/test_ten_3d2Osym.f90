@@ -1,5 +1,5 @@
 program test_3D2Osym
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical :: passed
@@ -42,7 +42,7 @@ end program test_3D2Osym
 
 subroutine test_ten_3D2Osym_approx(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -84,7 +84,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_sum(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_ten_3D2Osym
+    use muscle_tensor_3d2osym
     implicit none
     
     logical, intent(out) :: passed
@@ -154,7 +154,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_sub(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -223,7 +223,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_mul(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -299,7 +299,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_div(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -334,7 +334,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_dev(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -393,7 +393,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_ddot(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -449,7 +449,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_components(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -526,7 +526,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_dot(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
 
@@ -644,7 +644,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_square(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
 
@@ -704,7 +704,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_assign(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed

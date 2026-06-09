@@ -1,5 +1,5 @@
 module mod_closest_point
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_hardening_laws, only : Base_hardening_laws
     use mod_yield_criteria, only : Base_yield_critera

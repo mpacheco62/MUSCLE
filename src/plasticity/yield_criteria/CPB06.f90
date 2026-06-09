@@ -1,6 +1,6 @@
 module mod_CPB06
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use mod_yield_criteria
     implicit none
     PRIVATE
@@ -45,7 +45,7 @@ module mod_CPB06
 
 
     pure function stress_eq(self, stress) result(res)
-        use tensors_types
+        use muscle_tensors
         use muscle_math_operations, only : eigenvals
         implicit None
         class(CPB06), intent(in) :: self
@@ -90,7 +90,7 @@ module mod_CPB06
 
   !   pure function dstressEq_dstress_vm(self, stress) result(res)
   !     ! use muscle_math_operations
-  !     use tensors_types
+  !     use muscle_tensors
   !     implicit None
   !     class(VonMises), intent(in) :: self
   !     class(ten_3D2Osym), intent(in) :: stress
@@ -110,7 +110,7 @@ module mod_CPB06
   !   end function dstressEq_dstress_vm
 
   !   pure function ddstressEq_ddstress_vm(self, stress) result(res)
-  !     use tensors_types
+  !     use muscle_tensors
   !     implicit None
   !     class(VonMises), intent(in) :: self
   !     class(ten_3D2Osym), intent(in) :: stress

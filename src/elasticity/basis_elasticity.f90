@@ -133,7 +133,7 @@ module mod_base_elasticity
     !! ```fortran
     !! module mod_isotropic_elasticity
     !!   use mod_base_elasticity
-    !!   use tensors_types
+    !!   use muscle_tensors
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -156,7 +156,7 @@ module mod_base_elasticity
     !! ```fortran
     !! module mod_generalized_maxwell
     !!   use mod_base_elasticity
-    !!   use tensors_types
+    !!   use muscle_tensors
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -181,7 +181,7 @@ module mod_base_elasticity
     !! end module mod_generalized_maxwell
     !! ```
     !!
-    !! For tensor type definitions see [[tensors_types]].
+    !! For tensor type definitions see [[muscle_tensors]].
 
     use, intrinsic :: iso_fortran_env
     implicit none
@@ -359,7 +359,7 @@ module mod_base_elasticity
             !! from a given second-order symmetric strain tensor (`ten_3D2Osym`).
             !! This interface must be satisfied by every concrete subtype of `Base_elasticity`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_3D2Osym
+            use muscle_tensors, only : ten_3D2Osym
             import Base_elasticity
             class(Base_elasticity), intent(in) :: self
                 !! The elasticity model object (read-only).
@@ -376,7 +376,7 @@ module mod_base_elasticity
             !! from a given second-order symmetric strain tensor (`ten_2D2Osym`).
             !! This interface must be satisfied by every concrete subtype of `Base_elasticity`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_2D2Osym
+            use muscle_tensors, only : ten_2D2Osym
             import Base_elasticity
             class(Base_elasticity), intent(in) :: self
                 !! The elasticity model object (read-only).
@@ -394,7 +394,7 @@ module mod_base_elasticity
             !! evaluated at the given strain state.
             !! This interface must be satisfied by every concrete subtype of `Base_elasticity`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_3D2Osym, ten_3D4O3sym
+            use muscle_tensors, only : ten_3D2Osym, ten_3D4O3sym
             import Base_elasticity
             class(Base_elasticity), intent(in) :: self
                 !! The elasticity model object (read-only).
@@ -413,7 +413,7 @@ module mod_base_elasticity
             !! evaluated at the given strain state.
             !! This interface must be satisfied by every concrete subtype of `Base_elasticity`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_2D2Osym, ten_2D4O3sym
+            use muscle_tensors, only : ten_2D2Osym, ten_2D4O3sym
             import Base_elasticity
             class(Base_elasticity), intent(in) :: self
                 !! The elasticity model object (read-only).
@@ -442,7 +442,7 @@ module mod_base_elasticity
             !! Delegates to `stress_3D` and applies the `.dev.` operator.
             !! Override in a subtype if a more efficient direct evaluation is available.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_3D2Osym, operator(.dev.)
+            use muscle_tensors, only : ten_3D2Osym, operator(.dev.)
             class(Base_elasticity), intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_3D2Osym),     intent(in) :: strain
@@ -460,7 +460,7 @@ module mod_base_elasticity
             !! Delegates to `stress_2D` and applies the `.dev.` operator.
             !! Override in a subtype if a more efficient direct evaluation is available.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_2D2Osym, operator(.dev.)
+            use muscle_tensors, only : ten_2D2Osym, operator(.dev.)
             class(Base_elasticity), intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_2D2Osym),     intent(in) :: strain
@@ -488,7 +488,7 @@ module mod_base_elasticity
             !! The result is converted back to a minor-symmetric `ten_3D4O3sym` via
             !! `convert_3sym()`. Override in a subtype for a more efficient evaluation.
             use, intrinsic :: iso_fortran_env
-            use tensors_types
+            use muscle_tensors
             class(Base_elasticity), intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_3D2Osym),     intent(in) :: strain
@@ -522,7 +522,7 @@ module mod_base_elasticity
             !! Note: this procedure is `pure` — it does NOT modify `internal`.
             !! To advance the internal state, use `stress_and_update` instead.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_3D2Osym
+            use muscle_tensors, only : ten_3D2Osym
             class(Base_elasticity),                    intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_3D2Osym),                        intent(in) :: strain
@@ -549,7 +549,7 @@ module mod_base_elasticity
             !!
             !! Note: this procedure is `pure` — it does NOT modify `internal`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_2D2Osym
+            use muscle_tensors, only : ten_2D2Osym
             class(Base_elasticity),                    intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_2D2Osym),                        intent(in) :: strain
@@ -585,7 +585,7 @@ module mod_base_elasticity
             !!
             !! Note: this procedure is `pure` — it does NOT modify `internal`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_3D2Osym, operator(.dev.)
+            use muscle_tensors, only : ten_3D2Osym, operator(.dev.)
             class(Base_elasticity),                    intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_3D2Osym),                        intent(in) :: strain
@@ -612,7 +612,7 @@ module mod_base_elasticity
             !!
             !! Note: this procedure is `pure` — it does NOT modify `internal`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_2D2Osym, operator(.dev.)
+            use muscle_tensors, only : ten_2D2Osym, operator(.dev.)
             class(Base_elasticity),                    intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_2D2Osym),                        intent(in) :: strain
@@ -649,7 +649,7 @@ module mod_base_elasticity
             !!
             !! Note: this procedure is `pure` — it does NOT modify `internal`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_3D2Osym, ten_3D4O3sym
+            use muscle_tensors, only : ten_3D2Osym, ten_3D4O3sym
             class(Base_elasticity),                    intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_3D2Osym),                        intent(in) :: strain
@@ -676,7 +676,7 @@ module mod_base_elasticity
             !!
             !! Note: this procedure is `pure` — it does NOT modify `internal`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_2D2Osym, ten_2D4O3sym
+            use muscle_tensors, only : ten_2D2Osym, ten_2D4O3sym
             class(Base_elasticity),                    intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_2D2Osym),                        intent(in) :: strain
@@ -711,7 +711,7 @@ module mod_base_elasticity
             !!
             !! Note: this procedure is `pure` — it does NOT modify `internal`.
             use, intrinsic :: iso_fortran_env
-            use tensors_types
+            use muscle_tensors
             class(Base_elasticity),                    intent(in) :: self
                 !! The elasticity model object (read-only).
             class(ten_3D2Osym),                        intent(in) :: strain
@@ -762,7 +762,7 @@ module mod_base_elasticity
             !! Note: despite modifying `internal` via `intent(inout)`, this subroutine
             !! is `pure` because all side effects are confined to dummy arguments.
             use, intrinsic :: iso_fortran_env
-            use tensors_types, only : ten_3D2Osym
+            use muscle_tensors, only : ten_3D2Osym
             class(Base_elasticity),                    intent(in)    :: self
                 !! The elasticity model object (read-only).
             type(ten_3D2Osym),                         intent(out)   :: stress

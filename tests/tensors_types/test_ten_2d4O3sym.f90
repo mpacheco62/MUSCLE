@@ -1,5 +1,5 @@
 program test_2D4O3sym
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical :: passed
@@ -29,7 +29,7 @@ end program test_2D4O3sym
 
 subroutine test_ten_2D4O3sym_approx(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -73,7 +73,7 @@ end subroutine
 
 subroutine test_ten_2D4O3sym_sum(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -120,7 +120,7 @@ end subroutine
 
 subroutine test_ten_2D4O3sym_sub(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -166,7 +166,7 @@ end subroutine
 
 subroutine test_ten_2D4O3sym_mul(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -215,7 +215,7 @@ end subroutine
 
 subroutine test_ten_2D4O3sym_div(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -247,7 +247,7 @@ end subroutine
 
 subroutine test_ten_2D4O3sym_ddot(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed

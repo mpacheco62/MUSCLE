@@ -67,7 +67,7 @@ module mod_elasticity_linear
     !! ```fortran
     !! program example_linear_elasticity_usage
     !!   use mod_elasticity_linear
-    !!   use tensors_types
+    !!   use muscle_tensors
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -93,10 +93,10 @@ module mod_elasticity_linear
     !! ```
     !!
     !! For the base class definition see [[mod_base_elasticity]].
-    !! For tensor type definitions see [[tensors_types]].
+    !! For tensor type definitions see [[muscle_tensors]].
 
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use mod_base_elasticity
     implicit none
     PRIVATE

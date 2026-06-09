@@ -1,5 +1,5 @@
-module mod_iden_4O3TS
-    !! Module mod_iden_4O3TS
+module muscle_tensor_iden_4o3ts
+    !! Module muscle_tensor_iden_4o3ts
     !! ======================
     !!
     !! Defines the scaled 3D fourth-order identity tensor \(c \cdot (\delta_{ij}\delta_{kl})\).
@@ -38,7 +38,7 @@ module mod_iden_4O3TS
     !!
     !! ```fortran
     !! program example_iden_4O3Ts_usage
-    !!   use mod_iden_4O3TS
+    !!   use muscle_tensor_iden_4o3ts
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -58,7 +58,7 @@ module mod_iden_4O3TS
     !! end program example_iden_4O3Ts_usage
     !! ```
     !!
-    !! For more information see [[tensors_types]]
+    !! For more information see [[muscle_tensors]]
     use, intrinsic :: iso_fortran_env
     implicit none
     private
@@ -75,7 +75,7 @@ module mod_iden_4O3TS
         !! The scaling factor \(c\) is stored explicitly in the `val` component.
         !! This contrasts with the symbolic, non-scaled `iden_4O3T` type.
         !!
-        !! For more information see [[tensors_types]]
+        !! For more information see [[muscle_tensors]]
         real(real64) :: val
             !! The scaling factor \(c\) for the type 3 identity tensor \(c \cdot (\delta_{ij}\delta_{kl})\).
     end type iden_4O3TS
@@ -117,4 +117,4 @@ module mod_iden_4O3TS
         res%val = IMod%val/a 
     end function div_I4O3TS_real64
 
-end module mod_iden_4O3TS
+end module muscle_tensor_iden_4o3ts

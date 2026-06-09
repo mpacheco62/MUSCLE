@@ -1,5 +1,5 @@
 module mod_closest_point_time
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_viscoplastic_laws, only : Base_viscoplastic_law
     use mod_yield_criteria, only : Base_yield_critera

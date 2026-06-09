@@ -1,5 +1,5 @@
-module mod_ten_3D2Osym
-    !! Module mod_ten_3D2Osym
+module muscle_tensor_3d2osym
+    !! Module muscle_tensor_3d2osym
     !! =======================
     !!
     !! Defines the type for symmetric 3D second-order tensors and associated operations.
@@ -47,7 +47,7 @@ module mod_ten_3D2Osym
     !!
     !! ```fortran
     !! program example_ten_3d2osym_usage
-    !!   use mod_ten_3D2Osym
+    !!   use muscle_tensor_3d2osym
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -83,7 +83,7 @@ module mod_ten_3D2Osym
     !! end program example_ten_3d2osym_usage
     !! ```
     !!
-    !! For more information see [[tensors_types]]
+    !! For more information see [[muscle_tensors]]
 
     use, intrinsic :: iso_fortran_env
     implicit none
@@ -119,7 +119,7 @@ module mod_ten_3D2Osym
         !! array (following the Voigt order above) or by providing the 6 components
         !! individually (xx, yy, zz, xy, yz, xz).
         !!
-        !! For more information see [[tensors_types]]
+        !! For more information see [[muscle_tensors]]
         real(real64), dimension(6) :: vals
             !! Stores the 6 independent components in Voigt notation: (xx, yy, zz, xy, yz, xz).
         contains
@@ -438,4 +438,4 @@ contains
             iomsg = "Error in print_ten_3D2Osym: Failed to write to the specified unit."
         end if
     end subroutine print_ten_3D2Osym
-end module mod_ten_3D2Osym
+end module muscle_tensor_3d2osym

@@ -43,7 +43,7 @@ module mod_yield_criteria
     !! ```fortran
     !! module mod_von_mises_yield
     !!   use mod_yield_criteria
-    !!   use tensors_types
+    !!   use muscle_tensors
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -73,7 +73,7 @@ module mod_yield_criteria
     !!
     !! program use_yield_criterion
     !!   use mod_von_mises_yield
-    !!   use tensors_types
+    !!   use muscle_tensors
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -104,10 +104,10 @@ module mod_yield_criteria
     !! end program use_yield_criterion
     !! ```
     !!
-    !! For tensor type definitions see [[tensors_types]].
+    !! For tensor type definitions see [[muscle_tensors]].
 
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit None
     PRIVATE
 
@@ -139,7 +139,7 @@ module mod_yield_criteria
         pure function stress_eq_interface(self, stress) result(res)
             !! Interface required for the `stress_eq` procedure.
             use, intrinsic :: iso_fortran_env
-            use tensors_types
+            use muscle_tensors
             import Base_yield_critera
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
             class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`).
@@ -149,7 +149,7 @@ module mod_yield_criteria
         pure function dstressEq_dstress_interface(self, stress) result(res)
             !! Interface required for the `dstressEq_dstress` procedure (analytical version).
             use, intrinsic :: iso_fortran_env
-            use tensors_types
+            use muscle_tensors
             import Base_yield_critera
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
             class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the derivative is evaluated.
@@ -159,7 +159,7 @@ module mod_yield_criteria
         pure function ddstressEq_ddstress_interface(self, stress) result(res)
             !! Interface required for the `dstressEq_dstress` procedure (analytical version).
             use, intrinsic :: iso_fortran_env
-            use tensors_types
+            use muscle_tensors
             import Base_yield_critera
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
             class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the second derivative is evaluated.  
@@ -185,7 +185,7 @@ module mod_yield_criteria
             contains
                 pure function wrapper(x1) result(res1)
                     use, intrinsic :: iso_fortran_env
-                    use tensors_types, only : ten_3D2Osym
+                    use muscle_tensors, only : ten_3D2Osym
                     implicit none
                     type(ten_3D2Osym), intent(in) :: x1
                     real(real64) :: res1
@@ -208,7 +208,7 @@ module mod_yield_criteria
             contains
                 pure function wrapper(x1) result(res1)
                     use, intrinsic :: iso_fortran_env
-                    use tensors_types, only : ten_3D2Osym
+                    use muscle_tensors, only : ten_3D2Osym
                     implicit none
                     type(ten_3D2Osym), intent(in) :: x1
                     real(real64) :: res1

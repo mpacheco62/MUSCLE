@@ -1,5 +1,5 @@
-module mod_ten_3D2O
-    !! Module mod_ten_3D2O
+module muscle_tensor_3d2o
+    !! Module muscle_tensor_3d2o
     !! ====================
     !!
     !! Defines the type for general (non-symmetric) 3D second-order tensors and associated operations.
@@ -46,7 +46,7 @@ module mod_ten_3D2O
     !!
     !! ```fortran
     !! program example_ten_3d2o_usage
-    !!   use mod_ten_3D2O
+    !!   use muscle_tensor_3d2o
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -82,7 +82,7 @@ module mod_ten_3D2O
     !! end program example_ten_3d2o_usage
     !! ```
     !!
-    !! For more information see [[tensors_types]]
+    !! For more information see [[muscle_tensors]]
 
     use, intrinsic :: iso_fortran_env
     implicit none
@@ -122,7 +122,7 @@ module mod_ten_3D2O
         !! individually in the order: (xx, xy, xz, yx, yy, yz, zx, zy, zz). Note that the
         !! `init2` procedure internally rearranges these into the column-major `vals` array.
         !!
-        !! For more information see [[tensors_types]]
+        !! For more information see [[muscle_tensors]]
 
         real(real64), dimension(9) :: vals
             !! Stores the 9 components in column-major order: (11, 21, 31, 12, 22, 32, 13, 23, 33).
@@ -416,4 +416,4 @@ contains
     ! !     res%vals( 6) = a%vals(6)*b%vals(6)
     ! ! end procedure tdot_3D2Osym_3D2Osym
 
-end module mod_ten_3D2O
+end module muscle_tensor_3d2o

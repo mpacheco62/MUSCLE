@@ -15,7 +15,7 @@ program test_closest_point
 end program test_closest_point
 
 subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
@@ -111,7 +111,7 @@ end subroutine
 
 
 subroutine test_closest_point_vonmises_zero_strain(passed)
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises
@@ -197,7 +197,7 @@ end subroutine
 
 
 subroutine test_closest_point_vonmises_elastic_strain(passed)
-    use tensors_types
+    use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use mod_swift_hardening, only : Swift_hardening
     use mod_vonMises, only : VonMises

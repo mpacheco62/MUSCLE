@@ -1,4 +1,4 @@
-module tensors_types
+module muscle_tensors
     !! author: MPacheco
     !! version: 1.0 - Initial documentation
     !!
@@ -64,16 +64,16 @@ module tensors_types
     !!
     !! ### Derived Types:
     !!
-    !! - [[ten_3D2O]]:       General 3D second-order tensor (from [[mod_ten_3D2O]]).
-    !! - [[ten_3D2Osym]]:    Symmetric 3D second-order tensor (from [[mod_ten_3D2Osym]]).
-    !! - [[ten_3D4O2sym]]:   3D fourth-order tensor with minor symmetries (from [[mod_ten_3D4O2sym]]).
-    !! - [[ten_3D4O3sym]]:   3D fourth-order tensor with major and minor symmetries (from [[mod_ten_3D4O3sym]]).
-    !! - [[iden_2O]]:      Standard 3D second-order identity tensor (from [[mod_iden_2O]]).
-    !! - [[iden_2OS]]:   Scaled 3D second-order identity tensor (from [[mod_iden_2OS]]).
-    !! - [[iden_4O3T]]:    Type 3 3D fourth-order identity tensor (from [[mod_iden_4O3T]]).
-    !! - [[iden_4O3TS]]: Scaled Type 3 3D fourth-order identity tensor (from [[mod_iden_4O3TS]]).
-    !! - [[iden_4O4T]]:    Type 4 (symmetric) 3D fourth-order identity tensor (from [[mod_iden_4O4T]]).
-    !! - [[iden_4O4TS]]: Scaled Type 4 3D fourth-order identity tensor (from [[mod_iden_4O4TS]]).
+    !! - [[ten_3D2O]]:       General 3D second-order tensor (from [[muscle_tensor_3d2o]]).
+    !! - [[ten_3D2Osym]]:    Symmetric 3D second-order tensor (from [[muscle_tensor_3d2osym]]).
+    !! - [[ten_3D4O2sym]]:   3D fourth-order tensor with minor symmetries (from [[muscle_tensor_3d4o2sym]]).
+    !! - [[ten_3D4O3sym]]:   3D fourth-order tensor with major and minor symmetries (from [[muscle_tensor_3d4o3sym]]).
+    !! - [[iden_2O]]:      Standard 3D second-order identity tensor (from [[muscle_tensor_iden_2o]]).
+    !! - [[iden_2OS]]:   Scaled 3D second-order identity tensor (from [[muscle_tensor_iden_2os]]).
+    !! - [[iden_4O3T]]:    Type 3 3D fourth-order identity tensor (from [[muscle_tensor_iden_4o3t]]).
+    !! - [[iden_4O3TS]]: Scaled Type 3 3D fourth-order identity tensor (from [[muscle_tensor_iden_4o3ts]]).
+    !! - [[iden_4O4T]]:    Type 4 (symmetric) 3D fourth-order identity tensor (from [[muscle_tensor_iden_4o4t]]).
+    !! - [[iden_4O4TS]]: Scaled Type 4 3D fourth-order identity tensor (from [[muscle_tensor_iden_4o4ts]]).
     !!
     !! ### Operators:
     !!
@@ -98,12 +98,12 @@ module tensors_types
     !! Usage
     !! -----
     !!
-    !! To use the tensor types and operations defined here, simply add `use tensors_types`
+    !! To use the tensor types and operations defined here, simply add `use muscle_tensors`
     !! to your Fortran code.
     !!
     !! ```fortran
     !! program example_usage
-    !!   use tensors_types
+    !!   use muscle_tensors
     !!   implicit none
     !!
     !!   type(ten_3D2Osym) :: stress, strain, stress_dev
@@ -122,23 +122,23 @@ module tensors_types
     !! ```
 
     use, intrinsic :: iso_fortran_env
-    use mod_ten_3D2O
-    use mod_ten_3D2Osym
-    use mod_ten_2D2Osym
-    use mod_ten_3D4O3sym
-    use mod_ten_2D4O3sym
-    use mod_ten_3D4O2sym
-    use mod_iden_2OS
-    use mod_iden_2O
-    use mod_iden_4O3TS
-    use mod_iden_4O3T
-    use mod_iden_4O4TS
-    use mod_iden_4O4T
-    use mod_ops_addition_subtraction
-    use mod_ops_contraction_double
-    use mod_ops_dyadic
-    use mod_ops_contraction_single
-    use mod_ops_assignment
+    use muscle_tensor_3d2o
+    use muscle_tensor_3d2osym
+    use muscle_tensor_2d2osym
+    use muscle_tensor_3d4o3sym
+    use muscle_tensor_2d4o3sym
+    use muscle_tensor_3d4o2sym
+    use muscle_tensor_iden_2os
+    use muscle_tensor_iden_2o
+    use muscle_tensor_iden_4o3ts
+    use muscle_tensor_iden_4o3t
+    use muscle_tensor_iden_4o4ts
+    use muscle_tensor_iden_4o4t
+    use muscle_tensor_ops_addition_subtraction
+    use muscle_tensor_ops_contraction_double
+    use muscle_tensor_ops_dyadic
+    use muscle_tensor_ops_contraction_single
+    use muscle_tensor_ops_assignment
     implicit None
 
     public :: ten_3D2O
@@ -174,4 +174,4 @@ module tensors_types
     public :: assignment (=)
     public :: write(formatted)
 
-end module tensors_types
+end module muscle_tensors

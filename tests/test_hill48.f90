@@ -30,7 +30,7 @@ end program test_hill48
 
 subroutine test_vonMises_stresseq_hydrostatic(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use mod_hill48
     implicit none
     
@@ -56,7 +56,7 @@ end subroutine
 
 ! subroutine test_vonMises_stresseq_simple_tensile(passed)
 !     use, intrinsic :: iso_fortran_env
-!     use tensors_types
+!     use muscle_tensors
 !     use mod_vonMises
 !     implicit none
     
@@ -79,7 +79,7 @@ end subroutine
 
 ! subroutine test_vonMises_stresseq_zero_stress(passed)
 !     use, intrinsic :: iso_fortran_env
-!     use tensors_types
+!     use muscle_tensors
 !     use mod_vonMises
 !     implicit none
     
@@ -102,7 +102,7 @@ end subroutine
 
 ! subroutine test_vonMises_stresseq_biaxial(passed)
 !     use, intrinsic :: iso_fortran_env
-!     use tensors_types
+!     use muscle_tensors
 !     use mod_vonMises
 !     implicit none
     
@@ -125,7 +125,7 @@ end subroutine
 
 ! subroutine test_vonMises_stresseq_shear(passed)
 !     use, intrinsic :: iso_fortran_env
-!     use tensors_types
+!     use muscle_tensors
 !     use mod_vonMises
 !     implicit none
     
@@ -146,7 +146,7 @@ end subroutine
 
 ! subroutine test_vonMises_stresseq_derivates(passed)
 !     use, intrinsic :: iso_fortran_env
-!     use tensors_types
+!     use muscle_tensors
 !     use mod_vonMises
 !     implicit none
     
@@ -211,7 +211,7 @@ end subroutine
 
 ! subroutine test_vonMises_stresseq_derivates2(passed)
 !     use, intrinsic :: iso_fortran_env
-!     use tensors_types
+!     use muscle_tensors
 !     use mod_vonMises
 !     implicit none
     

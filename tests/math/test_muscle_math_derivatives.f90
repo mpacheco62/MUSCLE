@@ -16,7 +16,7 @@ contains
 
     pure function fun_object_scalar_test1(self, x) result(res)
         use, intrinsic :: iso_fortran_env
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         implicit none
         class(mytype_test), intent(in) :: self
         type(ten_3D2Osym), intent(in) :: x
@@ -28,7 +28,7 @@ contains
 
     pure function derivative_fun1(self, x) result(res)
         use, intrinsic :: iso_fortran_env
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         use muscle_math_derivatives
         implicit none
         class(mytype_test), intent(in) :: self
@@ -40,7 +40,7 @@ contains
         contains
             pure function wrapper(x1) result(res1)
                 use, intrinsic :: iso_fortran_env
-                use tensors_types, only : ten_3D2Osym
+                use muscle_tensors, only : ten_3D2Osym
                 implicit none
                 type(ten_3D2Osym), intent(in) :: x1
                 real(real64) :: res1
@@ -78,7 +78,7 @@ contains
 
     pure function fun_scalar_test1(x) result(res)
         use, intrinsic :: iso_fortran_env
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         real(real64) :: res
@@ -89,7 +89,7 @@ contains
 
     pure function fun_scalar_test2(x) result(res)
         use, intrinsic :: iso_fortran_env
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         type(ten_3D2Osym) :: y
@@ -103,7 +103,7 @@ contains
 
     pure function fun_scalar_test3(x) result(res)
         use, intrinsic :: iso_fortran_env
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         real(real64) :: res
@@ -113,7 +113,7 @@ contains
     end function
 
     pure function energy_hooke(strain) result(energy)
-            use tensors_types
+            use muscle_tensors
             implicit none
             type(ten_3D2Osym), intent(in) :: strain
             real(real64) :: energy
@@ -129,7 +129,7 @@ contains
 
 
     pure function fun_tens_x(x) result(res)
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         type(ten_3D2Osym) :: res
@@ -137,7 +137,7 @@ contains
     end function
 
     pure function fun_tens_2x(x) result(res)
-        use tensors_types, only : ten_3D2Osym, operator(*)
+        use muscle_tensors, only : ten_3D2Osym, operator(*)
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         type(ten_3D2Osym) :: res
@@ -145,7 +145,7 @@ contains
     end function
 
     pure function fun_tens_tenx(x) result(res)
-        use tensors_types, only : ten_3D2Osym, ten_3D4O3sym, operator(*), operator(.ddot.)
+        use muscle_tensors, only : ten_3D2Osym, ten_3D4O3sym, operator(*), operator(.ddot.)
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         type(ten_3D2Osym) :: res
@@ -156,7 +156,7 @@ contains
 
     ! f(x) = tr(x) * x
     pure function fun_nonlinear_tens(x) result(res)
-        use tensors_types, only : ten_3D2Osym
+        use muscle_tensors, only : ten_3D2Osym
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         type(ten_3D2Osym) :: res
@@ -306,7 +306,7 @@ end subroutine
 subroutine test_derivate_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_math_derivatives
-    use tensors_types
+    use muscle_tensors
     use test_muscle_math_derivatives_mod
     implicit none
     
@@ -354,7 +354,7 @@ end subroutine
 subroutine test_derivate_ten_ten(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_math_derivatives
-    use tensors_types
+    use muscle_tensors
     use test_muscle_math_derivatives_mod
     implicit none
     
@@ -453,7 +453,7 @@ end subroutine
 
 subroutine test_object_derivate_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     use test_muscle_math_derivatives_mod
     implicit none
     
@@ -485,7 +485,7 @@ end subroutine
 subroutine test_derivate2O_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_math_derivatives
-    use tensors_types
+    use muscle_tensors
     use test_muscle_math_derivatives_mod
     use mod_elasticity_linear
     implicit none

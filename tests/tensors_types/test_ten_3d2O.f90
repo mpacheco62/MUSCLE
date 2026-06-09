@@ -1,5 +1,5 @@
 program test_3D2O
-    use tensors_types
+    use muscle_tensors
     implicit none
     logical :: passed
 
@@ -35,7 +35,7 @@ end program test_3D2O
 
 subroutine test_ten_3D2O_approx(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -79,7 +79,7 @@ end subroutine
 
 subroutine test_ten_3D2O_sum(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -147,7 +147,7 @@ end subroutine
 
 subroutine test_ten_3D2O_sub(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -216,7 +216,7 @@ end subroutine
 
 subroutine test_ten_3D2O_mul(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -292,7 +292,7 @@ end subroutine
 
 subroutine test_ten_3D2O_div(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -327,7 +327,7 @@ end subroutine
 
 subroutine test_ten_3D2O_dev(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -398,7 +398,7 @@ end subroutine
 
 subroutine test_ten_3D2O_ddot(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed
@@ -451,7 +451,7 @@ end subroutine
 
 subroutine test_ten_3D2O_assign(passed)
     use, intrinsic :: iso_fortran_env
-    use tensors_types
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed

@@ -1,4 +1,4 @@
-module mod_ops_addition_subtraction
+module muscle_tensor_ops_addition_subtraction
     !! This module consolidates all mixed-type addition and subtraction operators
     !! for second and fourth-order tensors, as well as standard and scaled identity tensors.
     !!
@@ -12,18 +12,18 @@ module mod_ops_addition_subtraction
     use, intrinsic :: iso_fortran_env, only : real64
     
     ! Import all necessary tensor and identity types
-    use mod_iden_2O
-    use mod_iden_2OS
-    use mod_iden_4O3T
-    use mod_iden_4O3TS
-    use mod_iden_4O4T
-    use mod_iden_4O4TS
-    use mod_ten_2D2Osym
-    use mod_ten_2D4O3sym
-    use mod_ten_3D2O
-    use mod_ten_3D2Osym
-    use mod_ten_3D4O2sym
-    use mod_ten_3D4O3sym
+    use muscle_tensor_iden_2o
+    use muscle_tensor_iden_2os
+    use muscle_tensor_iden_4o3t
+    use muscle_tensor_iden_4o3ts
+    use muscle_tensor_iden_4o4t
+    use muscle_tensor_iden_4o4ts
+    use muscle_tensor_2d2osym
+    use muscle_tensor_2d4o3sym
+    use muscle_tensor_3d2o
+    use muscle_tensor_3d2osym
+    use muscle_tensor_3d4o2sym
+    use muscle_tensor_3d4o3sym
 
     implicit none
     private
@@ -1207,4 +1207,4 @@ contains
         res%vals(9) = a%vals(3) - b%vals(9) ! zz
     end function sub_3D2Osym_3D2O
 
-end module mod_ops_addition_subtraction
+end module muscle_tensor_ops_addition_subtraction
