@@ -6,5 +6,4 @@ target_sources(umatlib PRIVATE
                  NNL_model.f90
                  RK_model.f90
                  VA_model.f90
-                 voce_m_hardening.f90
                  )

@@ -3,4 +3,5 @@ target_sources(umatlib PRIVATE
                  bilinear_hardening.f90
                  ludwik_hardening.f90
                  swift_hardening.f90
+                 voce_m_hardening.f90
                  )

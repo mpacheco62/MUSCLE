@@ -1,3 +1,3 @@
 add_subdirectory(hardening_laws)
-add_subdirectory(return_mapping)
 add_subdirectory(viscoplastic_laws)
+add_subdirectory(yield_criteria)

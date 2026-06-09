@@ -4,11 +4,11 @@ add_library(umatlib )
 
 set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
 
-add_subdirectory(yield_criteria)
 add_subdirectory(plasticity)
 add_subdirectory(math)
 add_subdirectory(tensors)
 add_subdirectory(elasticity)
+add_subdirectory(solvers)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
