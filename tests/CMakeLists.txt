@@ -70,18 +70,10 @@ function(add_umat_test NAME)
 endfunction()
 
 
-add_subdirectory(tensors_types)
+add_subdirectory(tensors)
 add_subdirectory(math)
+add_subdirectory(elasticity)
+add_subdirectory(plasticity)
+add_subdirectory(solvers)
 
-add_umat_test(vonMises test_vonMises.f90)
-add_umat_test(hill48 test_hill48.f90)
-add_umat_test(CPB06 test_CPB06.f90)
-add_umat_test(swift_law test_swift_law.f90)
-add_umat_test(bilinear_hardening test_bilinear_hardening.f90)
-add_umat_test(elasticity_linear test_elasticity_linear.f90)
-add_umat_test(cutting_plane test_cutting_plane.f90)
-add_umat_test(closest_point test_closest_point.f90)
-add_umat_test(closest_point_time test_closest_point_time.f90)
-add_umat_test(closest_point_2 test_closest_point_2.f90)
-add_umat_test(viscoplastic_models test_viscoplastic_models.f90)
-add_umat_test(ludwik_law test_ludwik_law.f90)
+
