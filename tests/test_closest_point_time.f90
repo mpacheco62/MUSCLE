@@ -24,8 +24,8 @@ subroutine test_closest_point_time_vonmises_uniaxial_tensile(passed)
     use muscle_hard_swift, only : Swift_hardening
     use muscle_yield_vonmises, only : VonMises
     use muscle_elasticity_linear, only : Elasticity_linear
-    ! use mod_closest_point, only : closest_point2
-    use mod_closest_point_time
+    ! use muscle_solver_closest_point, only : closest_point2
+    use muscle_solver_closest_point_time
     implicit none
 
     real(real64), parameter :: EPS=1e-8
@@ -201,8 +201,8 @@ subroutine test_closest_point_time_non_converged(passed)
     use muscle_hard_swift, only : Swift_hardening
     use muscle_yield_vonmises, only : VonMises
     use muscle_elasticity_linear, only : Elasticity_linear
-    ! use mod_closest_point, only : closest_point2
-    use mod_closest_point_time
+    ! use muscle_solver_closest_point, only : closest_point2
+    use muscle_solver_closest_point_time
     implicit none
 
     real(real64), parameter :: EPS=1e-8
@@ -251,7 +251,7 @@ end subroutine
 !     use muscle_hard_swift, only : Swift_hardening
 !     use muscle_yield_vonmises, only : VonMises
 !     use muscle_elasticity_linear, only : Elasticity_linear
-!     use mod_closest_point, only : Closest_point, Closest_point_data
+!     use muscle_solver_closest_point, only : Closest_point, Closest_point_data
 !     implicit none
 
 !     real(real64), parameter :: EPS=1e-8
@@ -337,7 +337,7 @@ end subroutine
 !     use muscle_hard_swift, only : Swift_hardening
 !     use muscle_yield_vonmises, only : VonMises
 !     use muscle_elasticity_linear, only : Elasticity_linear
-!     use mod_closest_point, only : Closest_point, Closest_point_data
+!     use muscle_solver_closest_point, only : Closest_point, Closest_point_data
 !     implicit none
 
 !     real(real64), parameter :: EPS=1e-8

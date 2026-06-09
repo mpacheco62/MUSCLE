@@ -16,7 +16,7 @@ subroutine test_cutting_plane_vonmises(passed)
     use muscle_hard_swift, only : Swift_hardening
     use muscle_yield_vonmises, only : VonMises
     use muscle_elasticity_linear, only : Elasticity_linear
-    use mod_cutting_plane, only : cutting_plane
+    use muscle_solver_cutting_plane, only : cutting_plane
     implicit none
 
     real(real64), parameter :: EPS=1e-10

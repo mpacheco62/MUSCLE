@@ -1,4 +1,4 @@
-module mod_cutting_plane
+module muscle_solver_cutting_plane
     use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_hard_base, only : Base_hardening_laws

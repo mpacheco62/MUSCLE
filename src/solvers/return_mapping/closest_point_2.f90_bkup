@@ -1,4 +1,4 @@
-module mod_closest_point_2
+module muscle_solver_closest_point_2
 	use muscle_math_linsolvers ! con mkl
     use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
