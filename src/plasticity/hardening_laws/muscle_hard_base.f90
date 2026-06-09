@@ -4,7 +4,7 @@ module muscle_hard_base
     !!
     !! Defines the abstract base type for hardening laws used in plasticity models.
     !!
-    !! This module provides an abstract derived type, `Base_hardening_lawsss`, which serves as
+    !! This module provides an abstract derived type, `Base_hardening_laws`, which serves as
     !! a blueprint for implementing various isotropic hardening models (e.g., linear, power law,
     !! saturation hardening). It defines the essential interface that any concrete hardening
     !! law must provide: procedures to calculate the flow stress (yield stress), the hardening
@@ -39,7 +39,7 @@ module muscle_hard_base
     !!
     !! ```fortran
     !! module mod_linear_hardening
-    !!   use mod_hardening_law
+    !!   use muscle_hard_base
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!

@@ -6,7 +6,7 @@ module muscle_hard_swift
     !!
     !! This module provides the `Swift_hardening` derived type, which represents the
     !! Swift model for isotropic hardening in plasticity. It extends the abstract
-    !! `Base_hardening_laws` type defined in `mod_hardening_law`.
+    !! `Base_hardening_laws` type defined in `muscle_hard_base`.
     !!
     !! The Swift law describes the evolution of the flow stress (yield stress) as a
     !! function of the equivalent plastic strain.
@@ -80,7 +80,7 @@ module muscle_hard_swift
     !! end program example_swift_hardening_usage
     !! ```
     !!
-    !! For the base class definition see [[mod_hardening_law]].
+    !! For the base class definition see [[muscle_hard_base]].
 
     use, intrinsic :: iso_fortran_env
     use muscle_hard_base

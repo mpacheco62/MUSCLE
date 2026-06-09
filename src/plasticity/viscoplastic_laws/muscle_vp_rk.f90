@@ -16,7 +16,7 @@ module muscle_vp_rk
     !! 1. **Internal Hardening:** The hardening function is calculated internally based on 
     !!     a power-law type saturation, $B(\dot{\epsilon}_p) \cdot (\epsilon_0 + \epsilon_p)^{n(\dot{\epsilon}_p)}$.
     !!     Therefore, this model does **not** utilize the inherited `hard_law` pointer 
-    !!     from `basis_viscoplastic_law`.
+    !!     from `Base_viscoplastic_law`.
     !! 2. **Viscoplasticity:** Both the power-law exponent ($n_{val}$) and the scaling 
     !!     coefficient ($B_{val}$) are explicitly modified by the strain rate ($\dot{\epsilon}_p$).
     !!

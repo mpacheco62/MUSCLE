@@ -1,13 +1,13 @@
 module muscle_vp_base
-    !! Module mod_basis_viscoplastic_law
+    !! Module muscle_vp_base
     !! =================================
     !!
     !! Defines the abstract base type for viscoplastic laws.
     !!
-    !! This module provides an abstract derived type, `basis_viscoplastic_law`, which serves
+    !! This module provides an abstract derived type, `Base_viscoplastic_law`, which serves
     !! as a blueprint for implementing various viscoplastic models (e.g., Perzyna,
     !! Norton-Hoff, or Power Law creep models). It requires the **composition** of a
-    !! hardening law object (`Base_hardening_laws` from `mod_hardening_law`) to define
+    !! hardening law object (`Base_hardening_laws` from `muscle_hard_base`) to define
     !! the strain-dependent component of the flow stress.
     !!
     !! It defines the essential interface that any concrete viscoplastic law must provide:
@@ -21,7 +21,7 @@ module muscle_vp_base
     !!
     !! ### Abstract Derived Type:
     !!
-    !! - `basis_viscoplastic_law`: Abstract base type for viscoplastic laws.
+    !! - `Base_viscoplastic_law`: Abstract base type for viscoplastic laws.
     !!     - Component: `hard_law` (`class(Base_hardening_laws), pointer`) - Pointer to the
     !!       hardening law object that defines the static (strain-dependent) yield stress component.
     !!     - Deferred Procedure: `flow_stress(ep, epd)` - Interface for a function that computes
@@ -32,18 +32,18 @@ module muscle_vp_base
     !! Usage (Conceptual)
     !! ------------------
     !!
-    !! A concrete viscoplastic law (`MyViscoLaw`) would extend `basis_viscoplastic_law`
+    !! A concrete viscoplastic law (`MyViscoLaw`) would extend `Base_viscoplastic_law`
     !! and then use its `hard_law` component to retrieve the hardened yield stress
     !! (the static component) inside the `flow_stress` implementation.
     !!
     !! ```fortran
     !! module mod_my_visco_law
-    !!   use mod_basis_viscoplastic_law
+    !!   use mod_Base_viscoplastic_law
     !!   use mod_linear_hardening ! Example: depends on a concrete hardening law
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
-    !!   type, extends(basis_viscoplastic_law) :: MyViscoLaw
+    !!   type, extends(Base_viscoplastic_law) :: MyViscoLaw
     !!     real(real64) :: viscosity_parameter = 1.0D0 ! eta
     !!   end type MyViscoLaw
     !!
@@ -54,7 +54,7 @@ module muscle_vp_base
     !! end module mod_my_visco_law
     !! ```  
     !! use, intrinsic :: iso_fortran_env
-    !! use mod_hardening_law
+    !! use muscle_hard_base
 	use, intrinsic :: iso_fortran_env, only: real64
     use muscle_hard_base, only: Base_hardening_laws
     implicit none
@@ -76,7 +76,7 @@ module muscle_vp_base
     abstract interface
         pure function flow_stress_interface(self, ep, epd) result(res)
         !! Interface for the `flow_stress` procedure.
-        !! Must be implemented by concrete subtypes of `basis_viscoplastic_law`.
+        !! Must be implemented by concrete subtypes of `Base_viscoplastic_law`.
             use, intrinsic :: iso_fortran_env
             import Base_viscoplastic_law
             class(Base_viscoplastic_law), intent(in) :: self

@@ -6,7 +6,7 @@ module muscle_hard_ludwik
     !!
     !! This module provides the `ludwik_hardening` derived type, which represents the 
     !! Ludwik model for isotropic hardening in plasticity. It extends the abstract    
-    !! `Base_hardening_laws` type defined in `mod_hardening_law`.                     
+    !! `Base_hardening_laws` type defined in `muscle_hard_base`.                     
     !!
     !! The Ludwik law describes the evolution of the flow stress (yield stress) as a
     !! function of the equivalent plastic strain.
@@ -74,7 +74,7 @@ module muscle_hard_ludwik
     !!   print *, "  n =", material_ludwik%n
     !! end program example_ludwik_hardening_usage
     !! ```
-    !! For the base class definition see [[mod_hardening_law]].
+    !! For the base class definition see [[muscle_hard_base]].
 
     use, intrinsic :: iso_fortran_env
     use muscle_hard_base

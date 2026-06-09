@@ -12,7 +12,7 @@ module muscle_tensors
     !! implementations from specialized submodules, providing a unified interface for users.
     !!
     !! Instead of defining the tensor types and operations directly, this module uses other
-    !! modules (`mod_ten_*`, `mod_iden_*`, `mod_operator_*`) and makes specific types and
+    !! modules (`muscle_tensor_*`) and makes specific types and
     !! operators publicly available. This promotes modularity and organization within the library.
     !!
     !! Nomenclature
