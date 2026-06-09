@@ -1,5 +1,5 @@
-module spectral_derivatives
-    !! # Module mod_spectral_derivatives
+module muscle_math_spectral_derivs
+    !! # Module mod_muscle_math_spectral_derivs
     !!
     !! This module provides exact, analytical, eigenvector-free first and second derivatives 
     !! of eigenvalues with respect to their parent symmetric second-order tensor.
@@ -191,4 +191,4 @@ contains
 
     end function d2Eigenvalues_dTensor2
 
-end module spectral_derivatives
+end module muscle_math_spectral_derivs

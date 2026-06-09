@@ -46,7 +46,7 @@ module mod_CPB06
 
     pure function stress_eq(self, stress) result(res)
         use tensors_types
-        use basic_operations, only : eigenvals
+        use muscle_math_operations, only : eigenvals
         implicit None
         class(CPB06), intent(in) :: self
         class(ten_3D2Osym), intent(in) :: stress
@@ -89,7 +89,7 @@ module mod_CPB06
     end function stress_eq
 
   !   pure function dstressEq_dstress_vm(self, stress) result(res)
-  !     ! use basic_operations
+  !     ! use muscle_math_operations
   !     use tensors_types
   !     implicit None
   !     class(VonMises), intent(in) :: self

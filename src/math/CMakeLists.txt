@@ -1,7 +1,7 @@
 target_sources(umatlib PRIVATE
-                 basic_operations.f90
-                 derivatives.f90
-                 inverses_mat.f90
-                 lin_solvers.f90
-                 spectral_derivatives.f90
+                 muscle_math_operations.f90
+                 muscle_math_derivatives.f90
+                 muscle_math_inverses.f90
+                 muscle_math_linsolvers.f90
+                 muscle_math_spectral_derivs.f90
                  )

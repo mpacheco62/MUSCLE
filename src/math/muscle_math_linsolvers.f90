@@ -1,4 +1,4 @@
-module lin_solvers
+module muscle_math_linsolvers
   implicit none
   private
   public :: gauss_solve, gauss_seidel
@@ -236,4 +236,4 @@ contains
     deallocate(A_loc, b_loc, ipiv)
   end subroutine mklsolve
 
-end module lin_solvers
+end module muscle_math_linsolvers

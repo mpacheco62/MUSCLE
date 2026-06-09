@@ -1,4 +1,4 @@
-module test_spectral_derivatives_mod
+module test_muscle_math_spectral_derivs_mod
     use, intrinsic :: iso_fortran_env
     implicit none
     private
@@ -8,7 +8,7 @@ contains
     pure function first_eigval(x) result(res)
         use, intrinsic :: iso_fortran_env
         use tensors_types, only : ten_3D2Osym
-        use basic_operations, only : eigenvals
+        use muscle_math_operations, only : eigenvals
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         real(real64) :: res
@@ -20,7 +20,7 @@ contains
     pure function second_eigval(x) result(res)
         use, intrinsic :: iso_fortran_env
         use tensors_types, only : ten_3D2Osym
-        use basic_operations, only : eigenvals
+        use muscle_math_operations, only : eigenvals
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         real(real64) :: res
@@ -33,7 +33,7 @@ contains
     pure function third_eigval(x) result(res)
         use, intrinsic :: iso_fortran_env
         use tensors_types, only : ten_3D2Osym
-        use basic_operations, only : eigenvals
+        use muscle_math_operations, only : eigenvals
         implicit none
         type(ten_3D2Osym), intent(in) :: x
         real(real64) :: res
@@ -41,12 +41,12 @@ contains
         eigenvalues = eigenvals(x)
         res = eigenvalues(3)
     end function
-end module test_spectral_derivatives_mod
+end module test_muscle_math_spectral_derivs_mod
 
 
 ! ********************** PROGRAM TEST ************************************
 program test_derivatives
-    use derivatives
+    use muscle_math_derivatives
     implicit none
     
     logical :: passed
@@ -62,11 +62,11 @@ end program test_derivatives
 
 subroutine test_first_derivative(passed)
     use, intrinsic :: iso_fortran_env
-    use derivatives
+    use muscle_math_derivatives
     use tensors_types
-    use test_spectral_derivatives_mod
-    use basic_operations, only : eigenvals
-    use spectral_derivatives, only : dEigenvalues_dTensor
+    use test_muscle_math_spectral_derivs_mod
+    use muscle_math_operations, only : eigenvals
+    use muscle_math_spectral_derivs, only : dEigenvalues_dTensor
     implicit none
     
     logical, intent(out) :: passed
@@ -668,11 +668,11 @@ end subroutine
 
 subroutine test_second_derivative(passed)
     use, intrinsic :: iso_fortran_env
-    use derivatives
+    use muscle_math_derivatives
     use tensors_types
-    use test_spectral_derivatives_mod
-    use basic_operations, only : eigenvals
-    use spectral_derivatives, only : dEigenvalues_dTensor, d2Eigenvalues_dTensor2
+    use test_muscle_math_spectral_derivs_mod
+    use muscle_math_operations, only : eigenvals
+    use muscle_math_spectral_derivs, only : dEigenvalues_dTensor, d2Eigenvalues_dTensor2
     implicit none
     
     logical, intent(out) :: passed

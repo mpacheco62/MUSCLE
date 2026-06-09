@@ -329,7 +329,7 @@ contains
         !! differently (e.g., tensorial vs engineering).
         !! Requires an external `M66INV` routine for 6x6 matrix inversion
         use, intrinsic :: iso_fortran_env
-        use inverses_mat
+        use muscle_math_inverses
         implicit none
         type(ten_3D4O2sym), intent(in) :: a
         type(ten_3D4O2sym) :: res
@@ -353,7 +353,7 @@ contains
 
     pure function convert_3sym(self) result(res)
         use, intrinsic :: iso_fortran_env
-        use inverses_mat
+        use muscle_math_inverses
         use mod_ten_3D4O3sym
         implicit none
         class(ten_3D4O2sym), intent(in) :: self

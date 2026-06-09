@@ -1,4 +1,4 @@
-module derivatives
+module muscle_math_derivatives
     private
     public :: derivative
     interface derivative

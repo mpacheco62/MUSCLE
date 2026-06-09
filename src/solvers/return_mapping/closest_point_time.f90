@@ -309,7 +309,7 @@ module mod_closest_point_time
         end subroutine closest_point_tangent
 
         subroutine closest_point_tangent_numerical(self, strain, data, tangent)
-            use derivatives
+            use muscle_math_derivatives
             implicit none
             class(Closest_point), intent(in) :: self
             type(ten_3D2Osym), intent(in) :: strain

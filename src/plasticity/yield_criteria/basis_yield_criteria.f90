@@ -175,7 +175,7 @@ module mod_yield_criteria
             !! Computes d(stress_eq)/d(stress) numerically using central finite differences.
             !! This is the default implementation bound to the `dstressEq_dstress` procedure.
             use, intrinsic :: iso_fortran_env
-            use :: derivatives
+            use :: muscle_math_derivatives
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
             class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the derivative is evaluated.
             type(ten_3D2Osym) :: res                       !! Output first derivative tensor (`ten_3D2Osym`).
@@ -198,7 +198,7 @@ module mod_yield_criteria
             !! Computes d^2(stress_eq)/d(stress)^2 numerically using central finite differences.
             !! This is the default implementation bound to the `ddstressEq_ddstress` procedure.
             use, intrinsic :: iso_fortran_env
-            use :: derivatives
+            use :: muscle_math_derivatives
             implicit none
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
             class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the second derivative is evaluated.

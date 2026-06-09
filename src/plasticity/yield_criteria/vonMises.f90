@@ -26,7 +26,7 @@ module mod_vonMises
     end function stress_eq
 
     pure function dstressEq_dstress_vm(self, stress) result(res)
-      ! use basic_operations
+      ! use muscle_math_operations
       use tensors_types
       implicit None
       class(VonMises), intent(in) :: self

@@ -1,4 +1,4 @@
-module inverses_mat
+module muscle_math_inverses
     use, intrinsic :: iso_fortran_env
     
     public

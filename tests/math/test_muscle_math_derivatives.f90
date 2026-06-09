@@ -1,4 +1,4 @@
-module test_derivatives_mod
+module test_muscle_math_derivatives_mod
     use, intrinsic :: iso_fortran_env
     implicit none
     private
@@ -29,7 +29,7 @@ contains
     pure function derivative_fun1(self, x) result(res)
         use, intrinsic :: iso_fortran_env
         use tensors_types, only : ten_3D2Osym
-        use derivatives
+        use muscle_math_derivatives
         implicit none
         class(mytype_test), intent(in) :: self
         type(ten_3D2Osym), intent(in) :: x
@@ -164,12 +164,12 @@ contains
         trace = x%vals(1) + x%vals(2) + x%vals(3)
         res%vals = trace * x%vals
     end function
-end module test_derivatives_mod
+end module test_muscle_math_derivatives_mod
 
 
 ! ********************** PROGRAM TEST ************************************
-program test_derivatives
-    use derivatives
+program test_muscle_math_derivatives
+    use muscle_math_derivatives
     implicit none
     
     logical :: passed
@@ -190,13 +190,13 @@ program test_derivatives
     if (.not. passed) STOP 5
 
     STOP 0
-end program test_derivatives
+end program test_muscle_math_derivatives
 
 
 subroutine test_derivative_scalar_scalar(passed)
     use, intrinsic :: iso_fortran_env
-    use derivatives
-    use test_derivatives_mod
+    use muscle_math_derivatives
+    use test_muscle_math_derivatives_mod
     implicit none
     
     logical, intent(out) :: passed
@@ -305,9 +305,9 @@ end subroutine
 
 subroutine test_derivate_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
-    use derivatives
+    use muscle_math_derivatives
     use tensors_types
-    use test_derivatives_mod
+    use test_muscle_math_derivatives_mod
     implicit none
     
     logical, intent(out) :: passed
@@ -353,9 +353,9 @@ end subroutine
 
 subroutine test_derivate_ten_ten(passed)
     use, intrinsic :: iso_fortran_env
-    use derivatives
+    use muscle_math_derivatives
     use tensors_types
-    use test_derivatives_mod
+    use test_muscle_math_derivatives_mod
     implicit none
     
     logical, intent(out) :: passed
@@ -454,7 +454,7 @@ end subroutine
 subroutine test_object_derivate_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
     use tensors_types
-    use test_derivatives_mod
+    use test_muscle_math_derivatives_mod
     implicit none
     
     logical, intent(out) :: passed
@@ -484,9 +484,9 @@ end subroutine
 
 subroutine test_derivate2O_scalar_ten(passed)
     use, intrinsic :: iso_fortran_env
-    use derivatives
+    use muscle_math_derivatives
     use tensors_types
-    use test_derivatives_mod
+    use test_muscle_math_derivatives_mod
     use mod_elasticity_linear
     implicit none
     

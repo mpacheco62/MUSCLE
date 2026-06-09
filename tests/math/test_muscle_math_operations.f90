@@ -1,5 +1,5 @@
-program test_basic_operations
-    use basic_operations
+program test_muscle_math_operations
+    use muscle_math_operations
     implicit none
     
     logical :: passed
@@ -20,11 +20,11 @@ program test_basic_operations
     ! if (.not. passed) STOP 4
 
     STOP 0
-end program test_basic_operations
+end program test_muscle_math_operations
 
 subroutine test_eigenvalues(passed)
     use, intrinsic :: iso_fortran_env
-    use basic_operations
+    use muscle_math_operations
     use tensors_types
     implicit none
     

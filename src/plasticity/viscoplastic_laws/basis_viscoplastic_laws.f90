@@ -89,7 +89,7 @@ module mod_viscoplastic_laws
 
         pure function dstress_dep_numeric(self, ep, epd, dt) result(res)
         !! Numerical approximation of the derivative of the flow stress with respect to Delta strain.
-            use :: derivatives
+            use :: muscle_math_derivatives
             class(Base_viscoplastic_law), intent(in) :: self
             real(real64), intent(in) :: ep
             real(real64), intent(in) :: epd

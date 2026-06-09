@@ -285,7 +285,7 @@ contains
     !     !! resulting inverse matrix before storing them. This ensures consistency
     !     !! for subsequent Voigt-based tensor operations.
     !     use, intrinsic :: iso_fortran_env
-    !     use inverses_mat
+    !     use muscle_math_inverses
     !     implicit none
     !     class(ten_2D4O3sym), intent(in) :: a
     !     type(ten_2D4O3sym) :: res

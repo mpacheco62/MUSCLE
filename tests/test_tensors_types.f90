@@ -1,4 +1,4 @@
-program test_basic_operations
+program test_muscle_math_operations
     use tensors_types
     implicit none
     
@@ -62,7 +62,7 @@ program test_basic_operations
     ! if (.not. passed) STOP 5
 
     STOP 0
-end program test_basic_operations
+end program test_muscle_math_operations
 
 subroutine test_ten_3D2Osym_approx(passed)
     use, intrinsic :: iso_fortran_env

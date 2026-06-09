@@ -91,5 +91,5 @@ ctest
 This library is currently optimized for 3D stress states but includes support for 2D plane strain/stress formulations in specific modules.
 
 @Bug
-Numerical derivatives in the `derivatives` module require careful step size (`eps`) selection for highly non-linear yield surfaces like CPB06 to avoid round-off errors.
+Numerical derivatives in the `muscle_math_derivatives` module require careful step size (`eps`) selection for highly non-linear yield surfaces like CPB06 to avoid round-off errors.
 ```

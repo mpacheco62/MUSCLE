@@ -1,4 +1,4 @@
-module basic_operations
+module muscle_math_operations
   use, intrinsic :: iso_fortran_env
   
   public
