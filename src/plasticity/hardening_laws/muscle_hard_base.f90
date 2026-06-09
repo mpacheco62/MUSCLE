@@ -1,5 +1,5 @@
-module mod_hardening_laws
-    !! Module mod_hardening_laws
+module muscle_hard_base
+    !! Module muscle_hard_base
     !! ========================
     !!
     !! Defines the abstract base type for hardening laws used in plasticity models.

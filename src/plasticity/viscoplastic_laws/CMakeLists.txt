@@ -1,9 +1,9 @@
 target_sources(umatlib PRIVATE
-                 basis_viscoplastic_laws.f90
-                 JC_model.f90
-                 JohnsonCook_full_visco_hardening.f90
-                 MRK_model.f90
-                 NNL_model.f90
-                 RK_model.f90
-                 VA_model.f90
+                 muscle_vp_base.f90
+                 muscle_vp_jc.f90
+                 muscle_vp_jcfull.f90
+                 muscle_vp_mrk.f90
+                 muscle_vp_nnl.f90
+                 muscle_vp_rk.f90
+                 muscle_vp_va.f90
                  )

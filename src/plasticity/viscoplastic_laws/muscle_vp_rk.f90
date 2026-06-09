@@ -1,5 +1,5 @@
-module mod_RK_viscoplastic
-    !! Module mod_RK_viscoplastic
+module muscle_vp_rk
+    !! Module muscle_vp_rk
     !! ==========================
     !!
     !! Implements the **Rusinek-Klepaczko (RK)** Viscoplastic Flow Stress Law.
@@ -26,7 +26,7 @@ module mod_RK_viscoplastic
     !! \sigma_{flow} = B(\dot{\epsilon}_p) \cdot (\epsilon_0 + \epsilon_p)^{n(\dot{\epsilon}_p)} + \sigma_{extra}(\dot{\epsilon}_p)
     !! $$
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_laws
+    use muscle_vp_base
     implicit none
     private
     public :: RK_viscoplastic
@@ -135,4 +135,4 @@ contains
     end function dstress_dep_RK
     
 
-end module mod_RK_viscoplastic
+end module muscle_vp_rk

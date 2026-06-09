@@ -31,7 +31,7 @@ end program test_hill48
 subroutine test_vonMises_stresseq_hydrostatic(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
-    use mod_hill48
+    use muscle_yield_hill48
     implicit none
     
     real(real64), parameter :: EPS=1e-10
@@ -57,7 +57,7 @@ end subroutine
 ! subroutine test_vonMises_stresseq_simple_tensile(passed)
 !     use, intrinsic :: iso_fortran_env
 !     use muscle_tensors
-!     use mod_vonMises
+!     use muscle_yield_vonmises
 !     implicit none
     
 !     real(real64), parameter :: EPS=1e-10
@@ -80,7 +80,7 @@ end subroutine
 ! subroutine test_vonMises_stresseq_zero_stress(passed)
 !     use, intrinsic :: iso_fortran_env
 !     use muscle_tensors
-!     use mod_vonMises
+!     use muscle_yield_vonmises
 !     implicit none
     
 !     real(real64), parameter :: EPS=1e-10
@@ -103,7 +103,7 @@ end subroutine
 ! subroutine test_vonMises_stresseq_biaxial(passed)
 !     use, intrinsic :: iso_fortran_env
 !     use muscle_tensors
-!     use mod_vonMises
+!     use muscle_yield_vonmises
 !     implicit none
     
 !     real(real64), parameter :: EPS=1e-10
@@ -126,7 +126,7 @@ end subroutine
 ! subroutine test_vonMises_stresseq_shear(passed)
 !     use, intrinsic :: iso_fortran_env
 !     use muscle_tensors
-!     use mod_vonMises
+!     use muscle_yield_vonmises
 !     implicit none
     
 !     real(real64), parameter :: EPS=1e-10
@@ -147,7 +147,7 @@ end subroutine
 ! subroutine test_vonMises_stresseq_derivates(passed)
 !     use, intrinsic :: iso_fortran_env
 !     use muscle_tensors
-!     use mod_vonMises
+!     use muscle_yield_vonmises
 !     implicit none
     
 !     real(real64), parameter :: EPS=1e-10
@@ -212,7 +212,7 @@ end subroutine
 ! subroutine test_vonMises_stresseq_derivates2(passed)
 !     use, intrinsic :: iso_fortran_env
 !     use muscle_tensors
-!     use mod_vonMises
+!     use muscle_yield_vonmises
 !     implicit none
     
 !     real(real64), parameter :: EPS=1e-10

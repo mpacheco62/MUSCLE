@@ -1,6 +1,6 @@
-module mod_bilinear_hardening
+module muscle_hard_bilinear
     use, intrinsic :: iso_fortran_env
-    use mod_hardening_laws
+    use muscle_hard_base
     implicit none
     PRIVATE
 

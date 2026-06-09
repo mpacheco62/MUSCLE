@@ -42,8 +42,8 @@ end program test_closest_point_2
 subroutine test_closest_point_vonmises_uniaxial_tensile_sw(passed)
     use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_swift_hardening,      only : Swift_hardening
-    use mod_vonMises,             only : VonMises
+    use muscle_hard_swift,      only : Swift_hardening
+    use muscle_yield_vonmises,             only : VonMises
     use muscle_elasticity_linear,    only : Elasticity_linear
     use mod_closest_point_2
     implicit none
@@ -133,8 +133,8 @@ end subroutine test_closest_point_vonmises_uniaxial_tensile_sw
 subroutine test_closest_point_vonmises_zero_strain_sw(passed)
     use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_swift_hardening,      only : Swift_hardening
-    use mod_vonMises,             only : VonMises
+    use muscle_hard_swift,      only : Swift_hardening
+    use muscle_yield_vonmises,             only : VonMises
     use muscle_elasticity_linear,    only : Elasticity_linear
     use mod_closest_point_2,      only : closest_point2
     implicit none
@@ -204,8 +204,8 @@ end subroutine test_closest_point_vonmises_zero_strain_sw
 subroutine test_closest_point_vonmises_elastic_strain_sw(passed)
     use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_swift_hardening,      only : Swift_hardening
-    use mod_vonMises,             only : VonMises
+    use muscle_hard_swift,      only : Swift_hardening
+    use muscle_yield_vonmises,             only : VonMises
     use muscle_elasticity_linear,    only : Elasticity_linear
     use mod_closest_point_2,      only : closest_point2
     implicit none
@@ -274,8 +274,8 @@ end subroutine test_closest_point_vonmises_elastic_strain_sw
 !=====================================================================
 subroutine test_closest_point_vonmises_uniaxial_tensile_jc(passed)
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_swift_hardening,   only : Swift_hardening
-    use mod_JC_viscoplastic,   only : JC_viscoplastic
+    use muscle_hard_swift,   only : Swift_hardening
+    use muscle_vp_jc,   only : JC_viscoplastic
     implicit none
 
     real(real64), parameter :: EPS=1e-10
@@ -315,8 +315,8 @@ end subroutine test_closest_point_vonmises_uniaxial_tensile_jc
 !=====================================================================
 subroutine test_closest_point_vonmises_zero_strain_jc(passed)
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_swift_hardening,   only : Swift_hardening
-    use mod_JC_viscoplastic,   only : JC_viscoplastic
+    use muscle_hard_swift,   only : Swift_hardening
+    use muscle_vp_jc,   only : JC_viscoplastic
     implicit none
 
     real(real64), parameter :: EPS=1e-10
@@ -356,8 +356,8 @@ end subroutine test_closest_point_vonmises_zero_strain_jc
 ! !=====================================================================
 ! subroutine test_closest_point_vonmises_elastic_strain_jc(passed)
 !     use, intrinsic :: iso_fortran_env, only : real64
-!     use mod_swift_hardening,   only : Swift_hardening
-!     use mod_JC_viscoplastic,   only : JC_viscoplastic
+!     use muscle_hard_swift,   only : Swift_hardening
+!     use muscle_vp_jc,   only : JC_viscoplastic
 !     implicit none
 
 !     real(real64), parameter :: EPS=1e-12

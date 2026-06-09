@@ -1,6 +1,6 @@
-module mod_hill48
+module muscle_yield_hill48
     use, intrinsic :: iso_fortran_env
-    use mod_yield_criteria
+    use muscle_yield_base
     implicit none
     PRIVATE
 

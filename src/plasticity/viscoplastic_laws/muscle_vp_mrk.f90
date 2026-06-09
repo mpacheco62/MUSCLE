@@ -1,5 +1,5 @@
-module mod_MRK_viscoplastic
-    !! Module mod_MRK_viscoplastic
+module muscle_vp_mrk
+    !! Module muscle_vp_mrk
     !! ===========================
     !!
     !! Implements the **Modified Rusinek-Klepaczko (MRK)** Viscoplastic Flow Stress Law.
@@ -16,7 +16,7 @@ module mod_MRK_viscoplastic
     !! $\sigma_u$ is the ultimate stress (or back stress) and $\sigma_{a}$ is the rate-modified
     !! hardening component.
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_laws
+    use muscle_vp_base
     implicit none
     private
     public :: MRK_viscoplastic
@@ -124,4 +124,4 @@ contains
         res = (factor_rate**(1.0d0 / self%chi2)) * dsig0_dep + &
               ((dfactor_depd * sig0_a) + (factor_rate**(1.0d0 / self%chi2)) * dsig0_depd) / dt
     end function dstress_dep_MRK
-end module mod_MRK_viscoplastic
+end module muscle_vp_mrk

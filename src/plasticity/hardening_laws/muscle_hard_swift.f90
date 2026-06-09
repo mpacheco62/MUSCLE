@@ -1,5 +1,5 @@
-module mod_swift_hardening
-    !! Module mod_swift_hardening
+module muscle_hard_swift
+    !! Module muscle_hard_swift
     !! ==========================
     !!
     !! Defines a concrete implementation for the Swift isotropic hardening law.
@@ -48,7 +48,7 @@ module mod_swift_hardening
     !!
     !! ```fortran
     !! program example_swift_hardening_usage
-    !!   use mod_swift_hardening
+    !!   use muscle_hard_swift
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -83,7 +83,7 @@ module mod_swift_hardening
     !! For the base class definition see [[mod_hardening_law]].
 
     use, intrinsic :: iso_fortran_env
-    use mod_hardening_laws
+    use muscle_hard_base
     implicit none
     PRIVATE
 

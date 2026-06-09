@@ -1,4 +1,4 @@
-module mod_viscoplastic_laws
+module muscle_vp_base
     !! Module mod_basis_viscoplastic_law
     !! =================================
     !!
@@ -56,7 +56,7 @@ module mod_viscoplastic_laws
     !! use, intrinsic :: iso_fortran_env
     !! use mod_hardening_law
 	use, intrinsic :: iso_fortran_env, only: real64
-    use mod_hardening_laws, only: Base_hardening_laws
+    use muscle_hard_base, only: Base_hardening_laws
     implicit none
     private
     public :: Base_viscoplastic_law
@@ -116,4 +116,4 @@ module mod_viscoplastic_laws
 
         end function dstress_dep_numeric
 
-end module mod_viscoplastic_laws
+end module muscle_vp_base

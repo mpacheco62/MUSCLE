@@ -21,7 +21,7 @@ end program test_SwiftLaw
 
 subroutine test_swift_like_hollomon(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_swift_hardening
+    use muscle_hard_swift
     implicit none
     
     real(real64), parameter :: EPS=1e-10
@@ -104,7 +104,7 @@ end subroutine
 
 subroutine test_swift(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_swift_hardening
+    use muscle_hard_swift
     implicit none
     
     real(real64), parameter :: EPS=1e-10
@@ -195,7 +195,7 @@ end subroutine
 
 subroutine test_dswift(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_swift_hardening
+    use muscle_hard_swift
     implicit none
     
     real(real64), parameter :: EPS=1e-10
@@ -251,7 +251,7 @@ end subroutine
 
 subroutine test_ddswift(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_swift_hardening
+    use muscle_hard_swift
     implicit none
     
     real(real64), parameter :: EPS=1e-10

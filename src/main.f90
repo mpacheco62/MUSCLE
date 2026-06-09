@@ -1,7 +1,7 @@
 Program test
     use, intrinsic :: iso_fortran_env
     implicit None
-    ! use mod_vonMises
+    ! use muscle_yield_vonmises
     ! use basic_operations
     integer :: i
     real*8 :: eps22Init_t = 0.001216D0, eps22Init_c=0.002731D0, E22 = 4.76D0

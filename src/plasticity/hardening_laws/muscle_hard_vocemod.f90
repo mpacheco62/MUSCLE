@@ -1,8 +1,8 @@
-module mod_voce_m_hardening
+module muscle_hard_vocemod
     !! author: [Your Name/Initials]
     !! version: 1.0 - Initial documentation (Stress Function Only)
     !!
-    !! Module mod_voce_m_hardening
+    !! Module muscle_hard_vocemod
     !! ==========================
     !!
     !! Implements the **Modified Voce Hardening Law** (also known as Voce-Linear or Voce-Saturated hardening).
@@ -35,7 +35,7 @@ module mod_voce_m_hardening
     !! * `stress => stress_voce_mod`: Calculates the hardening stress $\sigma(\epsilon_p)$.
     !!
     use, intrinsic :: iso_fortran_env
-    use mod_hardening_laws
+    use muscle_hard_base
     implicit none
     private
     public :: Voce_modified_hardening
@@ -86,4 +86,4 @@ contains
         res = -self%q*self%n*self%n*exp(-self%n*ep)
     end function ddstress_ddep_voce_mod
 
-end module mod_voce_m_hardening
+end module muscle_hard_vocemod

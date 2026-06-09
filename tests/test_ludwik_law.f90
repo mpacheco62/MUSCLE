@@ -21,7 +21,7 @@ end program test_LudwikLaw
 
 subroutine test_ludwik_like_hollomon(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_ludwik_hardening
+    use muscle_hard_ludwik
     implicit none
     
     real(real64), parameter :: EPS=1e-10
@@ -104,7 +104,7 @@ end subroutine
 
 subroutine test_ludwik(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_ludwik_hardening
+    use muscle_hard_ludwik
     implicit none
     
     real(real64), parameter :: EPS=1e-10
@@ -195,7 +195,7 @@ end subroutine
 
 subroutine test_dludwik(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_ludwik_hardening
+    use muscle_hard_ludwik
     implicit none
     
     real(real64), parameter :: EPS=1e-10
@@ -251,7 +251,7 @@ end subroutine
 
 subroutine test_ddludwik(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_ludwik_hardening
+    use muscle_hard_ludwik
     implicit none
     
     real(real64), parameter :: EPS=1e-10

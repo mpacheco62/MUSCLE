@@ -1,5 +1,5 @@
-module mod_JC_viscoplastic
-    !! Module mod_JC_viscoplastic
+module muscle_vp_jc
+    !! Module muscle_vp_jc
     !! ===========================
     !!
     !! Implements the strain-rate dependent component of the **Johnson-Cook (JC) Viscoplastic Flow Stress Model**.
@@ -42,8 +42,8 @@ module mod_JC_viscoplastic
     !!       - `epd` (`real(real64)`): Equivalent plastic strain rate ($\dot{\epsilon}_p$).
     !!     - **Output:** `res` (`real(real64)`): The flow stress $\sigma_{flow}$.
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_laws, only: Base_viscoplastic_law
-    use mod_hardening_laws, only: Base_hardening_laws
+    use muscle_vp_base, only: Base_viscoplastic_law
+    use muscle_hard_base, only: Base_hardening_laws
     implicit none
     private
     public :: JC_viscoplastic
@@ -144,4 +144,4 @@ contains
         res = dsigma0 * factor_rate + sigma0 * dfactor_rate / dt
     end function dstress_dep_JC
 
-end module mod_JC_viscoplastic
+end module muscle_vp_jc

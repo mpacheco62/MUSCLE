@@ -1,6 +1,6 @@
 target_sources(umatlib PRIVATE
-                 basis_yield_criteria.f90
-                 CPB06.f90
-                 hill48.f90
-                 vonMises.f90
+                 muscle_yield_base.f90
+                 muscle_yield_cpb06.f90
+                 muscle_yield_hill48.f90
+                 muscle_yield_vonmises.f90
                  )

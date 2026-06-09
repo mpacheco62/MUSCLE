@@ -1,10 +1,10 @@
 module test_viscoplastic_mod
-    use mod_voce_m_hardening
-    use mod_JC_viscoplastic
-    use mod_RK_viscoplastic
-    use mod_MRK_viscoplastic
-    use mod_NNL_viscoplastic
-    use mod_VA_viscoplastic
+    use muscle_hard_vocemod
+    use muscle_vp_jc
+    use muscle_vp_rk
+    use muscle_vp_mrk
+    use muscle_vp_nnl
+    use muscle_vp_va
     implicit none
     private
     public :: test_viscoplastic

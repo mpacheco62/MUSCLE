@@ -1,5 +1,5 @@
-module mod_ludwik_hardening
-    !! Module mod_ludwik_hardening
+module muscle_hard_ludwik
+    !! Module muscle_hard_ludwik
     !! ==========================
     !!
     !! Defines a concrete implementation for the Ludwik isotropic hardening law.
@@ -48,7 +48,7 @@ module mod_ludwik_hardening
     !!
     !! ```fortran
     !! program example_ludwik_hardening_usage
-    !!   use mod_ludwik_hardening
+    !!   use muscle_hard_ludwik
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
@@ -77,7 +77,7 @@ module mod_ludwik_hardening
     !! For the base class definition see [[mod_hardening_law]].
 
     use, intrinsic :: iso_fortran_env
-    use mod_hardening_laws
+    use muscle_hard_base
     implicit none
     PRIVATE
 

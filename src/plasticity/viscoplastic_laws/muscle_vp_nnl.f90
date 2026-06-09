@@ -1,11 +1,11 @@
-module mod_NNL_viscoplastic
-    !! Module mod_NNL_viscoplastic
+module muscle_vp_nnl
+    !! Module muscle_vp_nnl
     !! ===========================
     !! Implementación robusta del modelo Nemat-Nasser-Li (NNL).
     !! Incluye protecciones térmicas y cinemáticas para asegurar convergencia.
 
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_laws
+    use muscle_vp_base
     implicit none
     private
     public :: NNL_viscoplastic
@@ -117,4 +117,4 @@ contains
         res = (dsig_u_dep + dsig_as_dep) + (dsig_as_depd / dt)
     end function dstress_dep_NNL
 
-end module mod_NNL_viscoplastic
+end module muscle_vp_nnl

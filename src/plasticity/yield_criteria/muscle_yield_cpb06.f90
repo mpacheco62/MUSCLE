@@ -1,7 +1,7 @@
-module mod_CPB06
+module muscle_yield_cpb06
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
-    use mod_yield_criteria
+    use muscle_yield_base
     implicit none
     PRIVATE
 

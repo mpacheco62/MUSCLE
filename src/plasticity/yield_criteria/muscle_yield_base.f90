@@ -1,5 +1,5 @@
-module mod_yield_criteria
-    !! Module mod_yield_criteria
+module muscle_yield_base
+    !! Module muscle_yield_base
     !! =========================
     !!
     !! Defines the abstract base type for yield criteria used in plasticity models.
@@ -42,7 +42,7 @@ module mod_yield_criteria
     !!
     !! ```fortran
     !! module mod_von_mises_yield
-    !!   use mod_yield_criteria
+    !!   use muscle_yield_base
     !!   use muscle_tensors
     !!   use iso_fortran_env, only: real64
     !!   implicit none

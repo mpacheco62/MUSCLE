@@ -18,7 +18,7 @@ end program test_bilinar_hardening
 
 subroutine test_bilinear(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_bilinear_hardening
+    use muscle_hard_bilinear
     implicit none
     
     real(real64), parameter :: EPS=1e-10
@@ -60,7 +60,7 @@ end subroutine
 
 subroutine test_dbilinear(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_bilinear_hardening
+    use muscle_hard_bilinear
     implicit none
     
     real(real64), parameter :: EPS=1e-10
@@ -102,7 +102,7 @@ end subroutine
 
 subroutine test_ddbilinear(passed)
     use, intrinsic :: iso_fortran_env
-    use mod_bilinear_hardening
+    use muscle_hard_bilinear
     implicit none
     
     real(real64), parameter :: EPS=1e-10

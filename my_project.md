@@ -57,8 +57,8 @@ Defines the elastic predictor. The base class `Base_elasticity` allows for both 
 
 ### 3. Yield Criteria (`yield_criteria`)
 Implements the surface that delimits the elastic-plastic transition. 
-- [[mod_vonMises]]: Classic J2 plasticity.
-- [[mod_CPB06]]: Advanced criteria for materials with strength differential effects (asymmetry between tension and compression).
+- [[muscle_yield_vonmises]]: Classic J2 plasticity.
+- [[muscle_yield_cpb06]]: Advanced criteria for materials with strength differential effects (asymmetry between tension and compression).
 
 ### 4. Hardening Laws (`hardening_laws`)
 Defines the evolution of the flow stress:

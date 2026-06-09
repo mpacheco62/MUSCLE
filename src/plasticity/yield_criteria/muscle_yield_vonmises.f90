@@ -1,6 +1,6 @@
-module mod_vonMises
+module muscle_yield_vonmises
     use, intrinsic :: iso_fortran_env
-    use mod_yield_criteria
+    use muscle_yield_base
     implicit none
     PRIVATE
 

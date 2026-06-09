@@ -1,6 +1,6 @@
-module mod_VA_viscoplastic
+module muscle_vp_va
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_laws
+    use muscle_vp_base
     implicit none
     private
     public :: VA_viscoplastic
@@ -64,4 +64,4 @@ pure function dstress_dep_VA(self, ep, epd, dt) result(res)
     res = dsig_dep + (dsig_depd / dt)
 end function dstress_dep_VA
 
-end module mod_VA_viscoplastic
+end module muscle_vp_va

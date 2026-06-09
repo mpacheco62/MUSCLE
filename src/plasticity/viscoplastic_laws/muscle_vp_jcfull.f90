@@ -1,7 +1,7 @@
 !======================================================================
 ! File: JohnsonCook_full_visco_hardening.f90
 !======================================================================
-! Module mod_JohnsonCook_full_visco_hardening
+! Module muscle_vp_jcfull
 ! ===========================================
 !
 ! Implementa el modelo Johnson–Cook completo usando la base viscoplástica:
@@ -25,10 +25,10 @@
 !
 !======================================================================
 
-module mod_JohnsonCook_full_visco_hardening
+module muscle_vp_jcfull
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_viscoplastic_laws, only : Base_viscoplastic_law
-    use mod_hardening_laws, only : Base_hardening_laws
+    use muscle_vp_base, only : Base_viscoplastic_law
+    use muscle_hard_base, only : Base_hardening_laws
     implicit none
     private
 
@@ -92,4 +92,4 @@ contains
         res = sigma0 * factor_rate * factor_temp
     end function flow_JC_full
 
-end module mod_JohnsonCook_full_visco_hardening
+end module muscle_vp_jcfull

@@ -13,8 +13,8 @@ end program test_cutting_plane
 subroutine test_cutting_plane_vonmises(passed)
     use muscle_tensors
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_swift_hardening, only : Swift_hardening
-    use mod_vonMises, only : VonMises
+    use muscle_hard_swift, only : Swift_hardening
+    use muscle_yield_vonmises, only : VonMises
     use muscle_elasticity_linear, only : Elasticity_linear
     use mod_cutting_plane, only : cutting_plane
     implicit none
