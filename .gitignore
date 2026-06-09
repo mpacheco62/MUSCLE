@@ -11,3 +11,4 @@ Theory/**
 !*.py
 *.obj
 *.mod
+all_fortran.txt
