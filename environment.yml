@@ -1,0 +1,11 @@
+name: ford
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - graphviz
+  - gfortran
+  - pip
+  - pip:
+    - ford

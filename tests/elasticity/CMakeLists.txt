@@ -1,0 +1,1 @@
+add_muscle_test(linear test_muscle_elasticity_linear.f90)

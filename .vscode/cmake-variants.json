@@ -16,6 +16,11 @@
             "short": "Profile",
             "long": "A custom build variant with specific flags.",
             "buildType": "Profile"
+          },
+          "Profile_unittest": {
+            "short": "Profile_unittests",
+            "long": "A custom build variant with specific flags.",
+            "buildType": "Profile_unittests"
           }
         }
       }

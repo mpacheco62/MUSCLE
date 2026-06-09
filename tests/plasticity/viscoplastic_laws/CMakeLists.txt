@@ -1,0 +1,1 @@
+add_muscle_test(vp_models test_muscle_vp_models.f90)

@@ -1,0 +1,360 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+
+module muscle_tensor_2d4o3sym
+    !! Module muscle_tensor_2d4o3sym
+    !! =======================
+    !!
+    !! Defines the type for fully symmetric 2D fourth-order tensors and associated operations.
+    !!
+    !! This module provides the derived type `ten_2D4O3sym` to represent a fourth-order
+    !! tensor in planar three dimensions possessing both major and minor symmetries:
+    !! \[ C_{ijkl} = C_{jikl} = C_{ijlk} = C_{klij} \]
+    !! Such tensors are common in linear elasticity (the elasticity tensor).
+    !!
+    !! The tensor is stored internally using a compressed format with xx components,
+    !! corresponding to the independent elements of the symmetric Voigt matrix representation.
+    !! The storage order follows a specific convention (see type description).
+    !!
+    !! The module overloads standard arithmetic operators (+, -, *, /), a custom
+    !! equality comparison operator (.approx.), an inverse operator (.inv.),
+    !! and provides methods for initialization.
+    !!
+    !! Public Entities
+    !! ---------------
+    !!
+    !! ### Derived Type:
+    !!
+    !! - `ten_2D4O3sym`: Represents a 3D fourth-order tensor with major and minor symmetries.
+    !!     - Component: `vals(10) :: real(real64)` - Stores the 10 independent components.
+    !!     - Generic Procedure: `init` - Initializes the tensor either from a
+    !!       10-element array or from 10 individual components.
+    !!
+    !! ### Operators:
+    !!
+    !! - `.approx.`: Compares two `ten_2D4O3sym` tensors for approximate equality using a modified L1 norm.
+    !! - `.inv.`: Computes the inverse of the tensor based on its ?x? symmetric Voigt matrix representation.
+    !! - `+`: Adds two `ten_2D4O3sym` tensors.
+    !! - `-`: Subtracts two `ten_2D4O3sym` tensors (binary) or computes the unary negation.
+    !! - `*`: Multiplies a `ten_2D4O3sym` tensor by a `real(real64)` scalar (or vice-versa).
+    !! - `/`: Divides a `ten_2D4O3sym` tensor by a `real(real64)` scalar.
+    !!
+    !! Usage
+    !! -----
+    !!
+    !! ```fortran
+    !! program example_ten_2D4O3sym_usage
+    !!   use muscle_tensors ! Includes muscle_tensor_2d4o3sym and others
+    !!   use iso_fortran_env, only: real64
+    !!   implicit none
+    !!
+    !!   type(ten_2D4O3sym) :: C_iso, C_inv
+    !!   real(real64) :: lambda, mu
+    !!   real(real64) :: C_vals(10)
+    !!   logical :: are_equal
+    !!
+    !!   ! Initialize isotropic elasticity tensor using individual components
+    !!   lambda = 120.0D0 ! Lame's first parameter
+    !!   mu = 80.0D0      ! Shear modulus (Lame's second parameter)
+    !!
+    !!   ! Components based on init2 order:
+    !!   ! xxxx, yyyy, zzzz, xyxy, xxyy, yyzz, zzxy,
+    !!   ! xxzz, yyxy, xxxy
+    !!   call C_iso%init( &
+    !!       lambda + 2*mu, lambda + 2*mu, lambda + 2*mu,  & ! xxxx, yyyy, zzzz
+    !!       mu,                                           & ! xyxy
+    !!       lambda, lambda,                               & ! xxyy, yyzz
+    !!       0.0,                                          & ! zzxy
+    !!       lambda,                                       & ! xxzz
+    !!       0.0,                                          & ! yyxy
+    !!       0.0                                          )  ! xxxy
+    !!
+    !!   ! Calculate the inverse (compliance tensor S = C^-1)
+    !!   C_inv = .inv. C_iso
+    !!
+    !!   ! Check a component of the inverse
+    !!   ! S_1111 = C_inv%vals(1) should be (lambda+mu)/(mu*(3*lambda+2*mu))
+    !!   print *, "C_iso(1) (C_1111):", C_iso%vals(1)
+    !!   print *, "C_inv(1) (S_1111):", C_inv%vals(1)
+    !!   print *, "Expected S_1111:", (lambda+mu)/(mu*(3*lambda+2*mu))
+    !!
+    !!   ! Comparison
+    !!   are_equal = (C_iso .approx. C_iso)
+    !!   print *, "Is C_iso equal to itself?", are_equal
+    !!
+    !! end program example_ten_2D4O3sym_usage
+    !! ```
+    !!
+    !! For more information see [[muscle_tensors]]
+
+    use, intrinsic :: iso_fortran_env
+    implicit none
+    private
+ 
+    type, public :: ten_2D4O3sym
+        !! Fully Symmetric 3D Fourth-Order Tensor (10-Component Storage)
+        !! ==============================================================
+        !!
+        !! Represents a fourth-order tensor \(C_{ijkl}\) in three dimensions that possesses
+        !! both minor and major symmetries:
+        !! \[ C_{ijkl} = C_{jikl} = C_{ijlk} = C_{klij} \]
+        !! This is the standard symmetry for linear elastic constitutive tensors.
+        !!
+        !! Storage:
+        !! --------
+        !! Due to the symmetries, only 10 independent components exist. These are stored
+        !! internally in a 1D array `vals` of size 10. The storage order corresponds
+        !! to the upper triangle of the 4x4 symmetric Voigt matrix representation,
+        !! stored column-wise:
+        !!
+        !! Voigt Matrix (Indices IJ):
+        !! ```
+        !! | 11 12 13 14 |
+        !! |    22 23 24 |
+        !! |       33 34 |
+        !! |          44 |
+        !! ```
+        !! Storage order in `vals(1:10)`:
+        !! (11, 22, 33, 44, 12, 23, 34, 13, 24, 14)
+        !!
+        !! where the Voigt index mapping is:
+        !! - 1 <-> (1,1) or xx
+        !! - 2 <-> (2,2) or yy
+        !! - 3 <-> (3,3) or zz
+        !! - 4 <-> (1,2) or (2,1) or xy
+        !!
+        !! Access:
+        !! -------
+        !! Components are typically accessed directly via the `vals` array using the
+        !! appropriate index based on the storage order.
+        !!
+        !! Initialization:
+        !! ---------------
+        !! Use the generic `init` procedure to initialize either from a 21-element `real(real64)`
+        !! array (following the storage order above) or by providing the 21 components
+        !! individually (see `init2_ten_2D4O3sym` for the required input order).
+        !!
+        !! For more information see [[muscle_tensors]]
+
+        real(real64), dimension(10) :: vals
+            !! Stores the 10 independent components following the compressed Voigt storage order.
+        contains
+            generic, public :: init => init_ten_2D4O3sym, init2_ten_2D4O3sym
+                !! Generic interface for initialization.
+            procedure, private :: init_ten_2D4O3sym, init2_ten_2D4O3sym 
+    end type ten_2D4O3sym
+
+    public :: operator(.approx.)
+    interface operator (.approx.)
+        module procedure approx_2D4O3sym
+    end interface
+
+    ! public :: operator(.inv.)
+    ! interface operator (.inv.)
+    !     module procedure inv_2D4O3sym
+    ! end interface
+
+    public :: operator(+)
+    interface operator (+)
+        module procedure sum_2D4O3sym
+    end interface
+
+    public :: operator(-)
+    interface operator (-)
+        module procedure sub_2D4O3sym
+        module procedure subU_2D4O3sym
+    end interface
+
+    public :: operator(*)
+    interface operator (*)
+        module procedure mul_real64_2D4O3sym
+        module procedure mul_2D4O3sym_real64
+    end interface
+
+    public :: operator( / )
+    interface operator ( / )
+        module procedure div_2D4O3sym_real64
+    end interface
+contains
+    
+    pure subroutine init_ten_2D4O3sym(self, vals)
+        !! Initializes a ten_2D4O3sym tensor from a 10-element array (compressed Voigt order).
+        implicit none
+        class(ten_2D4O3sym), intent(inout) :: self
+        real(real64), intent(in) :: vals(10)
+        self%vals = vals
+    end subroutine init_ten_2D4O3sym
+
+    pure subroutine init2_ten_2D4O3sym(self,             & 
+                                              xxxx, yyyy, zzzz, &
+                                              xyxy, xxyy, yyzz, &
+                                              zzxy, xxzz, yyxy, &
+                                              xxxy              &
+                                              )
+        !! Initializes a ten_2D4O3sym tensor from its 10 individual components.
+        !! Input arguments correspond to the independent Voigt matrix components C(I,J)
+        !! in a specific order (see implementation and type documentation).
+        !
+        !  Voigt Matrix Layout (I, J):
+        !  | (1,1) (1,2) (1,3) (1,4) |   <- xxxx, xxyy, xxzz, xxxy
+        !  | (2,1) (2,2) (2,3) (2,4) |   <- yyxx, yyyy, yyzz, yyxy
+        !  | (3,1) (3,2) (3,3) (3,4) |   <- zzxx, zzyy, zzzz, zzxy
+        !  | (4,1) (4,2) (4,3) (4,4) |   <- xyxx, xyyy, xyzz, xyxy
+        implicit none
+        class(ten_2D4O3sym), intent(inout) :: self
+        real(real64), intent(in) :: xxxx, xxyy, xxzz, xxxy
+        real(real64), intent(in) :: yyyy, yyzz, yyxy
+        real(real64), intent(in) :: zzzz, zzxy
+        real(real64), intent(in) :: xyxy
+        self%vals = (/xxxx, yyyy, zzzz, xyxy, &
+                      xxyy, yyzz, zzxy, &
+                      xxzz, yyxy, &
+                      xxxy &
+                      /)
+    end subroutine
+
+    pure function approx_2D4O3sym(a, b) result(res)
+        !! `.approx.` Compares two ten_2D4O3sym tensors for approximate equality.
+        !! Uses a modified L1 norm based on the 10 stored components, where components
+        !! corresponding to off-diagonal Voigt matrix entries are weighted by 2.
+        !! norm(A) = sum(|A_diag|) + 2*sum(|A_offdiag|) based on 4x4 Voigt matrix.
+        !! Condition: norm(a-b) / max(norm(a), norm(b), EPS_ABS) <= EPS
+        implicit none
+        type(ten_2D4O3sym), intent(in) :: a, b
+        logical :: res
+        real(real64), parameter :: EPS=1e-7, EPS_ABS=1e-30
+        real(real64) :: norm_a, norm_b, norm_max, norm
+
+        norm_a = sum(abs(a%vals(1:3))) + 2.0D0 * sum(abs(a%vals(4:10)))
+        norm_b = sum(abs(b%vals(1:3))) + 2.0D0 * sum(abs(b%vals(4:10)))
+
+        norm_max = max(max(norm_a, norm_b), EPS_ABS)        
+        norm = sum(abs(a%vals(1:3) - b%vals(1:3))) + 2.0D0 * sum(abs(a%vals(4:10) - b%vals(4:10)))
+
+        if (norm/norm_max .gt. EPS) res=.false.
+        if (norm/norm_max .le. EPS) res=.true.
+    end function approx_2D4O3sym
+
+    pure function sum_2D4O3sym(a, b) result(res)
+        implicit none
+        type(ten_2D4O3sym), intent(in) :: a, b
+        type(ten_2D4O3sym) :: res
+        res%vals = a%vals + b%vals
+    end function sum_2D4O3sym
+
+    pure function sub_2D4O3sym(a, b) result(res)
+        implicit none
+        type(ten_2D4O3sym), intent(in) :: a, b
+        type(ten_2D4O3sym) :: res
+        res%vals = a%vals - b%vals
+    end function sub_2D4O3sym
+
+    pure function subU_2D4O3sym(a) result(res)
+        implicit none
+        type(ten_2D4O3sym), intent(in) :: a
+        type(ten_2D4O3sym) :: res
+        res%vals = -a%vals
+    end function subU_2D4O3sym
+
+    pure function mul_real64_2D4O3sym(a, b) result(res)
+        implicit none
+        real(real64), intent(in) :: a
+        type(ten_2D4O3sym), intent(in) :: b
+        type(ten_2D4O3sym) :: res
+        res%vals = a * b%vals
+    end function mul_real64_2D4O3sym
+
+    pure function mul_2D4O3sym_real64(b, a) result(res)
+        implicit none
+        real(real64), intent(in) :: a
+        type(ten_2D4O3sym), intent(in) :: b
+        type(ten_2D4O3sym) :: res
+        res%vals = a * b%vals
+    end function mul_2D4O3sym_real64
+
+    pure function div_2D4O3sym_real64(b, a) result(res)
+        implicit none
+        real(real64), intent(in) :: a
+        type(ten_2D4O3sym), intent(in) :: b
+        type(ten_2D4O3sym) :: res
+        res%vals = b%vals/a
+    end function div_2D4O3sym_real64
+
+    ! pure function inv_2D4O3sym(a) result(res)
+    !     !! `.inv.` Computes the inverse of a ten_2D4O3sym tensor.
+    !     !! Reconstructs the 6x6 symmetric Voigt matrix, inverts it using `M66INV`,
+    !     !! and extracts the 21 independent components of the inverse, applying
+    !     !! scaling factors (1/2, 1/4) to the off-diagonal Voigt components of the
+    !     !! resulting inverse matrix before storing them. This ensures consistency
+    !     !! for subsequent Voigt-based tensor operations.
+    !     use, intrinsic :: iso_fortran_env
+    !     use muscle_math_inverses
+    !     implicit none
+    !     class(ten_2D4O3sym), intent(in) :: a
+    !     type(ten_2D4O3sym) :: res
+    !     real(real64) :: mat_a(6,6), mat_b(6,6), v(21)
+    !     logical :: ok
+    !     integer :: iok
+    !     v = a%vals
+    !     mat_a = reshape((/  v(1),  v(7), v(12), v(16), v(19), v(21), &
+    !                         v(7),  v(2),  v(8), v(13), v(17), v(20), &
+    !                        v(12),  v(8),  v(3),  v(9), v(14), v(18), & 
+    !                        v(16), v(13),  v(9),  v(4), v(10), v(15), &
+    !                        v(19), v(17), v(14), v(10),  v(5), v(11), &
+    !                        v(21), v(20), v(18), v(15), v(11),  v(6)  &
+    !                     /), (/6,6/))
+
+    !     call M66INV(mat_a, mat_b, ok)
+
+
+    !     ! call FINDInv(mat_a, mat_b, 6, iok)
+
+    !     ! v = (/ mat_b(1,1), mat_b(2,2), mat_b(3,3), mat_b(4,4), mat_b(5,5), mat_b(6,6),  &
+    !     !        mat_b(1,2), mat_b(2,3), mat_b(3,4), mat_b(4,5), mat_b(5,6),              &
+    !     !        mat_b(1,3), mat_b(2,4), mat_b(3,5), mat_b(4,6),                          &
+    !     !        mat_b(1,4), mat_b(2,5), mat_b(3,6),                                      &
+    !     !        mat_b(1,5), mat_b(2,6),                                                  &
+    !     !        mat_b(1,6)                                                               &
+    !     !       /)
+
+    !     ! TODO: Add error handling if 'ok' is .false. or iok indicates failure
+
+    !     ! Extract the 21 components of the inverse matrix (mat_b)
+    !     ! Apply scaling factors to off-diagonal Voigt components of the inverse
+    !     ! This scaling is necessary for the inverse tensor stored in 21-component
+    !     ! format to work correctly in standard Voigt tensor contractions like C:E
+    !     ! where factors of 2 or 4 might be implicitly assumed depending on the
+    !     ! definition of the contraction and the storage format.
+
+    !     v = (/ mat_b(1,1), mat_b(2,2), mat_b(3,3), mat_b(4,4)/4D0, mat_b(5,5)/4D0, mat_b(6,6)/4D0,  &
+    !            mat_b(1,2), mat_b(2,3), mat_b(3,4)/2D0, mat_b(4,5)/4D0, mat_b(5,6)/4D0,              &
+    !            mat_b(1,3), mat_b(2,4)/2D0, mat_b(3,5)/2D0, mat_b(4,6)/4D0,                          &
+    !            mat_b(1,4)/2D0, mat_b(2,5)/2D0, mat_b(3,6)/2D0,                                      &
+    !            mat_b(1,5)/2D0, mat_b(2,6)/2D0,                                                  &
+    !            mat_b(1,6)/2D0                                                               &
+    !           /)
+
+
+    !     ! mat_a = reshape((/  v(1),  v(7), v(12), v(16), v(19), v(21), &
+    !     !                     v(7),  v(2),  v(8), v(13), v(17), v(20), &
+    !     !                     v(12),  v(8),  v(3),  v(9), v(14), v(18), & 
+    !     !                     v(16), v(13),  v(9),  v(4), v(10), v(15), &
+    !     !                     v(19), v(17), v(14), v(10),  v(5), v(11), &
+    !     !                     v(21), v(20), v(18), v(15), v(11),  v(6)  &
+    !     !                     /), (/6,6/))
+    !     ! call M66INV(mat_a, mat_b, ok)
+    !     ! call FINDInv(mat_a, mat_b, 6, iok)
+        
+    !     call res%init(v)
+        
+    !         !
+    !         !  | ( 1:1111) ( 7:1122) (12:1133) (16:1112) (19:1123) (21:1113) |
+    !         !  | ( 7:2211) ( 2:2222) ( 8:2233) (13:2212) (17:2223) (20:2213) |
+    !         !  | (12:3311) ( 8:3322) ( 3:3333) ( 9:3312) (14:3323) (18:3313) |
+    !         !  | (16:1211) (13:1222) ( 9:1233) ( 4:1212) (10:1223) (15:1213) |
+    !         !  | (19:2311) (17:2322) (14:2333) (10:2312) ( 5:2323) (11:2313) |
+    !         !  | (21:1311) (20:1322) (18:1333) (15:1312) (11:1323) ( 6:1313) |
+
+    ! end function inv_2D4O3sym
+
+end module muscle_tensor_2d4o3sym

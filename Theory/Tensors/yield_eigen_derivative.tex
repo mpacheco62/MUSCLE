@@ -1,0 +1,170 @@
+\documentclass[12pt]{article}
+\usepackage[letterpaper, margin=1.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{empheq}
+\setlength\parindent{0pt}
+
+\begin{document}
+
+\title{\textbf{Formulación Indicial para las Derivadas de Primer y Segundo Orden de Funciones de Fluencia Basadas en Autovalores}}
+\author{Documentación Técnica de Desarrollo --- MUSCLE}
+\date{\today}
+\maketitle
+
+Este documento presenta las ecuaciones para el cálculo de las derivadas de primer y segundo orden de una función de fluencia $f$ que depende de los autovalores $\Sigma_a$ ($a=1,2,3$) de un tensor de tensiones transformado linealmente $\Sigma_{ij}$.
+
+\section{Definición del Modelo y Variables}
+
+La función de fluencia y las variables cinemáticas se definen en componentes como:
+\[ f(\Sigma_1, \Sigma_2, \Sigma_3) = f(\sigma_{ij}) \]
+\[ \Sigma_{ij} = L_{ijkl} S_{kl} \]
+\[ S_{ij} = \sigma_{ij} - \frac{1}{3}\sigma_{mm} \delta_{ij} \]
+
+Donde $\sigma_{ij}$ es el tensor de tensiones de Cauchy, $S_{ij}$ es el tensor desviador de tensiones, $L_{ijkl}$ es el tensor de la aplicación lineal, $\delta_{ij}$ es la Delta de Kronecker, y $\Sigma_a$ son los tres autovalores de la matriz $\Sigma_{ij}$.
+
+\section{Primera Derivada (Gradiente)}
+
+La primera derivada de la función de fluencia respecto al tensor de tensiones $\sigma_{ij}$ se calcula mediante la regla de la cadena:
+\begin{equation}
+    \frac{\partial f}{\partial \sigma_{ij}} = \frac{\partial f}{\partial \Sigma_k} \frac{\partial \Sigma_k}{\partial \Sigma_{mn}} \frac{\partial \Sigma_{mn}}{\partial S_{op}} \frac{\partial S_{op}}{\partial \sigma_{ij}}
+\end{equation}
+
+\subsection{Derivada del desviador respecto a las tensiones}
+\begin{equation}
+    \frac{\partial S_{op}}{\partial \sigma_{ij}} = \frac{\partial}{\partial \sigma_{ij}}\left(\sigma_{op} - \frac{1}{3}\sigma_{mm} \delta_{op}\right) = \delta_{oi}\delta_{pj} - \frac{1}{3}\delta_{ij}\delta_{op}
+\end{equation}
+
+\subsection{Derivada de $\Sigma_{mn}$ respecto a $S_{op}$}
+\begin{equation}
+    \frac{\partial \Sigma_{mn}}{\partial S_{op}} = \frac{\partial}{\partial S_{op}} \left(L_{mnop} S_{op}\right) = L_{mnop}
+\end{equation}
+
+\subsection{Derivada del autovalor $\Sigma_k$ respecto a $\Sigma_{mn}$}
+Aplicando diferenciación implícita sobre el polinomio característico de $\Sigma_{mn}$, definido como $P(\Sigma_k) = \Sigma_k^3 - I_1\Sigma_k^2 + I_2\Sigma_k - I_3 = 0$:
+\begin{equation}
+    \frac{\partial \Sigma_k}{\partial \Sigma_{mn}} = -\frac{\frac{\partial P}{\partial \Sigma_{mn}}}{\frac{\partial P}{\partial \Sigma_k}} = -\frac{-\Sigma_k^2 \frac{\partial I_1}{\partial \Sigma_{mn}} + \Sigma_k \frac{\partial I_2}{\partial \Sigma_{mn}} - \frac{\partial I_3}{\partial \Sigma_{mn}}}{3\Sigma_k^2 - 2I_1\Sigma_k + I_2}
+\end{equation}
+
+Sustituyendo las derivadas analíticas de los invariantes de $\Sigma_{mn}$ respecto a sí mismo:
+\begin{equation}
+    \frac{\partial I_1}{\partial \dots} \to \frac{\partial I_1}{\partial \Sigma_{mn}} = \delta_{mn}
+\end{equation}
+\begin{equation}
+    \frac{\partial I_2}{\partial \dots} \to \frac{\partial I_2}{\partial \Sigma_{mn}} = I_1\delta_{mn} - \Sigma_{mn}
+\end{equation}
+\begin{equation}
+    \frac{\partial I_3}{\partial \dots} \to \frac{\partial I_3}{\partial \Sigma_{mn}} = \Sigma_{mp}\Sigma_{pn} - I_1\Sigma_{mn} + I_2\delta_{mn}
+\end{equation}
+
+Obtenemos el tensor simétrico de segundo orden $H_{mn}^{(k)}$:
+\begin{equation}
+    H_{mn}^{(k)} = \frac{\partial \Sigma_k}{\partial \Sigma_{mn}} = \frac{\Sigma_{mp}\Sigma_{pn} - (I_1 - \Sigma_k)\Sigma_{mn} + (\Sigma_k^2 - I_1\Sigma_k + I_2)\delta_{mn}}{3\Sigma_k^2 - 2I_1\Sigma_k + I_2}
+\end{equation}
+
+Donde $I_1 = \Sigma_{pp}$ e $I_2 = \frac{1}{2}(I_1^2 - \Sigma_{pq}\Sigma_{qp})$.
+
+\section{Segunda Derivada (Hessiana)}
+
+La segunda derivada de la función de fluencia respecto al tensor de tensiones se calcula mediante la regla de la cadena para derivadas de orden superior:
+\begin{equation}
+    \frac{\partial^2 f}{\partial \sigma_{ij} \partial \sigma_{kl}} = \left[ \frac{\partial^2 f}{\partial \Sigma_q \partial \Sigma_r} \frac{\partial \Sigma_q}{\partial \Sigma_{mn}} \frac{\partial \Sigma_r}{\partial \Sigma_{st}} + \frac{\partial f}{\partial \Sigma_q} \frac{\partial^2 \Sigma_q}{\partial \Sigma_{mn} \partial \Sigma_{st}} \right] \frac{\partial \Sigma_{mn}}{\partial S_{op}} \frac{\partial S_{op}}{\partial \sigma_{ij}} \frac{\partial \Sigma_{st}}{\partial S_{uv}} \frac{\partial S_{uv}}{\partial \sigma_{kl}}
+\end{equation}
+
+\subsection{Segunda derivada del desviador respecto a las tensiones}
+\begin{equation}
+    \frac{\partial^2 S_{op}}{\partial \sigma_{ij} \partial \sigma_{kl}} = \frac{\partial}{\partial \sigma_{kl}}\left( \delta_{oi}\delta_{pj} - \frac{1}{3}\delta_{ij}\delta_{op} \right) = 0
+\end{equation}
+
+\subsection{Segunda derivada de $\Sigma_{mn}$ respecto a $S_{op}$}
+\begin{equation}
+    \frac{\partial^2 \Sigma_{mn}}{\partial S_{op} \partial S_{qr}} = \frac{\partial}{\partial S_{qr}} (L_{mnop}) = 0
+\end{equation}
+
+\subsection{Segunda derivada del autovalor $\Sigma_k$ respecto a $\Sigma_{mn}$}
+Diferenciando el tensor de primer orden $H_{mn}^{(k)}$ respecto a las componentes $\Sigma_{op}$ usando la regla del cociente:
+\begin{equation}
+    \frac{\partial^2 \Sigma_k}{\partial \Sigma_{mn} \partial \Sigma_{op}} = \frac{\partial}{\partial \Sigma_{op}} \left( \frac{F_{mn}^{(k)}}{D_k} \right) = \frac{1}{D_k} \left( \frac{\partial F_{mn}^{(k)}}{\partial \Sigma_{op}} - \frac{F_{mn}^{(k)}}{D_k} \frac{\partial D_k}{\partial \Sigma_{op}} \right)
+\end{equation}
+
+Donde el denominador es $D_k = 3\Sigma_k^2 - 2I_1\Sigma_k + I_2$ y el numerador es $F_{mn}^{(k)} = \Sigma_{mp}\Sigma_{pn} - (I_1 - \Sigma_k)\Sigma_{mn} + (\Sigma_k^2 - I_1\Sigma_k + I_2)\delta_{mn}$. 
+
+Sustituyendo el tensor de primer orden $H_{mn}^{(k)} = F_{mn}^{(k)}/D_k$, la expresión se define como:
+\begin{equation}
+    \frac{\partial^2 \Sigma_k}{\partial \Sigma_{mn} \partial \Sigma_{op}} = \frac{1}{D_k} \left( \frac{\partial F_{mn}^{(k)}}{\partial \Sigma_{op}} - H_{mn}^{(k)} \frac{\partial D_k}{\partial \Sigma_{op}} \right)
+\end{equation}
+
+\subsection{Derivada de $D_k$ respecto a $\Sigma_{op}$}
+\begin{equation}
+    \frac{\partial D_k}{\partial \Sigma_{op}} = \frac{\partial}{\partial \Sigma_{op}} \left(3\Sigma_k^2 - 2I_1\Sigma_k + I_2\right) = 2(3\Sigma_k - I_1)H_{op}^{(k)} + (I_1 - 2\Sigma_k)\delta_{op} - \Sigma_{op}
+\end{equation}
+
+
+
+
+\subsection{Derivadas fundamentales de los invariantes y variables}
+Antes de derivar $F_{mn}^{(k)}$, establecemos las derivadas fundamentales de los términos que lo componen respecto al tensor simétrico $\Sigma_{op}$:
+\begin{align}
+    \frac{\partial \Sigma_{mn}}{\partial \Sigma_{op}} &= \mathcal{I}_{mnop} = \frac{1}{2}(\delta_{mo}\delta_{np} + \delta_{mp}\delta_{no}) \\
+    \frac{\partial I_1}{\partial \Sigma_{op}} &= \delta_{op} \\
+    \frac{\partial I_2}{\partial \Sigma_{op}} &= I_1\delta_{op} - \Sigma_{op} \\
+    \frac{\partial \Sigma_k}{\partial \Sigma_{op}} &= H_{op}^{(k)}
+\end{align}
+
+\subsection{Derivada de $F_{mn}^{(k)}$ respecto a $\Sigma_{op}$}
+Recordemos la definición del tensor $F_{mn}^{(k)}$:
+\begin{equation}
+    F_{mn}^{(k)} = \Sigma_{mq}\Sigma_{qn} - (I_1 - \Sigma_k)\Sigma_{mn} + (\Sigma_k^2 - I_1\Sigma_k + I_2)\delta_{mn}
+\end{equation}
+
+Aplicando la regla del producto y la regla de la cadena término a término obtenemos:
+
+1. Derivada del término al cuadrado ($\Sigma_{mq}\Sigma_{qn}$):
+\begin{equation}
+    \frac{\partial}{\partial \Sigma_{op}} (\Sigma_{mq}\Sigma_{qn}) = \mathcal{I}_{mqop}\Sigma_{qn} + \Sigma_{mq}\mathcal{I}_{qnop} \equiv \mathcal{M}_{mnop}
+\end{equation}
+Donde $\mathcal{M}_{mnop} = \frac{1}{2}(\delta_{mo}\Sigma_{np} + \delta_{mp}\Sigma_{no} + \Sigma_{mo}\delta_{np} + \Sigma_{mp}\delta_{no})$.
+
+2. Derivada del término lineal ($(I_1 - \Sigma_k)\Sigma_{mn}$):
+\begin{equation}
+    \frac{\partial}{\partial \Sigma_{op}} \left[ (I_1 - \Sigma_k)\Sigma_{mn} \right] = (\delta_{op} - H_{op}^{(k)})\Sigma_{mn} + (I_1 - \Sigma_k)\mathcal{I}_{mnop}
+\end{equation}
+
+3. Derivada del término escalar con $\delta_{mn}$:
+\begin{equation}
+    \frac{\partial}{\partial \Sigma_{op}} \left[ (\Sigma_k^2 - I_1\Sigma_k + I_2)\delta_{mn} \right] = \left[ 2\Sigma_k H_{op}^{(k)} - (\delta_{op}\Sigma_k + I_1 H_{op}^{(k)}) + (I_1\delta_{op} - \Sigma_{op}) \right]\delta_{mn}
+\end{equation}
+
+Agrupando todos los términos (1) - (2) + (3) y reorganizando, obtenemos la derivada explícita de $F_{mn}^{(k)}$:
+\begin{align}
+    \frac{\partial F_{mn}^{(k)}}{\partial \Sigma_{op}} = & \mathcal{M}_{mnop} - (I_1 - \Sigma_k)\mathcal{I}_{mnop} + (I_1 - \Sigma_k)\delta_{mn}\delta_{op} - \Sigma_{mn}\delta_{op} - \delta_{mn}\Sigma_{op} \nonumber \\
+    & + \Sigma_{mn}H^{(k)}_{op} + (2\Sigma_k - I_1)\delta_{mn}H^{(k)}_{op} \label{eq:dF_dSigma}
+\end{align}
+
+\subsection{Ensamblaje del Numerador Completo $\mathcal{N}_{mnop}^{(k)}$ y Aparición de la Simetría}
+La Hessiana del autovalor se define a partir del numerador $\mathcal{N}_{mnop}^{(k)}$:
+\begin{equation}
+    \mathcal{N}_{mnop}^{(k)} = \frac{\partial F_{mn}^{(k)}}{\partial \Sigma_{op}} - H_{mn}^{(k)} \frac{\partial D_k}{\partial \Sigma_{op}}
+\end{equation}
+
+Sustituyendo la derivada de $D_k$ (ecuación de la sección 3.4), el término sustractivo se expande como:
+\begin{equation}
+    H_{mn}^{(k)} \frac{\partial D_k}{\partial \Sigma_{op}} = 2(3\Sigma_k - I_1)H_{mn}^{(k)}H_{op}^{(k)} + (I_1 - 2\Sigma_k)H_{mn}^{(k)}\delta_{op} - H_{mn}^{(k)}\Sigma_{op} \label{eq:H_dD}
+\end{equation}
+
+Al restar la ecuación \eqref{eq:H_dD} de la ecuación \eqref{eq:dF_dSigma}, los términos no simétricos se complementan perfectamente para formar productos diádicos simétricos (ante el intercambio $mn \leftrightarrow op$). Por ejemplo:
+\begin{itemize}
+    \item El término $+ \Sigma_{mn}H_{op}^{(k)}$ de \eqref{eq:dF_dSigma} se suma con el término $- (- H_{mn}^{(k)}\Sigma_{op})$ de \eqref{eq:H_dD}, formando la pareja simétrica $(\Sigma_{mn}H_{op}^{(k)} + H_{mn}^{(k)}\Sigma_{op})$.
+    \item El término $+ (2\Sigma_k - I_1)\delta_{mn}H_{op}^{(k)}$ se suma con $- (I_1 - 2\Sigma_k)H_{mn}^{(k)}\delta_{op}$, formando la pareja $(2\Sigma_k - I_1)(\delta_{mn}H_{op}^{(k)} + H_{mn}^{(k)}\delta_{op})$.
+\end{itemize}
+
+El resultado final es el tensor de cuarto orden $\mathcal{N}_{mnop}^{(k)}$, el cual posee simetría mayor intrínseca:
+\begin{align}
+    \mathcal{N}_{mnop}^{(k)} = & \mathcal{M}_{mnop} - (I_1 - \Sigma_k)\mathcal{I}_{mnop} + (I_1 - \Sigma_k)\delta_{mn}\delta_{op} \nonumber \\
+    & - (\Sigma_{mn}\delta_{op} + \delta_{mn}\Sigma_{op}) \nonumber \\
+    & + (\Sigma_{mn}H^{(k)}_{op} + H^{(k)}_{mn}\Sigma_{op}) \nonumber \\
+    & + (2\Sigma_k - I_1)(\delta_{mn}H^{(k)}_{op} + H^{(k)}_{mn}\delta_{op}) \nonumber \\
+    & - 2(3\Sigma_k - I_1)H^{(k)}_{mn}H^{(k)}_{op}
+\end{align}
+
+Esta forma simetrizada es la que permite un cómputo eficiente en la implementación de tensores en formato Voigt comprimido de 21 componentes.
