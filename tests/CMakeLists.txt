@@ -13,7 +13,7 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
                                         $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
                                 )
 
-        # target_compile_options(umatlib PRIVATE 
+        # target_compile_options(muscle PRIVATE 
         #                                 -c -Qopenmp -fpic
         #                         )
 elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
@@ -37,14 +37,14 @@ endif()
 # Store the root tests directory path
 set(BASE_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "Base tests directory")
 
-function(add_umat_test NAME)
+function(add_muscle_test NAME)
     # Define executable name with 'test_' prefix
     set(EXE_NAME "test_${NAME}")
 
     # Create executable target
     add_executable(${EXE_NAME} ${ARGN})
-    target_link_libraries(${EXE_NAME} PRIVATE umatlib compile_options)
-    target_include_directories(${EXE_NAME} PUBLIC ${CMAKE_BINARY_DIR}/modules/umatlib)
+    target_link_libraries(${EXE_NAME} PRIVATE muscle compile_options)
+    target_include_directories(${EXE_NAME} PUBLIC ${CMAKE_BINARY_DIR}/modules/muscle)
     add_dependencies(build_all_tests ${EXE_NAME})
 
 

@@ -8,7 +8,7 @@ module muscle_tensors
     !! This module serves as the central access point for various tensor types.
     !! 
     !! This module serves as the central access point for various tensor types and their associated
-    !! operations within the UmatLib library. It aggregates tensor definitions and operator
+    !! operations within the MUSCLE library. It aggregates tensor definitions and operator
     !! implementations from specialized submodules, providing a unified interface for users.
     !!
     !! Instead of defining the tensor types and operations directly, this module uses other

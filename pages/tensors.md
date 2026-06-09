@@ -2,7 +2,7 @@ title: Tensor Algebra Guide
 
 # Using the Tensor Engine
 
-UMatLib provides a high-level syntax for tensor operations to make the code look similar to mathematical notation.
+MUSCLE provides a high-level syntax for tensor operations to make the code look similar to mathematical notation.
 
 ## Available Types
 - `ten_3D2Osym`: Symmetric 2nd order tensor (6 components).

@@ -2,10 +2,10 @@ title: FEA Integration
 
 # Integration with FEA Solvers
 
-UMatLib is designed to be easily wrapped by standard user subroutines.
+MUSCLE is designed to be easily wrapped by standard user subroutines.
 
 ## 1. LS-DYNA (UMAT)
-To use UMatLib in LS-DYNA, you should map the `sigma` and `eps` arrays to the `ten_3D2Osym` type.
+To use MUSCLE in LS-DYNA, you should map the `sigma` and `eps` arrays to the `ten_3D2Osym` type.
 
 **Example Wrapper Structure:**
 1. Convert LS-DYNA history variables to internal library state.

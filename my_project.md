@@ -1,6 +1,6 @@
 ---
-project: UMatLib
-summary: A high-performance, object-oriented Fortran library for constitutive material modeling in FEA (LS-DYNA, ANSYS APDL).
+project: MUSCLE
+summary: Mechanics User-defined Solids Constitutive Library & Extensions. A high-performance, object-oriented Fortran library for constitutive material modeling in FEA (LS-DYNA, ANSYS APDL).
 src_dir: ./src
 output_dir: ./doc
 author: Matias Pacheco-Alarcon
@@ -19,7 +19,7 @@ page_dir: pages
 
 # Introduction
 
-**UMatLib** is a specialized Fortran library designed for the development and implementation of advanced constitutive laws in Computational Solid Mechanics. It provides a robust, modular, and high-performance framework to define material behaviors that can be integrated into Finite Element Analysis (FEA) codes such as **LS-DYNA (User Defined Materials)** and **ANSYS APDL (USERMAT)**.
+**MUSCLE** is a specialized Fortran library designed for the development and implementation of advanced constitutive laws in Computational Solid Mechanics. It provides a robust, modular, and high-performance framework to define material behaviors that can be integrated into Finite Element Analysis (FEA) codes such as **LS-DYNA (User Defined Materials)** and **ANSYS APDL (USERMAT)**.
 
 The library is built on modern Fortran standards (2003/2008), utilizing Object-Oriented Programming (OOP) to allow easy extension of yield criteria, hardening laws, and viscoplastic models.
 

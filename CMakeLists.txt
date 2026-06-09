@@ -2,15 +2,15 @@ cmake_minimum_required(VERSION 3.20)
 # set(CMAKE_CONFIGURATION_TYPES "${CMAKE_CXX_FLAGS_RELEASE};profiling" CACHE STRING "Available build types.")
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;Profile;Profile_unittests" CACHE STRING "Available build types.")
 
-project(Lib_Umats VERSION 0.1
-        DESCRIPTION "Library for umats"
+project(MUSCLE VERSION 0.1
+        DESCRIPTION "Mechanics User-defined Solids Constitutive Library & Extensions"
         LANGUAGES Fortran C) # C for the tests
 include(CTest)
 enable_testing()
 
 enable_language(Fortran)
 
-message(STATUS "********Lib_Umats - CMAKE_BUILD_TYPE is: ${CMAKE_BUILD_TYPE}********")
+message(STATUS "********MUSCLE - CMAKE_BUILD_TYPE is: ${CMAKE_BUILD_TYPE}********")
 
 # This generate a file compile_commands.json with commands use on compile
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -67,7 +67,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Profile_unittests")
             COMMENT "Procesando cobertura de codigo..."
             VERBATIM
         )
-        add_dependencies(coverage_report umatlib)
+        add_dependencies(coverage_report muscle)
         add_dependencies(coverage_report build_all_tests)
     else()
         message(WARNING "lcov o genhtml no encontrados. No se podra generar el reporte visual.")

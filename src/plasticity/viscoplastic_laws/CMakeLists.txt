@@ -1,4 +1,4 @@
-target_sources(umatlib PRIVATE
+target_sources(muscle PRIVATE
                  muscle_vp_base.f90
                  muscle_vp_jc.f90
                  muscle_vp_jcfull.f90

@@ -1,4 +1,4 @@
-target_sources(umatlib PRIVATE
+target_sources(muscle PRIVATE
                    types/muscle_tensor_3d2o.f90
                    types/muscle_tensor_3d2osym.f90
                    types/muscle_tensor_2d2osym.f90

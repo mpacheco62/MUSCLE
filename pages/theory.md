@@ -3,7 +3,7 @@ summary: Mathematical foundation of the library.
 
 # Theoretical Foundation
 
-This page describes the mathematical models implemented in UMatLib.
+This page describes the mathematical models implemented in MUSCLE.
 
 ## 1. Plasticity and Return Mapping
 The library uses an implicit integration scheme. Given a strain increment \(\Delta\varepsilon\), we find the state at \(n+1\) by solving:

@@ -1,1 +1,1 @@
-add_umat_test(linear test_muscle_elasticity_linear.f90)
+add_muscle_test(linear test_muscle_elasticity_linear.f90)

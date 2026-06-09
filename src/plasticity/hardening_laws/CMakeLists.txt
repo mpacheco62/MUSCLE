@@ -1,4 +1,4 @@
-target_sources(umatlib PRIVATE
+target_sources(muscle PRIVATE
                  muscle_hard_base.f90
                  muscle_hard_bilinear.f90
                  muscle_hard_ludwik.f90

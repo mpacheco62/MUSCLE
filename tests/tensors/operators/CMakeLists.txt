@@ -1,3 +1,3 @@
-add_umat_test(test_ddot_4O3_4O3 test_ddot_4O3_4O3.f90)
-add_umat_test(test_operator_3d2osym_3d4o3sym test_operator_3d2osym_3d4o3sym.f90)
+add_muscle_test(test_ddot_4O3_4O3 test_ddot_4O3_4O3.f90)
+add_muscle_test(test_operator_3d2osym_3d4o3sym test_operator_3d2osym_3d4o3sym.f90)
 
