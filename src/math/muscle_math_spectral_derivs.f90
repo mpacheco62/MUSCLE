@@ -1,5 +1,5 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
-! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco@usach.cl>
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 
 module muscle_math_spectral_derivs
     !! # Module mod_muscle_math_spectral_derivs

@@ -1,5 +1,5 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
-! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco@usach.cl>
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 
 module muscle_tensor_ops_assignment
     !! This module defines the overloaded assignment operator `=` for mixed-type conversions
