@@ -15,7 +15,7 @@ TARGET_FOLDERS = ['src', 'tests', 'Theory', 'pages']
 TARGET_FILES = ['CMakeLists.txt', 'my_project.md']
 
 # Nombre del archivo unificado resultante
-OUTPUT_FILENAME = "proyecto_completo_fortran.txt"
+OUTPUT_FILENAME = "all_fortran.txt"
 
 def clean_path(path, root_dir):
     """Devuelve la ruta relativa para una visualización limpia en la IA."""
@@ -73,7 +73,6 @@ def build_consolidated_file(root_path, files):
             outfile.write("CONSOLIDADO DE CÓDIGO FUENTE DE PROYECTO FORTRAN\n")
             outfile.write("===================================================\n\n")
             outfile.write("Este archivo contiene la estructura completa del código del proyecto\n")
-            outfile.write("para que un modelo de lenguaje (LLM) pueda entender todo su contexto.\n\n")
             
             # Sección 1: Índice
             outfile.write("--- 1. ÍNDICE DE ARCHIVOS INCLUIDOS ---\n")
@@ -113,7 +112,7 @@ def main():
     current_directory = Path('.').resolve()
     
     print("==============================================")
-    print("   Consolidador de Código Fortran para IA   ")
+    print("   Consolidador de Código Fortran             ")
     print("==============================================")
     print(f"Carpeta base del proyecto: {current_directory}")
     if TARGET_FOLDERS:
