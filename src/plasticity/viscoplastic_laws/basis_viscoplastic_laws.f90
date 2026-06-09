@@ -1,4 +1,4 @@
-module mod_viscoplastic_law
+module mod_viscoplastic_laws
     !! Module mod_basis_viscoplastic_law
     !! =================================
     !!
@@ -7,7 +7,7 @@ module mod_viscoplastic_law
     !! This module provides an abstract derived type, `basis_viscoplastic_law`, which serves
     !! as a blueprint for implementing various viscoplastic models (e.g., Perzyna,
     !! Norton-Hoff, or Power Law creep models). It requires the **composition** of a
-    !! hardening law object (`Base_hardening_law` from `mod_hardening_law`) to define
+    !! hardening law object (`Base_hardening_laws` from `mod_hardening_law`) to define
     !! the strain-dependent component of the flow stress.
     !!
     !! It defines the essential interface that any concrete viscoplastic law must provide:
@@ -22,7 +22,7 @@ module mod_viscoplastic_law
     !! ### Abstract Derived Type:
     !!
     !! - `basis_viscoplastic_law`: Abstract base type for viscoplastic laws.
-    !!     - Component: `hard_law` (`class(Base_hardening_law), pointer`) - Pointer to the
+    !!     - Component: `hard_law` (`class(Base_hardening_laws), pointer`) - Pointer to the
     !!       hardening law object that defines the static (strain-dependent) yield stress component.
     !!     - Deferred Procedure: `flow_stress(ep, epd)` - Interface for a function that computes
     !!       the **viscoplastic** flow stress `res` (`real(real64)`) as a function of the
@@ -56,7 +56,7 @@ module mod_viscoplastic_law
     !! use, intrinsic :: iso_fortran_env
     !! use mod_hardening_law
 	use, intrinsic :: iso_fortran_env, only: real64
-    use mod_hardening_law, only: Base_hardening_law
+    use mod_hardening_laws, only: Base_hardening_laws
     implicit none
     private
     public :: Base_viscoplastic_law
@@ -116,4 +116,4 @@ module mod_viscoplastic_law
 
         end function dstress_dep_numeric
 
-end module mod_viscoplastic_law
+end module mod_viscoplastic_laws

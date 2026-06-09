@@ -6,7 +6,7 @@ module mod_swift_hardening
     !!
     !! This module provides the `Swift_hardening` derived type, which represents the
     !! Swift model for isotropic hardening in plasticity. It extends the abstract
-    !! `Base_hardening_law` type defined in `mod_hardening_law`.
+    !! `Base_hardening_laws` type defined in `mod_hardening_law`.
     !!
     !! The Swift law describes the evolution of the flow stress (yield stress) as a
     !! function of the equivalent plastic strain.
@@ -17,7 +17,7 @@ module mod_swift_hardening
     !! ### Derived Type:
     !!
     !! - `Swift_hardening`: Concrete type representing the Swift isotropic hardening law.
-    !!     - Extends: `Base_hardening_law`.
+    !!     - Extends: `Base_hardening_laws`.
     !!     - Components:
     !!         - `k :: real(real64)`: Strength coefficient.
     !!         - `e0 :: real(real64)`: Initial strain offset.
@@ -83,12 +83,12 @@ module mod_swift_hardening
     !! For the base class definition see [[mod_hardening_law]].
 
     use, intrinsic :: iso_fortran_env
-    use mod_hardening_law
+    use mod_hardening_laws
     implicit none
     PRIVATE
 
     PUBLIC :: Swift_hardening
-    type, extends(Base_hardening_law) :: Swift_hardening
+    type, extends(Base_hardening_laws) :: Swift_hardening
         !! Concrete type for Swift Isotropic Hardening Law.
         !! Implements the flow stress and its derivatives according to the Swift equation:
         !! sigma_flow = K * (e0 + ep)^n

@@ -27,8 +27,8 @@
 
 module mod_JohnsonCook_full_visco_hardening
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_viscoplastic_law, only : Base_viscoplastic_law
-    use mod_hardening_law, only : Base_hardening_law
+    use mod_viscoplastic_laws, only : Base_viscoplastic_law
+    use mod_hardening_laws, only : Base_hardening_laws
     implicit none
     private
 
@@ -43,7 +43,7 @@ module mod_JohnsonCook_full_visco_hardening
         !!       * [ 1 - (Tstar)^m ]
         !!
         !! hard_law: Hardening law component (static part).
-        class(Base_hardening_law), allocatable :: hard_law
+        class(Base_hardening_laws), allocatable :: hard_law
         !! Parámetros viscoplásticos y térmicos:
         real(real64) :: C      = 0.0d0    !! Sensibilidad a la tasa
         real(real64) :: epdmax = 1.0d0    !! Tasa de referencia

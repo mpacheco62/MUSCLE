@@ -6,7 +6,7 @@ The library is highly extensible thanks to the use of abstract base classes.
 
 ## How to add a new Hardening Law
 1. Create a new module in `src/plasticity/hardening_laws/`.
-2. Define a type that extends `Base_hardening_law`.
+2. Define a type that extends `Base_hardening_laws`.
 3. Implement the deferred procedures:
     - `stress(ep)`
     - `dstress_dep(ep)`

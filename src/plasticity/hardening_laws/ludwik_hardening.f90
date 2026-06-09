@@ -6,7 +6,7 @@ module mod_ludwik_hardening
     !!
     !! This module provides the `ludwik_hardening` derived type, which represents the 
     !! Ludwik model for isotropic hardening in plasticity. It extends the abstract    
-    !! `Base_hardening_law` type defined in `mod_hardening_law`.                     
+    !! `Base_hardening_laws` type defined in `mod_hardening_law`.                     
     !!
     !! The Ludwik law describes the evolution of the flow stress (yield stress) as a
     !! function of the equivalent plastic strain.
@@ -17,7 +17,7 @@ module mod_ludwik_hardening
     !! ### Derived Type:
     !!
     !! - `ludwik_hardening`: Concrete type representing the Ludwik isotropic hardening law.
-    !!     - Extends: `Base_hardening_law`.
+    !!     - Extends: `Base_hardening_laws`.
     !!     - Components:
     !!         - `sigma0 :: real(real64)`: Initial yield stress.
     !!         - `k :: real(real64)`: Strength coefficient.
@@ -77,12 +77,12 @@ module mod_ludwik_hardening
     !! For the base class definition see [[mod_hardening_law]].
 
     use, intrinsic :: iso_fortran_env
-    use mod_hardening_law
+    use mod_hardening_laws
     implicit none
     PRIVATE
 
     PUBLIC :: ludwik_hardening
-    type, extends(Base_hardening_law) :: ludwik_hardening
+    type, extends(Base_hardening_laws) :: ludwik_hardening
         !! Concrete type for Ludwik Isotropic Hardening Law.
         !! Implements the flow stress and its derivatives according to the Ludwik equation:
         !! sigma_flow = sigma0 + K * (ep)^n

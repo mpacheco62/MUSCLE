@@ -26,7 +26,7 @@ module mod_RK_viscoplastic
     !! \sigma_{flow} = B(\dot{\epsilon}_p) \cdot (\epsilon_0 + \epsilon_p)^{n(\dot{\epsilon}_p)} + \sigma_{extra}(\dot{\epsilon}_p)
     !! $$
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_law
+    use mod_viscoplastic_laws
     implicit none
     private
     public :: RK_viscoplastic

@@ -1,6 +1,6 @@
 module mod_VA_viscoplastic
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_law
+    use mod_viscoplastic_laws
     implicit none
     private
     public :: VA_viscoplastic

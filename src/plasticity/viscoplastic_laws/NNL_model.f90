@@ -5,7 +5,7 @@ module mod_NNL_viscoplastic
     !! Incluye protecciones térmicas y cinemáticas para asegurar convergencia.
 
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_law
+    use mod_viscoplastic_laws
     implicit none
     private
     public :: NNL_viscoplastic

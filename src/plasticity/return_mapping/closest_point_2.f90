@@ -2,7 +2,7 @@ module mod_closest_point_2
 	use lin_solvers ! con mkl
     use tensors_types
     use, intrinsic :: iso_fortran_env, only : real64
-    use mod_hardening_law, only : Base_hardening_law
+    use mod_hardening_laws, only : Base_hardening_laws
 
     use mod_yield_criteria, only : Base_yield_critera
     use mod_base_elasticity, only : Base_elasticity
@@ -31,7 +31,7 @@ module mod_closest_point_2
 
     type, public :: Closest_point_2
         class(Base_elasticity), allocatable :: elasticity
-        class(Base_hardening_law), allocatable :: hardening
+        class(Base_hardening_laws), allocatable :: hardening
         class(Base_yield_critera), allocatable :: yield
 
         integer :: iter_nw=200
@@ -118,7 +118,7 @@ module mod_closest_point_2
             implicit none
             class(Closest_point_2), intent(inout) :: self
             class(Base_elasticity), intent(in) :: elasticity
-            class(Base_hardening_law), intent(in) :: hardening
+            class(Base_hardening_laws), intent(in) :: hardening
             class(Base_yield_critera), intent(in) :: yield
             integer, optional, intent(in) :: iter_nw
             self%elasticity = elasticity
@@ -322,7 +322,7 @@ module mod_closest_point_2
             implicit none
             class(ten_3D2Osym), intent(in) :: strain
             class(Base_elasticity), intent(in) :: elasticity
-            class(Base_hardening_law), intent(in) :: hardening
+            class(Base_hardening_laws), intent(in) :: hardening
             class(Base_yield_critera), intent(in) :: yield
             real(real64), intent(inout) :: strain_pf
             type(ten_3D2Osym), intent(inout) :: strain_p

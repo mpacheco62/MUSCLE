@@ -16,7 +16,7 @@ module mod_MRK_viscoplastic
     !! $\sigma_u$ is the ultimate stress (or back stress) and $\sigma_{a}$ is the rate-modified
     !! hardening component.
     use, intrinsic :: iso_fortran_env
-    use mod_viscoplastic_law
+    use mod_viscoplastic_laws
     implicit none
     private
     public :: MRK_viscoplastic

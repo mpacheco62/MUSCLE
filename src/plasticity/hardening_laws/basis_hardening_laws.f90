@@ -1,10 +1,10 @@
-module mod_hardening_law
-    !! Module mod_hardening_law
+module mod_hardening_laws
+    !! Module mod_hardening_laws
     !! ========================
     !!
     !! Defines the abstract base type for hardening laws used in plasticity models.
     !!
-    !! This module provides an abstract derived type, `Base_hardening_law`, which serves as
+    !! This module provides an abstract derived type, `Base_hardening_lawsss`, which serves as
     !! a blueprint for implementing various isotropic hardening models (e.g., linear, power law,
     !! saturation hardening). It defines the essential interface that any concrete hardening
     !! law must provide: procedures to calculate the flow stress (yield stress), the hardening
@@ -20,7 +20,7 @@ module mod_hardening_law
     !!
     !! ### Abstract Derived Type:
     !!
-    !! - `Base_hardening_law`: Abstract base type for isotropic hardening laws.
+    !! - `Base_hardening_laws`: Abstract base type for isotropic hardening laws.
     !!     - Deferred Procedure: `stress(ep)` - Interface for a function that computes
     !!       the current flow stress (yield stress) `res` (`real(real64)`) as a function of the
     !!       accumulated equivalent plastic strain `ep` (`real(real64)`).
@@ -35,7 +35,7 @@ module mod_hardening_law
     !! Usage (Conceptual)
     !! ------------------
     !!
-    !! Concrete hardening laws will extend `Base_hardening_law`:
+    !! Concrete hardening laws will extend `Base_hardening_laws`:
     !!
     !! ```fortran
     !! module mod_linear_hardening
@@ -43,7 +43,7 @@ module mod_hardening_law
     !!   use iso_fortran_env, only: real64
     !!   implicit none
     !!
-    !!   type, extends(Base_hardening_law) :: LinearHardening
+    !!   type, extends(Base_hardening_laws) :: LinearHardening
     !!     real(real64) :: initial_yield_stress = 0.0D0 ! sigma_y0
     !!     real(real64) :: hardening_modulus    = 0.0D0 ! H
     !!   contains
@@ -83,7 +83,7 @@ module mod_hardening_law
     !!   implicit none
     !!
     !!   type(LinearHardening) :: material_hardening
-    !!   class(Base_hardening_law), allocatable :: law_ptr
+    !!   class(Base_hardening_laws), allocatable :: law_ptr
     !!   real(real64) :: eq_plastic_strain, current_yield, current_H, current_H_prime
     !!
     !!   ! Initialize material hardening parameters
@@ -114,8 +114,8 @@ module mod_hardening_law
     implicit None
     PRIVATE
     
-    PUBLIC :: Base_hardening_law
-    type, abstract :: Base_hardening_law
+    PUBLIC :: Base_hardening_laws
+    type, abstract :: Base_hardening_laws
         !! Abstract Base Type for Isotropic Hardening Laws
         !! ===============================================
         !!
@@ -131,15 +131,15 @@ module mod_hardening_law
                 !! Computes the hardening modulus (d_stress / d_ep) for a given equivalent plastic strain.
             procedure(ddstress_ddep_interface), deferred :: ddstress_ddep
                 !! Computes the second derivative (d^2_stress / d_ep^2) for a given equivalent plastic strain.
-    end type Base_hardening_law
+    end type Base_hardening_laws
 
     interface
         pure function stress_interface(self, ep) result(res)
             !! Interface for the `stress` procedure.
-            !! Must be implemented by concrete subtypes of `Base_hardening_law`.
+            !! Must be implemented by concrete subtypes of `Base_hardening_laws`.
             use, intrinsic :: iso_fortran_env
-            import Base_hardening_law
-            class(Base_hardening_law), intent(in) :: self
+            import Base_hardening_laws
+            class(Base_hardening_laws), intent(in) :: self
                 !! The hardening law object.
             real(real64), intent(in) :: ep
                 !! Input equivalent plastic strain.
@@ -149,10 +149,10 @@ module mod_hardening_law
 
         pure function dstress_dep_interface(self, ep) result(res)
             !! Interface for the `dstress_dep` procedure.
-            !! Must be implemented by concrete subtypes of `Base_hardening_law`.
+            !! Must be implemented by concrete subtypes of `Base_hardening_laws`.
             use, intrinsic :: iso_fortran_env
-            import Base_hardening_law
-            class(Base_hardening_law), intent(in) :: self
+            import Base_hardening_laws
+            class(Base_hardening_laws), intent(in) :: self
                 !! The hardening law object.
             real(real64), intent(in) :: ep
                 !! Input equivalent plastic strain at which the derivative is evaluated.
@@ -162,10 +162,10 @@ module mod_hardening_law
 
         pure function ddstress_ddep_interface(self, ep) result(res)
             !! Interface for the `ddstress_ddep` procedure.
-            !! Must be implemented by concrete subtypes of `Base_hardening_law`.
+            !! Must be implemented by concrete subtypes of `Base_hardening_laws`.
             use, intrinsic :: iso_fortran_env
-            import Base_hardening_law
-            class(Base_hardening_law), intent(in) :: self
+            import Base_hardening_laws
+            class(Base_hardening_laws), intent(in) :: self
                 !! The hardening law object.
             real(real64), intent(in) :: ep
                 !! Input equivalent plastic strain at which the second derivative is evaluated.

@@ -24,7 +24,7 @@ module mod_voce_m_hardening
     !!
     !! ### Derived Type:
     !!
-    !! - `Voce_modified_hardening`: Concrete type extending `Base_hardening_law`.
+    !! - `Voce_modified_hardening`: Concrete type extending `Base_hardening_laws`.
     !!     - Component: `k :: real(real64)` - The **linear hardening modulus** (asymptotic slope).
     !!     - Component: `q :: real(real64)` - The **saturation stress range** of the non-linear component.
     !!     - Component: `n :: real(real64)` - The **saturation rate exponent** (controls the speed of saturation).
@@ -35,12 +35,12 @@ module mod_voce_m_hardening
     !! * `stress => stress_voce_mod`: Calculates the hardening stress $\sigma(\epsilon_p)$.
     !!
     use, intrinsic :: iso_fortran_env
-    use mod_hardening_law
+    use mod_hardening_laws
     implicit none
     private
     public :: Voce_modified_hardening
 
-    type, extends(Base_hardening_law) :: Voce_modified_hardening
+    type, extends(Base_hardening_laws) :: Voce_modified_hardening
         !! Voce Modified Hardening Law
         !! ===========================
         !! Implements the Voce hardening law with an additional linear term.

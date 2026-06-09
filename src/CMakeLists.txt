@@ -1,29 +1,14 @@
-add_subdirectory(plasticity)
-
-
-set(YIELD_CRITERIA   yield_criteria/basis_yield_criteria.f90
-                     yield_criteria/vonMises.f90
-                     yield_criteria/CPB06.f90
-                     yield_criteria/hill48.f90
-                     CACHE INTERNAL "")
-
-set(ELASTICITY       elasticity/basis_elasticity.f90
-                     elasticity/elasticity_linear.f90
-                     CACHE INTERNAL "")
 
 #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
-add_library(umatlib 
-                     ${HARDENING_LAWS}
-                     ${YIELD_CRITERIA}
-                     ${ELASTICITY}
-                     ${RETURN_MAPPING}
-		     ${VISCOPLASTIC_LAWS}
-                     )
+add_library(umatlib )
 
 set_target_properties(umatlib PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/umatlib)
 
+add_subdirectory(yield_criteria)
+add_subdirectory(plasticity)
 add_subdirectory(math)
 add_subdirectory(tensors)
+add_subdirectory(elasticity)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
