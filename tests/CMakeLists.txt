@@ -71,6 +71,7 @@ endfunction()
 
 
 add_subdirectory(tensors)
+add_subdirectory(kinematics)
 add_subdirectory(math)
 add_subdirectory(elasticity)
 add_subdirectory(plasticity)

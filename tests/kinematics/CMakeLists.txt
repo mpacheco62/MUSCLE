@@ -1,0 +1,1 @@
+add_muscle_test(kinematics test_muscle_kinematics.f90)

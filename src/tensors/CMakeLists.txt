@@ -17,4 +17,5 @@ target_sources(muscle PRIVATE
                    operators/muscle_tensor_ops_dyadic.f90
                    operators/muscle_tensor_ops_contraction_single.f90
                    operators/muscle_tensor_ops_assignment.f90
+                   operators/muscle_tensor_ops_transform.f90
                    )

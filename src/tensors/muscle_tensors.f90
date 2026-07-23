@@ -142,6 +142,7 @@ module muscle_tensors
     use muscle_tensor_ops_dyadic
     use muscle_tensor_ops_contraction_single
     use muscle_tensor_ops_assignment
+    use muscle_tensor_ops_transform
     implicit None
 
     public :: ten_3D2O
@@ -172,6 +173,9 @@ module muscle_tensors
     public :: operator(.tdot.)
     public :: operator(.tdotsym.)
     public :: operator(.inv.)
+    public :: operator(.transform.)
+
+    public :: transpose
     
 
     public :: assignment (=)

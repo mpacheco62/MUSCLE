@@ -137,6 +137,8 @@ module muscle_tensor_3d2o
             !! Computes the norm of the tensor.
         procedure, public :: is_approx => is_approx_3D2O
             !! Compares two tensors for approximate equality.
+        procedure, public :: det => det_3D2O
+        procedure, public :: transpose => transpose_3D2O
     end type ten_3D2O
 
     public :: operator(.approx.)
@@ -185,6 +187,11 @@ module muscle_tensor_3d2o
     interface write(formatted)
         module procedure print_ten_3D2O
     end interface
+
+    public :: transpose
+    interface transpose
+        module procedure transpose_3D2O
+    end interface
 contains
 
     pure subroutine ten_3D2O_real64_assign(a, b)
@@ -194,7 +201,7 @@ contains
         a%vals = b
     end subroutine ten_3D2O_real64_assign
 
-    subroutine init_ten_3D2O(self, vals)
+    pure subroutine init_ten_3D2O(self, vals)
         !! Initializes a ten_3D2O tensor from a 9-element array (assumed column-major).
         implicit none
         class(ten_3D2O), intent(inout) :: self
@@ -202,7 +209,7 @@ contains
         self%vals = vals
     end subroutine init_ten_3D2O
 
-    subroutine init2_ten_3D2O(self, xx, xy, xz, yx, yy, yz, zx, zy, zz)
+    pure subroutine init2_ten_3D2O(self, xx, xy, xz, yx, yy, yz, zx, zy, zz)
         !! Initializes a ten_3D2O tensor from its 9 individual components.
         !! Input order is (xx, xy, xz, yx, yy, yz, zx, zy, zz).
         !! Internal storage is column-major: (xx, yx, zx, xy, yy, zy, xz, yz, zz).
@@ -337,6 +344,15 @@ contains
         res%vals(6:8) = a%vals(6:8)
     end function dev_3D2O
 
+    pure function det_3D2O(a) result(res)
+        implicit none
+        class(ten_3D2O), intent(in) :: a
+        real(real64) :: res
+        res = a%vals(1)*a%vals(5)*a%vals(9) + a%vals(2)*a%vals(6)*a%vals(7)    & 
+              + a%vals(3)*a%vals(4)*a%vals(8) - a%vals(7)*a%vals(5)*a%vals(3)  &
+              - a%vals(8)*a%vals(6)*a%vals(1) - a%vals(9)*a%vals(4)*a%vals(2)
+    end function det_3D2O
+
 
     subroutine print_ten_3D2O(dtv, unit, iotype, v_list, iostat, iomsg)
         !! Custom I/O formatting for ten_3D2Osym.
@@ -380,6 +396,25 @@ contains
             iomsg = "Error in print_ten_3D2Osym: Failed to write to the specified unit."
         end if
     end subroutine print_ten_3D2O
+
+    pure function transpose_3D2O(self) result(res)
+        !! Returns the transpose of a general 3D second-order tensor (A_ij^T = A_ji).
+        implicit none
+        class(ten_3D2O), intent(in) :: self
+        type(ten_3D2O) :: res
+
+        ! Column-major mapping:
+        ! self%vals: (11:1, 21:2, 31:3, 12:4, 22:5, 32:6, 13:7, 23:8, 33:9)
+        res%vals(1) = self%vals(1) ! xx -> xx
+        res%vals(2) = self%vals(4) ! yx <- xy
+        res%vals(3) = self%vals(7) ! zx <- xz
+        res%vals(4) = self%vals(2) ! xy <- yx
+        res%vals(5) = self%vals(5) ! yy -> yy
+        res%vals(6) = self%vals(8) ! zy <- yz
+        res%vals(7) = self%vals(3) ! xz <- zx
+        res%vals(8) = self%vals(6) ! yz <- zy
+        res%vals(9) = self%vals(9) ! zz -> zz
+    end function transpose_3D2O
 
     ! ! !TODO HACERLE UN TESTTTSSS!!!!!
     ! ! module procedure tdot_3D2Osym_3D2Osym

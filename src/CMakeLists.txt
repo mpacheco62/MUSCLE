@@ -7,6 +7,7 @@ set_target_properties(muscle PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_
 add_subdirectory(plasticity)
 add_subdirectory(math)
 add_subdirectory(tensors)
+add_subdirectory(kinematics)
 add_subdirectory(elasticity)
 add_subdirectory(solvers)
 

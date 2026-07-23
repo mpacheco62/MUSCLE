@@ -34,6 +34,7 @@ module muscle_tensor_ops_contraction_single
         module procedure dot_3D2Osym_3D2Osym
         module procedure dot_3D2O_3D2Osym
         module procedure dot_3D2Osym_3D2O
+        module procedure dot_3D2O_3D2O
 
         ! --- Identity * Tensor (Single Contraction) ---
         module procedure mul_2D2Osym_I2O
@@ -149,6 +150,35 @@ contains
         res%vals(8) = a%vals(4)*b%vals(7) + a%vals(2)*b%vals(8) + a%vals(5)*b%vals(9)
         res%vals(9) = a%vals(6)*b%vals(7) + a%vals(5)*b%vals(8) + a%vals(3)*b%vals(9)
     end function dot_3D2Osym_3D2O
+
+    pure function dot_3D2O_3D2O(a, b) result(res)
+        !! Computes the single tensor contraction (matrix product) between two 
+        !! general second-order tensors: res = a . b  (res_ij = a_ik * b_kj).
+        !!
+        !! Both tensors are stored in column-major order (9 components).
+        implicit none
+        type(ten_3D2O), intent(in) :: a
+            !! First general second-order tensor A
+        type(ten_3D2O), intent(in) :: b
+            !! Second general second-order tensor B
+        type(ten_3D2O) :: res
+            !! Resulting general second-order tensor res = A * B
+
+        ! Column 1 of res: res_11, res_21, res_31
+        res%vals(1) = a%vals(1)*b%vals(1) + a%vals(4)*b%vals(2) + a%vals(7)*b%vals(3)
+        res%vals(2) = a%vals(2)*b%vals(1) + a%vals(5)*b%vals(2) + a%vals(8)*b%vals(3)
+        res%vals(3) = a%vals(3)*b%vals(1) + a%vals(6)*b%vals(2) + a%vals(9)*b%vals(3)
+
+        ! Column 2 of res: res_12, res_22, res_32
+        res%vals(4) = a%vals(1)*b%vals(4) + a%vals(4)*b%vals(5) + a%vals(7)*b%vals(6)
+        res%vals(5) = a%vals(2)*b%vals(4) + a%vals(5)*b%vals(5) + a%vals(8)*b%vals(6)
+        res%vals(6) = a%vals(3)*b%vals(4) + a%vals(6)*b%vals(5) + a%vals(9)*b%vals(6)
+
+        ! Column 3 of res: res_13, res_23, res_33
+        res%vals(7) = a%vals(1)*b%vals(7) + a%vals(4)*b%vals(8) + a%vals(7)*b%vals(9)
+        res%vals(8) = a%vals(2)*b%vals(7) + a%vals(5)*b%vals(8) + a%vals(8)*b%vals(9)
+        res%vals(9) = a%vals(3)*b%vals(7) + a%vals(6)*b%vals(8) + a%vals(9)*b%vals(9)
+    end function dot_3D2O_3D2O
 
     ! =========================================================================
     ! 2. IDENTITY * TENSOR (SINGLE CONTRACTION)
