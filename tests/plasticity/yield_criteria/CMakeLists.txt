@@ -1,3 +1,4 @@
 add_muscle_test(CPB06 test_muscle_yield_cpb06.f90)
 add_muscle_test(HILL48 test_muscle_yield_hill48.f90)
 add_muscle_test(VONMISES test_muscle_yield_vonmises.f90)
+add_muscle_test(DRUCKERPRAGER test_muscle_yield_druckerprager.f90)
