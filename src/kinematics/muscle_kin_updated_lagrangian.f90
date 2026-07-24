@@ -11,6 +11,7 @@ module muscle_kin_updated_lagrangian
         procedure :: update_F   => updated_lagrangian_update_F
         procedure :: get_strain => updated_lagrangian_get_strain
         procedure :: to_Cauchy => updated_lagrangian_to_Cauchy
+        procedure :: to_spatial_tangent => updated_to_spatial_tangent
     end type Updated_lagrangian_kinematics
 
 contains
@@ -35,4 +36,13 @@ contains
         ! Stress is ALREADY spatial Cauchy stress in Updated Lagrangian!
         sigma_cauchy = constitutive_stress
     end function updated_lagrangian_to_Cauchy
+
+    pure function updated_to_spatial_tangent(self, C_constitutive, stress_spatial) result(c_spatial)
+        class(Updated_lagrangian_kinematics), intent(in) :: self
+        type(ten_3D4O2sym), intent(in)                   :: C_constitutive
+        type(ten_3D2Osym), intent(in), optional          :: stress_spatial
+        type(ten_3D4O2sym)                               :: c_spatial
+
+        c_spatial = C_constitutive ! Tangent is ALREADY spatial in Updated Lagrangian
+    end function updated_to_spatial_tangent
 end module muscle_kin_updated_lagrangian

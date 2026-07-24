@@ -17,6 +17,8 @@ module muscle_kin_corotational
         logical           :: has_rotation = .FALSE.
     contains
         procedure :: update_corotational => corotational_update
+        generic   :: update              => update_corotational
+
         procedure :: jacobian            => corotational_jacobian
         procedure :: is_finite_strain    => corotational_is_finite
         procedure :: get_strain          => corotational_get_strain
@@ -25,6 +27,7 @@ module muscle_kin_corotational
         procedure :: push_forward_tangent => corotational_push_tangent
         procedure :: pull_back_tangent   => corotational_pull_tangent
         procedure :: to_Cauchy => corotational_to_Cauchy
+        procedure :: to_spatial_tangent  => corotational_to_spatial_tangent
     end type Corotational_kinematics
 
 contains
@@ -32,14 +35,19 @@ contains
     pure subroutine corotational_update(self, strain, R)
         class(Corotational_kinematics), intent(inout) :: self
         type(ten_3D2Osym), intent(in)                 :: strain
-        type(ten_3D2O), intent(in)                    :: R
+        type(ten_3D2O), intent(in), optional          :: R
         real(real64) :: tr_eps
 
         self%strain = strain
         tr_eps = strain%xx() + strain%yy() + strain%zz()
         self%J = exp(tr_eps)
-        self%R_rot = R
-        self%has_rotation = .TRUE.
+
+        if (present(R)) then
+            self%R_rot = R
+            self%has_rotation = .TRUE.
+        else
+            self%has_rotation = .FALSE.
+        end if
     end subroutine corotational_update
 
     pure function corotational_jacobian(self) result(J)
@@ -60,16 +68,41 @@ contains
         strain = self%strain
     end function corotational_get_strain
 
+    pure function corotational_to_Cauchy(self, constitutive_stress) result(sigma_cauchy)
+        !! Converts unrotated constitutive stress to global spatial Cauchy stress:
+        !! sigma = R * sigma_hat * R^T (if R is present)
+        class(Corotational_kinematics), intent(in) :: self
+        type(ten_3D2Osym), intent(in)              :: constitutive_stress
+        type(ten_3D2Osym)                          :: sigma_cauchy
+
+        if (self%has_rotation) then
+            sigma_cauchy = self%R_rot .transform. constitutive_stress
+        else
+            sigma_cauchy = constitutive_stress
+        end if
+    end function corotational_to_Cauchy
+
+    pure function corotational_to_spatial_tangent(self, C_constitutive, stress_spatial) result(c_spatial)
+        !! Converts unrotated tangent stiffness to global spatial tangent stiffness:
+        !! c_spat_ijkl = R_iI * R_jJ * R_kK * R_lL * C_IJKL (if R is present)
+        class(Corotational_kinematics), intent(in) :: self
+        type(ten_3D4O2sym), intent(in)             :: C_constitutive
+        type(ten_3D2Osym), intent(in), optional    :: stress_spatial
+        type(ten_3D4O2sym)                         :: c_spatial
+
+        if (self%has_rotation) then
+            c_spatial = self%R_rot .transform. C_constitutive
+        else
+            c_spatial = C_constitutive
+        end if
+    end function corotational_to_spatial_tangent
+
     pure function corotational_push_stress(self, S_material) result(sigma_spatial)
         class(Corotational_kinematics), intent(in) :: self
         type(ten_3D2Osym), intent(in)              :: S_material
         type(ten_3D2Osym)                          :: sigma_spatial
 
-        if (self%has_rotation) then
-            sigma_spatial = self%R_rot .transform. S_material
-        else
-            sigma_spatial = S_material
-        end if
+        sigma_spatial = self%to_Cauchy(S_material)
     end function corotational_push_stress
 
     pure function corotational_pull_stress(self, sigma_spatial) result(S_material)
@@ -84,31 +117,27 @@ contains
         end if
     end function corotational_pull_stress
 
-    pure function corotational_push_tangent(self, C_material, stress_spatial) result(c_spatial)
+     pure function corotational_push_tangent(self, C_material, stress_spatial) result(c_spatial)
         class(Corotational_kinematics), intent(in) :: self
         type(ten_3D4O2sym), intent(in)             :: C_material
         type(ten_3D2Osym), intent(in), optional    :: stress_spatial
         type(ten_3D4O2sym)                         :: c_spatial
-        c_spatial = C_material
+
+        c_spatial = self%to_spatial_tangent(C_material, stress_spatial)
     end function corotational_push_tangent
+
 
     pure function corotational_pull_tangent(self, c_spatial, stress_material) result(C_material)
         class(Corotational_kinematics), intent(in) :: self
         type(ten_3D4O2sym), intent(in)             :: c_spatial
         type(ten_3D2Osym), intent(in), optional    :: stress_material
         type(ten_3D4O2sym)                         :: C_material
-        C_material = c_spatial
-    end function corotational_pull_tangent
 
-    pure function corotational_to_Cauchy(self, constitutive_stress) result(sigma_cauchy)
-        class(Corotational_kinematics), intent(in) :: self
-        type(ten_3D2Osym), intent(in)              :: constitutive_stress
-        type(ten_3D2Osym)                          :: sigma_cauchy
         if (self%has_rotation) then
-            sigma_cauchy = self%R_rot .transform. constitutive_stress
+            C_material = self%R_rot%transpose() .transform. c_spatial
         else
-            sigma_cauchy = constitutive_stress
+            C_material = c_spatial
         end if
-    end function corotational_to_Cauchy
+    end function corotational_pull_tangent
 
 end module muscle_kin_corotational

@@ -12,10 +12,6 @@ module muscle_kinematics_base
     type, abstract :: Base_kinematics
         !! Abstract Base Type for Kinematic Strategies
     contains
-        ! --- 1. Non-deferred update procedures with fallback implementations ---
-        procedure :: update_F           => base_update_F_noop
-        procedure :: update_strain      => base_update_strain_noop
-        procedure :: update_corotational => base_update_corotational_noop
 
         ! --- 2. Kinematic Quantities ---
         procedure(jacobian_interface), deferred :: jacobian
@@ -36,12 +32,13 @@ module muscle_kinematics_base
         procedure :: rotate_to_corotational   => base_rotate_to_corotational
         procedure :: rotate_from_corotational => base_rotate_from_corotational
 
-        ! --- Generic Update Interface (Unambiguous) ---
-        generic :: update => update_F, update_strain, update_corotational
-
         procedure(cauchy_interface), deferred :: to_Cauchy
             !! Context-aware converter: Converts the constitutive flow stress 
             !! to spatial Cauchy stress according to the formulation rules.
+
+        procedure(spatial_tangent_interface), deferred :: to_spatial_tangent
+            !! Context-aware converter: Converts the constitutive tangent modulus
+            !! to the spatial tangent stiffness required by FEA solvers.
     end type Base_kinematics
 
     abstract interface
@@ -108,25 +105,21 @@ module muscle_kinematics_base
             type(ten_3D2Osym)                  :: sigma_cauchy
                 !! True spatial Cauchy stress tensor required by FEA solvers.
         end function cauchy_interface
+
+        pure function spatial_tangent_interface(self, C_constitutive, stress_spatial) result(c_spatial)
+            use muscle_tensors, only : ten_3D4O2sym, ten_3D2Osym
+            import Base_kinematics
+            class(Base_kinematics), intent(in) :: self
+            type(ten_3D4O2sym), intent(in)     :: C_constitutive
+                !! Tangent stiffness outputted by the return mapping algorithm.
+            type(ten_3D2Osym), intent(in), optional :: stress_spatial
+                !! Current spatial Cauchy stress for geometric stiffness terms if needed.
+            type(ten_3D4O2sym)                 :: c_spatial
+                !! True spatial tangent stiffness tensor required by FEA solvers.
+        end function spatial_tangent_interface
     end interface
 
 contains
-
-    pure subroutine base_update_F_noop(self, F)
-        class(Base_kinematics), intent(inout) :: self
-        type(ten_3D2O), intent(in)            :: F
-    end subroutine base_update_F_noop
-
-    pure subroutine base_update_strain_noop(self, strain)
-        class(Base_kinematics), intent(inout) :: self
-        type(ten_3D2Osym), intent(in)         :: strain
-    end subroutine base_update_strain_noop
-
-    pure subroutine base_update_corotational_noop(self, strain, R)
-        class(Base_kinematics), intent(inout) :: self
-        type(ten_3D2Osym), intent(in)         :: strain
-        type(ten_3D2O), intent(in)            :: R
-    end subroutine base_update_corotational_noop
 
     pure function base_rotate_to_corotational(self, T, R) result(res)
         class(Base_kinematics), intent(in) :: self

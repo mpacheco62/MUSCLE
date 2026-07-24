@@ -25,6 +25,8 @@ module muscle_kin_finite_base
         procedure :: update_F_base      => finite_update_F
         procedure :: update_F           => finite_update_F
         procedure :: update_incremental => finite_update_incremental
+        generic   :: update             => update_F, update_incremental
+        
         procedure :: jacobian           => finite_jacobian
         procedure :: is_finite_strain   => finite_is_finite_strain
 

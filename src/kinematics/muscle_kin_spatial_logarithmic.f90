@@ -20,6 +20,7 @@ module muscle_kin_spatial_logarithmic
         procedure :: update_F   => spat_log_update_F
         procedure :: get_strain => spat_log_get_strain
         procedure :: to_Cauchy  => spat_log_to_Cauchy
+        procedure :: to_spatial_tangent => spat_log_to_spatial_tangent
     end type Spatial_logarithmic_kinematics
 
 contains
@@ -48,5 +49,14 @@ contains
 
         sigma_cauchy = constitutive_stress / self%J
     end function spat_log_to_Cauchy
+
+    pure function spat_log_to_spatial_tangent(self, C_constitutive, stress_spatial) result(c_spatial)
+        class(Spatial_logarithmic_kinematics), intent(in) :: self
+        type(ten_3D4O2sym), intent(in)                    :: C_constitutive
+        type(ten_3D2Osym), intent(in), optional           :: stress_spatial
+        type(ten_3D4O2sym)                                :: c_spatial
+
+        c_spatial = C_constitutive / self%J
+    end function spat_log_to_spatial_tangent
 
 end module muscle_kin_spatial_logarithmic
