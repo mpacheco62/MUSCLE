@@ -20,13 +20,13 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
     use muscle_hard_swift, only : Swift_hardening
     use muscle_yield_vonmises, only : VonMises
     use muscle_elasticity_linear, only : Elasticity_linear
-    ! use muscle_solver_closest_point, only : closest_point2
-    use muscle_solver_closest_point
+    use muscle_plastic_history, only : Plastic_material_history
+    use muscle_solver_closest_point, only : Closest_point
     implicit none
 
     real(real64), parameter :: EPS=1e-5
     logical, intent(out) :: passed
-    type(Closest_point_data) :: data
+    type(Plastic_material_history) :: history
     type(Closest_point) :: solver
     type(VonMises) :: vm
     type(ten_3D2Osym) :: strain, strain_p, stress
@@ -57,15 +57,13 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
 
-    call data%init(strain_pf=strain_pf, strain_p=strain_p)
+    call history%init(strain_p=strain_p, strain_pf=strain_pf)
     call solver%init(elasticity=elas, hardening=sw, yield=vm)
-    call solver%solve(strain=strain, data=data)
-    call data%get(stress=stress,        & 
-                  strain_pf=strain_pf,  &
-                  strain_p=strain_p,    &
-                  status=status,        &
-                  iters=iters           &
-                  )
+    call solver%solve(strain=strain, history=history, status=status, iters=iters)
+    
+    stress    = history%state_np1%stress
+    strain_p  = history%state_np1%strain_p
+    strain_pf = history%state_np1%strain_pf
 
     passed = stress%is_approx(expected_stress, tol=EPS)
     if (.not. passed) print*, "Error: Stress is no equal", new_line('A'),          &
@@ -95,10 +93,10 @@ subroutine test_closest_point_vonmises_uniaxial_tensile(passed)
     if(.not. passed) return
 
 
-    call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
-    call solver%tangent(strain=strain, data=data, tangent=tangent)
+    call solver%tangent_numerical(strain=strain, history=history, tangent=numerical_tangent)
+    call solver%tangent(strain=strain, history=history, tangent=tangent)
 
-    passed = tangent .approx. numerical_tangent
+    passed = tangent%is_approx(numerical_tangent, tol=1.0D-7)
     if (.not. passed) print*, "Tangent is no equal", new_line('A'),          &
                               "Analitical:", tangent, new_line('A'),  &
                               "Numerical:", numerical_tangent, new_line('A'),       &
@@ -116,13 +114,14 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
     use muscle_hard_swift, only : Swift_hardening
     use muscle_yield_vonmises, only : VonMises
     use muscle_elasticity_linear, only : Elasticity_linear
-    use muscle_solver_closest_point, only : Closest_point, Closest_point_data
+    use muscle_plastic_history, only : Plastic_material_history
+    use muscle_solver_closest_point, only : Closest_point
     implicit none
 
     real(real64), parameter :: EPS=1e-8
     logical, intent(out) :: passed
 
-    type(Closest_point_data) :: data
+    type(Plastic_material_history) :: history
     type(Closest_point) :: solver
     type(VonMises) :: vm
     type(ten_3D2Osym) :: strain, strain_p, stress
@@ -134,6 +133,7 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
     type(ten_3D2Osym) :: expected_stress, expected_strain_plastic
     real(real64) :: expected_strain_effective
     type(ten_3D4O2sym) :: tangent, numerical_tangent
+    integer :: status, iters
 
 
     passed = .False.
@@ -150,13 +150,13 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
 
-    call data%init(strain_pf=strain_pf, strain_p=strain_p)
+    call history%init(strain_p=strain_p, strain_pf=strain_pf)
     call solver%init(elasticity=elas, hardening=sw, yield=vm)
-    call solver%solve(strain=strain, data=data)
-    call data%get(stress=stress,        & 
-                  strain_pf=strain_pf,  &
-                  strain_p=strain_p     &
-                  )
+    call solver%solve(strain=strain, history=history, status=status, iters=iters)
+    
+    stress    = history%state_np1%stress
+    strain_p  = history%state_np1%strain_p
+    strain_pf = history%state_np1%strain_pf
 
     passed = stress .approx. expected_stress
     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
@@ -180,8 +180,8 @@ subroutine test_closest_point_vonmises_zero_strain(passed)
     if (.not. passed) return
 
 
-    call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
-    call solver%tangent(strain=strain, data=data, tangent=tangent)
+    call solver%tangent_numerical(strain=strain, history=history, tangent=numerical_tangent)
+    call solver%tangent(strain=strain, history=history, tangent=tangent)
 
     passed = tangent .approx. numerical_tangent
     if (.not. passed) print*, "Tangent is no equal", new_line('A'),          &
@@ -202,13 +202,14 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
     use muscle_hard_swift, only : Swift_hardening
     use muscle_yield_vonmises, only : VonMises
     use muscle_elasticity_linear, only : Elasticity_linear
-    use muscle_solver_closest_point, only : Closest_point, Closest_point_data
+    use muscle_plastic_history, only : Plastic_material_history
+    use muscle_solver_closest_point, only : Closest_point
     implicit none
 
     real(real64), parameter :: EPS=1e-8
     logical, intent(out) :: passed
 
-    type(Closest_point_data) :: data
+    type(Plastic_material_history) :: history
     type(Closest_point) :: solver
     type(VonMises) :: vm
     type(ten_3D2Osym) :: strain, strain_p, stress
@@ -220,6 +221,7 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
     type(ten_3D2Osym) :: expected_stress, expected_strain_plastic
     real(real64) :: expected_strain_effective
     type(ten_3D4O2sym) :: tangent, numerical_tangent
+    integer :: status, iters
 
 
     passed = .False.
@@ -236,13 +238,13 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
     call elas%set_parameters(young=1000D0, poisson=0.3D0)
     sw = Swift_hardening(k=100D0, n=0.1D0, e0=1D-4)
 
-    call data%init(strain_pf=strain_pf, strain_p=strain_p)
+    call history%init(strain_p=strain_p, strain_pf=strain_pf)
     call solver%init(elasticity=elas, hardening=sw, yield=vm)
-    call solver%solve(strain=strain, data=data)
-    call data%get(stress=stress,        & 
-                  strain_pf=strain_pf,  &
-                  strain_p=strain_p     &
-                  )
+    call solver%solve(strain=strain, history=history, status=status, iters=iters)
+    
+    stress    = history%state_np1%stress
+    strain_p  = history%state_np1%strain_p
+    strain_pf = history%state_np1%strain_pf
 
     passed = stress .approx. expected_stress
     if (.not. passed) print*, "Stress is no equal", new_line('A'),          &
@@ -266,8 +268,8 @@ subroutine test_closest_point_vonmises_elastic_strain(passed)
     if (.not. passed) return
 
 
-    call solver%tangent_numerical(strain=strain, data=data, tangent=numerical_tangent)
-    call solver%tangent(strain=strain, data=data, tangent=tangent)
+    call solver%tangent_numerical(strain=strain, history=history, tangent=numerical_tangent)
+    call solver%tangent(strain=strain, history=history, tangent=tangent)
 
     passed = tangent .approx. numerical_tangent
     if (.not. passed) print*, "Tangent is no equal", new_line('A'),          &
