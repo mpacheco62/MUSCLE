@@ -104,6 +104,13 @@ module muscle_elasticity_linear
     implicit none
     PRIVATE
 
+#ifdef ENABLE_UDTIO
+    public :: write(formatted)
+    interface write(formatted)
+        module procedure print_elasticity_linear
+    end interface
+#endif
+
     PUBLIC :: Elasticity_linear
     type, extends(Base_elasticity) :: Elasticity_linear
         !! Concrete type for Linear Isotropic Elasticity.
@@ -145,6 +152,7 @@ module muscle_elasticity_linear
         procedure :: dstress_dstrain_dev_3D => dstress_dstrain_dev_linear_3D
             !! Pure function. Deviatoric 3-D tangent modulus computed analytically.
             !! Overrides the projector-based default of `Base_elasticity`.
+        procedure, public :: to_string => to_string_elasticity_linear
     end type Elasticity_linear
 
 contains
@@ -417,5 +425,38 @@ contains
                        xyxy=mu,     yzyz=mu,     xzxz=mu,       &
                        xyyz=0.0D0,  yzxz=0.0D0,  xyxz=0.0D0    )
     end function dstress_dstrain_dev_linear_3D
+
+    pure function to_string_elasticity_linear(self) result(str)
+        !! Generates a formatted string representation of Elasticity_linear's internal state.
+        class(Elasticity_linear), intent(in) :: self
+        character(len=275)                   :: str
+        character(len=1), parameter          :: nl = new_line('A')
+
+        write(str, "(A, A, A, ES14.6, A, A, ES14.6, A, A, ES14.6, A, A, L1, A, A, L1, A)") &
+            "=== Elasticity_linear Internal State ===", nl, &
+            "  Lambda (Lame 1st)     : ", self%lambda,       nl, &
+            "  Mu (Shear Modulus)    : ", self%mu,           nl, &
+            "  E1 (Lambda + 2*Mu)    : ", self%e1,           nl, &
+            "  3D Stiffness Cached?  : ", self%tan_init_3D,   nl, &
+            "  2D Stiffness Cached?  : ", self%tan_init_2D, nl
+    end function to_string_elasticity_linear
+
+
+    subroutine print_elasticity_linear(dtv, unit, iotype, v_list, iostat, iomsg)
+        !! Custom UDTIO procedure. Reuses to_string() for formatting.
+        class(Elasticity_linear), intent(in) :: dtv
+        integer, intent(in)                  :: unit
+        character(len=*), intent(in)         :: iotype
+        integer, intent(in)                  :: v_list(:)
+        integer, intent(out)                 :: iostat
+        character(len=*), intent(inout)      :: iomsg
+
+        iostat = 0
+        write(unit, "(A)", iostat=iostat) trim(dtv%to_string())
+
+        if (iostat /= 0) then
+            iomsg = "Error in print_elasticity_linear: Failed to write output."
+        end if
+    end subroutine print_elasticity_linear
 
 end module

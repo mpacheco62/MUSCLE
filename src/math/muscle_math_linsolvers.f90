@@ -185,6 +185,7 @@ contains
   !     - Devuelve x = solución
   !===========================================================
   subroutine mklsolve(A, b, x, tol, maxit, its, info)
+    use, intrinsic :: iso_c_binding, only: c_int
     implicit none
     real(8), intent(in)    :: A(:,:), b(:)
     real(8), intent(out)   :: x(:)
@@ -204,7 +205,19 @@ contains
          integer :: ipiv(*)
          real(8) :: a(lda,*), b(ldb,*)
        end subroutine dgesv
+
+#ifdef USE_MKL
+       subroutine mkl_set_num_threads_local(nth) bind(C, name="mkl_set_num_threads_local")
+         import :: c_int
+         integer(c_int), value :: nth
+       end subroutine mkl_set_num_threads_local
+#endif
     end interface
+
+#ifdef USE_MKL
+    ! Solo se ejecuta si estamos compilando/enlazando con Intel MKL
+    call mkl_set_num_threads_local(1_c_int)
+#endif
 
     n = size(A,1)
     if (size(A,2) /= n .or. size(b) /= n .or. size(x) /= n) then

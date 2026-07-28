@@ -52,7 +52,7 @@ module muscle_yield_cpb06
         use muscle_math_operations, only : eigenvals
         implicit None
         class(CPB06), intent(in) :: self
-        class(ten_3D2Osym), intent(in) :: stress
+        type(ten_3D2Osym), intent(in) :: stress
 
         real(real64) :: k, a
 

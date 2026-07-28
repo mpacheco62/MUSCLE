@@ -21,7 +21,7 @@ module muscle_yield_hill48
         use muscle_tensors
         implicit None
         class(Hill48), intent(in) :: self
-        class(ten_3D2Osym), intent(in) :: stress
+        type(ten_3D2Osym), intent(in) :: stress
         real(real64) :: res
 
         res = (self%f*(stress%yy()-stress%zz())**2 + &

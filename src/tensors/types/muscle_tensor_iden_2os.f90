@@ -134,10 +134,13 @@ module muscle_tensor_iden_2os
         module procedure approx_I2OS
     end interface
 
+#ifdef ENABLE_UDTIO
     public :: write(formatted)
     interface write(formatted)
         module procedure print_ten_I2OS
     end interface
+#endif
+
     contains
 
     subroutine init_iden_2OS(self, val)

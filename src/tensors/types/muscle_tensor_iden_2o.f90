@@ -129,10 +129,12 @@ module muscle_tensor_iden_2o
         module procedure div_I2O_real64
     end interface
 
+#ifdef ENABLE_UDTIO
     public :: write(formatted)
     interface write(formatted)
         module procedure print_ten_I2O
     end interface
+#endif
 
 contains
 

@@ -179,6 +179,8 @@ module muscle_tensors
     
 
     public :: assignment (=)
-    public :: write(formatted)
 
+#ifdef ENABLE_UDTIO
+    public :: write(formatted)
+#endif
 end module muscle_tensors

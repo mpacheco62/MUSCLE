@@ -81,14 +81,17 @@ contains
         class(Plastic_material_history), intent(inout) :: self
         real(real64), intent(in)                       :: hsv(:)
 
-        if (size(hsv) >= 13) then
-            self%state_n%stress%vals   = hsv(1:6)
-            self%state_n%strain_p%vals  = hsv(7:12)
-            self%state_n%strain_pf      = hsv(13)
-
-            ! Initialize candidate state_np1 to match state_n at step start
-            self%state_np1 = self%state_n
+        if (size(hsv) < 13) then
+            error stop "ERROR FATAL [Plastic_material_history%unpack_from_fea]: " // &
+                       "El arreglo 'hsv' (statev) debe tener al menos 13 componentes."
         end if
+
+        self%state_n%stress%vals   = hsv(1:6)
+        self%state_n%strain_p%vals  = hsv(7:12)
+        self%state_n%strain_pf      = hsv(13)
+
+        ! Initialize candidate state_np1 to match state_n at step start
+        self%state_np1 = self%state_n
     end subroutine history_unpack
 
     pure subroutine history_pack(self, hsv)
@@ -96,11 +99,14 @@ contains
         class(Plastic_material_history), intent(in) :: self
         real(real64), intent(inout)                 :: hsv(:)
 
-        if (size(hsv) >= 13) then
-            hsv(1:6)  = self%state_np1%stress%vals
-            hsv(7:12) = self%state_np1%strain_p%vals
-            hsv(13)   = self%state_np1%strain_pf
+        if (size(hsv) < 13) then
+            error stop "ERROR FATAL [Plastic_material_history%pack_to_fea]: " // &
+                       "El arreglo 'hsv' (statev) debe tener al menos 13 componentes."
         end if
+
+        hsv(1:6)  = self%state_np1%stress%vals
+        hsv(7:12) = self%state_np1%strain_p%vals
+        hsv(13)   = self%state_np1%strain_pf
     end subroutine history_pack
 
 end module muscle_plastic_history

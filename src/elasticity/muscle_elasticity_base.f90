@@ -255,6 +255,9 @@ module muscle_elasticity_base
                 !! (`ten_2D4O3sym`) at a given strain state.
                 !! Must be implemented by every concrete subtype.
 
+            procedure(to_string_elasticity_base), deferred :: to_string
+
+
             ! --- Non-deferred: deviatoric (time-independent) --------------------
             procedure :: stress_dev_3D
                 !! Pure function. Returns the deviatoric part of the 3-D Cauchy stress:
@@ -426,6 +429,13 @@ module muscle_elasticity_base
             type(ten_2D4O3sym) :: res
                 !! Output fourth-order tangent modulus tensor (`ten_2D4O3sym`).
         end function dstress_dstrain_interface_2D
+
+        pure function to_string_elasticity_base(self) result(str)
+            !! Generates a formatted string representation of Elasticity's internal state.
+            import Base_elasticity
+            class(Base_elasticity), intent(in) :: self
+            character(len=275)                   :: str
+        end function to_string_elasticity_base
 
     end interface
 

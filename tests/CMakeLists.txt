@@ -1,4 +1,6 @@
+find_package(OpenMP REQUIRED COMPONENTS Fortran)
 add_library(compile_options INTERFACE)
+target_link_libraries(compile_options INTERFACE OpenMP::OpenMP_Fortran)
 add_custom_target(build_all_tests)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")

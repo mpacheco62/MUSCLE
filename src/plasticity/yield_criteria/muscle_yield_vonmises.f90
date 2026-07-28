@@ -20,7 +20,7 @@ module muscle_yield_vonmises
         use muscle_tensors
         implicit None
         class(VonMises), intent(in) :: self
-        class(ten_3D2Osym), intent(in) :: stress
+        type(ten_3D2Osym), intent(in) :: stress
         real(real64) :: res
         type(ten_3D2Osym) :: dev
 
@@ -33,7 +33,7 @@ module muscle_yield_vonmises
       use muscle_tensors
       implicit None
       class(VonMises), intent(in) :: self
-      class(ten_3D2Osym), intent(in) :: stress
+      type(ten_3D2Osym), intent(in) :: stress
       type(ten_3D2Osym) :: res
      
       type(ten_3D2Osym) :: dev
@@ -53,7 +53,7 @@ module muscle_yield_vonmises
       use muscle_tensors
       implicit None
       class(VonMises), intent(in) :: self
-      class(ten_3D2Osym), intent(in) :: stress
+      type(ten_3D2Osym), intent(in) :: stress
       type(ten_3D4O3sym) :: res
     
       type(ten_3D2Osym) :: dev

@@ -195,10 +195,12 @@ module muscle_tensor_3d2osym
         module procedure ten_3D2Osym_real64_assign
     end interface
 
+#ifdef ENABLE_UDTIO
     public :: write(formatted)
     interface write(formatted)
         module procedure print_ten_3D2Osym
     end interface
+#endif
 
 contains
 

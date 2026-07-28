@@ -145,7 +145,7 @@ module muscle_yield_base
             use muscle_tensors
             import Base_yield_critera
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
-            class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`).
+            type(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`).
             real(real64) :: res                            !! Output equivalent stress (`real(real64)`).
         end function stress_eq_interface
 
@@ -155,7 +155,7 @@ module muscle_yield_base
             use muscle_tensors
             import Base_yield_critera
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
-            class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the derivative is evaluated.
+            type(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the derivative is evaluated.
             type(ten_3D2Osym) :: res                       !! Output first derivative tensor (`ten_3D2Osym`).
         end function dstressEq_dstress_interface
 
@@ -165,7 +165,7 @@ module muscle_yield_base
             use muscle_tensors
             import Base_yield_critera
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
-            class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the second derivative is evaluated.  
+            type(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the second derivative is evaluated.  
             type(ten_3D4O3sym) :: res                      !! Output second derivative tensor (`ten_3D4O3sym`).
         end function ddstressEq_ddstress_interface
 
@@ -180,7 +180,7 @@ module muscle_yield_base
             use, intrinsic :: iso_fortran_env
             use :: muscle_math_derivatives
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
-            class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the derivative is evaluated.
+            type(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the derivative is evaluated.
             type(ten_3D2Osym) :: res                       !! Output first derivative tensor (`ten_3D2Osym`).
 
             res = derivative(wrapper, stress)
@@ -204,7 +204,7 @@ module muscle_yield_base
             use :: muscle_math_derivatives
             implicit none
             class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
-            class(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the second derivative is evaluated.
+            type(ten_3D2Osym), intent(in) :: stress       !! Input stress tensor (`ten_3D2Osym`) at which the second derivative is evaluated.
             type(ten_3D4O3sym) :: res                      !! Output second derivative tensor (`ten_3D4O2sym`).
   
             res = derivative2O(wrapper, stress)

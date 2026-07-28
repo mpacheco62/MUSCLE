@@ -44,6 +44,7 @@ contains
 
     pure subroutine init_dp(self, beta_deg, K, hardening_mode)
         !! Initializes Drucker-Prager parameters matching Abaqus material options.
+        implicit none
         class(DruckerPrager), intent(inout) :: self
         real(real64), intent(in)          :: beta_deg       !! Friction angle beta in degrees
         real(real64), intent(in)          :: K              !! Yield stress ratio K (0.778 <= K <= 1.0)
@@ -71,8 +72,9 @@ contains
 
     pure function stress_eq_dp(self, stress) result(res)
         !! Computes the Drucker-Prager equivalent stress.
+        implicit none
         class(DruckerPrager), intent(in) :: self
-        class(ten_3D2Osym), intent(in)   :: stress
+        type(ten_3D2Osym), intent(in)   :: stress
         real(real64)                     :: res
 
         real(real64) :: q, r3, t, p, stress_norm

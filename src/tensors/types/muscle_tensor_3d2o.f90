@@ -183,10 +183,12 @@ module muscle_tensor_3d2o
         module procedure ten_3D2O_real64_assign
     end interface
 
+#ifdef ENABLE_UDTIO
     public :: write(formatted)
     interface write(formatted)
         module procedure print_ten_3D2O
     end interface
+#endif
 
     public :: transpose
     interface transpose
