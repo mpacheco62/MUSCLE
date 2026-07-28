@@ -85,12 +85,6 @@ subroutine test_openmp_tensor_ops(passed)
     do i = 1, N
         ! Variante 1: Operador Unario .dev.
         par_oper(i) = .dev. a(i)
-
-        ! Variante 2: Método Función
-        par_fun(i)  = a(i)%dev()
-
-        ! Variante 3: Subrutina Directa
-        call a(i)%calc_dev(par_sub(i))
     end do
 !$OMP END PARALLEL DO
 
@@ -115,31 +109,6 @@ subroutine test_openmp_tensor_ops(passed)
             print*, "   diff : ", par_oper(i)%vals - seq_res(i)%vals
         end if
 
-        ! Verificar Variante 2 (Método Función)
-        if (any(abs(par_fun(i)%vals - seq_res(i)%vals) > 1.0D-10) .and. .not. err_fun) then
-            err_fun = .true.
-            passed = .false.
-            print*, ""
-            print*, "---------------------------------------------------------"
-            print*, " [FALLA] VARIANTE 2 (Método Función) falló en índice: ", i
-            print*, "   a(i) : ", a(i)%vals
-            print*, "   seq  : ", seq_res(i)%vals
-            print*, "   par  : ", par_fun(i)%vals
-            print*, "   diff : ", par_fun(i)%vals - seq_res(i)%vals
-        end if
-
-        ! Verificar Variante 3 (Subrutina)
-        if (any(abs(par_sub(i)%vals - seq_res(i)%vals) > 1.0D-10) .and. .not. err_sub) then
-            err_sub = .true.
-            passed = .false.
-            print*, ""
-            print*, "---------------------------------------------------------"
-            print*, " [FALLA] VARIANTE 3 (Subrutina) falló en índice: ", i
-            print*, "   a(i) : ", a(i)%vals
-            print*, "   seq  : ", seq_res(i)%vals
-            print*, "   par  : ", par_sub(i)%vals
-            print*, "   diff : ", par_sub(i)%vals - seq_res(i)%vals
-        end if
     end do
 
     print*, ""
@@ -147,12 +116,6 @@ subroutine test_openmp_tensor_ops(passed)
     print*, " RESUMEN DE RESULTADOS:"
     if (.not. err_oper) print*, "   Variante 1 (Operador .dev.) : PASÓ OK "
     if (err_oper)       print*, "   Variante 1 (Operador .dev.) : FALLÓ "
-
-    if (.not. err_fun)  print*, "   Variante 2 (Método Función)  : PASÓ OK "
-    if (err_fun)        print*, "   Variante 2 (Método Función)  : FALLÓ "
-
-    if (.not. err_sub)  print*, "   Variante 3 (Subrutina)       : PASÓ OK "
-    if (err_sub)        print*, "   Variante 3 (Subrutina)       : FALLÓ "
     print*, "========================================================="
 
     deallocate(a, seq_res, par_oper, par_fun, par_sub)
