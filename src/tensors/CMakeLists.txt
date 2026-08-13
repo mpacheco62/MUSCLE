@@ -5,6 +5,7 @@ target_sources(muscle PRIVATE
                    types/muscle_tensor_3d4o3sym.f90
                    types/muscle_tensor_2d4o3sym.f90
                    types/muscle_tensor_3d4o2sym.f90
+                   types/muscle_tensor_3d4o.f90
                    types/muscle_tensor_iden_2os.f90
                    types/muscle_tensor_iden_2o.f90
                    types/muscle_tensor_iden_4o3ts.f90

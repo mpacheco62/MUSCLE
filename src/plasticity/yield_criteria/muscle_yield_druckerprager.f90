@@ -38,6 +38,7 @@ module muscle_yield_druckerprager
     contains
         procedure, public :: init => init_dp
         procedure, public :: stress_eq => stress_eq_dp
+        procedure, public :: dstressEq_dstress => dstressEq_dstress_dp
     end type DruckerPrager
 
 contains
@@ -110,5 +111,57 @@ contains
         res = t + self%I1_factor * p
 
     end function stress_eq_dp
+
+    pure function dstressEq_dstress_dp(self, stress) result(N_tensor)
+        !! Analytical First Derivative (Gradient / Flow Direction): N = d(sigma_eq) / d(sigma)
+        implicit none
+        class(DruckerPrager), intent(in) :: self
+        type(ten_3D2Osym), intent(in)    :: stress
+        type(ten_3D2Osym)                :: N_tensor
+
+        type(ten_3D2Osym) :: s, s2
+        real(real64)      :: q, r3, c1, c2, f, d
+        real(real64)      :: alpha1, alpha2, alpha3, stress_norm
+        type(iden_2O)     :: I2O
+
+        real(real64), parameter :: TOL_REL = 1.0D-9
+        real(real64), parameter :: TOL_ABS = 1.0D-40
+
+        f = self%f_factor
+        d = self%I1_factor
+
+        stress_norm = sqrt(stress .ddot. stress)
+
+        ! Handle Zero Stress State
+        if (stress_norm < TOL_ABS) then
+            N_tensor = (d / 3.0D0) * I2O
+            return
+        end if
+
+        s = .dev. stress
+        q = sqrt(1.5D0 * (s .ddot. s))
+
+        ! Handle Hydrostatic State (q -> 0)
+        if ((q / stress_norm) < TOL_REL) then
+            N_tensor = (d / 3.0D0) * I2O
+            return
+        end if
+
+        ! Invariant constants
+        c1 = 0.5D0 * (1.0D0 + 1.0D0 / self%K)
+        c2 = 0.5D0 * (1.0D0 - 1.0D0 / self%K)
+
+        s2 = s%square()
+        r3 = 4.5D0 * (s2 .ddot. s)
+
+        ! Scalar coefficients for gradient
+        alpha1 = (1.5D0 / q) * (c1 + 2.0D0 * c2 * (r3 / (q**3)))
+        alpha2 = -13.5D0 * c2 / (q**2)
+        alpha3 = (d / 3.0D0) + 3.0D0 * f * c2
+
+        ! N = f * (alpha1 * S + alpha2 * S^2) + alpha3 * I
+        N_tensor = f * (alpha1 * s + alpha2 * s2) + alpha3 * I2O
+
+    end function dstressEq_dstress_dp
 
 end module muscle_yield_druckerprager

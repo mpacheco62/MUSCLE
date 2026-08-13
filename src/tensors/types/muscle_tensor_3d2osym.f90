@@ -147,6 +147,10 @@ module muscle_tensor_3d2osym
                 !! Computes the norm of the tensor.
             procedure, public :: is_approx => is_approx_3D2Osym
                 !! Compares two tensors for approximate equality.
+            procedure, public :: det => det_3D2Osym
+                !! Computes the determinant of the symmetric 2nd-order tensor.
+            procedure, public :: inv => inv_3D2Osym
+                !! Computes the analytical inverse tensor (A^-1).
     end type ten_3D2Osym
 
     public :: operator(.approx.)
@@ -193,6 +197,11 @@ module muscle_tensor_3d2osym
     public :: assignment (=)
     interface assignment (=)
         module procedure ten_3D2Osym_real64_assign
+    end interface
+
+    public :: operator(.inv.)
+    interface operator (.inv.)
+        module procedure inv_3D2Osym
     end interface
 
 #ifdef ENABLE_UDTIO
@@ -443,4 +452,67 @@ contains
             iomsg = "Error in print_ten_3D2Osym: Failed to write to the specified unit."
         end if
     end subroutine print_ten_3D2Osym
+
+    pure function det_3D2Osym(self) result(res)
+        !! Computes the determinant of a 3D symmetric 2nd-order tensor.
+        !! Mapeo Voigt: (1)xx, (2)yy, (3)zz, (4)xy, (5)yz, (6)xz
+        implicit none
+        class(ten_3D2Osym), intent(in) :: self
+        real(real64)                   :: res
+        real(real64) :: a11, a22, a33, a12, a23, a13
+
+        a11 = self%vals(1); a22 = self%vals(2); a33 = self%vals(3)
+        a12 = self%vals(4); a23 = self%vals(5); a13 = self%vals(6)
+
+        res = a11 * (a22 * a33 - a23**2) &
+            - a12 * (a12 * a33 - a23 * a13) &
+            + a13 * (a12 * a23 - a22 * a13)
+    end function det_3D2Osym
+
+
+    pure function inv_3D2Osym(self) result(res)
+        !! Computes the analytical inverse of a symmetric 2nd-order tensor: A^-1 = adj(A) / det(A).
+        !! If det(A) == 0, returns a zero tensor.
+        implicit none
+        class(ten_3D2Osym), intent(in) :: self
+        type(ten_3D2Osym)             :: res
+
+        real(real64) :: a11, a22, a33, a12, a23, a13
+        real(real64) :: c11, c22, c33, c12, c23, c13
+        real(real64) :: det_val, inv_det
+        real(real64), parameter :: EPS_DET = 1.0D-30
+
+        ! 1. Desempaquetar componentes Voigt
+        a11 = self%vals(1); a22 = self%vals(2); a33 = self%vals(3)
+        a12 = self%vals(4); a23 = self%vals(5); a13 = self%vals(6)
+
+        ! 2. Calcular cofactores de la matriz simétrica
+        c11 =  (a22 * a33 - a23**2)
+        c22 =  (a11 * a33 - a13**2)
+        c33 =  (a11 * a22 - a12**2)
+
+        c12 = -(a12 * a33 - a23 * a13)
+        c23 = -(a11 * a23 - a12 * a13)
+        c13 =  (a12 * a23 - a22 * a13)
+
+        ! 3. Calcular determinante usando la primera fila de cofactores
+        det_val = a11 * c11 + a12 * c12 + a13 * c13
+
+        ! 4. Manejo de singularidad (det -> 0)
+        if (abs(det_val) < EPS_DET) then
+            res%vals = 0.0D0
+            return
+        end if
+
+        inv_det = 1.0D0 / det_val
+
+        ! 5. Asignar componentes de la matriz inversa A^-1 = Adj(A) / det(A)
+        res%vals(1) = c11 * inv_det ! xx
+        res%vals(2) = c22 * inv_det ! yy
+        res%vals(3) = c33 * inv_det ! zz
+        res%vals(4) = c12 * inv_det ! xy
+        res%vals(5) = c23 * inv_det ! yz
+        res%vals(6) = c13 * inv_det ! xz
+
+    end function inv_3D2Osym
 end module muscle_tensor_3d2osym

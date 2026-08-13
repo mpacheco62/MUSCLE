@@ -1614,6 +1614,62 @@ module muscle_math_inverses
   
         END SUBROUTINE M66INV
 
+    !***************************************************************************************************
+    !  M99INV  -  Compute the inverse of a general 9x9 matrix using LAPACK (DGETRF + DGETRI).
+    !
+    !  A       = input 9x9 matrix to be inverted (read-only)
+    !  AINV    = output 9x9 inverse matrix
+    !  OK_FLAG = (output) .TRUE. if inversion succeeded, .FALSE. if matrix is singular
+    !***************************************************************************************************
+    PURE SUBROUTINE M99INV(A, AINV, OK_FLAG)
+        implicit none
+        REAL(real64), INTENT(IN)  :: A(9,9)
+        REAL(real64), INTENT(OUT) :: AINV(9,9)
+        LOGICAL, INTENT(OUT)      :: OK_FLAG
+
+        INTEGER, PARAMETER :: N = 9
+        REAL(real64)       :: work(N)
+        INTEGER            :: ipiv(N)
+        INTEGER            :: info
+
+        INTERFACE
+            PURE SUBROUTINE DGETRF(M, N, A, LDA, IPIV, INFO)
+                import :: real64
+                INTEGER, INTENT(IN) :: M, N, LDA
+                REAL(real64), DIMENSION(*), INTENT(INOUT) :: A
+                INTEGER, DIMENSION(*), INTENT(OUT) :: IPIV
+                INTEGER, INTENT(OUT) :: INFO
+            END SUBROUTINE DGETRF
+
+            PURE SUBROUTINE DGETRI(N, A, LDA, IPIV, WORK, LWORK, INFO)
+                import :: real64
+                INTEGER, INTENT(IN) :: N, LDA, LWORK
+                REAL(real64), DIMENSION(*), INTENT(INOUT) :: A, WORK
+                INTEGER, DIMENSION(*), INTENT(INOUT) :: IPIV
+                INTEGER, INTENT(OUT) :: INFO
+            END SUBROUTINE DGETRI
+        END INTERFACE
+
+        AINV = A
+        CALL DGETRF(N, N, AINV, N, ipiv, info)
+
+        IF (info /= 0) THEN
+            OK_FLAG = .FALSE.
+            AINV = 0.0D0
+            RETURN
+        END IF
+
+        CALL DGETRI(N, AINV, N, ipiv, work, N, info)
+
+        IF (info /= 0) THEN
+            OK_FLAG = .FALSE.
+            AINV = 0.0D0
+            RETURN
+        END IF
+
+        OK_FLAG = .TRUE.
+    END SUBROUTINE M99INV
+
 
       ! !Subroutine to find the inverse of a square matrix
       ! !Author : Louisda16th a.k.a Ashwith J. Rego
