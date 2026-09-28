@@ -116,8 +116,11 @@ module muscle_solver_closest_point
 
             strain_pf = strain_pf_n + dgamma
 
+            ! The plastic strain takes the same relaxed step as dgamma, so the iterate
+            ! stays on the Newton direction when omega < 1 (except in an iteration where
+            ! dgamma is clipped at zero)
             dstrain_p = ((.inv. elas_tan) .ddot. hess) .ddot. (residual1 + ddgamma * df)
-            strain_p  = strain_p + dstrain_p
+            strain_p  = strain_p + omega * dstrain_p
 
             ! 8. Update candidate state t_n+1 (iter k+1)
             history%state_np1%strain_p  = strain_p
