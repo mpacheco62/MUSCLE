@@ -145,14 +145,7 @@ contains
         I2 = 0.5D0 * (I1**2 - (Sigma .ddot. Sigma))
        
         ! Fourth-order tensor M_ijkl (analytical derivative of \Sigma^2) 
-        call M_tensor%init( &
-            xxxx=2.0D0*Sigma%xx(), xxyy=0.0D0, xxzz=0.0D0, xxxy=Sigma%xy(), xxyz=0.0D0, xxxz=Sigma%xz(), &
-            yyyy=2.0D0*Sigma%yy(), yyzz=0.0D0, yyxy=Sigma%xy(), yyyz=Sigma%yz(), yyxz=0.0D0, &
-            zzzz=2.0D0*Sigma%zz(), zzxy=0.0D0, zzyz=Sigma%yz(), zzxz=Sigma%xz(), &
-            xyxy=0.5D0*(Sigma%xx()+Sigma%yy()), xyyz=0.5D0*Sigma%xz(), xyxz=0.5D0*Sigma%yz(), &
-            yzyz=0.5D0*(Sigma%yy()+Sigma%zz()), yzxz=0.5D0*Sigma%xy(), &
-            xzxz=0.5D0*(Sigma%xx()+Sigma%zz()) &
-        )
+        M_tensor = Sigma%dsquare()
 
         num_sing = 0
         good_idx = 1

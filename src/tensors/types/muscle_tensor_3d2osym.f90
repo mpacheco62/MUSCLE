@@ -89,6 +89,7 @@ module muscle_tensor_3d2osym
     !! For more information see [[muscle_tensors]]
 
     use, intrinsic :: iso_fortran_env
+    use muscle_tensor_3d4o3sym, only : ten_3D4O3sym
     implicit none
     private
 
@@ -143,6 +144,8 @@ module muscle_tensor_3d2osym
                 !! Accessor for the xz (1,3) component.
             procedure, public :: square => square_3D2Osym
                 !! Computes the square of the tensor.
+            procedure, public :: dsquare => dsquare_3D2Osym
+                !! Computes the derivative of the square with respect to the tensor.
             procedure, public :: norm => norm_3D2Osym
                 !! Computes the norm of the tensor.
             procedure, public :: is_approx => is_approx_3D2Osym
@@ -361,6 +364,25 @@ contains
         res%vals(5) = a%vals(5)*(a%vals(2) + a%vals(3)) + a%vals(4)*a%vals(6)
         res%vals(6) = a%vals(6)*(a%vals(1) + a%vals(3)) + a%vals(4)*a%vals(5)
     end function square_3D2Osym
+
+    pure function dsquare_3D2Osym(a) result(res)
+        !! Derivative of the square with respect to the tensor (Itskov, 2007, Eq. 6.119 with
+        !! k = 2), used by second derivatives of invariants (`d2Eigenvalues_dTensor2`):
+        !! \[ \frac{\partial (A^2)_{ij}}{\partial A_{kl}} = \frac{1}{2} \left( \delta_{ik} A_{lj}
+        !!    + \delta_{jl} A_{ik} + \delta_{il} A_{kj} + \delta_{jk} A_{il} \right) \]
+        !! It is linear in A, so `(c*A)%dsquare()` equals `c * A%dsquare()`.
+        implicit none
+        class(ten_3D2Osym), intent(in) :: a
+        type(ten_3D4O3sym) :: res
+        call res%init( &
+            xxxx=2.0D0*a%xx(), xxyy=0.0D0, xxzz=0.0D0, xxxy=a%xy(), xxyz=0.0D0, xxxz=a%xz(), &
+            yyyy=2.0D0*a%yy(), yyzz=0.0D0, yyxy=a%xy(), yyyz=a%yz(), yyxz=0.0D0, &
+            zzzz=2.0D0*a%zz(), zzxy=0.0D0, zzyz=a%yz(), zzxz=a%xz(), &
+            xyxy=0.5D0*(a%xx()+a%yy()), xyyz=0.5D0*a%xz(), xyxz=0.5D0*a%yz(), &
+            yzyz=0.5D0*(a%yy()+a%zz()), yzxz=0.5D0*a%xy(), &
+            xzxz=0.5D0*(a%xx()+a%zz()) &
+        )
+    end function dsquare_3D2Osym
     
     pure function xx(a) result(res)
         !! Accessor function for the xx (11) component (vals(1)).
