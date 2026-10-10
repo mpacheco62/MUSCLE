@@ -27,9 +27,13 @@ module muscle_tensors
     !!
     !! Nomenclature `ten_xyz`:
     !!
-    !! - `x`: Dimensions of the tensor (e.g., 3D)
+    !! - `x`: Dimensions of the tensor (e.g., 3D, 2D)
     !! - `y`: Order of the tensor (e.g., 2O, 4O)
     !! - `z`: Number of symmetries of the tensor (e.g., sym, 2sym, 3sym)
+    !!
+    !! `2D` tensors describe plane (strain/stress) or axisymmetric states: the
+    !! out-of-plane coupling components (13, 23, 31, 32) vanish, but the
+    !! out-of-plane normal component (33) is kept.
     !!
     !! Examples:
     !!
@@ -37,6 +41,8 @@ module muscle_tensors
     !! - `ten_3D2Osym`: 3D tensor, second order, symmetric (likely stored efficiently, e.g., 6 components).
     !! - `ten_3D4O2sym`: 3D tensor, fourth order, with minor symmetries (\(C_{ijkl} = C_{jikl} = C_{ijlk}\)).
     !! - `ten_3D4O3sym`: 3D tensor, fourth order, with major and minor symmetries (\(C_{ijkl} = C_{jikl} = C_{ijlk} = C_{klij}\)).
+    !! - `ten_2D2Osym`: 2D symmetric second-order tensor (4 components: 11, 22, 33, 12).
+    !! - `ten_2D2O`: 2D general second-order tensor (5 components: 11, 21, 12, 22, 33).
     !!
     !! ### Identity Tensors:
     !!
@@ -71,6 +77,11 @@ module muscle_tensors
     !! - [[ten_3D2Osym]]:    Symmetric 3D second-order tensor (from [[muscle_tensor_3d2osym]]).
     !! - [[ten_3D4O2sym]]:   3D fourth-order tensor with minor symmetries (from [[muscle_tensor_3d4o2sym]]).
     !! - [[ten_3D4O3sym]]:   3D fourth-order tensor with major and minor symmetries (from [[muscle_tensor_3d4o3sym]]).
+    !! - [[ten_2D2O]]:       General 2D second-order tensor (from [[muscle_tensor_2d2o]]).
+    !! - [[ten_2D2Osym]]:    Symmetric 2D second-order tensor (from [[muscle_tensor_2d2osym]]).
+    !! - [[ten_2D4O2sym]]:   2D fourth-order tensor with minor symmetries (from [[muscle_tensor_2d4o2sym]]).
+    !! - [[ten_2D4O3sym]]:   2D fourth-order tensor with major and minor symmetries (from [[muscle_tensor_2d4o3sym]]).
+    !! - [[ten_2D4O]]:       General (unsymmetric) 2D fourth-order tensor (from [[muscle_tensor_2d4o]]).
     !! - [[iden_2O]]:      Standard 3D second-order identity tensor (from [[muscle_tensor_iden_2o]]).
     !! - [[iden_2OS]]:   Scaled 3D second-order identity tensor (from [[muscle_tensor_iden_2os]]).
     !! - [[iden_4O3T]]:    Type 3 3D fourth-order identity tensor (from [[muscle_tensor_iden_4o3t]]).
@@ -92,7 +103,10 @@ module muscle_tensors
     !! - `.dev.`: Deviatoric part of a second-order tensor.
     !! - `.ddot.`: Double dot product (e.g., `tensor4 : tensor2`, `tensor2 : tensor2`).
     !! - `.tdot.`: Tensor dot product (specific definition depends on implementation, often \( (A \otimes B)_{ijkl} = A_{ij} B_{kl} \) for second order).
-    !! - `.inv.`: Inverse of a 3D fourth-order tensor, with major and minor symmetries.
+    !! - `.inv.`: Inverse of a tensor (2nd-order symmetric, 4th-order fully symmetric or general 4th order; 2D and 3D).
+    !! - `.tdotsym.`: Symmetrized dyadic product \( \frac{1}{2}(\mathbf{a}\otimes\mathbf{b} + \mathbf{b}\otimes\mathbf{a}) \).
+    !! - `.transform.`: Congruence transformation \( \mathbf{F}\cdot\mathbf{S}\cdot\mathbf{F}^T \) (2nd and 4th order).
+    !! - `transpose`: Transpose of a general second-order tensor.
     !!
     !! ### Assignment:
     !!
@@ -127,9 +141,12 @@ module muscle_tensors
     use, intrinsic :: iso_fortran_env
     use muscle_tensor_3d2o
     use muscle_tensor_3d2osym
+    use muscle_tensor_2d2o
     use muscle_tensor_2d2osym
     use muscle_tensor_3d4o3sym
     use muscle_tensor_2d4o3sym
+    use muscle_tensor_2d4o2sym
+    use muscle_tensor_2d4o
     use muscle_tensor_3d4o2sym
     use muscle_tensor_iden_2os
     use muscle_tensor_iden_2o
@@ -147,9 +164,12 @@ module muscle_tensors
 
     public :: ten_3D2O
     public :: ten_3D2Osym
+    public :: ten_2D2O
     public :: ten_2D2Osym
     public :: ten_3D4O3sym
     public :: ten_2D4O3sym
+    public :: ten_2D4O2sym
+    public :: ten_2D4O
     public :: ten_3D4O2sym
     public :: iden_2OS
     public :: iden_2O

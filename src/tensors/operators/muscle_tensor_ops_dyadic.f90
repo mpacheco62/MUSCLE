@@ -19,6 +19,7 @@ module muscle_tensor_ops_dyadic
     ! Import necessary types
     use muscle_tensor_iden_2o
     use muscle_tensor_2d2osym
+    use muscle_tensor_2d4o2sym
     use muscle_tensor_2d4o3sym
     use muscle_tensor_3d2osym
     use muscle_tensor_3d4o2sym
@@ -37,6 +38,8 @@ module muscle_tensor_ops_dyadic
         module procedure tdot_3D2Osym_3D2Osym
         module procedure tdot_3D2Osym_I2O
         module procedure tdot_I2O_3D2Osym
+        module procedure tdot_2D2Osym_I2O
+        module procedure tdot_I2O_2D2Osym
     end interface
 
     public :: operator(.tdotsym.)
@@ -45,6 +48,10 @@ module muscle_tensor_ops_dyadic
         module procedure tdotsym_3D2Osym
         module procedure tdotsym_3D2Osym_I2O
         module procedure tdotsym_I2O_3D2Osym
+        module procedure tdotsym_2D2Osym_2D2Osym
+        module procedure tdotsym_2D2Osym
+        module procedure tdotsym_2D2Osym_I2O
+        module procedure tdotsym_I2O_2D2Osym
     end interface
 
 contains
@@ -54,45 +61,60 @@ contains
     ! =========================================================================
 
     pure function tdot_2D2Osym_2D2Osym(a, b) result(res)
-        !! Computes the dyadic (outer) tensor product between two 2D symmetric 
-        !! second-order tensors.
+        !! Computes the dyadic (outer) tensor product between two 2D symmetric
+        !! second-order tensors: \(\mathbb{C} = \mathbf{a} \otimes \mathbf{b}\).
         !!
-        !! Mathematically: \( \mathbb{C}_{ijkl} = a_{ij} b_{kl} \).
+        !! Mathematically: \( C_{ijkl} = a_{ij} b_{kl} \).
         !!
-        !! The result is returned as a fully symmetric fourth-order tensor (`ten_2D4O3sym`).
-        !! Note: This inherently enforces the major symmetry structure of the resulting 
-        !! Voigt matrix, so this operator is most accurately used when \(\mathbf{a}\) 
-        !! and \(\mathbf{b}\) are physically equivalent or proportional (e.g., \(\mathbf{I} \otimes \mathbf{I}\)).
-        !!
-        !! Voigt Mapping Reference:
-        !! ```
-        !!  | ( 1:1111) ( 5:1122) ( 8:1133) (10:1112) |
-        !!  | ( 5:2211) ( 2:2222) ( 6:2233) ( 9:2212) |
-        !!  | ( 8:3311) ( 6:3322) ( 3:3333) ( 7:3312) |
-        !!  | (10:1211) ( 9:1222) ( 7:1233) ( 4:1212) |
-        !! ```
+        !! As in 3D, the result only has minor symmetries (major symmetry holds only
+        !! when \(\mathbf{a}\) and \(\mathbf{b}\) are proportional), so it is returned as a
+        !! `ten_2D4O2sym`: the 4x4 Voigt matrix \(C_{IJ} = a_I b_J\).
+        !! Use `.tdotsym.` for the major-symmetric (symmetrized) product.
         implicit none
         type(ten_2D2Osym), intent(in) :: a
             !! First second-order symmetric tensor \(\mathbf{a}\)
         type(ten_2D2Osym), intent(in) :: b
             !! Second second-order symmetric tensor \(\mathbf{b}\)
-        type(ten_2D4O3sym) :: res
-            !! Resulting fourth-order fully symmetric tensor \(\mathbb{C}\)
-            
-        res%vals( 1) = a%vals(1)*b%vals(1)
-        res%vals( 5) = a%vals(1)*b%vals(2)
-        res%vals( 8) = a%vals(1)*b%vals(3)
-        res%vals(10) = a%vals(1)*b%vals(4)
+        type(ten_2D4O2sym) :: res
+            !! Resulting fourth-order tensor with minor symmetries \(\mathbb{C}\)
 
-        res%vals( 2) = a%vals(2)*b%vals(2)
-        res%vals( 6) = a%vals(2)*b%vals(3)
-        res%vals( 9) = a%vals(2)*b%vals(4)
-
-        res%vals( 3) = a%vals(3)*b%vals(3)
-        res%vals( 7) = a%vals(3)*b%vals(4)
-
-        res%vals( 4) = a%vals(4)*b%vals(4)
+        res%vals(1,:) = a%vals(1) * b%vals(:)
+        res%vals(2,:) = a%vals(2) * b%vals(:)
+        res%vals(3,:) = a%vals(3) * b%vals(:)
+        res%vals(4,:) = a%vals(4) * b%vals(:)
     end function tdot_2D2Osym_2D2Osym
+
+    pure function tdot_2D2Osym_I2O(a, I2) result(res)
+        !! Computes the dyadic product \(\mathbb{C} = \mathbf{a} \otimes \mathbf{I}\).
+        !! In 4x4 Voigt notation, this fills the first three (normal) columns with \(\mathbf{a}\).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric second-order tensor \(\mathbf{a}\).
+        type(iden_2O), intent(in) :: I2
+            !! Standard identity tensor \(\mathbf{I}\).
+        type(ten_2D4O2sym) :: res
+            !! Resulting minor-symmetric fourth-order tensor.
+        res%vals = 0.0D0
+        res%vals(:,1) = a%vals
+        res%vals(:,2) = a%vals
+        res%vals(:,3) = a%vals
+    end function tdot_2D2Osym_I2O
+
+    pure function tdot_I2O_2D2Osym(I2, a) result(res)
+        !! Computes the dyadic product \(\mathbb{C} = \mathbf{I} \otimes \mathbf{a}\).
+        !! In 4x4 Voigt notation, this fills the first three (normal) rows with \(\mathbf{a}\).
+        implicit none
+        type(iden_2O), intent(in) :: I2
+            !! Standard identity tensor \(\mathbf{I}\).
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric second-order tensor \(\mathbf{a}\).
+        type(ten_2D4O2sym) :: res
+            !! Resulting minor-symmetric fourth-order tensor.
+        res%vals = 0.0D0
+        res%vals(1,:) = a%vals
+        res%vals(2,:) = a%vals
+        res%vals(3,:) = a%vals
+    end function tdot_I2O_2D2Osym
 
     pure function tdot_3D2Osym_3D2Osym(a, b) result(res)
         !! Computes the dyadic (outer) tensor product: \(\mathbb{C} = \mathbf{a} \otimes \mathbf{b}\).
@@ -296,5 +318,94 @@ contains
         ! Delegate to the primary implementation
         res = tdotsym_3D2Osym_I2O(a, I2)
     end function tdotsym_I2O_3D2Osym
+
+    ! =========================================================================
+    ! 3. 2D SYMMETRIZED DYADIC PRODUCT (.tdotsym.)
+    ! =========================================================================
+    ! ten_2D4O3sym storage: (11, 22, 33, 44, 12, 23, 34, 13, 24, 14)
+    !                         1   2   3   4   5   6   7   8   9  10
+
+    pure function tdotsym_2D2Osym_2D2Osym(a, b) result(res)
+        !! Computes the symmetrized dyadic product of two 2D symmetric tensors:
+        !! \(\mathbb{C} = \frac{1}{2} (\mathbf{a} \otimes \mathbf{b} + \mathbf{b} \otimes \mathbf{a})\).
+        !! The result is always a fully symmetric 4th-order tensor (`ten_2D4O3sym`).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! First symmetric tensor \(\mathbf{a}\).
+        type(ten_2D2Osym), intent(in) :: b
+            !! Second symmetric tensor \(\mathbf{b}\).
+        type(ten_2D4O3sym) :: res
+            !! Fully symmetric fourth-order tensor.
+
+        res%vals(1)  = a%vals(1)*b%vals(1)
+        res%vals(2)  = a%vals(2)*b%vals(2)
+        res%vals(3)  = a%vals(3)*b%vals(3)
+        res%vals(4)  = a%vals(4)*b%vals(4)
+        res%vals(5)  = 0.5D0 * (a%vals(1)*b%vals(2) + b%vals(1)*a%vals(2))
+        res%vals(6)  = 0.5D0 * (a%vals(2)*b%vals(3) + b%vals(2)*a%vals(3))
+        res%vals(7)  = 0.5D0 * (a%vals(3)*b%vals(4) + b%vals(3)*a%vals(4))
+        res%vals(8)  = 0.5D0 * (a%vals(1)*b%vals(3) + b%vals(1)*a%vals(3))
+        res%vals(9)  = 0.5D0 * (a%vals(2)*b%vals(4) + b%vals(2)*a%vals(4))
+        res%vals(10) = 0.5D0 * (a%vals(1)*b%vals(4) + b%vals(1)*a%vals(4))
+    end function tdotsym_2D2Osym_2D2Osym
+
+    pure function tdotsym_2D2Osym(a) result(res)
+        !! Computes the dyadic product of a 2D tensor with itself:
+        !! \(\mathbb{C} = \mathbf{a} \otimes \mathbf{a}\), i.e. \( C_{ijkl} = a_{ij} a_{kl} \).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! The symmetric 2nd-order tensor to be multiplied by itself.
+        type(ten_2D4O3sym) :: res
+            !! The resulting fully symmetric 4th-order tensor.
+
+        res%vals(1)  = a%vals(1)*a%vals(1)
+        res%vals(2)  = a%vals(2)*a%vals(2)
+        res%vals(3)  = a%vals(3)*a%vals(3)
+        res%vals(4)  = a%vals(4)*a%vals(4)
+        res%vals(5)  = a%vals(1)*a%vals(2)
+        res%vals(6)  = a%vals(2)*a%vals(3)
+        res%vals(7)  = a%vals(3)*a%vals(4)
+        res%vals(8)  = a%vals(1)*a%vals(3)
+        res%vals(9)  = a%vals(2)*a%vals(4)
+        res%vals(10) = a%vals(1)*a%vals(4)
+    end function tdotsym_2D2Osym
+
+    pure function tdotsym_2D2Osym_I2O(a, I2) result(res)
+        !! Computes the symmetrized dyadic product
+        !! \(\mathbb{C} = \frac{1}{2}(\mathbf{a} \otimes \mathbf{I} + \mathbf{I} \otimes \mathbf{a})\)
+        !! for a 2D symmetric tensor. The result has major symmetry (`ten_2D4O3sym`).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric second-order tensor \(\mathbf{a}\).
+        type(iden_2O),     intent(in) :: I2
+            !! Standard identity tensor \(\mathbf{I}\).
+        type(ten_2D4O3sym)            :: res
+            !! Fully symmetric fourth-order tensor.
+
+        res%vals(1)  = a%vals(1)                        ! 11
+        res%vals(2)  = a%vals(2)                        ! 22
+        res%vals(3)  = a%vals(3)                        ! 33
+        res%vals(4)  = 0.0D0                            ! 44
+        res%vals(5)  = 0.5D0 * (a%vals(1) + a%vals(2))  ! 12
+        res%vals(6)  = 0.5D0 * (a%vals(2) + a%vals(3))  ! 23
+        res%vals(7)  = 0.5D0 * a%vals(4)                ! 34
+        res%vals(8)  = 0.5D0 * (a%vals(1) + a%vals(3))  ! 13
+        res%vals(9)  = 0.5D0 * a%vals(4)                ! 24
+        res%vals(10) = 0.5D0 * a%vals(4)                ! 14
+    end function tdotsym_2D2Osym_I2O
+
+    pure function tdotsym_I2O_2D2Osym(I2, a) result(res)
+        !! Computes \(\mathbb{C} = \frac{1}{2}(\mathbf{I} \otimes \mathbf{a} + \mathbf{a} \otimes \mathbf{I})\),
+        !! identical to `a .tdotsym. I2`.
+        implicit none
+        type(iden_2O),     intent(in) :: I2
+            !! Standard identity tensor \(\mathbf{I}\).
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric second-order tensor \(\mathbf{a}\).
+        type(ten_2D4O3sym)            :: res
+            !! Fully symmetric fourth-order tensor.
+
+        res = tdotsym_2D2Osym_I2O(a, I2)
+    end function tdotsym_I2O_2D2Osym
 
 end module muscle_tensor_ops_dyadic

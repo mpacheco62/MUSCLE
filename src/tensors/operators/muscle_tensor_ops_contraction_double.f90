@@ -20,7 +20,9 @@ module muscle_tensor_ops_contraction_double
     use muscle_tensor_iden_2os
     use muscle_tensor_iden_4o4t
     use muscle_tensor_iden_4o4ts
+    use muscle_tensor_2d2o
     use muscle_tensor_2d2osym
+    use muscle_tensor_2d4o2sym
     use muscle_tensor_2d4o3sym
     use muscle_tensor_3d2o
     use muscle_tensor_3d2osym
@@ -76,6 +78,31 @@ module muscle_tensor_ops_contraction_double
 
         ! --- 4th Order Tensor : 4th Order Tensor ---
         module procedure ddot_3D4O3sym_3D4O3sym
+
+        ! --- 2D: 2nd Order Identities : 2D General Tensor ---
+        module procedure ddot_I2O_2D2O
+        module procedure ddot_2D2O_I2O
+        module procedure ddot_I2OS_2D2O
+        module procedure ddot_2D2O_I2OS
+
+        ! --- 2D: 2nd Order Tensor : 2nd Order Tensor ---
+        module procedure ddot_2D2O_2D2Osym
+        module procedure ddot_2D2Osym_2D2O
+
+        ! --- 2D: 4th Order Symmetric Identities : 2nd Order Tensor ---
+        module procedure ddot_I4O4T_2D2O
+        module procedure ddot_2D2O_I4O4T
+        module procedure ddot_I4O4TS_2D2O
+        module procedure ddot_2D2O_I4O4TS
+        module procedure ddot_I4O4TS_2D2Osym
+        module procedure ddot_2D2Osym_I4O4TS
+
+        ! --- 2D: 4th Order Tensor : 2nd Order Tensor ---
+        module procedure ddot_2D4O2sym_2D2Osym
+        module procedure ddot_2D2Osym_2D4O2sym
+
+        ! --- 2D: 4th Order Tensor : 4th Order Tensor ---
+        module procedure ddot_2D4O3sym_2D4O3sym
     end interface
 
 contains
@@ -754,5 +781,246 @@ contains
         res%vals(6, 6) = bT%vals(6)*x29 + x13 + x19 + x24 + x28 + x3
 
     end function ddot_3D4O3sym_3D4O3sym
+
+    ! =========================================================================
+    ! 7. 2D TENSORS
+    ! =========================================================================
+    ! Storage reminder:
+    ! - ten_2D2Osym : (xx, yy, zz, xy)                 -> indices 1..4
+    ! - ten_2D2O    : (xx, yx, xy, yy, zz)             -> indices 1..5
+    ! - ten_2D4O3sym: (11,22,33,44,12,23,34,13,24,14)  -> indices 1..10 (Voigt IJ)
+    ! - ten_2D4O2sym: 4x4 Voigt matrix
+    ! The tensorial shear (Voigt index 4) is counted twice in every contraction.
+
+    pure function ddot_I2O_2D2O(I2, b) result(res)
+        !! Computes the double contraction \(\text{tr}(\mathbf{B}) = \mathbf{I} : \mathbf{B}\).
+        implicit none
+        type(iden_2O), intent(in) :: I2
+            !! The standard 2nd-order identity tensor \(\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: b
+            !! The general 2D tensor \(\mathbf{B}\).
+        real(real64) :: res
+            !! Trace of \(\mathbf{B}\).
+        res = b%vals(1) + b%vals(4) + b%vals(5)
+    end function ddot_I2O_2D2O
+
+    pure function ddot_2D2O_I2O(b, I2) result(res)
+        !! Computes the double contraction \(\text{tr}(\mathbf{B}) = \mathbf{B} : \mathbf{I}\).
+        implicit none
+        type(ten_2D2O), intent(in) :: b
+            !! The general 2D tensor \(\mathbf{B}\).
+        type(iden_2O), intent(in) :: I2
+            !! The standard 2nd-order identity tensor \(\mathbf{I}\).
+        real(real64) :: res
+            !! Trace of \(\mathbf{B}\).
+        res = b%vals(1) + b%vals(4) + b%vals(5)
+    end function ddot_2D2O_I2O
+
+    pure function ddot_I2OS_2D2O(I2, b) result(res)
+        !! Computes the double contraction \(c\,\text{tr}(\mathbf{B}) = c\mathbf{I} : \mathbf{B}\).
+        implicit none
+        type(iden_2OS), intent(in) :: I2
+            !! The scaled identity \(c\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: b
+            !! The general 2D tensor \(\mathbf{B}\).
+        real(real64) :: res
+            !! Scaled trace of \(\mathbf{B}\).
+        res = I2%val * (b%vals(1) + b%vals(4) + b%vals(5))
+    end function ddot_I2OS_2D2O
+
+    pure function ddot_2D2O_I2OS(b, I2) result(res)
+        !! Computes the double contraction \(c\,\text{tr}(\mathbf{B}) = \mathbf{B} : c\mathbf{I}\).
+        implicit none
+        type(ten_2D2O), intent(in) :: b
+            !! The general 2D tensor \(\mathbf{B}\).
+        type(iden_2OS), intent(in) :: I2
+            !! The scaled identity \(c\mathbf{I}\).
+        real(real64) :: res
+            !! Scaled trace of \(\mathbf{B}\).
+        res = I2%val * (b%vals(1) + b%vals(4) + b%vals(5))
+    end function ddot_2D2O_I2OS
+
+    pure function ddot_2D2O_2D2Osym(a, b) result(res)
+        !! Double contraction of a 2D general and a 2D symmetric tensor:
+        !! \( \mathbf{A} : \mathbf{B} = A_{ij} B_{ij} \).
+        implicit none
+        type(ten_2D2O), intent(in) :: a
+            !! General tensor \(\mathbf{A}\).
+        type(ten_2D2Osym), intent(in) :: b
+            !! Symmetric tensor \(\mathbf{B}\).
+        real(real64) :: res
+            !! Scalar result.
+        res =   a%vals(1)*b%vals(1) + a%vals(4)*b%vals(2) + a%vals(5)*b%vals(3) &
+              + (a%vals(2) + a%vals(3))*b%vals(4)
+    end function ddot_2D2O_2D2Osym
+
+    pure function ddot_2D2Osym_2D2O(a, b) result(res)
+        !! Double contraction of a 2D symmetric and a 2D general tensor:
+        !! \( \mathbf{A} : \mathbf{B} = A_{ij} B_{ij} \).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric tensor \(\mathbf{A}\).
+        type(ten_2D2O), intent(in) :: b
+            !! General tensor \(\mathbf{B}\).
+        real(real64) :: res
+            !! Scalar result.
+        res = ddot_2D2O_2D2Osym(b, a)
+    end function ddot_2D2Osym_2D2O
+
+    pure function ddot_I4O4T_2D2O(I4, a) result(res)
+        !! Projects a 2D general tensor onto its symmetric part:
+        !! \( \mathbb{I}^S : \mathbf{A} = \frac{1}{2}(\mathbf{A} + \mathbf{A}^T) \).
+        implicit none
+        type(iden_4O4T), intent(in) :: I4
+            !! Symmetric fourth-order identity \(\mathbb{I}^S\).
+        type(ten_2D2O),  intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2Osym)           :: res
+            !! Symmetric part of \(\mathbf{A}\).
+
+        res%vals(1) = a%vals(1)                       ! xx
+        res%vals(2) = a%vals(4)                       ! yy
+        res%vals(3) = a%vals(5)                       ! zz
+        res%vals(4) = 0.5D0 * (a%vals(2) + a%vals(3)) ! xy = (yx + xy)/2
+    end function ddot_I4O4T_2D2O
+
+    pure function ddot_2D2O_I4O4T(a, I4) result(res)
+        !! Computes \( \mathbf{A} : \mathbb{I}^S = \frac{1}{2}(\mathbf{A} + \mathbf{A}^T) \).
+        implicit none
+        type(ten_2D2O),  intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(iden_4O4T), intent(in) :: I4
+            !! Symmetric fourth-order identity \(\mathbb{I}^S\).
+        type(ten_2D2Osym)           :: res
+            !! Symmetric part of \(\mathbf{A}\).
+        res = ddot_I4O4T_2D2O(I4, a)
+    end function ddot_2D2O_I4O4T
+
+    pure function ddot_I4O4TS_2D2O(I4S, a) result(res)
+        !! Computes \( c\mathbb{I}^S : \mathbf{A} = \frac{c}{2}(\mathbf{A} + \mathbf{A}^T) \).
+        implicit none
+        type(iden_4O4TS), intent(in) :: I4S
+            !! Scaled symmetric fourth-order identity \(c\mathbb{I}^S\).
+        type(ten_2D2O),   intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2Osym)            :: res
+            !! Scaled symmetric part of \(\mathbf{A}\).
+        real(real64) :: c
+
+        c = I4S%val
+        res%vals(1) = c * a%vals(1)
+        res%vals(2) = c * a%vals(4)
+        res%vals(3) = c * a%vals(5)
+        res%vals(4) = 0.5D0 * c * (a%vals(2) + a%vals(3))
+    end function ddot_I4O4TS_2D2O
+
+    pure function ddot_2D2O_I4O4TS(a, I4S) result(res)
+        !! Computes \( \mathbf{A} : c\mathbb{I}^S = \frac{c}{2}(\mathbf{A} + \mathbf{A}^T) \).
+        implicit none
+        type(ten_2D2O),   intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(iden_4O4TS), intent(in) :: I4S
+            !! Scaled symmetric fourth-order identity \(c\mathbb{I}^S\).
+        type(ten_2D2Osym)            :: res
+            !! Scaled symmetric part of \(\mathbf{A}\).
+        res = ddot_I4O4TS_2D2O(I4S, a)
+    end function ddot_2D2O_I4O4TS
+
+    pure function ddot_I4O4TS_2D2Osym(I4S, a) result(res)
+        !! Computes \( c\mathbb{I}^S : \mathbf{A} = c\mathbf{A} \) for a symmetric 2D tensor.
+        implicit none
+        type(iden_4O4TS),  intent(in) :: I4S
+            !! Scaled symmetric fourth-order identity \(c\mathbb{I}^S\).
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric 2D tensor \(\mathbf{A}\).
+        type(ten_2D2Osym)             :: res
+            !! Scaled tensor.
+        res%vals = I4S%val * a%vals
+    end function ddot_I4O4TS_2D2Osym
+
+    pure function ddot_2D2Osym_I4O4TS(a, I4S) result(res)
+        !! Computes \( \mathbf{A} : c\mathbb{I}^S = c\mathbf{A} \) for a symmetric 2D tensor.
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric 2D tensor \(\mathbf{A}\).
+        type(iden_4O4TS),  intent(in) :: I4S
+            !! Scaled symmetric fourth-order identity \(c\mathbb{I}^S\).
+        type(ten_2D2Osym)             :: res
+            !! Scaled tensor.
+        res = ddot_I4O4TS_2D2Osym(I4S, a)
+    end function ddot_2D2Osym_I4O4TS
+
+    pure function ddot_2D4O2sym_2D2Osym(a, b) result(res)
+        !! Double contraction \( \mathbb{A} : \mathbf{b} \), i.e. \( res_{ij} = A_{ijkl} b_{kl} \).
+        !! In Voigt form: \( res_I = A_{IJ} w_J b_J \) with \( w = (1,1,1,2) \).
+        implicit none
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Minor-symmetric fourth-order tensor \(\mathbb{A}\).
+        type(ten_2D2Osym), intent(in) :: b
+            !! Symmetric second-order tensor \(\mathbf{b}\).
+        type(ten_2D2Osym) :: res
+            !! Resulting symmetric second-order tensor.
+
+        res%vals(:) =   a%vals(:,1)*b%vals(1) + a%vals(:,2)*b%vals(2) + a%vals(:,3)*b%vals(3) &
+                      + 2.0D0*a%vals(:,4)*b%vals(4)
+    end function ddot_2D4O2sym_2D2Osym
+
+    pure function ddot_2D2Osym_2D4O2sym(b, a) result(res)
+        !! Double contraction \( \mathbf{b} : \mathbb{A} \), i.e. \( res_{kl} = b_{ij} A_{ijkl} \).
+        !! In Voigt form: \( res_J = w_I b_I A_{IJ} \) with \( w = (1,1,1,2) \).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: b
+            !! Symmetric second-order tensor \(\mathbf{b}\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Minor-symmetric fourth-order tensor \(\mathbb{A}\).
+        type(ten_2D2Osym) :: res
+            !! Resulting symmetric second-order tensor.
+        real(real64), dimension(4) :: b_weighted
+
+        b_weighted(1:3) = b%vals(1:3)
+        b_weighted(4)   = 2.0D0 * b%vals(4)
+        res%vals = matmul(b_weighted, a%vals)
+    end function ddot_2D2Osym_2D4O2sym
+
+    pure function ddot_2D4O3sym_2D4O3sym(aT, bT) result(res)
+        !! Double contraction of two fully symmetric 2D fourth-order tensors:
+        !! \( (\mathbb{A} : \mathbb{B})_{ijkl} = A_{ijmn} B_{mnkl} \).
+        !!
+        !! In Voigt form \( \mathbf{R} = \mathbf{A}\,\mathbf{W}\,\mathbf{B} \) with
+        !! \( \mathbf{W} = \mathrm{diag}(1,1,1,2) \) accounting for the two shear terms
+        !! (\(mn = 12\) and \(21\)). The product of two major-symmetric tensors is in
+        !! general not major-symmetric, so the result is a `ten_2D4O2sym`.
+        implicit none
+        type(ten_2D4O3sym), intent(in) :: aT
+            !! First fully symmetric tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym), intent(in) :: bT
+            !! Second fully symmetric tensor \(\mathbb{B}\).
+        type(ten_2D4O2sym) :: res
+            !! Minor-symmetric result \(\mathbb{A} : \mathbb{B}\).
+        real(real64) :: ma(4,4), mb(4,4)
+
+        ma = unpack_2D4O3sym(aT)
+        mb = unpack_2D4O3sym(bT)
+        ma(:,4) = 2.0D0 * ma(:,4)   ! A * W
+        res%vals = matmul(ma, mb)
+    end function ddot_2D4O3sym_2D4O3sym
+
+    pure function unpack_2D4O3sym(a) result(m)
+        !! Expands the 10-component storage of a `ten_2D4O3sym` into its full
+        !! symmetric 4x4 Voigt matrix (private helper).
+        implicit none
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fully symmetric 2D tensor.
+        real(real64) :: m(4,4)
+            !! Full 4x4 Voigt matrix.
+        real(real64) :: v(10)
+
+        v = a%vals
+        m = reshape((/  v(1),  v(5),  v(8), v(10), &
+                        v(5),  v(2),  v(6),  v(9), &
+                        v(8),  v(6),  v(3),  v(7), &
+                       v(10),  v(9),  v(7),  v(4)  &
+                    /), (/4,4/))
+    end function unpack_2D4O3sym
 
 end module muscle_tensor_ops_contraction_double

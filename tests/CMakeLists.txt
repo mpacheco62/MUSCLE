@@ -36,6 +36,12 @@ else()
 endif()
 
 
+# Shared assertions (check_approx, check_true) used by the tests
+add_library(muscle_test_utils STATIC common/muscle_test_utils.f90)
+target_link_libraries(muscle_test_utils PUBLIC muscle PRIVATE compile_options)
+set_target_properties(muscle_test_utils PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/tests)
+target_include_directories(muscle_test_utils PUBLIC ${CMAKE_BINARY_DIR}/modules/tests)
+
 # Store the root tests directory path
 set(BASE_TESTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "Base tests directory")
 
@@ -45,7 +51,7 @@ function(add_muscle_test NAME)
 
     # Create executable target
     add_executable(${EXE_NAME} ${ARGN})
-    target_link_libraries(${EXE_NAME} PRIVATE muscle compile_options)
+    target_link_libraries(${EXE_NAME} PRIVATE muscle muscle_test_utils compile_options)
     target_include_directories(${EXE_NAME} PUBLIC ${CMAKE_BINARY_DIR}/modules/muscle)
     add_dependencies(build_all_tests ${EXE_NAME})
 
