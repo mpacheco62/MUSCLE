@@ -21,7 +21,9 @@ module muscle_tensor_ops_addition_subtraction
     use muscle_tensor_iden_4o3ts
     use muscle_tensor_iden_4o4t
     use muscle_tensor_iden_4o4ts
+    use muscle_tensor_2d2o
     use muscle_tensor_2d2osym
+    use muscle_tensor_2d4o2sym
     use muscle_tensor_2d4o3sym
     use muscle_tensor_3d2o
     use muscle_tensor_3d2osym
@@ -44,6 +46,8 @@ module muscle_tensor_ops_addition_subtraction
         module procedure sum_2D2Osym_I2O
         module procedure sum_I2O_3D2O
         module procedure sum_3D2O_I2O
+        module procedure sum_I2O_2D2O
+        module procedure sum_2D2O_I2O
 
         ! --- Scaled 2nd Order Identity + 2nd Order Tensor ---
         module procedure sum_I2OS_3D2Osym
@@ -52,24 +56,42 @@ module muscle_tensor_ops_addition_subtraction
         module procedure sum_2D2Osym_I2OS
         module procedure sum_I2OS_3D2O
         module procedure sum_3D2O_I2OS
+        module procedure sum_I2OS_2D2O
+        module procedure sum_2D2O_I2OS
 
         ! --- 4th Order Identity + 4th Order Tensor ---
         module procedure sum_I4O3TS_3D4O2sym
         module procedure sum_3D4O2sym_I4O3TS
         module procedure sum_I4O3TS_3D4O3sym
         module procedure sum_3D4O3sym_I4O3TS
+        module procedure sum_I4O3TS_2D4O2sym
+        module procedure sum_2D4O2sym_I4O3TS
+        module procedure sum_I4O3TS_2D4O3sym
+        module procedure sum_2D4O3sym_I4O3TS
         module procedure sum_I4O4TS_3D4O2sym
         module procedure sum_3D4O2sym_I4O4TS
         module procedure sum_I4O4TS_3D4O3sym
         module procedure sum_3D4O3sym_I4O4TS
+        module procedure sum_I4O4TS_2D4O2sym
+        module procedure sum_2D4O2sym_I4O4TS
+        module procedure sum_I4O4TS_2D4O3sym
+        module procedure sum_2D4O3sym_I4O4TS
         module procedure sum_I4O3T_3D4O2sym
         module procedure sum_3D4O2sym_I4O3T
         module procedure sum_I4O3T_3D4O3sym
         module procedure sum_3D4O3sym_I4O3T
+        module procedure sum_I4O3T_2D4O2sym
+        module procedure sum_2D4O2sym_I4O3T
+        module procedure sum_I4O3T_2D4O3sym
+        module procedure sum_2D4O3sym_I4O3T
         module procedure sum_I4O4T_3D4O2sym
         module procedure sum_3D4O2sym_I4O4T
         module procedure sum_I4O4T_3D4O3sym
         module procedure sum_3D4O3sym_I4O4T
+        module procedure sum_I4O4T_2D4O2sym
+        module procedure sum_2D4O2sym_I4O4T
+        module procedure sum_I4O4T_2D4O3sym
+        module procedure sum_2D4O3sym_I4O4T
 
         ! --- Identity + Identity ---
         module procedure sum_I4O3TS_I4O4T
@@ -84,6 +106,8 @@ module muscle_tensor_ops_addition_subtraction
         ! --- 2nd Order Tensor + 2nd Order Tensor ---
         module procedure sum_3D2O_3D2Osym
         module procedure sum_3D2Osym_3D2O
+        module procedure sum_2D2O_2D2Osym
+        module procedure sum_2D2Osym_2D2O
     end interface
 
     public :: operator(-)
@@ -95,6 +119,8 @@ module muscle_tensor_ops_addition_subtraction
         module procedure sub_2D2Osym_I2O
         module procedure sub_I2O_3D2O
         module procedure sub_3D2O_I2O
+        module procedure sub_I2O_2D2O
+        module procedure sub_2D2O_I2O
         
         ! --- Scaled 2nd Order Identity - 2nd Order Tensor ---
         module procedure sub_I2OS_3D2Osym
@@ -103,24 +129,42 @@ module muscle_tensor_ops_addition_subtraction
         module procedure sub_2D2Osym_I2OS
         module procedure sub_I2OS_3D2O
         module procedure sub_3D2O_I2OS
+        module procedure sub_I2OS_2D2O
+        module procedure sub_2D2O_I2OS
 
         ! ! --- 4th Order Identity - 4th Order Tensor ---
         module procedure sub_I4O3TS_3D4O2sym
         module procedure sub_3D4O2sym_I4O3TS
         module procedure sub_I4O3TS_3D4O3sym
         module procedure sub_3D4O3sym_I4O3TS
+        module procedure sub_I4O3TS_2D4O2sym
+        module procedure sub_2D4O2sym_I4O3TS
+        module procedure sub_I4O3TS_2D4O3sym
+        module procedure sub_2D4O3sym_I4O3TS
         module procedure sub_I4O4TS_3D4O2sym
         module procedure sub_3D4O2sym_I4O4TS
         module procedure sub_I4O4TS_3D4O3sym
         module procedure sub_3D4O3sym_I4O4TS
+        module procedure sub_I4O4TS_2D4O2sym
+        module procedure sub_2D4O2sym_I4O4TS
+        module procedure sub_I4O4TS_2D4O3sym
+        module procedure sub_2D4O3sym_I4O4TS
         module procedure sub_I4O3T_3D4O2sym
         module procedure sub_3D4O2sym_I4O3T
         module procedure sub_I4O3T_3D4O3sym
         module procedure sub_3D4O3sym_I4O3T
+        module procedure sub_I4O3T_2D4O2sym
+        module procedure sub_2D4O2sym_I4O3T
+        module procedure sub_I4O3T_2D4O3sym
+        module procedure sub_2D4O3sym_I4O3T
         module procedure sub_I4O4T_3D4O2sym
         module procedure sub_3D4O2sym_I4O4T
         module procedure sub_I4O4T_3D4O3sym
         module procedure sub_3D4O3sym_I4O4T
+        module procedure sub_I4O4T_2D4O2sym
+        module procedure sub_2D4O2sym_I4O4T
+        module procedure sub_I4O4T_2D4O3sym
+        module procedure sub_2D4O3sym_I4O4T
 
         ! --- Identity - Identity ---
         module procedure sub_I4O3TS_I4O4T
@@ -131,6 +175,12 @@ module muscle_tensor_ops_addition_subtraction
         module procedure sub_I4O4T_I4O3T
         module procedure sub_I4O3T_I4O4TS
         module procedure sub_I4O4TS_I4O3T
+
+        ! --- 2nd Order General - 2nd Order Symmetric ---
+        module procedure sub_3D2O_3D2Osym
+        module procedure sub_3D2Osym_3D2O
+        module procedure sub_2D2O_2D2Osym
+        module procedure sub_2D2Osym_2D2O
     end interface
 
 contains
@@ -212,6 +262,30 @@ contains
         res%vals(9) = res%vals(9) + 1.0D0
     end function sum_3D2O_I2O
 
+    pure function sum_I2O_2D2O(I2, a) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{I} + \mathbf{A}\).
+        implicit none
+        type(iden_2O), intent(in) :: I2
+            !! Identity \(\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! Result.
+        res = add_iden_2D2O(a, 1.0D0)
+    end function sum_I2O_2D2O
+
+    pure function sum_2D2O_I2O(a, I2) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{A} + \mathbf{I}\).
+        implicit none
+        type(iden_2O), intent(in) :: I2
+            !! Identity \(\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! Result.
+        res = add_iden_2D2O(a, 1.0D0)
+    end function sum_2D2O_I2O
+
     ! --- Scaled 2nd Order Identity - 2nd Order Tensor ---
     !*************************************************************************
     pure function sum_I2OS_3D2Osym(I2, a) result(res)
@@ -278,6 +352,30 @@ contains
         res%vals(9) = res%vals(9) + I2%val
     end function sum_3D2O_I2OS
 
+    pure function sum_I2OS_2D2O(I2, a) result(res)
+        !! Computes \(\mathbf{res} = c\mathbf{I} + \mathbf{A}\).
+        implicit none
+        type(iden_2OS), intent(in) :: I2
+            !! Identity \(c\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! Result.
+        res = add_iden_2D2O(a, I2%val)
+    end function sum_I2OS_2D2O
+
+    pure function sum_2D2O_I2OS(a, I2) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{A} + c\mathbf{I}\).
+        implicit none
+        type(iden_2OS), intent(in) :: I2
+            !! Identity \(c\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! Result.
+        res = add_iden_2D2O(a, I2%val)
+    end function sum_2D2O_I2OS
+
     ! --- 4th Order Identity + 4th Order Tensor ---
     !*************************************************************************
 
@@ -332,6 +430,54 @@ contains
         res%vals(7:8) = res%vals(7:8) + I4S%val
         res%vals(12)  = res%vals(12)  + I4S%val
     end function sum_3D4O3sym_I4O3TS
+
+    pure function sum_I4O3TS_2D4O2sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = c\mathbb{I}_{3T} + \mathbb{A}\).
+        implicit none
+        type(iden_4O3TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}_{3T}\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I3_2D4O2sym(a, I4%val)
+    end function sum_I4O3TS_2D4O2sym
+
+    pure function sum_2D4O2sym_I4O3TS(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} + c\mathbb{I}_{3T}\).
+        implicit none
+        type(iden_4O3TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}_{3T}\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I3_2D4O2sym(a, I4%val)
+    end function sum_2D4O2sym_I4O3TS
+
+    pure function sum_I4O3TS_2D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = c\mathbb{I}_{3T} + \mathbb{A}\).
+        implicit none
+        type(iden_4O3TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}_{3T}\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I3_2D4O3sym(a, I4%val)
+    end function sum_I4O3TS_2D4O3sym
+
+    pure function sum_2D4O3sym_I4O3TS(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} + c\mathbb{I}_{3T}\).
+        implicit none
+        type(iden_4O3TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}_{3T}\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I3_2D4O3sym(a, I4%val)
+    end function sum_2D4O3sym_I4O3TS
 
     pure function sum_I4O4TS_3D4O2sym(I4S, a) result(res)
         !! Computes \(\mathbb{res} = c\mathbb{I}^S + \mathbb{A}\).
@@ -399,6 +545,54 @@ contains
         res = sum_I4O4TS_3D4O3sym(I4S, a)
     end function sum_3D4O3sym_I4O4TS
 
+    pure function sum_I4O4TS_2D4O2sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = c\mathbb{I}^S + \mathbb{A}\).
+        implicit none
+        type(iden_4O4TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}^S\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I4_2D4O2sym(a, I4%val)
+    end function sum_I4O4TS_2D4O2sym
+
+    pure function sum_2D4O2sym_I4O4TS(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} + c\mathbb{I}^S\).
+        implicit none
+        type(iden_4O4TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}^S\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I4_2D4O2sym(a, I4%val)
+    end function sum_2D4O2sym_I4O4TS
+
+    pure function sum_I4O4TS_2D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = c\mathbb{I}^S + \mathbb{A}\).
+        implicit none
+        type(iden_4O4TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}^S\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I4_2D4O3sym(a, I4%val)
+    end function sum_I4O4TS_2D4O3sym
+
+    pure function sum_2D4O3sym_I4O4TS(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} + c\mathbb{I}^S\).
+        implicit none
+        type(iden_4O4TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}^S\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I4_2D4O3sym(a, I4%val)
+    end function sum_2D4O3sym_I4O4TS
+
     pure function sum_I4O3T_3D4O2sym(I4, a) result(res)
         !! Computes the sum \(\mathbb{res} = \mathbb{I} + \mathbb{A}\).
         implicit none
@@ -451,6 +645,54 @@ contains
         res%vals(7:8) = res%vals(7:8) + 1.0D0
         res%vals(12)  = res%vals(12)  + 1.0D0
     end function sum_3D4O3sym_I4O3T
+
+    pure function sum_I4O3T_2D4O2sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}_{3T} + \mathbb{A}\).
+        implicit none
+        type(iden_4O3T), intent(in) :: I4
+            !! Identity \(\mathbb{I}_{3T}\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I3_2D4O2sym(a, 1.0D0)
+    end function sum_I4O3T_2D4O2sym
+
+    pure function sum_2D4O2sym_I4O3T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} + \mathbb{I}_{3T}\).
+        implicit none
+        type(iden_4O3T), intent(in) :: I4
+            !! Identity \(\mathbb{I}_{3T}\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I3_2D4O2sym(a, 1.0D0)
+    end function sum_2D4O2sym_I4O3T
+
+    pure function sum_I4O3T_2D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}_{3T} + \mathbb{A}\).
+        implicit none
+        type(iden_4O3T), intent(in) :: I4
+            !! Identity \(\mathbb{I}_{3T}\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I3_2D4O3sym(a, 1.0D0)
+    end function sum_I4O3T_2D4O3sym
+
+    pure function sum_2D4O3sym_I4O3T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} + \mathbb{I}_{3T}\).
+        implicit none
+        type(iden_4O3T), intent(in) :: I4
+            !! Identity \(\mathbb{I}_{3T}\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I3_2D4O3sym(a, 1.0D0)
+    end function sum_2D4O3sym_I4O3T
 
     pure function sum_I4O4T_3D4O2sym(I4, a) result(res)
         !! Computes \(\mathbb{res} = \mathbb{I}^S + \mathbf{A}\).
@@ -508,6 +750,54 @@ contains
         ! Delegate to ensure identical behavior and enable compiler inlining
         res = sum_I4O4T_3D4O3sym(I4, a)
     end function sum_3D4O3sym_I4O4T
+
+    pure function sum_I4O4T_2D4O2sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}^S + \mathbb{A}\).
+        implicit none
+        type(iden_4O4T), intent(in) :: I4
+            !! Identity \(\mathbb{I}^S\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I4_2D4O2sym(a, 1.0D0)
+    end function sum_I4O4T_2D4O2sym
+
+    pure function sum_2D4O2sym_I4O4T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} + \mathbb{I}^S\).
+        implicit none
+        type(iden_4O4T), intent(in) :: I4
+            !! Identity \(\mathbb{I}^S\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I4_2D4O2sym(a, 1.0D0)
+    end function sum_2D4O2sym_I4O4T
+
+    pure function sum_I4O4T_2D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}^S + \mathbb{A}\).
+        implicit none
+        type(iden_4O4T), intent(in) :: I4
+            !! Identity \(\mathbb{I}^S\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I4_2D4O3sym(a, 1.0D0)
+    end function sum_I4O4T_2D4O3sym
+
+    pure function sum_2D4O3sym_I4O4T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} + \mathbb{I}^S\).
+        implicit none
+        type(iden_4O4T), intent(in) :: I4
+            !! Identity \(\mathbb{I}^S\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I4_2D4O3sym(a, 1.0D0)
+    end function sum_2D4O3sym_I4O4T
 
     ! --- Identity + Identity ---
     !*************************************************************************
@@ -677,6 +967,38 @@ contains
         res%vals(9) = a%vals(3) + b%vals(9) ! zz
     end function sum_3D2Osym_3D2O
 
+    pure function sum_2D2O_2D2Osym(a, b) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{A} + \mathbf{B}\) (general + symmetric, 2D).
+        implicit none
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2Osym), intent(in) :: b
+            !! Symmetric 2D tensor \(\mathbf{B}\).
+        type(ten_2D2O) :: res
+            !! General result.
+        res%vals(1) = a%vals(1) + b%vals(1) ! xx
+        res%vals(2) = a%vals(2) + b%vals(4) ! yx (sym: xy)
+        res%vals(3) = a%vals(3) + b%vals(4) ! xy
+        res%vals(4) = a%vals(4) + b%vals(2) ! yy
+        res%vals(5) = a%vals(5) + b%vals(3) ! zz
+    end function sum_2D2O_2D2Osym
+
+    pure function sum_2D2Osym_2D2O(a, b) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{A} + \mathbf{B}\) (symmetric + general, 2D).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O), intent(in) :: b
+            !! General 2D tensor \(\mathbf{B}\).
+        type(ten_2D2O) :: res
+            !! General result.
+        res%vals(1) = a%vals(1) + b%vals(1) ! xx
+        res%vals(2) = a%vals(4) + b%vals(2) ! yx (sym: xy)
+        res%vals(3) = a%vals(4) + b%vals(3) ! xy
+        res%vals(4) = a%vals(2) + b%vals(4) ! yy
+        res%vals(5) = a%vals(3) + b%vals(5) ! zz
+    end function sum_2D2Osym_2D2O
+
 
     ! =========================================================================
     ! IMPLEMENTATIONS: SUBTRACTION (-)
@@ -755,6 +1077,30 @@ contains
         res%vals(9) = res%vals(9) - 1.0D0
     end function sub_3D2O_I2O
 
+    pure function sub_I2O_2D2O(I2, a) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{I} - \mathbf{A}\).
+        implicit none
+        type(iden_2O), intent(in) :: I2
+            !! Identity \(\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! Result.
+        res = add_iden_2D2O(-a, 1.0D0)
+    end function sub_I2O_2D2O
+
+    pure function sub_2D2O_I2O(a, I2) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{A} - \mathbf{I}\).
+        implicit none
+        type(iden_2O), intent(in) :: I2
+            !! Identity \(\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! Result.
+        res = add_iden_2D2O(a, -1.0D0)
+    end function sub_2D2O_I2O
+
     ! --- Scaled 2nd Order Identity - 2nd Order Tensor ---
     !*************************************************************************
 
@@ -822,6 +1168,30 @@ contains
         res%vals(9) = res%vals(9) - I2%val
     end function sub_3D2O_I2OS
 
+    pure function sub_I2OS_2D2O(I2, a) result(res)
+        !! Computes \(\mathbf{res} = c\mathbf{I} - \mathbf{A}\).
+        implicit none
+        type(iden_2OS), intent(in) :: I2
+            !! Identity \(c\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! Result.
+        res = add_iden_2D2O(-a, I2%val)
+    end function sub_I2OS_2D2O
+
+    pure function sub_2D2O_I2OS(a, I2) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{A} - c\mathbf{I}\).
+        implicit none
+        type(iden_2OS), intent(in) :: I2
+            !! Identity \(c\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! Result.
+        res = add_iden_2D2O(a, -I2%val)
+    end function sub_2D2O_I2OS
+
     ! --- 4th Order Identity - 4th Order Tensor ---
     !*************************************************************************
 
@@ -870,6 +1240,54 @@ contains
         res%vals(7:8) = res%vals(7:8) - I4S%val
         res%vals(12)  = res%vals(12)  - I4S%val
     end function sub_3D4O3sym_I4O3TS
+
+    pure function sub_I4O3TS_2D4O2sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = c\mathbb{I}_{3T} - \mathbb{A}\).
+        implicit none
+        type(iden_4O3TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}_{3T}\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I3_2D4O2sym(-a, I4%val)
+    end function sub_I4O3TS_2D4O2sym
+
+    pure function sub_2D4O2sym_I4O3TS(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} - c\mathbb{I}_{3T}\).
+        implicit none
+        type(iden_4O3TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}_{3T}\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I3_2D4O2sym(a, -I4%val)
+    end function sub_2D4O2sym_I4O3TS
+
+    pure function sub_I4O3TS_2D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = c\mathbb{I}_{3T} - \mathbb{A}\).
+        implicit none
+        type(iden_4O3TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}_{3T}\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I3_2D4O3sym(-a, I4%val)
+    end function sub_I4O3TS_2D4O3sym
+
+    pure function sub_2D4O3sym_I4O3TS(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} - c\mathbb{I}_{3T}\).
+        implicit none
+        type(iden_4O3TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}_{3T}\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I3_2D4O3sym(a, -I4%val)
+    end function sub_2D4O3sym_I4O3TS
 
         pure function sub_I4O4TS_3D4O2sym(I4S, a) result(res)
         !! Computes \(\mathbb{res} = c\mathbb{I}^S - \mathbb{A}\).
@@ -949,6 +1367,54 @@ contains
         res%vals(4:6) = res%vals(4:6) - half_c
     end function sub_3D4O3sym_I4O4TS
 
+    pure function sub_I4O4TS_2D4O2sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = c\mathbb{I}^S - \mathbb{A}\).
+        implicit none
+        type(iden_4O4TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}^S\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I4_2D4O2sym(-a, I4%val)
+    end function sub_I4O4TS_2D4O2sym
+
+    pure function sub_2D4O2sym_I4O4TS(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} - c\mathbb{I}^S\).
+        implicit none
+        type(iden_4O4TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}^S\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I4_2D4O2sym(a, -I4%val)
+    end function sub_2D4O2sym_I4O4TS
+
+    pure function sub_I4O4TS_2D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = c\mathbb{I}^S - \mathbb{A}\).
+        implicit none
+        type(iden_4O4TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}^S\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I4_2D4O3sym(-a, I4%val)
+    end function sub_I4O4TS_2D4O3sym
+
+    pure function sub_2D4O3sym_I4O4TS(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} - c\mathbb{I}^S\).
+        implicit none
+        type(iden_4O4TS), intent(in) :: I4
+            !! Identity \(c\mathbb{I}^S\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I4_2D4O3sym(a, -I4%val)
+    end function sub_2D4O3sym_I4O4TS
+
     pure function sub_I4O3T_3D4O2sym(I4, a) result(res)
         !! Computes the subtraction \(\mathbb{res} = \mathbb{I} - \mathbb{A}\).
         implicit none
@@ -994,6 +1460,54 @@ contains
         res%vals(7:8) = res%vals(7:8) - 1.0D0
         res%vals(12)  = res%vals(12)  - 1.0D0
     end function sub_3D4O3sym_I4O3T
+
+    pure function sub_I4O3T_2D4O2sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}_{3T} - \mathbb{A}\).
+        implicit none
+        type(iden_4O3T), intent(in) :: I4
+            !! Identity \(\mathbb{I}_{3T}\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I3_2D4O2sym(-a, 1.0D0)
+    end function sub_I4O3T_2D4O2sym
+
+    pure function sub_2D4O2sym_I4O3T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} - \mathbb{I}_{3T}\).
+        implicit none
+        type(iden_4O3T), intent(in) :: I4
+            !! Identity \(\mathbb{I}_{3T}\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I3_2D4O2sym(a, -1.0D0)
+    end function sub_2D4O2sym_I4O3T
+
+    pure function sub_I4O3T_2D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}_{3T} - \mathbb{A}\).
+        implicit none
+        type(iden_4O3T), intent(in) :: I4
+            !! Identity \(\mathbb{I}_{3T}\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I3_2D4O3sym(-a, 1.0D0)
+    end function sub_I4O3T_2D4O3sym
+
+    pure function sub_2D4O3sym_I4O3T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} - \mathbb{I}_{3T}\).
+        implicit none
+        type(iden_4O3T), intent(in) :: I4
+            !! Identity \(\mathbb{I}_{3T}\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I3_2D4O3sym(a, -1.0D0)
+    end function sub_2D4O3sym_I4O3T
 
     pure function sub_I4O4T_3D4O2sym(I4, a) result(res)
         !! Computes \(\mathbb{res} = \mathbb{I}^S - \mathbf{A}\).
@@ -1053,6 +1567,54 @@ contains
         res%vals(1:3) = res%vals(1:3) - 1.0D0
         res%vals(4:6) = res%vals(4:6) - 0.5D0
     end function sub_3D4O3sym_I4O4T
+
+    pure function sub_I4O4T_2D4O2sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}^S - \mathbb{A}\).
+        implicit none
+        type(iden_4O4T), intent(in) :: I4
+            !! Identity \(\mathbb{I}^S\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I4_2D4O2sym(-a, 1.0D0)
+    end function sub_I4O4T_2D4O2sym
+
+    pure function sub_2D4O2sym_I4O4T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} - \mathbb{I}^S\).
+        implicit none
+        type(iden_4O4T), intent(in) :: I4
+            !! Identity \(\mathbb{I}^S\).
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res = add_I4_2D4O2sym(a, -1.0D0)
+    end function sub_2D4O2sym_I4O4T
+
+    pure function sub_I4O4T_2D4O3sym(I4, a) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{I}^S - \mathbb{A}\).
+        implicit none
+        type(iden_4O4T), intent(in) :: I4
+            !! Identity \(\mathbb{I}^S\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I4_2D4O3sym(-a, 1.0D0)
+    end function sub_I4O4T_2D4O3sym
+
+    pure function sub_2D4O3sym_I4O4T(a, I4) result(res)
+        !! Computes \(\mathbb{res} = \mathbb{A} - \mathbb{I}^S\).
+        implicit none
+        type(iden_4O4T), intent(in) :: I4
+            !! Identity \(\mathbb{I}^S\).
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fourth-order 2D tensor \(\mathbb{A}\).
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res = add_I4_2D4O3sym(a, -1.0D0)
+    end function sub_2D4O3sym_I4O4T
 
     ! --- Identity - Identity ---
     !*************************************************************************
@@ -1209,5 +1771,116 @@ contains
         res%vals(8) = a%vals(5) - b%vals(8) ! yz
         res%vals(9) = a%vals(3) - b%vals(9) ! zz
     end function sub_3D2Osym_3D2O
+
+    pure function sub_2D2O_2D2Osym(a, b) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{A} - \mathbf{B}\) (general - symmetric, 2D).
+        implicit none
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        type(ten_2D2Osym), intent(in) :: b
+            !! Symmetric 2D tensor \(\mathbf{B}\).
+        type(ten_2D2O) :: res
+            !! General result.
+        res%vals(1) = a%vals(1) - b%vals(1) ! xx
+        res%vals(2) = a%vals(2) - b%vals(4) ! yx (sym: xy)
+        res%vals(3) = a%vals(3) - b%vals(4) ! xy
+        res%vals(4) = a%vals(4) - b%vals(2) ! yy
+        res%vals(5) = a%vals(5) - b%vals(3) ! zz
+    end function sub_2D2O_2D2Osym
+
+    pure function sub_2D2Osym_2D2O(a, b) result(res)
+        !! Computes \(\mathbf{res} = \mathbf{A} - \mathbf{B}\) (symmetric - general, 2D).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O), intent(in) :: b
+            !! General 2D tensor \(\mathbf{B}\).
+        type(ten_2D2O) :: res
+            !! General result.
+        res%vals(1) = a%vals(1) - b%vals(1) ! xx
+        res%vals(2) = a%vals(4) - b%vals(2) ! yx (sym: xy)
+        res%vals(3) = a%vals(4) - b%vals(3) ! xy
+        res%vals(4) = a%vals(2) - b%vals(4) ! yy
+        res%vals(5) = a%vals(3) - b%vals(5) ! zz
+    end function sub_2D2Osym_2D2O
+
+    ! --- Private helpers (2D): tensor + c * identity ---
+    !*************************************************************************
+
+    pure function add_iden_2D2O(a, c) result(res)
+        !! Returns \(\mathbf{A} + c\,\mathbf{I}\) for a general 2D tensor (private helper).
+        implicit none
+        type(ten_2D2O), intent(in) :: a
+            !! General 2D tensor \(\mathbf{A}\).
+        real(real64), intent(in) :: c
+            !! Identity scaling factor.
+        type(ten_2D2O) :: res
+            !! \(\mathbf{A} + c\,\mathbf{I}\).
+        res%vals = a%vals
+        res%vals(1) = res%vals(1) + c ! xx
+        res%vals(4) = res%vals(4) + c ! yy
+        res%vals(5) = res%vals(5) + c ! zz
+    end function add_iden_2D2O
+
+    pure function add_I3_2D4O2sym(a, c) result(res)
+        !! Returns \(\mathbb{A} + c\,\delta_{ij}\delta_{kl}\) (private helper): adds \(c\) to
+        !! the 3x3 normal-normal block of the 4x4 Voigt matrix.
+        implicit none
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Minor-symmetric 2D tensor.
+        real(real64), intent(in) :: c
+            !! Identity scaling factor.
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res%vals = a%vals
+        res%vals(1:3, 1:3) = res%vals(1:3, 1:3) + c
+    end function add_I3_2D4O2sym
+
+    pure function add_I4_2D4O2sym(a, c) result(res)
+        !! Returns \(\mathbb{A} + c\,\mathbb{I}^S\) (private helper): adds \(c\) to the normal
+        !! Voigt diagonal and \(c/2\) to the shear diagonal term.
+        implicit none
+        type(ten_2D4O2sym), intent(in) :: a
+            !! Minor-symmetric 2D tensor.
+        real(real64), intent(in) :: c
+            !! Identity scaling factor.
+        type(ten_2D4O2sym) :: res
+            !! Result.
+        res%vals = a%vals
+        res%vals(1,1) = res%vals(1,1) + c
+        res%vals(2,2) = res%vals(2,2) + c
+        res%vals(3,3) = res%vals(3,3) + c
+        res%vals(4,4) = res%vals(4,4) + 0.5D0*c
+    end function add_I4_2D4O2sym
+
+    pure function add_I3_2D4O3sym(a, c) result(res)
+        !! Returns \(\mathbb{A} + c\,\delta_{ij}\delta_{kl}\) (private helper) for the 10-component
+        !! storage (11, 22, 33, 44, 12, 23, 34, 13, 24, 14): adds \(c\) to 11, 22, 33, 12, 23, 13.
+        implicit none
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fully symmetric 2D tensor.
+        real(real64), intent(in) :: c
+            !! Identity scaling factor.
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res%vals = a%vals
+        res%vals(1:3) = res%vals(1:3) + c
+        res%vals(5:6) = res%vals(5:6) + c
+        res%vals(8)   = res%vals(8)   + c
+    end function add_I3_2D4O3sym
+
+    pure function add_I4_2D4O3sym(a, c) result(res)
+        !! Returns \(\mathbb{A} + c\,\mathbb{I}^S\) (private helper) for the 10-component storage.
+        implicit none
+        type(ten_2D4O3sym), intent(in) :: a
+            !! Fully symmetric 2D tensor.
+        real(real64), intent(in) :: c
+            !! Identity scaling factor.
+        type(ten_2D4O3sym) :: res
+            !! Result.
+        res%vals = a%vals
+        res%vals(1:3) = res%vals(1:3) + c
+        res%vals(4)   = res%vals(4)   + 0.5D0*c
+    end function add_I4_2D4O3sym
 
 end module muscle_tensor_ops_addition_subtraction

@@ -12,3 +12,8 @@ Theory/**
 *.obj
 *.mod
 all_fortran.txt
+
+.claude/
+CLAUDE.MD
+INDICE_FUNCIONES.md
+TODO.md

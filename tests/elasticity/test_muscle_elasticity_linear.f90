@@ -257,7 +257,7 @@ subroutine test_tensile_2D(passed)
     passed = result .approx. expected_result
     if (.not. passed) return
 
-    call expected_result%init((/0D0, 0D0, 0D0, 0.769230769D0/))
+    call expected_result%init((/0D0, 0D0, 0D0, 1D0/1.3D0/))
     call strain%init((/0D0, 0D0, 0D0, 1D0/))
     result = el%stress(strain=strain)
     passed = result .approx. expected_result

@@ -1670,6 +1670,128 @@ module muscle_math_inverses
         OK_FLAG = .TRUE.
     END SUBROUTINE M99INV
 
+    !***************************************************************************************************
+    !  M44INV  -  Compute the inverse of a general 4x4 matrix using LAPACK (DGETRF + DGETRI).
+    !
+    !  A       = input 4x4 matrix to be inverted (read-only)
+    !  AINV    = output 4x4 inverse matrix (zero if A is singular)
+    !  OK_FLAG = (output) .TRUE. if inversion succeeded, .FALSE. if matrix is singular
+    !***************************************************************************************************
+    PURE SUBROUTINE M44INV(A, AINV, OK_FLAG)
+        !! Inverse of a general 4x4 matrix through LU factorisation with partial pivoting
+        !! (LAPACK `DGETRF` + `DGETRI`). Used by the 2D tensor engine (4x4 Voigt matrices of `ten_2D4O3sym` / `ten_2D4O2sym`).
+        implicit none
+        REAL(real64), INTENT(IN)  :: A(4,4)
+            !! Matrix to be inverted.
+        REAL(real64), INTENT(OUT) :: AINV(4,4)
+            !! Inverse of `A`; set to zero when `A` is singular.
+        LOGICAL, INTENT(OUT)      :: OK_FLAG
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+
+        INTEGER, PARAMETER :: N = 4
+        REAL(real64)       :: work(N)
+        INTEGER            :: ipiv(N)
+        INTEGER            :: info
+
+        INTERFACE
+            PURE SUBROUTINE DGETRF(M, N, A, LDA, IPIV, INFO)
+                import :: real64
+                INTEGER, INTENT(IN) :: M, N, LDA
+                REAL(real64), DIMENSION(*), INTENT(INOUT) :: A
+                INTEGER, DIMENSION(*), INTENT(OUT) :: IPIV
+                INTEGER, INTENT(OUT) :: INFO
+            END SUBROUTINE DGETRF
+
+            PURE SUBROUTINE DGETRI(N, A, LDA, IPIV, WORK, LWORK, INFO)
+                import :: real64
+                INTEGER, INTENT(IN) :: N, LDA, LWORK
+                REAL(real64), DIMENSION(*), INTENT(INOUT) :: A, WORK
+                INTEGER, DIMENSION(*), INTENT(INOUT) :: IPIV
+                INTEGER, INTENT(OUT) :: INFO
+            END SUBROUTINE DGETRI
+        END INTERFACE
+
+        AINV = A
+        CALL DGETRF(N, N, AINV, N, ipiv, info)
+
+        IF (info /= 0) THEN
+            OK_FLAG = .FALSE.
+            AINV = 0.0D0
+            RETURN
+        END IF
+
+        CALL DGETRI(N, AINV, N, ipiv, work, N, info)
+
+        IF (info /= 0) THEN
+            OK_FLAG = .FALSE.
+            AINV = 0.0D0
+            RETURN
+        END IF
+
+        OK_FLAG = .TRUE.
+    END SUBROUTINE M44INV
+
+    !***************************************************************************************************
+    !  M55INV  -  Compute the inverse of a general 5x5 matrix using LAPACK (DGETRF + DGETRI).
+    !
+    !  A       = input 5x5 matrix to be inverted (read-only)
+    !  AINV    = output 5x5 inverse matrix (zero if A is singular)
+    !  OK_FLAG = (output) .TRUE. if inversion succeeded, .FALSE. if matrix is singular
+    !***************************************************************************************************
+    PURE SUBROUTINE M55INV(A, AINV, OK_FLAG)
+        !! Inverse of a general 5x5 matrix through LU factorisation with partial pivoting
+        !! (LAPACK `DGETRF` + `DGETRI`). Used by the 2D tensor engine (5x5 matrices of `ten_2D4O`).
+        implicit none
+        REAL(real64), INTENT(IN)  :: A(5,5)
+            !! Matrix to be inverted.
+        REAL(real64), INTENT(OUT) :: AINV(5,5)
+            !! Inverse of `A`; set to zero when `A` is singular.
+        LOGICAL, INTENT(OUT)      :: OK_FLAG
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+
+        INTEGER, PARAMETER :: N = 5
+        REAL(real64)       :: work(N)
+        INTEGER            :: ipiv(N)
+        INTEGER            :: info
+
+        INTERFACE
+            PURE SUBROUTINE DGETRF(M, N, A, LDA, IPIV, INFO)
+                import :: real64
+                INTEGER, INTENT(IN) :: M, N, LDA
+                REAL(real64), DIMENSION(*), INTENT(INOUT) :: A
+                INTEGER, DIMENSION(*), INTENT(OUT) :: IPIV
+                INTEGER, INTENT(OUT) :: INFO
+            END SUBROUTINE DGETRF
+
+            PURE SUBROUTINE DGETRI(N, A, LDA, IPIV, WORK, LWORK, INFO)
+                import :: real64
+                INTEGER, INTENT(IN) :: N, LDA, LWORK
+                REAL(real64), DIMENSION(*), INTENT(INOUT) :: A, WORK
+                INTEGER, DIMENSION(*), INTENT(INOUT) :: IPIV
+                INTEGER, INTENT(OUT) :: INFO
+            END SUBROUTINE DGETRI
+        END INTERFACE
+
+        AINV = A
+        CALL DGETRF(N, N, AINV, N, ipiv, info)
+
+        IF (info /= 0) THEN
+            OK_FLAG = .FALSE.
+            AINV = 0.0D0
+            RETURN
+        END IF
+
+        CALL DGETRI(N, AINV, N, ipiv, work, N, info)
+
+        IF (info /= 0) THEN
+            OK_FLAG = .FALSE.
+            AINV = 0.0D0
+            RETURN
+        END IF
+
+        OK_FLAG = .TRUE.
+    END SUBROUTINE M55INV
+
 
       ! !Subroutine to find the inverse of a square matrix
       ! !Author : Louisda16th a.k.a Ashwith J. Rego

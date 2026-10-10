@@ -17,6 +17,7 @@ module muscle_tensor_ops_contraction_single
     ! Import necessary types
     use muscle_tensor_iden_2o
     use muscle_tensor_iden_2os
+    use muscle_tensor_2d2o
     use muscle_tensor_2d2osym
     use muscle_tensor_3d2o
     use muscle_tensor_3d2osym
@@ -35,6 +36,10 @@ module muscle_tensor_ops_contraction_single
         module procedure dot_3D2O_3D2Osym
         module procedure dot_3D2Osym_3D2O
         module procedure dot_3D2O_3D2O
+        module procedure dot_2D2Osym_2D2Osym
+        module procedure dot_2D2O_2D2Osym
+        module procedure dot_2D2Osym_2D2O
+        module procedure dot_2D2O_2D2O
 
         ! --- Identity * Tensor (Single Contraction) ---
         module procedure mul_2D2Osym_I2O
@@ -45,6 +50,12 @@ module muscle_tensor_ops_contraction_single
         module procedure mul_I2O_3D2Osym
         module procedure mul_I2OS_3D2O
         module procedure mul_3D2O_I2OS
+        module procedure mul_2D2O_I2O
+        module procedure mul_I2O_2D2O
+        module procedure mul_I2OS_2D2O
+        module procedure mul_2D2O_I2OS
+        module procedure mul_I2OS_2D2Osym
+        module procedure mul_2D2Osym_I2OS
     end interface
 
 contains
@@ -261,4 +272,163 @@ contains
         type(ten_3D2O) :: res
         res%vals = I2%val * a%vals
     end function mul_3D2O_I2OS
+    ! =========================================================================
+    ! 3. 2D TENSOR * 2D TENSOR (SINGLE CONTRACTION)
+    ! =========================================================================
+    ! Storage reminder:
+    ! - ten_2D2Osym : (xx, yy, zz, xy)        -> indices 1..4
+    ! - ten_2D2O    : (xx, yx, xy, yy, zz)    -> indices 1..5
+    ! The in-plane 2x2 blocks multiply as matrices and the out-of-plane
+    ! components multiply as scalars: res_33 = a_33 * b_33.
+
+    pure function dot_2D2Osym_2D2Osym(a, b) result(res)
+        !! Single contraction (matrix product) of two 2D symmetric tensors:
+        !! \( res_{ij} = a_{ik} b_{kj} \).
+        !!
+        !! The product of two symmetric tensors is symmetric only if they commute,
+        !! so the result is returned as a general `ten_2D2O`.
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! First symmetric tensor \(\mathbf{A}\).
+        type(ten_2D2Osym), intent(in) :: b
+            !! Second symmetric tensor \(\mathbf{B}\).
+        type(ten_2D2O) :: res
+            !! General tensor \(\mathbf{A}\cdot\mathbf{B}\).
+
+        res%vals(1) = a%vals(1)*b%vals(1) + a%vals(4)*b%vals(4) ! xx
+        res%vals(2) = a%vals(4)*b%vals(1) + a%vals(2)*b%vals(4) ! yx
+        res%vals(3) = a%vals(1)*b%vals(4) + a%vals(4)*b%vals(2) ! xy
+        res%vals(4) = a%vals(4)*b%vals(4) + a%vals(2)*b%vals(2) ! yy
+        res%vals(5) = a%vals(3)*b%vals(3)                       ! zz
+    end function dot_2D2Osym_2D2Osym
+
+    pure function dot_2D2O_2D2Osym(a, b) result(res)
+        !! Single contraction of a 2D general and a 2D symmetric tensor:
+        !! \( res_{ij} = a_{ik} b_{kj} \).
+        implicit none
+        type(ten_2D2O), intent(in) :: a
+            !! General tensor \(\mathbf{A}\).
+        type(ten_2D2Osym), intent(in) :: b
+            !! Symmetric tensor \(\mathbf{B}\).
+        type(ten_2D2O) :: res
+            !! General tensor \(\mathbf{A}\cdot\mathbf{B}\).
+
+        res%vals(1) = a%vals(1)*b%vals(1) + a%vals(3)*b%vals(4) ! xx
+        res%vals(2) = a%vals(2)*b%vals(1) + a%vals(4)*b%vals(4) ! yx
+        res%vals(3) = a%vals(1)*b%vals(4) + a%vals(3)*b%vals(2) ! xy
+        res%vals(4) = a%vals(2)*b%vals(4) + a%vals(4)*b%vals(2) ! yy
+        res%vals(5) = a%vals(5)*b%vals(3)                       ! zz
+    end function dot_2D2O_2D2Osym
+
+    pure function dot_2D2Osym_2D2O(a, b) result(res)
+        !! Single contraction of a 2D symmetric and a 2D general tensor:
+        !! \( res_{ij} = a_{ik} b_{kj} \).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! Symmetric tensor \(\mathbf{A}\).
+        type(ten_2D2O), intent(in) :: b
+            !! General tensor \(\mathbf{B}\).
+        type(ten_2D2O) :: res
+            !! General tensor \(\mathbf{A}\cdot\mathbf{B}\).
+
+        res%vals(1) = a%vals(1)*b%vals(1) + a%vals(4)*b%vals(2) ! xx
+        res%vals(2) = a%vals(4)*b%vals(1) + a%vals(2)*b%vals(2) ! yx
+        res%vals(3) = a%vals(1)*b%vals(3) + a%vals(4)*b%vals(4) ! xy
+        res%vals(4) = a%vals(4)*b%vals(3) + a%vals(2)*b%vals(4) ! yy
+        res%vals(5) = a%vals(3)*b%vals(5)                       ! zz
+    end function dot_2D2Osym_2D2O
+
+    pure function dot_2D2O_2D2O(a, b) result(res)
+        !! Single contraction (matrix product) of two 2D general tensors:
+        !! \( res_{ij} = a_{ik} b_{kj} \).
+        implicit none
+        type(ten_2D2O), intent(in) :: a
+            !! First general tensor \(\mathbf{A}\).
+        type(ten_2D2O), intent(in) :: b
+            !! Second general tensor \(\mathbf{B}\).
+        type(ten_2D2O) :: res
+            !! General tensor \(\mathbf{A}\cdot\mathbf{B}\).
+
+        res%vals(1) = a%vals(1)*b%vals(1) + a%vals(3)*b%vals(2) ! xx
+        res%vals(2) = a%vals(2)*b%vals(1) + a%vals(4)*b%vals(2) ! yx
+        res%vals(3) = a%vals(1)*b%vals(3) + a%vals(3)*b%vals(4) ! xy
+        res%vals(4) = a%vals(2)*b%vals(3) + a%vals(4)*b%vals(4) ! yy
+        res%vals(5) = a%vals(5)*b%vals(5)                       ! zz
+    end function dot_2D2O_2D2O
+
+    ! =========================================================================
+    ! 4. IDENTITY * 2D TENSOR (SINGLE CONTRACTION)
+    ! =========================================================================
+
+    pure function mul_I2O_2D2O(I2, a) result(res)
+        !! Computes the single contraction \(\mathbf{res} = \mathbf{I} \cdot \mathbf{A} = \mathbf{A}\).
+        implicit none
+        type(iden_2O), intent(in) :: I2
+            !! The standard 2nd-order identity tensor \(\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! The general 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! The resulting tensor.
+        res%vals = a%vals
+    end function mul_I2O_2D2O
+
+    pure function mul_2D2O_I2O(a, I2) result(res)
+        !! Computes the single contraction \(\mathbf{res} = \mathbf{A} \cdot \mathbf{I} = \mathbf{A}\).
+        implicit none
+        type(ten_2D2O), intent(in) :: a
+            !! The general 2D tensor \(\mathbf{A}\).
+        type(iden_2O), intent(in) :: I2
+            !! The standard 2nd-order identity tensor \(\mathbf{I}\).
+        type(ten_2D2O) :: res
+            !! The resulting tensor.
+        res%vals = a%vals
+    end function mul_2D2O_I2O
+
+    pure function mul_I2OS_2D2O(I2, a) result(res)
+        !! Computes the scaled contraction \(\mathbf{res} = c\mathbf{I} \cdot \mathbf{A} = c\mathbf{A}\).
+        implicit none
+        type(iden_2OS), intent(in) :: I2
+            !! The scaled identity \(c\mathbf{I}\).
+        type(ten_2D2O), intent(in) :: a
+            !! The general 2D tensor \(\mathbf{A}\).
+        type(ten_2D2O) :: res
+            !! The resulting tensor.
+        res%vals = I2%val * a%vals
+    end function mul_I2OS_2D2O
+
+    pure function mul_2D2O_I2OS(a, I2) result(res)
+        !! Computes the scaled contraction \(\mathbf{res} = \mathbf{A} \cdot c\mathbf{I} = c\mathbf{A}\).
+        implicit none
+        type(ten_2D2O), intent(in) :: a
+            !! The general 2D tensor \(\mathbf{A}\).
+        type(iden_2OS), intent(in) :: I2
+            !! The scaled identity \(c\mathbf{I}\).
+        type(ten_2D2O) :: res
+            !! The resulting tensor.
+        res%vals = I2%val * a%vals
+    end function mul_2D2O_I2OS
+
+    pure function mul_I2OS_2D2Osym(I2, a) result(res)
+        !! Computes the scaled contraction \(\mathbf{res} = c\mathbf{I} \cdot \mathbf{A} = c\mathbf{A}\).
+        implicit none
+        type(iden_2OS), intent(in) :: I2
+            !! The scaled identity \(c\mathbf{I}\).
+        type(ten_2D2Osym), intent(in) :: a
+            !! The symmetric 2D tensor \(\mathbf{A}\).
+        type(ten_2D2Osym) :: res
+            !! The resulting symmetric tensor.
+        res%vals = I2%val * a%vals
+    end function mul_I2OS_2D2Osym
+
+    pure function mul_2D2Osym_I2OS(a, I2) result(res)
+        !! Computes the scaled contraction \(\mathbf{res} = \mathbf{A} \cdot c\mathbf{I} = c\mathbf{A}\).
+        implicit none
+        type(ten_2D2Osym), intent(in) :: a
+            !! The symmetric 2D tensor \(\mathbf{A}\).
+        type(iden_2OS), intent(in) :: I2
+            !! The scaled identity \(c\mathbf{I}\).
+        type(ten_2D2Osym) :: res
+            !! The resulting symmetric tensor.
+        res%vals = I2%val * a%vals
+    end function mul_2D2Osym_I2OS
 end module muscle_tensor_ops_contraction_single
