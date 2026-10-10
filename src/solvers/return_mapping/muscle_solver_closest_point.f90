@@ -69,7 +69,7 @@ module muscle_solver_closest_point
             type(ten_3D2Osym)  :: strain_p_n, strain_p
             real(real64)       :: strain_pf_n, strain_pf
             type(ten_3D2Osym)  :: df, residual1, dstrain_p, stress
-            type(ten_3D4O3sym) :: elas_tan, hess, ddf
+            type(ten_3D4O3sym) :: elas_tan, elas_inv, hess, ddf
             real(real64)       :: hard, dhard, f, norm_res
 
             ! 1. Read state t_n
@@ -101,7 +101,8 @@ module muscle_solver_closest_point
 
             ! 6. Compute Hessian & Raw Newton-Raphson correction (ddgamma)
             ddf  = self%yield%ddstressEq_ddstress(stress)
-            hess = .inv. ((.inv. elas_tan) + dgamma * ddf)
+            elas_inv = .inv. elas_tan
+            hess = .inv. (elas_inv + dgamma * ddf)
 
             ddgamma = (f - (df .ddot. hess .ddot. residual1)) / ((df .ddot. hess .ddot. df) + dhard)
 
@@ -119,7 +120,7 @@ module muscle_solver_closest_point
             ! The plastic strain takes the same relaxed step as dgamma, so the iterate
             ! stays on the Newton direction when omega < 1 (except in an iteration where
             ! dgamma is clipped at zero)
-            dstrain_p = ((.inv. elas_tan) .ddot. hess) .ddot. (residual1 + ddgamma * df)
+            dstrain_p = (elas_inv .ddot. hess) .ddot. (residual1 + ddgamma * df)
             strain_p  = strain_p + omega * dstrain_p
 
             ! 8. Update candidate state t_n+1 (iter k+1)
