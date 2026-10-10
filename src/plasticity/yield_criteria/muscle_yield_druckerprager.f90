@@ -39,6 +39,7 @@ module muscle_yield_druckerprager
         procedure, public :: init => init_dp
         procedure, public :: stress_eq => stress_eq_dp
         procedure, public :: dstressEq_dstress => dstressEq_dstress_dp
+        procedure, public :: ddstressEq_ddstress => ddstressEq_ddstress_dp
     end type DruckerPrager
 
 contains
@@ -163,5 +164,70 @@ contains
         N_tensor = f * (alpha1 * s + alpha2 * s2) + alpha3 * I2O
 
     end function dstressEq_dstress_dp
+
+    pure function ddstressEq_ddstress_dp(self, stress) result(H_tensor)
+        !! Analytical Hessian: H = d^2(sigma_eq) / d(sigma)^2, called by the return-mapping solvers.
+        !! Obtained by differentiating Dassault Systemes (2017), Abaqus Theory Guide, Eq. (3),
+        !! "Models for granular or polymer behavior" (extended linear model, including K).
+        !! Derivative of N = f * (alpha1 * S + alpha2 * S^2) + alpha3 * I (the hydrostatic part is
+        !! linear and drops out), with f already inside the coefficients:
+        !! \[ \mathbb{H} = \alpha_1 \mathbb{P} + \alpha_2 \frac{\partial \mathbf{S}^2}{\partial \mathbf{S}}
+        !!    + \beta_1 \mathbf{S} \otimes \mathbf{S} + \beta_2 \, \mathrm{sym}(\mathbf{S} \otimes \mathbf{S}^2) \]
+        !! with \( \mathbb{P} \) the deviatoric projector. On the hydrostatic axis the gradient is
+        !! constant, so H = 0 there, under the same conditions as the gradient.
+        implicit none
+        class(DruckerPrager), intent(in) :: self
+        type(ten_3D2Osym), intent(in)    :: stress
+        type(ten_3D4O3sym)               :: H_tensor
+
+        type(ten_3D2Osym)  :: s, s2, u
+        ! Mises stress, r^3, invariant coefficients, calibration factor, |sigma|
+        real(real64)       :: q, r3, c1, c2, f, stress_norm
+        ! Coefficients of P, d(S^2)/dS, S(x)S and sym(S(x)S^2)
+        real(real64)       :: alpha1, alpha2, beta1, beta2
+
+        real(real64), parameter :: TOL_REL = 1.0D-9
+        real(real64), parameter :: TOL_ABS = 1.0D-40
+
+        f = self%f_factor
+
+        stress_norm = sqrt(stress .ddot. stress)
+
+        ! Handle Zero Stress State
+        if (stress_norm < TOL_ABS) then
+            H_tensor%vals = 0.0D0
+            return
+        end if
+
+        s = .dev. stress
+        q = sqrt(1.5D0 * (s .ddot. s))
+
+        ! Handle Hydrostatic State (q -> 0)
+        if ((q / stress_norm) < TOL_REL) then
+            H_tensor%vals = 0.0D0
+            return
+        end if
+
+        ! Invariant constants
+        c1 = 0.5D0 * (1.0D0 + 1.0D0 / self%K)
+        c2 = 0.5D0 * (1.0D0 - 1.0D0 / self%K)
+
+        s2 = s%square()
+        r3 = 4.5D0 * (s2 .ddot. s)
+
+        ! alpha1, alpha2 as in the gradient; beta1, beta2 from d(alpha1)/dS and d(alpha2)/dS
+        ! (the S (x) I terms cancel). All scaled by f.
+        alpha1 = f * (1.5D0 / q) * (c1 + 2.0D0 * c2 * (r3 / (q**3)))
+        alpha2 = -13.5D0 * f * c2 / (q**2)
+        beta1  = -f * (2.25D0 / (q**3)) * (c1 + 8.0D0 * c2 * (r3 / (q**3)))
+        beta2  = 81.0D0 * f * c2 / (q**4)
+
+        ! alpha2 * d(S^2)/dS: dsquare is linear, so it is built from u = alpha2 * S
+        u = alpha2 * s
+
+        H_tensor = alpha1 * iden_4O4T() + u%dsquare() + beta1 * (.tdotsym. s) &
+                   + beta2 * (s .tdotsym. s2) - (alpha1 / 3.0D0) * iden_4O3T()
+
+    end function ddstressEq_ddstress_dp
 
 end module muscle_yield_druckerprager

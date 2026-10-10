@@ -23,6 +23,9 @@ program test_muscle_yield_dp
     call test_dp_compression_uniaxial_comp_abaqus(passed)
     if (.not. passed) stop 6
 
+    call test_DruckerPrager_hessian(passed)
+    if (.not. passed) stop 8
+
     call test_dp_biaxial_comp_abaqus(passed)
     if (.not. passed) stop 7
 
@@ -568,3 +571,77 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
     end if
 
 end subroutine test_dp_biaxial_comp_abaqus
+
+subroutine test_DruckerPrager_hessian(passed)
+    use, intrinsic :: iso_fortran_env, only : real64
+    use muscle_tensors
+    use muscle_yield_druckerprager
+    use muscle_yield_vonmises
+    implicit none
+    logical, intent(out) :: passed
+
+    type(DruckerPrager) :: dp
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: stress
+    type(ten_3D4O3sym) :: hess
+    real(real64), parameter :: TOL_VM = 1.0D-12
+    real(real64), parameter :: TOL_NUM = 1.0D-6
+
+    ! K = 1 removes the third-invariant term and the shear calibration gives f = 1:
+    ! the Hessian must equal the Von Mises one. Normals and shears coupled.
+    call dp%init(beta_deg=16.0D0, K=1.0D0, hardening_mode=DP_HARDENING_SHEAR)
+    call stress%init(xx=210.0D0, yy=-45.0D0, zz=80.0D0, xy=60.0D0, yz=-35.0D0, xz=25.0D0)
+    hess = dp%ddstressEq_ddstress(stress)
+    passed = hess%is_approx(vm%ddstressEq_ddstress(stress), tol=TOL_VM)
+    if (.not. passed) then
+        print *, "FAIL: Hessian K = 1 vs Von Mises"
+        return
+    end if
+    print *, "PASS: Hessian K = 1 vs Von Mises"
+
+    ! K = 0.78 (lower bound) makes the third-invariant term largest; tension-like Lode angle
+    ! (r^3 > 0) with all six components nonzero.
+    call dp%init(beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_TENSION)
+    call stress%init(xx=300.0D0, yy=40.0D0, zz=-20.0D0, xy=45.0D0, yz=-30.0D0, xz=55.0D0)
+    hess = dp%ddstressEq_ddstress(stress)
+    passed = hess%is_approx(dp%ddstressEq_ddstress_numeric(stress), tol=TOL_NUM)
+    if (.not. passed) then
+        print *, "FAIL: Hessian vs numeric (TENSIONDEF, K = 0.78)"
+        return
+    end if
+    print *, "PASS: Hessian vs numeric (TENSIONDEF, K = 0.78)"
+
+    ! Compression-like Lode angle (r^3 < 0) on top of a large hydrostatic part, as in the
+    ! biaxial case above, with shears added.
+    call dp%init(beta_deg=16.0D0, K=0.85D0, hardening_mode=DP_HARDENING_COMPRESSION)
+    call stress%init(xx=-1048.47D0, yy=-1647.97D0, zz=-970.69D0, xy=-120.0D0, yz=85.0D0, xz=40.0D0)
+    hess = dp%ddstressEq_ddstress(stress)
+    passed = hess%is_approx(dp%ddstressEq_ddstress_numeric(stress), tol=TOL_NUM)
+    if (.not. passed) then
+        print *, "FAIL: Hessian vs numeric (COMPRESSIONDEF, K = 0.85)"
+        return
+    end if
+    print *, "PASS: Hessian vs numeric (COMPRESSIONDEF, K = 0.85)"
+
+    ! Shear calibration with K < 1 activates the third-invariant term missing from the K = 1 check.
+    call dp%init(beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_SHEAR)
+    call stress%init(xx=300.0D0, yy=40.0D0, zz=-20.0D0, xy=45.0D0, yz=-30.0D0, xz=55.0D0)
+    hess = dp%ddstressEq_ddstress(stress)
+    passed = hess%is_approx(dp%ddstressEq_ddstress_numeric(stress), tol=TOL_NUM)
+    if (.not. passed) then
+        print *, "FAIL: Hessian vs numeric (SHEARDEF, K = 0.78)"
+        return
+    end if
+    print *, "PASS: Hessian vs numeric (SHEARDEF, K = 0.78)"
+
+    ! Pure hydrostatic stress (q = 0): the gradient is constant there, so the Hessian is
+    ! exactly zero and must not be NaN (the return mapping reaches this state in tension).
+    call stress%init(xx=500.0D0, yy=500.0D0, zz=500.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
+    hess = dp%ddstressEq_ddstress(stress)
+    passed = (sum(abs(hess%vals)) < tiny(1.0D0))
+    if (.not. passed) then
+        print *, "FAIL: Hessian on the hydrostatic axis"
+        return
+    end if
+    print *, "PASS: Hessian on the hydrostatic axis"
+end subroutine test_DruckerPrager_hessian

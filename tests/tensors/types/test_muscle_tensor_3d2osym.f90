@@ -37,6 +37,9 @@ program test_muscle_tensor_3d2osym
     call test_ten_3D2Osym_assign(passed)
     if (.not. passed) STOP 11
 
+    call test_ten_3D2Osym_dsquare(passed)
+    if (.not. passed) STOP 12
+
     STOP 0
 end program test_muscle_tensor_3d2osym
 
@@ -733,6 +736,32 @@ subroutine test_ten_3D2Osym_assign(passed)
         print*, "2.- Error: Assignment of scalar value failed", new_line('A'), &
                 "Expected:", expected, new_line('A'), &
                 "Actual:", to_test1
+        return
+    end if
+end subroutine
+
+subroutine test_ten_3D2Osym_dsquare(passed)
+    use, intrinsic :: iso_fortran_env
+    use muscle_tensors
+    implicit none
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym) :: a, b, a_plus_b, expected, result
+    real(real64), parameter :: TOL = 1.0D-12
+
+    ! The square is quadratic, so (A + B)^2 - A^2 - B^2 = AB + BA = d(A^2)/dA : B exactly.
+    ! General A and B: all normal and shear components nonzero and different, so each of the
+    ! 21 components of d(A^2)/dA reaches the result
+    call a%init(xx=3.0D0, yy=-1.5D0, zz=0.7D0, xy=2.2D0, yz=-0.9D0, xz=1.3D0)
+    call b%init(xx=-0.4D0, yy=1.1D0, zz=2.5D0, xy=-1.7D0, yz=0.6D0, xz=0.8D0)
+    a_plus_b = a + b
+    expected = a_plus_b%square() - a%square() - b%square()
+    result = a%dsquare() .ddot. b
+    passed = result%is_approx(expected, tol=TOL)
+    if (.not. passed) then
+        print*, "Error: dsquare of a general tensor failed", new_line('A'), &
+                "Expected:", expected, new_line('A'), &
+                "Actual:", result
         return
     end if
 end subroutine
