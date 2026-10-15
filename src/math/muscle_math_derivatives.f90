@@ -16,6 +16,8 @@ module muscle_math_derivatives
         module procedure derivative2O_scalar_3D2Osym
     end interface
 
+    public :: dsquare
+
     interface
         pure function f_scalar_scalar(x)
             use, intrinsic :: iso_fortran_env
@@ -388,5 +390,27 @@ module muscle_math_derivatives
         mat_var%vals(6) = mat%vals(6)
 
     end function derivative_3D2Osym_3D2Osym
+
+    pure function dsquare(a) result(res)
+        !! Analytical derivative of the square of a symmetric tensor with respect to the tensor
+        !! (Itskov, 2007, Eq. 6.119 with k = 2):
+        !! \[ \frac{\partial (A^2)_{ij}}{\partial A_{kl}} = \frac{1}{2} \left( \delta_{ik} A_{lj}
+        !!    + \delta_{jl} A_{ik} + \delta_{il} A_{kj} + \delta_{jk} A_{il} \right) \]
+        !! It is linear in A, so `dsquare(c*A)` equals `c * dsquare(A)`.
+        !! Called by `d2Eigenvalues_dTensor2` (`muscle_math_spectral_derivs`).
+        use muscle_tensors, only : ten_3D2Osym, ten_3D4O3sym
+        implicit none
+        type(ten_3D2Osym), intent(in) :: a
+        type(ten_3D4O3sym) :: res
+
+        call res%init( &
+            xxxx=2.0D0*a%xx(), xxyy=0.0D0, xxzz=0.0D0, xxxy=a%xy(), xxyz=0.0D0, xxxz=a%xz(), &
+            yyyy=2.0D0*a%yy(), yyzz=0.0D0, yyxy=a%xy(), yyyz=a%yz(), yyxz=0.0D0, &
+            zzzz=2.0D0*a%zz(), zzxy=0.0D0, zzyz=a%yz(), zzxz=a%xz(), &
+            xyxy=0.5D0*(a%xx()+a%yy()), xyyz=0.5D0*a%xz(), xyxz=0.5D0*a%yz(), &
+            yzyz=0.5D0*(a%yy()+a%zz()), yzxz=0.5D0*a%xy(), &
+            xzxz=0.5D0*(a%xx()+a%zz()) &
+        )
+    end function dsquare
 
 end module

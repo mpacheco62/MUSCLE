@@ -206,6 +206,9 @@ program test_muscle_math_derivatives
     call test_derivate2O_normal_shear(passed)
     if (.not. passed) STOP 6
 
+    call test_dsquare_general(passed)
+    if (.not. passed) STOP 7
+
     STOP 0
 end program test_muscle_math_derivatives
 
@@ -584,6 +587,37 @@ subroutine test_derivate2O_normal_shear(passed)
     passed = expected%is_approx(result, tol=1.0D-8)
     if (.not. passed) print*, "Case 3 second derivative",  new_line('A'), &
                               "The normal-shear entries differ from the analytical ones", new_line('A'), &
+                              "The values obtained are:", new_line('A'),  &
+                              result%vals(:), new_line('A'), &
+                              "The expected are:", new_line('A'), &
+                              expected%vals(:), new_line('A')
+end subroutine
+
+
+subroutine test_dsquare_general(passed)
+    ! Analytical derivative of the square, dsquare(A). The square is quadratic, so
+    ! (A + B)^2 - A^2 - B^2 = AB + BA = dsquare(A) : B exactly. General A and B: all normal and
+    ! shear components nonzero and different, so each of the 21 components of dsquare(A) reaches
+    ! the result
+    ! Called by program test_muscle_math_derivatives (STOP 7)
+    use, intrinsic :: iso_fortran_env
+    use muscle_math_derivatives
+    use muscle_tensors
+    implicit none
+
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym) :: a, b, a_plus_b, expected, result
+    real(real64), parameter :: TOL = 1.0D-12
+
+    call a%init(xx=3.0D0, yy=-1.5D0, zz=0.7D0, xy=2.2D0, yz=-0.9D0, xz=1.3D0)
+    call b%init(xx=-0.4D0, yy=1.1D0, zz=2.5D0, xy=-1.7D0, yz=0.6D0, xz=0.8D0)
+    a_plus_b = a + b
+    expected = a_plus_b%square() - a%square() - b%square()
+    result = dsquare(a) .ddot. b
+
+    passed = result%is_approx(expected, tol=TOL)
+    if (.not. passed) print*, "dsquare of a general tensor failed", new_line('A'), &
                               "The values obtained are:", new_line('A'),  &
                               result%vals(:), new_line('A'), &
                               "The expected are:", new_line('A'), &
