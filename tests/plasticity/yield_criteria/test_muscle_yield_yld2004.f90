@@ -14,6 +14,9 @@ program test_muscle_yield_yld2004
     call test_Yld2004_gradient_numeric_3(passed)
     if (.not. passed) STOP 3
 
+    call test_Yld2004_hessian_4(passed)
+    if (.not. passed) STOP 4
+
     print*, "Passed!", passed
     STOP 0
 end program test_muscle_yield_yld2004
@@ -222,3 +225,72 @@ subroutine test_Yld2004_gradient_numeric_3(passed)
     passed = g%is_approx(expected, tol=TOL)
     if (.not. passed) print*, "Yld2004 gradient vs reference:", g%vals
 end subroutine test_Yld2004_gradient_numeric_3
+
+subroutine test_Yld2004_hessian_4(passed)
+    ! yld%ddstressEq_ddstress against the finite differences of the base class, von Mises in the
+    ! isotropic limit and an independent high-precision reference for AA2090-T3 (H : X).
+    ! Called by program test_muscle_yield_yld2004 (STOP 4)
+    use, intrinsic :: iso_fortran_env
+    use muscle_tensors
+    use muscle_yield_yld2004
+    use muscle_yield_vonmises
+    use muscle_test_utils
+    implicit none
+    logical, intent(out) :: passed
+
+    ! Against the base-class Hessian: second-order central differences with step
+    ! h = 1e-4 ||sigma||, so the rounding error eps*f/h**2 is ~2e-8 relative and the truncation
+    ! O(h**2) grows with the exponent a. Measured: 6.1e-7 or less (worst for AA2090-T3, a = 8)
+    real(real64), parameter :: TOL_NUM = 1.0D-5
+    ! Against von Mises and the high-precision reference: round-off only. Measured: 6e-15; the
+    ! relative tolerance 1e-12 (~5000 eps) leaves margin
+    real(real64), parameter :: TOL = 1.0D-12
+    ! Against von Mises with nearly repeated eigenvalues: the quotient
+    ! (df/dlam_a - df/dlam_b)/(lam_a - lam_b) of the spectral functions loses digits as eps/gap,
+    ! up to ~2e-7 for gaps just above their threshold (1e-9). Measured: 2.3e-9
+    real(real64), parameter :: TOL_NEAR = 1.0D-6
+    type(Yld2004) :: yld(4)
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: s(8), x, hx, expected
+    type(ten_3D4O3sym) :: h
+    real(real64) :: delta(3), tol_vm
+    integer :: m, i
+    character(len=64) :: label
+
+    passed = .true.
+    call Yld2004_derivative_materials(yld)
+    call Yld2004_test_states(s(1:5))
+    ! Equibiaxial with the pair split by 1e-4, 1e-8 and 1e-12 (relative): nearly repeated
+    ! eigenvalues in Sp (isotropic and yld(3)) and Spp (isotropic), the two transformed
+    ! tensors, on both sides of the threshold of the spectral functions
+    delta = (/1D-4, 1D-8, 1D-12/)
+    do i = 1, 3
+        call s(5+i)%init((/100D0, 100D0*(1D0 + delta(i)), 0D0, 0D0, 0D0, 0D0/))
+    end do
+
+    do m = 1, 4
+        do i = 1, 8
+            h = yld(m)%ddstressEq_ddstress(s(i))
+            write(label, '(a, i0, a, i0)') "Yld2004 Hessian vs numeric: material ", m, ", state ", i
+            call check_approx(passed, trim(label), h, yld(m)%ddstressEq_ddstress_numeric(s(i)), &
+                              tol=TOL_NUM)
+            if (.not. passed) return
+            if (m == 1) then
+                tol_vm = merge(TOL, TOL_NEAR, i <= 5)
+                write(label, '(a, i0)') "Yld2004 isotropic Hessian vs von Mises: state ", i
+                call check_approx(passed, trim(label), h, vm%ddstressEq_ddstress(s(i)), tol=tol_vm)
+                if (.not. passed) return
+            end if
+        end do
+    end do
+
+    ! AA2090-T3, rotated 3D state: H : X against a reference from mpmath at 90 digits (phi from
+    ! traces of powers of Sp and Spp, central differences, no eigenvalues)
+    call x%init((/1.0D0, -0.5D0, 0.25D0, 0.75D0, -0.3D0, 0.4D0/))
+    call expected%init((/-0.0014821575782850093216D0, 0.0021762432256393042999D0, &
+                         -0.00069408564735429497827D0, 0.0034707049991813534300D0, &
+                         0.00092921489684781910143D0, 0.00081961465048068192313D0/))
+    h = yld(2)%ddstressEq_ddstress(s(1))
+    hx = h .ddot. x
+    call check_approx(passed, "Yld2004 Hessian vs reference: AA2090-T3, H : X", hx, expected, tol=TOL)
+end subroutine test_Yld2004_hessian_4
