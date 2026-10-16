@@ -22,6 +22,9 @@ program test_muscle_plastic_history
     call test_fea_slot_mapping(passed)
     if (.not. passed) stop 3
 
+    call test_history_partial_init(passed)
+    if (.not. passed) stop 4
+
     print*, "Material History Tests PASSED successfully!"
     stop 0
 end program test_muscle_plastic_history
@@ -209,3 +212,31 @@ subroutine test_fea_slot_mapping(passed)
 
     passed = .TRUE.
 end subroutine test_fea_slot_mapping
+
+subroutine test_history_partial_init(passed)
+    ! Called by the test program: omitted strain_p must preserve two distinct prior tensors.
+    use muscle_tensors
+    use muscle_plastic_history, only : Plastic_material_history
+    use muscle_test_utils, only : check_approx
+    implicit none
+    logical, intent(out) :: passed
+    type(Plastic_material_history) :: history
+    type(ten_3D2Osym) :: strain_p_n, strain_p_np1, stress
+
+    passed = .true.
+    ! Partial init: different committed and candidate plastic strains expose an accidental copy or reset.
+    call strain_p_n%init(xx=0.02D0, yy=-0.011D0, zz=-0.009D0, &
+                         xy=0.004D0, yz=-0.006D0, xz=0.003D0)
+    strain_p_np1 = 2D0*strain_p_n
+    call history%init(strain_p=strain_p_n, strain_pf=0.025D0)
+    history%state_np1%strain_p = strain_p_np1
+    call stress%init(xx=120D0, yy=-30D0, zz=15D0, xy=8D0, yz=-11D0, xz=6D0)
+    call history%init(stress=stress, strain_pf=0.125D0)
+    ! init only copies values (no arithmetic), so every comparison is exact: tol = 0
+    call check_approx(passed, 'partial init: committed plastic strain', history%state_n%strain_p, strain_p_n, tol=0D0)
+    call check_approx(passed, 'partial init: candidate plastic strain', history%state_np1%strain_p, strain_p_np1, tol=0D0)
+    call check_approx(passed, 'partial init: committed stress', history%state_n%stress, stress, tol=0D0)
+    call check_approx(passed, 'partial init: candidate stress', history%state_np1%stress, stress, tol=0D0)
+    call check_approx(passed, 'partial init: committed equivalent strain', history%state_n%strain_pf, 0.125D0, tol=0D0)
+    call check_approx(passed, 'partial init: candidate equivalent strain', history%state_np1%strain_pf, 0.125D0, tol=0D0)
+end subroutine test_history_partial_init
