@@ -136,6 +136,10 @@ module muscle_yield_base
                 !! Numerical implementation of d(stress_eq)/d(stress) using finite differences.
             procedure :: ddstressEq_ddstress_numeric
                 !! Numerical implementation of d^2(stress_eq)/d(stress)^2 using finite differences.
+            procedure :: apex_slope
+                !! Slope d of the pressure term at the apex of a cone criterion. Default 0: no apex.
+            procedure :: apex_dev_gauge
+                !! Gauge of the deviatoric subdifferential at the apex. Default huge: no apex.
     end type Base_yield_critera
 
     interface
@@ -218,4 +222,27 @@ module muscle_yield_base
                     res1 = self%stress_eq(x1)
                 end function wrapper
         end function ddstressEq_ddstress_numeric
+
+        pure function apex_slope(self) result(res)
+            !! Slope d of a cone criterion stress_eq = h(dev(stress)) + d*p, with p = tr(stress)/3 and
+            !! h positively homogeneous; its apex is the hydrostatic stress p = sigma_y/d.
+            !! The default 0 means that the criterion has no apex. Called by `Closest_point`.
+            implicit none
+            class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
+            real(real64) :: res                            !! Slope d (0: no apex).
+
+            res = 0.0D0
+        end function apex_slope
+
+        pure function apex_dev_gauge(self, n) result(res)
+            !! Gauge t(n) = sup over deviatoric s of (n : s)/h(s) of the deviatoric subdifferential of h
+            !! at s = 0: a plastic strain increment with deviatoric part n and multiplier dgamma flows
+            !! from the apex iff t(n) <= dgamma. The default (huge) admits none. Called by `Closest_point`.
+            implicit none
+            class(Base_yield_critera), intent(in) :: self  !! The yield criterion object.
+            type(ten_3D2Osym), intent(in) :: n            !! Deviatoric tensor.
+            real(real64) :: res                            !! Gauge t(n).
+
+            res = huge(1.0D0)
+        end function apex_dev_gauge
 end module

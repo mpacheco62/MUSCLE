@@ -24,6 +24,9 @@ program test_muscle_yield_vonmises
     call test_vonMises_stresseq_derivates2(passed)
     if (.not. passed) STOP 7
 
+    call test_vonMises_apex_defaults(passed)
+    if (.not. passed) STOP 8
+
     print*, "Passed!", passed
     STOP 0
 end program test_muscle_yield_vonmises
@@ -342,3 +345,28 @@ subroutine test_vonMises_stresseq_derivates2(passed)
 
 end subroutine
 
+subroutine test_vonMises_apex_defaults(passed)
+    ! Default apex functions of Base_yield_critera: a criterion without an apex reports slope 0
+    ! and a gauge that admits no deviatoric flow direction (huge)
+    ! Called by program test_muscle_yield_vonmises (STOP 8)
+    use, intrinsic :: iso_fortran_env
+    use muscle_tensors
+    use muscle_yield_vonmises
+    use muscle_test_utils
+    implicit none
+    logical, intent(out) :: passed
+
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: n
+
+    passed = .true.
+
+    ! Coupled deviatoric direction (normals and shears at once)
+    call n%init((/2D-3, -5D-4, -1.5D-3, 1D-3, -7D-4, 4D-4/))
+
+    ! The defaults are constants: exact comparison
+    call check_approx(passed, "Von Mises apex slope is the default 0 (no apex)", &
+                      vm%apex_slope(), 0.0D0, tol=0.0D0)
+    call check_true(passed, "Von Mises apex gauge is the default huge (no admissible direction)", &
+                    vm%apex_dev_gauge(n) >= huge(1.0D0))
+end subroutine test_vonMises_apex_defaults

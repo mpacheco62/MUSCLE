@@ -32,6 +32,12 @@ program test_muscle_yield_dp
     call test_DruckerPrager_hessian_analytical(passed)
     if (.not. passed) stop 9
 
+    call test_DruckerPrager_apex_slope(passed)
+    if (.not. passed) stop 10
+
+    call test_DruckerPrager_apex_dev_gauge(passed)
+    if (.not. passed) stop 11
+
     stop 0
 end program test_muscle_yield_dp
 
@@ -701,3 +707,96 @@ subroutine test_DruckerPrager_hessian_analytical(passed)
     call check_true(passed, "DP Hessian is exactly zero on the hydrostatic axis", &
                     all(abs(hess%vals) < tiny(1.0D0)))
 end subroutine test_DruckerPrager_hessian_analytical
+
+subroutine test_DruckerPrager_apex_slope(passed)
+    ! Apex slope against the tension calibration d = f*tan(beta), and against stress_eq at the
+    ! hydrostatic stress p = 1, where the deviatoric part vanishes and stress_eq = d*p
+    ! Called by program test_muscle_yield_dp (STOP 10)
+    use, intrinsic :: iso_fortran_env, only : real64
+    use muscle_tensors
+    use muscle_yield_druckerprager
+    use muscle_test_utils
+    implicit none
+    logical, intent(out) :: passed
+
+    ! Closed-form reference: round-off only. Measured: identical (difference 0)
+    real(real64), parameter :: TOL = 1.0D-12
+    type(DruckerPrager) :: dp
+    type(ten_3D2Osym) :: stress
+    real(real64) :: tanbeta, PI
+
+    passed = .true.
+
+    PI = acos(-1.0D0)
+    tanbeta = tan(16.0D0 * PI / 180.0D0)
+
+    ! Tension calibration with K < 1, f = 1/(1/K + tan(beta)/3): the apex is the hydrostatic
+    ! singularity of the cone, at p = sigma_y/d
+    call dp%init(beta_deg=16.0D0, K=0.85D0, hardening_mode=DP_HARDENING_TENSION)
+    call check_approx(passed, "DP apex slope is f*tan(beta): tension calibration, K = 0.85", &
+                      dp%apex_slope(), tanbeta / (1.0D0 / 0.85D0 + tanbeta / 3.0D0), tol=TOL)
+
+    call stress%init(xx=1.0D0, yy=1.0D0, zz=1.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
+    call check_approx(passed, "DP apex slope equals stress_eq at the hydrostatic stress p = 1", &
+                      dp%apex_slope(), dp%stress_eq(stress), tol=TOL)
+end subroutine test_DruckerPrager_apex_slope
+
+subroutine test_DruckerPrager_apex_dev_gauge(passed)
+    ! Gauge of the deviatoric subdifferential at the apex, max over deviatoric s of (n : s)/t(s),
+    ! for directions n with normal and shear components together. For K < 1 the references
+    ! maximize over the full deviatoric space with mpmath (40 digits)
+    ! Called by program test_muscle_yield_dp (STOP 11)
+    use, intrinsic :: iso_fortran_env, only : real64
+    use, intrinsic :: ieee_exceptions
+    use muscle_tensors
+    use muscle_yield_druckerprager
+    use muscle_yield_vonmises
+    use muscle_test_utils
+    implicit none
+    logical, intent(out) :: passed
+
+    ! The gauges are of order 1e-2, so this is about 1e-11 relative; it covers the stopping
+    ! tolerance of the Lode-angle iteration (relative error of M below 2e-12).
+    ! Measured: 4.0e-17 or less
+    real(real64), parameter :: TOL = 1.0D-13
+    type(DruckerPrager) :: dp
+    type(VonMises) :: vm
+    type(ten_3D2Osym) :: n
+    logical :: invalid
+
+    passed = .true.
+
+    ! K = 1, shear calibration (f = 1): circular cone, so the gauge is (2/3) q(n), with q the
+    ! Von Mises equivalent of n
+    call dp%init(beta_deg=20.0D0, K=1.0D0, hardening_mode=DP_HARDENING_SHEAR)
+    call n%init((/1.81536221119D-3, -1.11120307957D-3, -7.0415913162D-4, &
+                  2.82442330595D-3, 1.21196306882D-3, 2.0174822516D-4/))
+    call check_approx(passed, "DP apex gauge vs (2/3) Von Mises: K = 1, shear calibration", &
+                      dp%apex_dev_gauge(n), (2.0D0 / 3.0D0) * vm%stress_eq(n), tol=TOL)
+
+    ! K = 0.85, tension calibration, Lode angle 0.6 of n: the maximizing angle is not the Lode
+    ! angle of n
+    call dp%init(beta_deg=16.0D0, K=0.85D0, hardening_mode=DP_HARDENING_TENSION)
+    call n%init((/2.02901221125D-4, 4.19317108241D-4, -6.22218329366D-4, &
+                  6.27452450337D-4, 1.99507951108D-3, -1.06702722181D-4/))
+    call check_approx(passed, "DP apex gauge vs mpmath: K = 0.85, tension calibration", &
+                      dp%apex_dev_gauge(n), 3.0469160045314333873D-3, tol=TOL)
+
+    ! K = 0.778 (convexity limit), compression calibration, Lode angle 0.003: an unguarded
+    ! Newton step leaves [0, pi/3] and ends at the minimum
+    call dp%init(beta_deg=30.0D0, K=0.778D0, hardening_mode=DP_HARDENING_COMPRESSION)
+    call n%init((/1.1019546062D-2, -5.01214440894D-3, -6.00740165306D-3, &
+                  8.19660642397D-3, -2.93972584491D-3, -7.04295564963D-3/))
+    call check_approx(passed, "DP apex gauge vs mpmath: K = 0.778, compression calibration", &
+                      dp%apex_dev_gauge(n), 1.0683686244491726332D-2, tol=TOL)
+
+    ! Zero direction (pure volumetric trial strain): there is no Lode angle; the gauge is zero
+    ! and no invalid operation (0/0) is raised
+    call n%init((/0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0, 0.0D0/))
+    call ieee_set_flag(ieee_invalid, .false.)
+    call check_approx(passed, "DP apex gauge of a zero direction is zero", &
+                      dp%apex_dev_gauge(n), 0.0D0, tol=TOL)
+    call ieee_get_flag(ieee_invalid, invalid)
+    call check_true(passed, "DP apex gauge of a zero direction raises no invalid operation", &
+                    .not. invalid)
+end subroutine test_DruckerPrager_apex_dev_gauge
