@@ -78,3 +78,7 @@ install(EXPORT muscle-targets
 
 
 
+
+if(MUSCLE_USE_FYPP)
+  add_subdirectory(generated)
+endif()

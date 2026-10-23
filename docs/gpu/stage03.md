@@ -19,8 +19,9 @@ No tolerance was relaxed. A successful build or host fallback cannot pass.
 
 ## Reproduce
 
-Provide Fypp 3.3 on PATH or in a sibling `../fypp` checkout (release commit
-`0db20548ca930cd4f9a201bed5f5acd4fc81bc73`). No network downloads occur at build time.
+The stage 4 integration includes pinned Fypp 3.3 in `tools/fypp` (release commit
+`0db20548ca930cd4f9a201bed5f5acd4fc81bc73`). The probes can also use Fypp 3.3
+on PATH or in a sibling `../fypp` checkout. No network downloads occur at build time.
 From the MUSCLE repository root:
 
 ```sh
@@ -46,3 +47,6 @@ The [CPU reference program](../../validation/reference/cpu_reference.f90)
 exports 768 Von Mises states with history, stresses, tangent and residuals.
 Its stored Release CSV and exact Debug/Release comparison are the numerical
 baseline for stage 4. The one-point Drucker–Prager reproducer is also retained.
+
+The baseline above is historical. [Stage 4 is now implemented and validated](stage04.md)
+for CPU/NVIDIA, including newly generated Swift/LU kernels in GPU.

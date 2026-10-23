@@ -1,0 +1,262 @@
+{
+  "profile": "native-cpu-release",
+  "tests": 51,
+  "failures": 0,
+  "cases": [
+    {
+      "name": "tensors-operators-test_ddot_4O3_4O3",
+      "time": "0.00396918",
+      "status": "run"
+    },
+    {
+      "name": "tensors-operators-test_operator_contraction_single",
+      "time": "0.00444334",
+      "status": "run"
+    },
+    {
+      "name": "tensors-operators-test_operator_dyadic",
+      "time": "0.00253394",
+      "status": "run"
+    },
+    {
+      "name": "tensors-operators-test_operator_transform",
+      "time": "0.00378347",
+      "status": "run"
+    },
+    {
+      "name": "tensors-operators-test_operator_2d_vs_3d",
+      "time": "0.002518",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-2d4o3sym",
+      "time": "0.00424998",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d2o",
+      "time": "0.00301244",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d2osym",
+      "time": "0.0037202",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d4o3sym",
+      "time": "0.0038544",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_2o",
+      "time": "0.00391436",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_2os",
+      "time": "0.00410893",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_4o3t",
+      "time": "0.0025378",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_4o3ts",
+      "time": "0.00300261",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_4o4t",
+      "time": "0.00399159",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_4o4ts",
+      "time": "0.00383702",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d2osym_openmp",
+      "time": "0.0171262",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d2osym_openmp2",
+      "time": "0.0129663",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-2d2osym",
+      "time": "0.00429118",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-2d2o",
+      "time": "0.00195541",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-2d4o",
+      "time": "0.00179732",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d4o",
+      "time": "0.00237501",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-inverses",
+      "time": "0.00173145",
+      "status": "run"
+    },
+    {
+      "name": "kinematics-kinematics",
+      "time": "0.00412515",
+      "status": "run"
+    },
+    {
+      "name": "math-muscle_math_operations",
+      "time": "0.00422953",
+      "status": "run"
+    },
+    {
+      "name": "math-muscle_math_derivatives",
+      "time": "0.00411144",
+      "status": "run"
+    },
+    {
+      "name": "math-muscle_math_spectral_derivs",
+      "time": "0.00382924",
+      "status": "run"
+    },
+    {
+      "name": "math-muscle_math_inverses",
+      "time": "0.00613071",
+      "status": "run"
+    },
+    {
+      "name": "elasticity-linear",
+      "time": "0.00396209",
+      "status": "run"
+    },
+    {
+      "name": "elasticity-linear_openmp",
+      "time": "0.0742035",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-plastic_history",
+      "time": "0.00451769",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-hardening_laws-bilinear",
+      "time": "0.00189738",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-hardening_laws-ludwik",
+      "time": "0.0037169",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-hardening_laws-swift",
+      "time": "0.00361061",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-hardening_laws-vocemod",
+      "time": "0.00187237",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-viscoplastic_laws-vp_models",
+      "time": "0.00367174",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-CPB06",
+      "time": "0.0027774",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-HILL48",
+      "time": "0.00358492",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-VONMISES",
+      "time": "0.0038959",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-DRUCKERPRAGER",
+      "time": "0.00234576",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-YLD2004",
+      "time": "0.00498058",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-CPB06EX2",
+      "time": "0.00464395",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point",
+      "time": "0.00447955",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_yld2004",
+      "time": "0.00282693",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_time",
+      "time": "0.00362883",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_2",
+      "time": "0.00561084",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_cpb06",
+      "time": "0.00532207",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-cutting_plane",
+      "time": "0.00419576",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-openmp_ts",
+      "time": "0.0629389",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_large_increment",
+      "time": "0.00697717",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_hill48",
+      "time": "0.00233074",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_joint",
+      "time": "0.0018031",
+      "status": "run"
+    }
+  ]
+}

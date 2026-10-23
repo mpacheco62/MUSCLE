@@ -117,7 +117,7 @@ module muscle_hard_swift
             !! Input equivalent plastic strain.
         real(real64) :: res
             !! Output flow stress (yield stress) at the given `ep`.
-        res = self%K*(self%e0 + ep)**self%n
+        include 'swift_stress.inc'
     end function stress_swift
 
     pure function dstress_dep_swift(self, ep) result(res)
@@ -129,7 +129,7 @@ module muscle_hard_swift
             !! Input equivalent plastic strain at which the derivative is evaluated.
         real(real64) :: res
             !! Output hardening modulus (d_stress / d_ep) at the given `ep`.
-        res = self%K*self%n*(self%e0 + ep)**(self%n-1D0)
+        include 'swift_dstress.inc'
     end function dstress_dep_swift
 
     pure function ddstress_ddep_swift(self, ep) result(res)
@@ -141,6 +141,6 @@ module muscle_hard_swift
             !! Input equivalent plastic strain at which the second derivative is evaluated.
         real(real64) :: res
             !! Output second derivative (d^2_stress / d_ep^2) at the given `ep`.
-        res = self%K*self%n*(self%n-1D0)*(self%e0 + ep)**(self%n-2D0)
+        include 'swift_ddstress.inc'
     end function ddstress_ddep_swift
 end module

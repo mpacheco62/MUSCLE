@@ -1,0 +1,10 @@
+{
+  "src/solvers/return_mapping/muscle_solver_closest_point.f90": {
+    "reconstructs_exact_original": true,
+    "original_sha256": "9961bd780a176ea79da916931c806b2efaf3cad134cb1182e93fa4d016160d62"
+  },
+  "src/plasticity/hardening_laws/muscle_hard_swift.f90": {
+    "reconstructs_exact_original": true,
+    "original_sha256": "d2f9c63795ebcdee2a91dccb74745fa8252c908a4a74f6ab16ea7275b5058952"
+  }
+}

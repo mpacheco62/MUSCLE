@@ -1,0 +1,150 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "fypp-cpu-release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/fypp-cpu-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MUSCLE_USE_FYPP": "ON",
+        "MUSCLE_TARGET_BACKEND": "host",
+        "BLA_VENDOR": "OpenBLAS",
+        "BUILD_TESTING": "ON",
+        "CMAKE_Fortran_COMPILER": "/usr/bin/gfortran"
+      }
+    },
+    {
+      "name": "fypp-cpu-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/fypp-cpu-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MUSCLE_USE_FYPP": "ON",
+        "MUSCLE_TARGET_BACKEND": "host",
+        "BLA_VENDOR": "OpenBLAS",
+        "BUILD_TESTING": "ON",
+        "CMAKE_Fortran_COMPILER": "/usr/bin/gfortran"
+      }
+    },
+    {
+      "name": "native-cpu-release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/native-cpu-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MUSCLE_USE_FYPP": "OFF",
+        "MUSCLE_TARGET_BACKEND": "host",
+        "BLA_VENDOR": "OpenBLAS",
+        "BUILD_TESTING": "ON",
+        "CMAKE_Fortran_COMPILER": "/usr/bin/gfortran"
+      }
+    },
+    {
+      "name": "fypp-nvidia-gcc12",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/fypp-nvidia-gcc12",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MUSCLE_USE_FYPP": "ON",
+        "MUSCLE_TARGET_BACKEND": "nvidia_gcc12",
+        "BLA_VENDOR": "OpenBLAS",
+        "BUILD_TESTING": "ON"
+      },
+      "toolchainFile": "${sourceDir}/validation/openmp-fypp/cmake/nvidia-gcc12.cmake"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "fypp-cpu-release",
+      "configurePreset": "fypp-cpu-release",
+      "jobs": 4
+    },
+    {
+      "name": "fypp-cpu-debug",
+      "configurePreset": "fypp-cpu-debug",
+      "jobs": 4
+    },
+    {
+      "name": "native-cpu-release",
+      "configurePreset": "native-cpu-release",
+      "jobs": 4
+    },
+    {
+      "name": "fypp-nvidia-gcc12",
+      "configurePreset": "fypp-nvidia-gcc12",
+      "jobs": 4
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "fypp-cpu-release",
+      "configurePreset": "fypp-cpu-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "OMP_NUM_THREADS": "4",
+        "OMP_DYNAMIC": "FALSE",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "fypp-cpu-debug",
+      "configurePreset": "fypp-cpu-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "OMP_NUM_THREADS": "4",
+        "OMP_DYNAMIC": "FALSE",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "native-cpu-release",
+      "configurePreset": "native-cpu-release",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "OMP_NUM_THREADS": "4",
+        "OMP_DYNAMIC": "FALSE",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "fypp-nvidia-gcc12",
+      "configurePreset": "fypp-nvidia-gcc12",
+      "output": {
+        "outputOnFailure": true
+      },
+      "environment": {
+        "OMP_NUM_THREADS": "4",
+        "OMP_DYNAMIC": "FALSE",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

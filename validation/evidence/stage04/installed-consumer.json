@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "compiler": "GNU Fortran 11.4",
+  "prefix": "/tmp/muscle-stage04-install",
+  "result": "PASS_INSTALLED_CONSUMER",
+  "targets": [
+    "muscle",
+    "muscle_target"
+  ],
+  "checks": [
+    "find_package(muscle CONFIG REQUIRED)",
+    "import concrete solver module",
+    "import CPU and Target kernel modules",
+    "link and execute"
+  ]
+}

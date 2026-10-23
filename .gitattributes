@@ -1,0 +1,6 @@
+# Preserve the CRLF conventions of the original CMake sources.
+CMakeLists.txt whitespace=cr-at-eol
+# The pinned upstream Fypp source is deliberately unmodified.
+tools/fypp/fypp.py -whitespace
+# The shared body retains the original separator before END MODULE.
+src/solvers/return_mapping/closest_point_methods.inc whitespace=-blank-at-eof

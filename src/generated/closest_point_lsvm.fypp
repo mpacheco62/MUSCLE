@@ -1,0 +1,41 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Concrete CPU specialization; all numerical methods are shared with Closest_point.
+module muscle_solver_closest_point_lsvm
+    use muscle_tensors
+    use iso_fortran_env, only: real64
+    use muscle_elasticity_linear, only: Elasticity_linear
+    use muscle_hard_swift, only: Swift_hardening
+    use muscle_yield_vonmises, only: VonMises
+    use muscle_plastic_history, only: Plastic_material_history, Plastic_state
+    use muscle_solver_closest_point, only: STATUS_UNDEFINED, STATUS_ELASTIC_CASE, &
+        STATUS_CONVERGED, STATUS_NONCONVERGED, STATUS_ITER_CONVERGED, STATUS_ITER_NONCONVERGED
+    implicit none
+    private
+    public :: Closest_point, STATUS_UNDEFINED, STATUS_ELASTIC_CASE, STATUS_CONVERGED, STATUS_NONCONVERGED
+    type :: Closest_point
+        type(Elasticity_linear) :: elasticity
+        type(Swift_hardening) :: hardening
+        type(VonMises) :: yield
+        integer, private :: iter_nw=200
+    contains
+        procedure :: init => closest_point_init
+        procedure :: solve => closest_point_solve
+        procedure :: iter => closest_point_iter
+        procedure :: tangent => closest_point_tangent
+        procedure :: tangent_numerical => closest_point_tangent_numerical
+    end type
+contains
+    pure subroutine closest_point_init(self, elasticity, hardening, yield, iter_nw)
+        class(Closest_point), intent(inout) :: self
+        type(Elasticity_linear), intent(in) :: elasticity
+        type(Swift_hardening), intent(in) :: hardening
+        type(VonMises), intent(in) :: yield
+        integer, optional, intent(in) :: iter_nw
+        self%elasticity=elasticity
+        self%hardening=hardening
+        self%yield=yield
+        self%iter_nw=200
+        if (present(iter_nw)) self%iter_nw=iter_nw
+    end subroutine
+#:include "solvers/return_mapping/closest_point_methods.inc"
+end module

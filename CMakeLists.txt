@@ -27,8 +27,24 @@ find_package(BLAS REQUIRED)
 find_package(LAPACK REQUIRED)
 
 # Source code
+option(MUSCLE_USE_FYPP "Generate CPU modules and concrete specializations with pinned Fypp" ON)
+set(MUSCLE_TARGET_BACKEND "host" CACHE STRING "Generated target kernels: host or nvidia_gcc12")
+set_property(CACHE MUSCLE_TARGET_BACKEND PROPERTY STRINGS host nvidia_gcc12)
+if(MUSCLE_USE_FYPP)
+  include(cmake/MuscleFypp.cmake)
+elseif(NOT MUSCLE_TARGET_BACKEND STREQUAL "host")
+  message(FATAL_ERROR "A target backend requires MUSCLE_USE_FYPP=ON")
+else()
+  # Keep the same source registration function for builds without Python/Fypp.
+  function(muscle_add_source SOURCE)
+    target_sources(muscle PRIVATE "${SOURCE}")
+  endfunction()
+endif()
+
 add_subdirectory(src)
-add_subdirectory(tests)
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()
 
 # Benchmarks (optional, not part of the test suite)
 option(MUSCLE_BUILD_BENCHMARKS "Build the performance benchmarks in benchmarks/" OFF)

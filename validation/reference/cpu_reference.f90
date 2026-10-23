@@ -8,7 +8,11 @@ program cpu_reference
     use muscle_hard_swift, only: Swift_hardening
     use muscle_yield_vonmises, only: VonMises
     use muscle_plastic_history, only: Plastic_material_history
+#ifdef MUSCLE_CONCRETE_REFERENCE
+    use muscle_solver_closest_point_lsvm, only: Closest_point, STATUS_CONVERGED, STATUS_ELASTIC_CASE
+#else
     use muscle_solver_closest_point, only: Closest_point, STATUS_CONVERGED, STATUS_ELASTIC_CASE
+#endif
     implicit none
     integer, parameter :: npoints=64, nsteps=6
     real(real64), parameter :: load_factors(nsteps)=[0.0d0,0.25d0,0.75d0,0.5d0,1.0d0,0.0d0]

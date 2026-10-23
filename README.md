@@ -131,3 +131,8 @@ This library is licensed under the **GNU General Public License v3.0 (GPL-3.0-or
 *   **Email:** [matias.pacheco.a@gmail.com](mailto:matias.pacheco.a@gmail.com)
 
 *Feel free to reach out for collaborations, academic inquiries, or support with FEA integration.*
+## CPU/GPU development with Fypp
+
+The `dev-GPU` branch integrates pinned Fypp 3.3 into the library build while
+preserving the CPU API. See [stage 4 usage, validation and scope](docs/gpu/stage04.md)
+and the [validated CPU/NVIDIA baseline](docs/gpu/stage03.md).

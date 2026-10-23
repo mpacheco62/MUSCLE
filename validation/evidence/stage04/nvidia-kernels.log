@@ -1,0 +1,5 @@
+omp_num_devices=1
+calculation_host_points=0
+samples=257
+swift_max_absolute_difference=  3.5527136788005009E-15
+PASS_GENERATED_KERNELS_DEVICE

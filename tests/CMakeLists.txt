@@ -86,3 +86,7 @@ add_subdirectory(plasticity)
 add_subdirectory(solvers)
 
 
+
+if(MUSCLE_USE_FYPP)
+  add_subdirectory(generated)
+endif()

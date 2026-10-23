@@ -1,0 +1,272 @@
+{
+  "profile": "fypp-cpu-release",
+  "tests": 53,
+  "failures": 0,
+  "cases": [
+    {
+      "name": "tensors-operators-test_ddot_4O3_4O3",
+      "time": "0.00358344",
+      "status": "run"
+    },
+    {
+      "name": "tensors-operators-test_operator_contraction_single",
+      "time": "0.00192218",
+      "status": "run"
+    },
+    {
+      "name": "tensors-operators-test_operator_dyadic",
+      "time": "0.00218504",
+      "status": "run"
+    },
+    {
+      "name": "tensors-operators-test_operator_transform",
+      "time": "0.00169606",
+      "status": "run"
+    },
+    {
+      "name": "tensors-operators-test_operator_2d_vs_3d",
+      "time": "0.00381788",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-2d4o3sym",
+      "time": "0.00382764",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d2o",
+      "time": "0.00206846",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d2osym",
+      "time": "0.00425012",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d4o3sym",
+      "time": "0.00344603",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_2o",
+      "time": "0.00181595",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_2os",
+      "time": "0.00426038",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_4o3t",
+      "time": "0.00181518",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_4o3ts",
+      "time": "0.002146",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_4o4t",
+      "time": "0.00199896",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-iden_4o4ts",
+      "time": "0.0019458",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d2osym_openmp",
+      "time": "0.015375",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d2osym_openmp2",
+      "time": "0.0126384",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-2d2osym",
+      "time": "0.00417035",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-2d2o",
+      "time": "0.00431025",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-2d4o",
+      "time": "0.00494198",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-3d4o",
+      "time": "0.00308422",
+      "status": "run"
+    },
+    {
+      "name": "tensors-types-inverses",
+      "time": "0.00408121",
+      "status": "run"
+    },
+    {
+      "name": "kinematics-kinematics",
+      "time": "0.00402328",
+      "status": "run"
+    },
+    {
+      "name": "math-muscle_math_operations",
+      "time": "0.00154757",
+      "status": "run"
+    },
+    {
+      "name": "math-muscle_math_derivatives",
+      "time": "0.00409666",
+      "status": "run"
+    },
+    {
+      "name": "math-muscle_math_spectral_derivs",
+      "time": "0.0039156",
+      "status": "run"
+    },
+    {
+      "name": "math-muscle_math_inverses",
+      "time": "0.00624177",
+      "status": "run"
+    },
+    {
+      "name": "elasticity-linear",
+      "time": "0.00195582",
+      "status": "run"
+    },
+    {
+      "name": "elasticity-linear_openmp",
+      "time": "0.0777692",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-plastic_history",
+      "time": "0.0045868",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-hardening_laws-bilinear",
+      "time": "0.00419797",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-hardening_laws-ludwik",
+      "time": "0.00170433",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-hardening_laws-swift",
+      "time": "0.00405378",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-hardening_laws-vocemod",
+      "time": "0.00219746",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-viscoplastic_laws-vp_models",
+      "time": "0.00174921",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-CPB06",
+      "time": "0.00587706",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-HILL48",
+      "time": "0.0026355",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-VONMISES",
+      "time": "0.00395731",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-DRUCKERPRAGER",
+      "time": "0.00437659",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-YLD2004",
+      "time": "0.00510316",
+      "status": "run"
+    },
+    {
+      "name": "plasticity-yield_criteria-CPB06EX2",
+      "time": "0.00216757",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point",
+      "time": "0.004218",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_yld2004",
+      "time": "0.00276423",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_time",
+      "time": "0.00411905",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_2",
+      "time": "0.00546004",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_cpb06",
+      "time": "0.00456312",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-cutting_plane",
+      "time": "0.00411479",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-openmp_ts",
+      "time": "0.0666113",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_large_increment",
+      "time": "0.00528445",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_hill48",
+      "time": "0.00229012",
+      "status": "run"
+    },
+    {
+      "name": "solvers-return_mapping-closest_point_joint",
+      "time": "0.001829",
+      "status": "run"
+    },
+    {
+      "name": "generated_cpu_reference",
+      "time": "0.395504",
+      "status": "run"
+    },
+    {
+      "name": "generated_kernels",
+      "time": "0.00562101",
+      "status": "run"
+    }
+  ]
+}
