@@ -1,0 +1,3 @@
+# Validation uses the local release checkout pinned in fypp-release.lock.json.
+# Optional package equivalent; no package download is needed for the source CLI.
+fypp==3.3

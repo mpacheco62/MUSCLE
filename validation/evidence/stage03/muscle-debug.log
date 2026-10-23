@@ -1,0 +1,108 @@
+Internal ctest changing into directory: /home/ezamora/Workspace/GPU-MUSCLE/build/cpu-debug
+Test project /home/ezamora/Workspace/GPU-MUSCLE/build/cpu-debug
+      Start  1: tensors-operators-test_ddot_4O3_4O3
+ 1/51 Test  #1: tensors-operators-test_ddot_4O3_4O3 ....................   Passed    0.00 sec
+      Start  2: tensors-operators-test_operator_contraction_single
+ 2/51 Test  #2: tensors-operators-test_operator_contraction_single .....   Passed    0.00 sec
+      Start  3: tensors-operators-test_operator_dyadic
+ 3/51 Test  #3: tensors-operators-test_operator_dyadic .................   Passed    0.01 sec
+      Start  4: tensors-operators-test_operator_transform
+ 4/51 Test  #4: tensors-operators-test_operator_transform ..............   Passed    0.00 sec
+      Start  5: tensors-operators-test_operator_2d_vs_3d
+ 5/51 Test  #5: tensors-operators-test_operator_2d_vs_3d ...............   Passed    0.00 sec
+      Start  6: tensors-types-2d4o3sym
+ 6/51 Test  #6: tensors-types-2d4o3sym .................................   Passed    0.00 sec
+      Start  7: tensors-types-3d2o
+ 7/51 Test  #7: tensors-types-3d2o .....................................   Passed    0.00 sec
+      Start  8: tensors-types-3d2osym
+ 8/51 Test  #8: tensors-types-3d2osym ..................................   Passed    0.00 sec
+      Start  9: tensors-types-3d4o3sym
+ 9/51 Test  #9: tensors-types-3d4o3sym .................................   Passed    0.00 sec
+      Start 10: tensors-types-iden_2o
+10/51 Test #10: tensors-types-iden_2o ..................................   Passed    0.00 sec
+      Start 11: tensors-types-iden_2os
+11/51 Test #11: tensors-types-iden_2os .................................   Passed    0.00 sec
+      Start 12: tensors-types-iden_4o3t
+12/51 Test #12: tensors-types-iden_4o3t ................................   Passed    0.00 sec
+      Start 13: tensors-types-iden_4o3ts
+13/51 Test #13: tensors-types-iden_4o3ts ...............................   Passed    0.00 sec
+      Start 14: tensors-types-iden_4o4t
+14/51 Test #14: tensors-types-iden_4o4t ................................   Passed    0.00 sec
+      Start 15: tensors-types-iden_4o4ts
+15/51 Test #15: tensors-types-iden_4o4ts ...............................   Passed    0.00 sec
+      Start 16: tensors-types-3d2osym_openmp
+16/51 Test #16: tensors-types-3d2osym_openmp ...........................   Passed    0.02 sec
+      Start 17: tensors-types-3d2osym_openmp2
+17/51 Test #17: tensors-types-3d2osym_openmp2 ..........................   Passed    0.01 sec
+      Start 18: tensors-types-2d2osym
+18/51 Test #18: tensors-types-2d2osym ..................................   Passed    0.00 sec
+      Start 19: tensors-types-2d2o
+19/51 Test #19: tensors-types-2d2o .....................................   Passed    0.00 sec
+      Start 20: tensors-types-2d4o
+20/51 Test #20: tensors-types-2d4o .....................................   Passed    0.00 sec
+      Start 21: tensors-types-3d4o
+21/51 Test #21: tensors-types-3d4o .....................................   Passed    0.00 sec
+      Start 22: tensors-types-inverses
+22/51 Test #22: tensors-types-inverses .................................   Passed    0.00 sec
+      Start 23: kinematics-kinematics
+23/51 Test #23: kinematics-kinematics ..................................   Passed    0.00 sec
+      Start 24: math-muscle_math_operations
+24/51 Test #24: math-muscle_math_operations ............................   Passed    0.00 sec
+      Start 25: math-muscle_math_derivatives
+25/51 Test #25: math-muscle_math_derivatives ...........................   Passed    0.00 sec
+      Start 26: math-muscle_math_spectral_derivs
+26/51 Test #26: math-muscle_math_spectral_derivs .......................   Passed    0.00 sec
+      Start 27: math-muscle_math_inverses
+27/51 Test #27: math-muscle_math_inverses ..............................   Passed    0.00 sec
+      Start 28: elasticity-linear
+28/51 Test #28: elasticity-linear ......................................   Passed    0.00 sec
+      Start 29: elasticity-linear_openmp
+29/51 Test #29: elasticity-linear_openmp ...............................   Passed    0.09 sec
+      Start 30: plasticity-plastic_history
+30/51 Test #30: plasticity-plastic_history .............................   Passed    0.00 sec
+      Start 31: plasticity-hardening_laws-bilinear
+31/51 Test #31: plasticity-hardening_laws-bilinear .....................   Passed    0.00 sec
+      Start 32: plasticity-hardening_laws-ludwik
+32/51 Test #32: plasticity-hardening_laws-ludwik .......................   Passed    0.00 sec
+      Start 33: plasticity-hardening_laws-swift
+33/51 Test #33: plasticity-hardening_laws-swift ........................   Passed    0.00 sec
+      Start 34: plasticity-hardening_laws-vocemod
+34/51 Test #34: plasticity-hardening_laws-vocemod ......................   Passed    0.00 sec
+      Start 35: plasticity-viscoplastic_laws-vp_models
+35/51 Test #35: plasticity-viscoplastic_laws-vp_models .................   Passed    0.00 sec
+      Start 36: plasticity-yield_criteria-CPB06
+36/51 Test #36: plasticity-yield_criteria-CPB06 ........................   Passed    0.00 sec
+      Start 37: plasticity-yield_criteria-HILL48
+37/51 Test #37: plasticity-yield_criteria-HILL48 .......................   Passed    0.00 sec
+      Start 38: plasticity-yield_criteria-VONMISES
+38/51 Test #38: plasticity-yield_criteria-VONMISES .....................   Passed    0.00 sec
+      Start 39: plasticity-yield_criteria-DRUCKERPRAGER
+39/51 Test #39: plasticity-yield_criteria-DRUCKERPRAGER ................   Passed    0.00 sec
+      Start 40: plasticity-yield_criteria-YLD2004
+40/51 Test #40: plasticity-yield_criteria-YLD2004 ......................   Passed    0.01 sec
+      Start 41: plasticity-yield_criteria-CPB06EX2
+41/51 Test #41: plasticity-yield_criteria-CPB06EX2 .....................   Passed    0.00 sec
+      Start 42: solvers-return_mapping-closest_point
+42/51 Test #42: solvers-return_mapping-closest_point ...................   Passed    0.00 sec
+      Start 43: solvers-return_mapping-closest_point_yld2004
+43/51 Test #43: solvers-return_mapping-closest_point_yld2004 ...........   Passed    0.01 sec
+      Start 44: solvers-return_mapping-closest_point_time
+44/51 Test #44: solvers-return_mapping-closest_point_time ..............   Passed    0.00 sec
+      Start 45: solvers-return_mapping-closest_point_2
+45/51 Test #45: solvers-return_mapping-closest_point_2 .................   Passed    0.00 sec
+      Start 46: solvers-return_mapping-closest_point_cpb06
+46/51 Test #46: solvers-return_mapping-closest_point_cpb06 .............   Passed    0.01 sec
+      Start 47: solvers-return_mapping-cutting_plane
+47/51 Test #47: solvers-return_mapping-cutting_plane ...................   Passed    0.00 sec
+      Start 48: solvers-return_mapping-openmp_ts
+48/51 Test #48: solvers-return_mapping-openmp_ts .......................   Passed    0.34 sec
+      Start 49: solvers-return_mapping-closest_point_large_increment
+49/51 Test #49: solvers-return_mapping-closest_point_large_increment ...   Passed    0.01 sec
+      Start 50: solvers-return_mapping-closest_point_hill48
+50/51 Test #50: solvers-return_mapping-closest_point_hill48 ............   Passed    0.01 sec
+      Start 51: solvers-return_mapping-closest_point_joint
+51/51 Test #51: solvers-return_mapping-closest_point_joint .............   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 51
+
+Total Test time (real) =   0.64 sec

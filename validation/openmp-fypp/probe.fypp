@@ -1,0 +1,7 @@
+#:assert BACKEND in ('serial', 'openmp', 'target_host', 'target_gpu')
+! Generated backend: ${BACKEND}$
+#:if BACKEND.startswith('target_')
+#:include "../stage-03/probe_target.f90"
+#:else
+#:include "../stage-03/probe_host.f90"
+#:endif

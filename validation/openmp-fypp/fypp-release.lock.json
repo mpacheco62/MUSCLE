@@ -1,0 +1,11 @@
+{
+  "version": "3.3",
+  "branch": "release",
+  "commit": "0db20548ca930cd4f9a201bed5f5acd4fc81bc73",
+  "tag": "3.3",
+  "tag_commit": "0db20548ca930cd4f9a201bed5f5acd4fc81bc73",
+  "source_sha256": "04934d1fba1d86c40c151c0e6d0c04e385896a0bbf4cb9a4240e59af807f5d5e",
+  "license_sha256": "f74ffdfb17f9f2fb0a7582080368751e7a2c37726fd975b3393e7fd8390f4689",
+  "executable": "fypp/bin/fypp",
+  "network_used": false
+}

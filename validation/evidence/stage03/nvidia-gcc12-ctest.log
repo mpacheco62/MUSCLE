@@ -1,0 +1,124 @@
+UpdateCTestConfiguration  from :/home/ezamora/Workspace/GPU-MUSCLE/validation/openmp-fypp/DartConfiguration.tcl
+UpdateCTestConfiguration  from :/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/DartConfiguration.tcl
+Parse Config file:/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/DartConfiguration.tcl
+Test project /home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 1
+    Start 1: fypp_nvidia_gcc12
+
+1: Test command: /home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/probe_fypp "--require-device"
+1: Environment variables:
+1:  OMP_NUM_THREADS=4
+1:  OMP_DYNAMIC=FALSE
+1:  OMP_TARGET_OFFLOAD=MANDATORY
+1:  OPENBLAS_NUM_THREADS=1
+1: Test timeout computed to be: 60
+1: omp_num_devices=1
+1: executed_on_initial_device=F
+1: samples=257
+1: normalized_error=  3.0790185216270984E-16
+1: PASS_DEVICE_TARGET
+1/2 Test #1: fypp_nvidia_gcc12 ................   Passed    5.13 sec
+test 2
+    Start 2: compare_nvidia_gcc12
+
+2: Test command: /usr/bin/python3.10 "/home/ezamora/Workspace/GPU-MUSCLE/validation/openmp-fypp/scripts/compare_snapshots.py" "--reference" "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/probe_snapshot_cpu" "--selected" "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/probe_snapshot" "--mode" "gpu" "--output" "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/comparison"
+2: Environment variables:
+2:  OMP_NUM_THREADS=4
+2:  OMP_DYNAMIC=FALSE
+2:  OMP_TARGET_OFFLOAD=MANDATORY
+2:  OPENBLAS_NUM_THREADS=1
+2: Test timeout computed to be: 60
+2: {
+2:   "mode": "gpu",
+2:   "gpu_validated": true,
+2:   "reference": {
+2:     "command": [
+2:       "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/probe_snapshot_cpu",
+2:       "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/comparison/reference.csv"
+2:     ],
+2:     "policy": "DISABLED",
+2:     "exit_code": 0,
+2:     "stdout": "calculation_host_points=257\nreduction_host_visits=257\nchecksum=  9.4978429868257270E+004\nPASS_SNAPSHOT_HOST\n",
+2:     "stderr": ""
+2:   },
+2:   "selected": {
+2:     "command": [
+2:       "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/probe_snapshot",
+2:       "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/nvidia-gcc12/comparison/selected.csv"
+2:     ],
+2:     "policy": "MANDATORY",
+2:     "exit_code": 0,
+2:     "stdout": "omp_num_devices=1\nentry_initial_device=F\ncalculation_host_points=0\nreduction_host_visits=0\nchecksum=  9.4978429868257328E+004\nPASS_SNAPSHOT_DEVICE\n",
+2:     "stderr": ""
+2:   },
+2:   "samples": 257,
+2:   "tolerances": {
+2:     "stress_1": {
+2:       "atol": 1e-10,
+2:       "rtol": 1e-11
+2:     },
+2:     "stress_2": {
+2:       "atol": 1e-10,
+2:       "rtol": 1e-11
+2:     },
+2:     "stress_3": {
+2:       "atol": 1e-10,
+2:       "rtol": 1e-11
+2:     },
+2:     "stress_4": {
+2:       "atol": 1e-10,
+2:       "rtol": 1e-11
+2:     },
+2:     "stress_5": {
+2:       "atol": 1e-10,
+2:       "rtol": 1e-11
+2:     },
+2:     "stress_6": {
+2:       "atol": 1e-10,
+2:       "rtol": 1e-11
+2:     },
+2:     "vm": {
+2:       "atol": 1e-10,
+2:       "rtol": 1e-11
+2:     },
+2:     "hard": {
+2:       "atol": 1e-12,
+2:       "rtol": 1e-11
+2:     },
+2:     "inverse_residual": {
+2:       "atol": 1e-12,
+2:       "rtol": 0.0
+2:     }
+2:   },
+2:   "max_absolute_difference": {
+2:     "stress_1": 2.842170943040401e-14,
+2:     "stress_2": 2.842170943040401e-14,
+2:     "stress_3": 3.552713678800501e-15,
+2:     "stress_4": 0.0,
+2:     "stress_5": 0.0,
+2:     "stress_6": 0.0,
+2:     "vm": 5.684341886080802e-14,
+2:     "hard": 0.0,
+2:     "inverse_residual": 1.1102230246251565e-16
+2:   },
+2:   "checksum_absolute_difference": 5.820766091346741e-11,
+2:   "difference_count": 0,
+2:   "first_differences": [],
+2:   "status": "passed"
+2: }
+2/2 Test #2: compare_nvidia_gcc12 .............   Passed    0.51 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Label Time Summary:
+feature         =   5.13 sec*proc (1 test)
+nvidia_gcc12    =   5.64 sec*proc (2 tests)
+regression      =   0.51 sec*proc (1 test)
+
+Total Test time (real) =   5.64 sec

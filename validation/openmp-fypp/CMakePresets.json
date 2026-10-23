@@ -1,0 +1,126 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "release-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../../build/profiles/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "cpu-serial",
+      "inherits": "release-base",
+      "cacheVariables": {
+        "CMAKE_Fortran_COMPILER": "/usr/bin/gfortran",
+        "PROBE_BACKEND": "serial"
+      }
+    },
+    {
+      "name": "cpu-openmp",
+      "inherits": "release-base",
+      "cacheVariables": {
+        "CMAKE_Fortran_COMPILER": "/usr/bin/gfortran",
+        "PROBE_BACKEND": "openmp"
+      }
+    },
+    {
+      "name": "cpu-target-host",
+      "inherits": "release-base",
+      "cacheVariables": {
+        "CMAKE_Fortran_COMPILER": "/usr/bin/gfortran",
+        "PROBE_BACKEND": "target_host"
+      }
+    },
+    {
+      "name": "nvidia-gcc12",
+      "inherits": "release-base",
+      "toolchainFile": "${sourceDir}/cmake/nvidia-gcc12.cmake",
+      "cacheVariables": {
+        "PROBE_BACKEND": "nvidia_gcc12",
+        "PROBE_GPU_ARCH": "sm_80"
+      },
+      "environment": {
+        "PATH": "/usr/bin:/bin"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "cpu-serial",
+      "configurePreset": "cpu-serial",
+      "jobs": 4
+    },
+    {
+      "name": "cpu-openmp",
+      "configurePreset": "cpu-openmp",
+      "jobs": 4
+    },
+    {
+      "name": "cpu-target-host",
+      "configurePreset": "cpu-target-host",
+      "jobs": 4
+    },
+    {
+      "name": "nvidia-gcc12",
+      "configurePreset": "nvidia-gcc12",
+      "jobs": 4,
+      "environment": {
+        "PATH": "/usr/bin:/bin"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "cpu-serial",
+      "configurePreset": "cpu-serial",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "cpu-openmp",
+      "configurePreset": "cpu-openmp",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "cpu-target-host",
+      "configurePreset": "cpu-target-host",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "nvidia-gcc12",
+      "configurePreset": "nvidia-gcc12",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1,
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

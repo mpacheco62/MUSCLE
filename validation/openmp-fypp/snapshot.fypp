@@ -1,0 +1,94 @@
+#! Test instrumentation only: the shared numerical kernel is unchanged.
+#:assert BACKEND in ('serial','openmp','target_host','target_gpu')
+#:set TARGET = BACKEND.startswith('target_')
+program snapshot
+    use iso_fortran_env, only: real64
+    use ieee_arithmetic, only: ieee_is_finite
+    use probe_core
+#:if BACKEND != 'serial'
+    use omp_lib, only: omp_is_initial_device,omp_get_num_devices
+#:endif
+    implicit none
+    integer, parameter :: n=257
+    type(material_parameters) :: parameters
+    real(real64) :: input(6,n),actual(9,n),checksum
+    integer :: statuses(n),i,j,unit,ios,host_visits
+    logical :: entry_initial,point_initial(n)
+    character(len=2048) :: destination
+    call get_command_argument(1,destination)
+    if (len_trim(destination)==0) error stop 'EXECUTION_ERROR: output path required'
+    entry_initial=.true.
+    point_initial=.true.
+    host_visits=0
+#:if TARGET
+    print '(a,i0)', 'omp_num_devices=',omp_get_num_devices()
+    !$omp target map(from:entry_initial)
+        entry_initial=omp_is_initial_device()
+    !$omp end target
+    print '(a,l1)', 'entry_initial_device=',entry_initial
+#:if BACKEND == 'target_gpu'
+    if (entry_initial.or.omp_get_num_devices()==0) &
+        error stop 'OFFLOAD_ERROR: GPU required; host fallback rejected'
+#:endif
+#:endif
+    do i=1,n
+        do j=1,6
+            input(j,i)=real(mod(i*j,19)-9,real64)*1d-4
+        end do
+    end do
+    actual=0d0
+    statuses=-1
+    checksum=0d0
+#:if TARGET
+    !$omp target data map(to:input,parameters) map(alloc:actual,statuses,point_initial)
+    !$omp target teams distribute parallel do private(i)
+#:elif BACKEND == 'openmp'
+    !$omp parallel do private(i)
+#:endif
+    do i=1,n
+#:if TARGET
+        point_initial(i)=omp_is_initial_device()
+#:endif
+        call point_kernel(input(:,i),parameters,i,actual(1:6,i),actual(7,i), &
+                          actual(8,i),actual(9,i),statuses(i))
+    end do
+#:if TARGET
+    !$omp end target teams distribute parallel do
+    !$omp target teams distribute parallel do reduction(+:checksum,host_visits) map(tofrom:checksum,host_visits)
+    do i=1,n
+        checksum=checksum+actual(7,i)+actual(8,i)
+        if (omp_is_initial_device()) host_visits=host_visits+1
+    end do
+    !$omp end target teams distribute parallel do
+    !$omp target update from(actual,statuses,point_initial)
+    !$omp end target data
+#:else
+#:if BACKEND == 'openmp'
+    !$omp end parallel do
+#:endif
+    checksum=sum(actual(7,:)+actual(8,:))
+    host_visits=n
+#:endif
+    print '(a,i0)', 'calculation_host_points=',count(point_initial)
+    print '(a,i0)', 'reduction_host_visits=',host_visits
+#:if BACKEND == 'target_gpu'
+    if (any(point_initial).or.host_visits/=0) error stop 'OFFLOAD_ERROR: a calculation kernel ran on host'
+#:endif
+    if (.not.all(ieee_is_finite(actual)).or..not.ieee_is_finite(checksum)) &
+        error stop 'NUMERICAL_ERROR: non-finite output'
+    if (count(statuses==1)/=n/17) error stop 'NUMERICAL_ERROR: singular status count'
+    if (maxval(actual(9,:))>1d-12) error stop 'NUMERICAL_ERROR: inverse residual'
+    open(newunit=unit,file=trim(destination),status='replace',action='write',iostat=ios)
+    if (ios/=0) error stop 'EXECUTION_ERROR: cannot write snapshot'
+    write(unit,'(a)') 'point,status,stress_1,stress_2,stress_3,stress_4,stress_5,stress_6,vm,hard,inverse_residual'
+    do i=1,n
+        write(unit,'(i0,",",i0,9(",",es25.16e3))') i,statuses(i),actual(:,i)
+    end do
+    close(unit)
+    print '(a,es25.16e3)', 'checksum=',checksum
+#:if BACKEND == 'target_gpu'
+    print '(a)', 'PASS_SNAPSHOT_DEVICE'
+#:else
+    print '(a)', 'PASS_SNAPSHOT_HOST'
+#:endif
+end program

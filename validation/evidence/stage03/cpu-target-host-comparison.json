@@ -1,0 +1,78 @@
+{
+  "mode": "host",
+  "gpu_validated": false,
+  "reference": {
+    "command": [
+      "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/cpu-target-host/probe_snapshot_cpu",
+      "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/cpu-target-host/comparison/reference.csv"
+    ],
+    "policy": "DISABLED",
+    "exit_code": 0,
+    "stdout": "calculation_host_points=257\nreduction_host_visits=257\nchecksum=  9.4978429868257270E+004\nPASS_SNAPSHOT_HOST\n",
+    "stderr": ""
+  },
+  "selected": {
+    "command": [
+      "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/cpu-target-host/probe_snapshot",
+      "/home/ezamora/Workspace/GPU-MUSCLE/build/profiles/cpu-target-host/comparison/selected.csv"
+    ],
+    "policy": "DISABLED",
+    "exit_code": 0,
+    "stdout": "omp_num_devices=0\nentry_initial_device=T\ncalculation_host_points=257\nreduction_host_visits=257\nchecksum=  9.4978429868257314E+004\nPASS_SNAPSHOT_HOST\n",
+    "stderr": ""
+  },
+  "samples": 257,
+  "tolerances": {
+    "stress_1": {
+      "atol": 1e-10,
+      "rtol": 1e-11
+    },
+    "stress_2": {
+      "atol": 1e-10,
+      "rtol": 1e-11
+    },
+    "stress_3": {
+      "atol": 1e-10,
+      "rtol": 1e-11
+    },
+    "stress_4": {
+      "atol": 1e-10,
+      "rtol": 1e-11
+    },
+    "stress_5": {
+      "atol": 1e-10,
+      "rtol": 1e-11
+    },
+    "stress_6": {
+      "atol": 1e-10,
+      "rtol": 1e-11
+    },
+    "vm": {
+      "atol": 1e-10,
+      "rtol": 1e-11
+    },
+    "hard": {
+      "atol": 1e-12,
+      "rtol": 1e-11
+    },
+    "inverse_residual": {
+      "atol": 1e-12,
+      "rtol": 0.0
+    }
+  },
+  "max_absolute_difference": {
+    "stress_1": 0.0,
+    "stress_2": 0.0,
+    "stress_3": 0.0,
+    "stress_4": 0.0,
+    "stress_5": 0.0,
+    "stress_6": 0.0,
+    "vm": 0.0,
+    "hard": 0.0,
+    "inverse_residual": 0.0
+  },
+  "checksum_absolute_difference": 4.3655745685100555e-11,
+  "difference_count": 0,
+  "first_differences": [],
+  "status": "passed"
+}
