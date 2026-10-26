@@ -28,6 +28,7 @@ add_subdirectory(math)
 add_subdirectory(tensors)
 add_subdirectory(kinematics)
 add_subdirectory(elasticity)
+add_subdirectory(viscoelasticity)
 add_subdirectory(solvers)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")

@@ -1,0 +1,1 @@
+add_muscle_test(viscoelastic_sls test_viscoelastic_sls.f90)

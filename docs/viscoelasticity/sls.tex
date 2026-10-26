@@ -1,0 +1,121 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage[margin=20mm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,hyperref}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,frame=single}
+\title{Material viscoelástico SLS en MUSCLE\\\large Integración por punto de Gauss con un shell T3}
+\author{Proyecto XFEM / ContactProj}
+\date{26 de octubre de 2026}
+\begin{document}
+\sloppy
+\maketitle
+\section*{Modelo y ubicación}
+Se incorpora \texttt{Viscoelastic\_sls} en
+\texttt{src/viscoelasticity/muscle\_viscoelastic\_sls.f90}, compilado como parte de
+\texttt{libmuscle}. Es una implementación nueva para este proyecto, no un modelo
+preexistente de la biblioteca. Hereda de \texttt{Elasticity\_linear} y utiliza los
+tensores y la interfaz transitoria de MUSCLE. No cambia los materiales existentes.
+
+El sólido lineal estándar consta de un resorte de equilibrio en paralelo con una
+rama Maxwell (resorte y amortiguador en serie). En pequeñas deformaciones:
+\begin{align}
+ \boldsymbol\sigma &= \mathbb C_\infty:\boldsymbol\varepsilon+\mathbf q,\\
+ \dot{\mathbf q}+\frac{\mathbf q}{\tau}
+ &= r\,\mathbb C_\infty:\dot{\boldsymbol\varepsilon}.
+\end{align}
+$\mathbb C_\infty$ se obtiene con el material elástico de MUSCLE;
+$r=E_M/E_\infty$ y $\tau$ es el tiempo de relajación.
+Ambas ramas tienen el mismo coeficiente de Poisson: se relajan las respuestas
+volumétrica y desviadora con el mismo tiempo. No es un modelo de plasticidad.
+
+\section*{Actualización local y tangente}
+Para deformación lineal durante un incremento $\Delta t$:
+\begin{align}
+ a&=e^{-\Delta t/\tau}, & b&=\frac{1-a}{\Delta t/\tau},\\
+ \mathbf q_{n+1}^{\mathrm{trial}}&=a\mathbf q_n+
+ r b\,\mathbb C_\infty:(\boldsymbol\varepsilon_{n+1}-\boldsymbol\varepsilon_n),\\
+ \boldsymbol\sigma_{n+1}&=\mathbb C_\infty:\boldsymbol\varepsilon_{n+1}
+ +\mathbf q_{n+1}^{\mathrm{trial}}, &
+ \mathbb C_{\mathrm{alg}}&=(1+rb)\mathbb C_\infty.
+\end{align}
+Se usa una serie de Taylor para evaluar $b$ cuando $\Delta t/\tau$ es pequeño.
+Cada punto de Gauss tiene su propio \texttt{Sls\_internal}, que almacena los seis
+componentes de $\mathbf q$. El FEM conserva también la deformación aceptada para
+construir el incremento. La interfaz Fortran usa cortantes tensoriales; el puente C
+recibe cortantes ingenieriles y realiza la conversión.
+
+\section*{Uso desde Fortran}
+\begin{lstlisting}[language=Fortran]
+use muscle_viscoelastic_sls
+! eps, deps, sigma: ten_3D2Osym
+! C: ten_3D4O3sym
+! Declarar un estado independiente por punto de Gauss:
+type(Viscoelastic_sls) :: mat
+type(Sls_internal) :: history
+call mat%set_parameters(1.0d7, 0.3d0)
+mat%ratio = 1.0d0
+mat%tau = 0.5d0
+sigma = mat%stress(eps, deps, dt, history)
+C = mat%dstress_dstrain(eps, deps, dt, history)
+! Solo despues de converger:
+call mat%stress_and_update(sigma, eps, deps, dt, history)
+\end{lstlisting}
+\newpage
+\section*{Integración en el shell}
+ContactProj proporciona las deformaciones generalizadas del T3. Se usa un punto
+centroidal en el plano (deformaciones constantes en este elemento lineal) y dos
+puntos de Gauss en el espesor:
+\[
+ z_g=\pm\frac{h}{2\sqrt3},\qquad w_g=\frac h2,\qquad
+ \boldsymbol\varepsilon_p(z_g)=\boldsymbol\varepsilon_m+z_g\boldsymbol\kappa.
+\]
+En cada punto se llama a la rutina Fortran con su historia independiente. El puente
+resuelve $\sigma_{zz}=0$, incluyendo la contribución hereditaria, y condensa la
+tangente:
+\[
+ \mathbb C_{ps}=\mathbb C_{pp}^{alg}
+ -\mathbb C_{pz}^{alg}(C_{zz}^{alg})^{-1}\mathbb C_{zp}^{alg}.
+\]
+Luego se integran $\mathbf N=\sum_g w_g\boldsymbol\sigma_p(z_g)$ y
+$\mathbf M=\sum_g w_g z_g\boldsymbol\sigma_p(z_g)$. Para cortante transversal se
+aplica $\sqrt{5/6}$ a la deformación y a la transformación de tensión; así la
+rigidez efectiva lleva el factor $5/6$ y se preserva el trabajo virtual.
+
+El puente actualiza una copia local de la historia. El solver acepta todos los
+estados únicamente después de resolver el equilibrio. Las evaluaciones repetidas
+durante iteraciones no avanzan la historia. Los resultantes almacenados para VTK
+son datos derivados; la memoria constitutiva está en los puntos de Gauss.
+
+\section*{Ensayo de comprobación}
+\begin{center}
+\begin{tabular}{ll}\toprule
+Parámetro & Valor\\\midrule
+Dimensiones & $100\times20\times1$ mm\\
+$E_\infty$, $E_M$, $\nu$ & 10 MPa, 10 MPa, 0,3\\
+$\tau$ & 0,5 s\\
+Carga & Rampa a 1\% en 1 s; mantenimiento hasta 4 s\\
+Malla / paso & 16 triángulos / 0,05 s\\\bottomrule
+\end{tabular}
+\end{center}
+La fuerza de referencia sube hasta $2{,}86466$ N y se relaja hasta $2{,}00214$ N
+al final; su límite es 2 N. Se verifican tracción, malla refinada, tangente,
+relajación, descarga, límite elástico y llamadas polimórficas a MUSCLE. La prueba
+Fortran comprueba además que evaluar un trial no modifica la historia.
+
+\section*{Alcance y reproducción}
+Implementación 3D, CPU y pequeñas deformaciones. La llamada sin tiempo devuelve
+la contribución elástica de equilibrio; para el SLS completo se debe usar la
+sobrecarga transitoria. Las sobrecargas transitorias 2D se rechazan explícitamente:
+el shell usa la rutina 3D con reducción de tensión plana en el puente.
+No se afirma validación de flexión libre, contacto, grandes deformaciones ni GPU.
+Los parámetros son ilustrativos.
+
+En XFEM: \texttt{./scripts/run.sh}. La secuencia de ParaView se escribe en
+\texttt{results/sls\_fortran/vtk/tension.pvd}. El test nativo está en
+\texttt{tests/viscoelasticity/test\_viscoelastic\_sls.f90} dentro de MUSCLE.
+La rutina usa la API de \texttt{muscle\_elasticity\_base} y
+\texttt{muscle\_elasticity\_linear} del mismo repositorio.
+\end{document}

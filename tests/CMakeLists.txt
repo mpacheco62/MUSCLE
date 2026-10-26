@@ -82,6 +82,7 @@ add_subdirectory(tensors)
 add_subdirectory(kinematics)
 add_subdirectory(math)
 add_subdirectory(elasticity)
+add_subdirectory(viscoelasticity)
 add_subdirectory(plasticity)
 add_subdirectory(solvers)
 
