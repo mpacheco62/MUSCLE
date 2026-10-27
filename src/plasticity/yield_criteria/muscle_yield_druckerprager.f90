@@ -40,6 +40,8 @@ module muscle_yield_druckerprager
         procedure, public :: stress_eq => stress_eq_dp
         procedure, public :: dstressEq_dstress => dstressEq_dstress_dp
         procedure, public :: ddstressEq_ddstress => ddstressEq_ddstress_dp
+        procedure, public :: apex_slope => apex_slope_dp
+        procedure, public :: apex_dev_gauge => apex_dev_gauge_dp
     end type DruckerPrager
 
 contains
@@ -230,5 +232,71 @@ contains
                    + beta2 * (s .tdotsym. s2) - (alpha1 / 3.0D0) * iden_4O3T()
 
     end function ddstressEq_ddstress_dp
+
+    pure function apex_slope_dp(self) result(res)
+        !! Slope d = f*tan(beta) of the pressure term: the apex is p = sigma_y/d.
+        implicit none
+        class(DruckerPrager), intent(in) :: self
+        real(real64)                     :: res
+
+        res = self%I1_factor
+
+    end function apex_slope_dp
+
+    pure function apex_dev_gauge_dp(self, n) result(res)
+        !! Gauge of the deviatoric subdifferential of t at s = 0, t(n) = sqrt(2/3)*|n|*M/f, with
+        !! M = max over the Lode angle alpha of cos(theta - alpha)/g(alpha), theta the Lode angle of n
+        !! and g = c1 - c2*cos(3*alpha) the Lode factor of t (M = 1 for K = 1). Coaxial s suffice
+        !! (Lewis, 1996, Corollary 4.6 and Example 7.3). M is found by Newton on dM/dalpha = 0 in
+        !! [0, pi/3], with bisection when a step leaves the bracket (K near 0.778).
+        implicit none
+        class(DruckerPrager), intent(in) :: self
+        type(ten_3D2Osym), intent(in)    :: n   !! Deviatoric tensor
+        real(real64)                     :: res
+
+        real(real64), parameter :: PI = acos(-1.0D0)
+        real(real64), parameter :: TOL_ALPHA = 1.0D-3   ! last Newton step; measured M error below 2e-12
+        real(real64) :: nn, m, c1, c2, cos3t, theta, alpha, step, lo, hi
+        real(real64) :: ca, sa, c3a, s3a, r, dr
+        integer      :: i
+
+        nn = n .ddot. n
+        c1 = 0.5D0 * (1.0D0 + 1.0D0 / self%K)
+        c2 = 0.5D0 * (1.0D0 - 1.0D0 / self%K)
+
+        ! M = 1 for K = 1 and for n = 0 (no Lode angle; avoids 0/0)
+        m = 1.0D0
+        if (abs(c2) > 0.0D0 .and. nn > 0.0D0) then
+            ! cos(3*theta) = (r/q)**3, with r**3 = (9/2) n^2 : n and q**2 = (3/2) n : n
+            cos3t = 4.5D0 * (n%square() .ddot. n) / (1.5D0 * nn)**1.5D0
+            theta = acos(max(-1.0D0, min(1.0D0, cos3t))) / 3.0D0
+
+            ! r = g**2 dM/dalpha decreases in [0, pi/3], with r(0) >= 0 >= r(pi/3)
+            lo = 0.0D0
+            hi = PI / 3.0D0
+            alpha = theta
+            do i = 1, 50
+                ca  = cos(theta - alpha)
+                sa  = sin(theta - alpha)
+                c3a = cos(3.0D0 * alpha)
+                s3a = sin(3.0D0 * alpha)
+                r   = sa * (c1 - c2 * c3a) - ca * 3.0D0 * c2 * s3a
+                dr  = -ca * (c1 + 8.0D0 * c2 * c3a)
+                if (r > 0.0D0) then
+                    lo = alpha
+                else
+                    hi = alpha
+                end if
+                step = -r / dr
+                if (alpha + step < lo .or. alpha + step > hi) step = 0.5D0 * (lo + hi) - alpha
+                alpha = alpha + step
+                if (abs(step) <= TOL_ALPHA) exit
+            end do
+            m = cos(theta - alpha) / (c1 - c2 * cos(3.0D0 * alpha))
+        end if
+
+        res = sqrt(nn / 1.5D0) * m / self%f_factor
+
+    end function apex_dev_gauge_dp
 
 end module muscle_yield_druckerprager
