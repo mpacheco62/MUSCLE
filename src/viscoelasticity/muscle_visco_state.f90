@@ -13,6 +13,7 @@ module muscle_visco_state
     !!
     !! FEA history array layout (`pack_to_fea` / `unpack_from_fea`):
     !!
+    !! - n_branches            : Number of history tensors in use (-1: state not initialized)
     !! - hsv(1:6)              : Elastic strain at the end of the step (xx, yy, zz, xy, yz, xz)
     !! - hsv(6*k+1 : 6*k+6)    : History tensor of branch k (k = 1..n_branches)
 
@@ -29,7 +30,7 @@ module muscle_visco_state
 
     type :: Viscoelastic_state
         !! Viscoelastic state of a material point at a specific instant
-        integer           :: n_branches = 0                                                !! Number of active branches
+        integer           :: n_branches = -1                                               !! Number of active branches
         type(ten_3D2Osym) :: strain_e = ten_3D2Osym((/0d0, 0d0, 0d0, 0d0, 0d0, 0d0/))  !! Elastic strain
         real(real64)      :: h(6, MAX_VISCO_BRANCHES) = 0D0                                !! History tensors (Voigt)
     end type Viscoelastic_state
@@ -79,12 +80,17 @@ contains
     end subroutine history_rollback
 
     pure subroutine history_unpack(self, hsv)
-        !! Unpacks state_n from a flat 1D FEA history array. `n_branches` must be set (`init`).
+        !! Unpacks state_n from a flat 1D FEA history array. `n_branches` must be set (`init`);
+        !! a state that was never initialized stops with an error instead of reading no history.
         class(Viscoelastic_history), intent(inout) :: self
         real(real64), intent(in)                   :: hsv(:)
         integer :: n
 
         n = self%state_n%n_branches
+        if (n < 0) then
+            error stop "ERROR FATAL [Viscoelastic_history%unpack_from_fea]: " // &
+                       "El estado no fue iniciado: llame a 'init' antes de 'unpack_from_fea'."
+        end if
         if (size(hsv) < 6*(n + 1)) then
             error stop "ERROR FATAL [Viscoelastic_history%unpack_from_fea]: " // &
                        "El arreglo 'hsv' debe tener al menos 6*(n_branches + 1) componentes."
@@ -104,6 +110,10 @@ contains
         integer :: n
 
         n = self%state_np1%n_branches
+        if (n < 0) then
+            error stop "ERROR FATAL [Viscoelastic_history%pack_to_fea]: " // &
+                       "El estado no fue iniciado: llame a 'init' antes de 'pack_to_fea'."
+        end if
         if (size(hsv) < 6*(n + 1)) then
             error stop "ERROR FATAL [Viscoelastic_history%pack_to_fea]: " // &
                        "El arreglo 'hsv' debe tener al menos 6*(n_branches + 1) componentes."

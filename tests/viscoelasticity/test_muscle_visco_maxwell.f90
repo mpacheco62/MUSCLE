@@ -32,6 +32,9 @@ program test_muscle_visco_maxwell
     call test_maxwell_init_history_strain_e(passed)
     if (.not. passed) STOP 10
 
+    call test_maxwell_normalized_sum_g_one(passed)
+    if (.not. passed) STOP 11
+
     print*, "Passed!", passed
 end program test_muscle_visco_maxwell
 
@@ -637,3 +640,50 @@ subroutine test_maxwell_init_history_strain_e(passed)
     call check_approx(passed, "init_history: a step at constant strain adds no branch stress", &
                       elas%stress(strain), expected, tol=1D-12)
 end subroutine test_maxwell_init_history_strain_e
+
+subroutine test_maxwell_normalized_sum_g_one(passed)
+    !! Normalized input with sum(g) = 1, that is, a Maxwell fluid: G_inf = 0, G_0 from E and nu,
+    !! and the deviatoric stress relaxes to zero, leaving only K tr(eps) I.
+    !! Hard case: sum([0.2, 0.4, 0.3, 0.1]) = 1.0000000000000002 in double precision, so the
+    !! rounding of the sum is the whole problem, and a negative G_inf would show up here.
+    use, intrinsic :: iso_fortran_env, only : real64
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_visco_state, only : Viscoelastic_history
+    use muscle_visco_frozen, only : Elasticity_frozen
+    use muscle_visco_base, only : Visco_coefficients
+    use muscle_visco_maxwell, only : Generalized_maxwell
+    implicit none
+    logical, intent(out) :: passed
+
+    type(Generalized_maxwell) :: model
+    type(Viscoelastic_history) :: hist
+    type(Elasticity_frozen) :: elas
+    type(Visco_coefficients) :: coefs
+    type(ten_3D2Osym) :: strain, stress, vol
+    real(real64), parameter :: E = 1000D0, NU = 0.3D0
+    real(real64), parameter :: K = E/(3D0*(1D0 - 2D0*NU)), G_0 = 0.5D0*E/(1D0 + NU)
+    real(real64) :: tr
+
+    passed = .true.
+    call model%set_parameters_normalized(young=E, poisson=NU, g=[0.2D0, 0.4D0, 0.3D0, 0.1D0], &
+                                         tau=[0.1D0, 1D0, 10D0, 100D0])
+
+    ! Measured: 0 and 0 (bit to bit).
+    call check_approx(passed, "sum(g) = 1: G_0", model%shear_instantaneous(), G_0, tol=0D0)
+    call check_approx(passed, "sum(g) = 1: G(1e12) = 0", model%relaxation_shear(1D12), 0D0, tol=0D0)
+
+    ! A strain applied instantaneously and then held: only the bulk part is left
+    call model%init_history(hist)
+    call strain%init(xx=1D-3, yy=-2D-4, zz=3D-4, xy=5D-4, yz=-1D-4, xz=2D-4)
+    call model%update_dt(1D-9, strain, hist)
+    call hist%commit()
+    coefs = model%coefficients(1D12)          ! much longer than every tau
+    elas = model%freeze(coefs, hist)
+    stress = elas%stress(strain)
+    tr = strain%xx() + strain%yy() + strain%zz()
+    call vol%init(xx=K*tr, yy=K*tr, zz=K*tr, xy=0D0, yz=0D0, xz=0D0)
+    ! Measured: 1.1e-16 (1.2e-16 relative).
+    call check_approx(passed, "sum(g) = 1: stress after a long hold = K tr(eps) I", &
+                      stress, vol, tol=1D-9)
+end subroutine test_maxwell_normalized_sum_g_one

@@ -93,14 +93,16 @@ contains
         real(real64), intent(in) :: tau(:)   !! Branch relaxation times tau_k
         real(real64) :: g0
 
-        if (sum(g) > 1D0) then
+        ! sum(g) = 1 (Maxwell fluid) is a valid input, but the sum of a few normalized terms
+        ! carries a rounding error below n*epsilon/2: [0.2, 0.4, 0.3, 0.1] gives 1 + 2.2e-16.
+        if (sum(g) > 1D0 + 10D0*epsilon(1D0)) then
             error stop "ERROR FATAL [Generalized_maxwell%set_parameters_normalized]: " // &
                        "La suma de 'g' no puede ser mayor que 1."
         end if
 
         g0 = 0.5D0*young/(1D0 + poisson)
         call self%set_parameters(bulk=young/(3D0*(1D0 - 2D0*poisson)), &
-                                 shear_inf=g0*(1D0 - sum(g)), shear=g0*g, tau=tau)
+                                 shear_inf=g0*max(0D0, 1D0 - sum(g)), shear=g0*g, tau=tau)
     end subroutine set_parameters_normalized
 
     pure function relaxation_shear(self, t) result(res)
@@ -131,6 +133,10 @@ contains
         real(real64) :: x, gamma
         integer :: i
 
+        if (dt < 0D0) then
+            error stop "ERROR FATAL [Generalized_maxwell%coefficients]: " // &
+                       "El paso de tiempo 'dt' no puede ser negativo (dt = 0 es valido)."
+        end if
         coefs%dt = dt
         coefs%k_alg = self%k
         coefs%g_alg = self%g_inf
