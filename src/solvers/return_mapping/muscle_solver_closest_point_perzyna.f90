@@ -128,12 +128,7 @@ module muscle_solver_closest_point_perzyna
             elas_tan = self%elasticity%dstress_dstrain(strain - strain_p)
             stress   = self%elasticity%stress(strain - strain_p)
             joint    = self%yield%joint_evaluation()
-            if (joint) then
-                call self%yield%stressEq_and_derivatives(stress, stress_eq, df, ddf)
-            else
-                stress_eq = self%yield%stress_eq(stress)
-                df        = self%yield%dstressEq_dstress(stress)
-            end if
+            call evaluate_yield(self, stress, stress_eq, df, ddf, joint, .false.)
 
             ! 3. Flow law and its derivatives
             g  = self%viscoplastic%flow_rate(stress_eq, strain_pf)
@@ -251,11 +246,9 @@ module muscle_solver_closest_point_perzyna
                 return
             end if
 
-            stress_eq = self%yield%stress_eq(stress)
+            call evaluate_yield(self, stress, stress_eq, df, ddf, self%yield%joint_evaluation(), .true.)
             c  = self%viscoplastic%dflow_dsigma(stress_eq, strain_pf)
             gp = self%viscoplastic%dflow_dep(stress_eq, strain_pf)
-            df  = self%yield%dstressEq_dstress(stress)
-            ddf = self%yield%ddstressEq_ddstress(stress)
             hess = .inv. ((.inv. elas_tan) + dgamma * ddf)
 
             if (c .le. 0D0) then  ! No overstress sensitivity: no plastic correction
@@ -267,6 +260,26 @@ module muscle_solver_closest_point_perzyna
             denom = (1D0 - dt*gp)/(dt*c) + (df .ddot. hess .ddot. df)
             tangent = hess - (.tdotsym. (df .ddot. hess)) / denom
         end subroutine closest_point_tangent
+
+        pure subroutine evaluate_yield(self, stress, stress_eq, df, ddf, joint, need_hessian)
+            ! Evaluate the criterion through its declared route for iter and tangent.
+            ! The separate Hessian is deferred until after iter's convergence check.
+            implicit none
+            class(Closest_point), intent(in) :: self
+            type(ten_3D2Osym), intent(in) :: stress
+            real(real64), intent(out) :: stress_eq
+            type(ten_3D2Osym), intent(out) :: df
+            type(ten_3D4O3sym), intent(out) :: ddf
+            logical, intent(in) :: joint, need_hessian
+
+            if (joint) then
+                call self%yield%stressEq_and_derivatives(stress, stress_eq, df, ddf)
+            else
+                stress_eq = self%yield%stress_eq(stress)
+                df = self%yield%dstressEq_dstress(stress)
+                if (need_hessian) ddf = self%yield%ddstressEq_ddstress(stress)
+            end if
+        end subroutine evaluate_yield
 
         subroutine closest_point_tangent_numerical(self, strain, history, dt, tangent)
             use muscle_math_derivatives
