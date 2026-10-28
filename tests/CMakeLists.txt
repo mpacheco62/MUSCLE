@@ -78,6 +78,14 @@ function(add_muscle_test NAME)
 endfunction()
 
 
+function(add_muscle_fypp_test NAME SOURCE)
+    # Same as add_muscle_test, for a single .fypp template (see cmake/MuscleFypp.cmake)
+    muscle_fypp_preprocess(GENERATED ${SOURCE})
+    add_muscle_test(${NAME} ${GENERATED})
+endfunction()
+
+
+add_subdirectory(common)
 add_subdirectory(tensors)
 add_subdirectory(kinematics)
 add_subdirectory(math)

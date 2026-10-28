@@ -139,10 +139,10 @@ contains
           do j = 1, n
              if (j /= i) sigma = sigma + A(i,j)*x(j)
           end do
-		  if (A(i,i) == 0.0d0) then
-			info = 2   ! código especial: diagonal nula
-			return
-		  end if
+          if (A(i,i) == 0.0d0) then
+            info = 2   ! código especial: diagonal nula
+            return
+          end if
 
           x(i) = (b(i) - sigma) / A(i,i)
        end do

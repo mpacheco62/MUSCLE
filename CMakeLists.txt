@@ -23,6 +23,9 @@ endif()
 set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${FVERSION}")
 
 
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+include(MuscleFypp)
+
 find_package(BLAS REQUIRED)
 find_package(LAPACK REQUIRED)
 

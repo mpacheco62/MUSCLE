@@ -1,0 +1,44 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module fypp_smoke
+    !! Smoke test of the FYPP pipeline: per-kind instances, shared macros and helpers.
+    use, intrinsic :: iso_fortran_env, only: sp => real32, dp => real64
+    implicit none
+    private
+#:for k in REAL_KINDS
+    public :: twice_${k}$
+#:endfor
+
+contains
+
+#:for k in REAL_KINDS
+    pure function twice_${k}$(x) result(y)
+        !! Doubles a `real(${k}$)` value (device-callable when MUSCLE_GPU is defined).
+        @:DEVICE()
+        real(${k}$), intent(in) :: x
+        real(${k}$) :: y
+        y = 2.0_${k}$ * x
+    end function twice_${k}$
+
+#:endfor
+end module fypp_smoke
+
+
+program test_fypp_smoke
+    use, intrinsic :: iso_fortran_env, only: sp => real32, dp => real64
+    use fypp_smoke
+    use muscle_test_utils, only: check_true
+    implicit none
+    logical :: passed
+
+    passed = .true.
+#:for k in REAL_KINDS
+    call check_true(passed, 'twice_${k}$ returns real(${k}$)', kind(twice_${k}$(1.0_${k}$)) == ${k}$)
+    call check_true(passed, 'twice_${k}$(1.5) == 3', twice_${k}$(1.5_${k}$) == 3.0_${k}$)
+#:endfor
+
+    if (.not. passed) stop 1
+    print '(a)', 'All FYPP smoke tests passed successfully!'
+end program test_fypp_smoke

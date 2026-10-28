@@ -1,0 +1,34 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Definitions shared by every MUSCLE template. Include with `#:include "muscle_common.fypp"`.
+#! Rules: .claude/rules/fypp-templates.md
+#:mute
+
+#! Every kind MUSCLE knows, and the subset to instantiate. CMake passes MUSCLE_REAL_KINDS
+#! (cache variable of the same name); dp is required by the historical aliases (D-003).
+#:set ALL_KINDS = list(muscle_meta.KINDS)
+#:if defined('MUSCLE_REAL_KINDS')
+#:set REAL_KINDS = MUSCLE_REAL_KINDS
+#:else
+#:set REAL_KINDS = ALL_KINDS
+#:endif
+#:assert all(k in ALL_KINDS for k in REAL_KINDS)
+#:assert 'dp' in REAL_KINDS
+#:set REAL_TYPES = ['real({})'.format(k) for k in REAL_KINDS]
+
+#! Space dimensions with a template instance.
+#:set DIMS = ['3D', '2D']
+
+#! Concrete tensor type name: ${tname('3D2Osym', k)}$ -> ten_3D2Osym_dp
+#:set tname = muscle_meta.tname
+
+#! Marks a procedure as callable from OpenMP target regions. Expands to nothing unless the
+#! build defines MUSCLE_GPU (Phase 8). Use `@:DEVICE()` instead of writing the directive.
+#:def DEVICE()
+#:if defined('MUSCLE_GPU')
+!$omp declare target
+#:endif
+#:enddef
+
+#:endmute

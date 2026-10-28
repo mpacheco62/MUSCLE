@@ -55,10 +55,10 @@ module muscle_vp_base
     !!   ! Implementation of flow_stress would call self%hard_law%stress(ep)
     !!   ...
     !! end module mod_my_visco_law
-    !! ```  
+    !! ```
     !! use, intrinsic :: iso_fortran_env
     !! use muscle_hard_base
-	use, intrinsic :: iso_fortran_env, only: real64
+    use, intrinsic :: iso_fortran_env, only: real64
     use muscle_hard_base, only: Base_hardening_laws
     implicit none
     private
@@ -83,8 +83,8 @@ module muscle_vp_base
             use, intrinsic :: iso_fortran_env
             import Base_viscoplastic_law
             class(Base_viscoplastic_law), intent(in) :: self
-            real(real64), intent(in) :: ep    
-            real(real64), intent(in) :: epd   
+            real(real64), intent(in) :: ep
+            real(real64), intent(in) :: epd
             real(real64) :: res
         end function flow_stress_interface
     end interface

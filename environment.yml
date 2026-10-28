@@ -9,3 +9,4 @@ dependencies:
   - pip
   - pip:
     - ford
+    - fypp>=3.1
