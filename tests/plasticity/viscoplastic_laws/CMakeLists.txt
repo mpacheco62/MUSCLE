@@ -1,2 +1,3 @@
 add_muscle_test(vp_models test_muscle_vp_models.f90)
 add_muscle_test(vp_chaboche test_muscle_vp_chaboche.f90)
+add_muscle_test(vp_peric test_muscle_vp_peric.f90)

@@ -6,6 +6,7 @@ target_sources(muscle PRIVATE
                  muscle_vp_mrk.f90
                  muscle_vp_nnl.f90
                  muscle_vp_overstress_base.f90
+                 muscle_vp_peric.f90
                  muscle_vp_perzyna.f90
                  muscle_vp_rk.f90
                  muscle_vp_va.f90
