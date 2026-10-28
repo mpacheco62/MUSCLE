@@ -39,6 +39,7 @@ end program test_muscle_openmp
 ! =========================================================================
 subroutine test_openmp_closest_point_vm(passed)
     use omp_lib
+    use, intrinsic :: iso_fortran_env, only: real64
     use muscle_tensors
     use muscle_plastic_history
     use muscle_solver_closest_point
@@ -61,7 +62,7 @@ subroutine test_openmp_closest_point_vm(passed)
     type(Closest_point)     :: solver, solver_loc
     integer :: i
     integer, allocatable :: status_code(:), status_code_par(:)
-    real(8) :: t_start, t_seq, t_par
+    real(real64) :: t_start, t_seq, t_par
 
     passed = .FALSE.
 
@@ -167,6 +168,7 @@ end subroutine test_openmp_closest_point_vm
 ! =========================================================================
 subroutine test_openmp_closest_point_dp(passed)
     use omp_lib
+    use, intrinsic :: iso_fortran_env, only: real64
     use muscle_tensors
     use muscle_plastic_history
     use muscle_solver_closest_point
@@ -188,7 +190,7 @@ subroutine test_openmp_closest_point_dp(passed)
     type(DruckerPrager)      :: dp
     type(Closest_point)     :: solver
     integer :: i, status_code
-    real(8) :: t_start, t_seq, t_par
+    real(real64) :: t_start, t_seq, t_par
 
     passed = .FALSE.
 

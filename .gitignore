@@ -2,6 +2,7 @@ python/
 bin/
 build/
 build-check/
+__pycache__/
 modFiles/
 output/
 doc/

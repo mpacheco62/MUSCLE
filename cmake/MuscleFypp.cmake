@@ -94,7 +94,9 @@ function(muscle_fypp_preprocess OUT_VAR)
         add_custom_command(
             OUTPUT "${output}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${output_dir}"
-            COMMAND ${FYPP_EXECUTABLE} ${MUSCLE_FYPP_FLAGS} ${defines} "${source_abs}" "${output}"
+            # No bytecode: fypp imports muscle_meta from the source tree
+            COMMAND ${CMAKE_COMMAND} -E env PYTHONDONTWRITEBYTECODE=1
+                    ${FYPP_EXECUTABLE} ${MUSCLE_FYPP_FLAGS} ${defines} "${source_abs}" "${output}"
             DEPENDS "${source_abs}" ${MUSCLE_FYPP_DEPENDS} ${arg_DEPENDS}
             COMMENT "FYPP ${source_rel}"
             VERBATIM)

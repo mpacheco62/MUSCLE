@@ -25,6 +25,7 @@ target_include_directories(muscle PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
+add_subdirectory(common)
 add_subdirectory(plasticity)
 add_subdirectory(math)
 add_subdirectory(tensors)

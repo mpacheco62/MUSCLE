@@ -1,0 +1,541 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#!
+#! Per-kind data of the tests. The dp values are the historical ones of
+#! test_muscle_math_inverses.f90 (the dp instance keeps every historical check with the same
+#! tolerances). eps_sp = 1.19e-7, eps_dp = 2.22e-16.
+#!
+#! Hilbert sizes: the Hilbert test needs kappa_inf(H_n) * eps << 1 (the check is 10 kappa eps).
+#! kappa_inf(H_n) = 748, 2.8e4, 9.4e5, 2.9e7, 1.1e12 for n = 3, 4, 5, 6, 9. In sp,
+#! 10 kappa eps = 8.9e-4 (n = 3), 3.4e-2 (n = 4), 1.1 (n = 5): from n = 5 on the inverse has no
+#! correct digit, so sp only runs n = 3 (adjugate path) and n = 4 (LU fallback of M44INV).
+#:set HILBERT_SIZES = {'dp': '3, 4, 5, 6, 9', 'sp': '3, 4'}
+#!
+#! test_general: absolute tolerance on the entries of A*inv(A) - I (kappa_inf ~ 2-4, n <= 9).
+#! dp: 1e-13 (~450 eps). sp: 1e-5 (~84 eps); the backward-error bound n kappa eps is 4e-6 for
+#! n = 9 and kappa = 4.
+#:set TOL_GENERAL = {'dp': '1.0e-13', 'sp': '1.0e-5'}
+#!
+#! test_general: returned kappa against |A| |inv(A)| computed by the test with the same formula
+#! (only the evaluation order may differ). dp: 1e-14 (~45 eps). sp: 1e-6 (~8 eps).
+#:set TOL_KAPPA = {'dp': '1.0e-14', 'sp': '1.0e-6'}
+#!
+#! test_extreme_scaling: scale factors and relative tolerance. The scale must make the 4x4
+#! determinant (c^4 det B) underflow to exactly zero / overflow to infinity while c^3 stays in
+#! range for the 3x3 adjugate. dp: c = 1e-100 / 1e+100 (c^4 = 1e-400 / 1e+400). sp: the range is
+#! [1.4e-45 (subnormal), 3.4e38], so c = 1e-12 / 1e+11: the terms of the 4x4 determinant
+#! (~ c^4 * 625) underflow to 0 (1e-45) / overflow (6e46), while the 3x3 determinant (c^3 det B, det B = 117)
+#! stays normal: 1.2e-34 / 1.2e35. 1e+12 is not used because det = 1.2e38 > 1/tiny = 8.5e37 makes
+#! 1/det subnormal (correct but with fewer bits and an IEEE_DENORMAL signal).
+#! Tolerance: dp 1e-13 (~450 eps); sp 1e-5 (~84 eps; measured 1.7e-7), kappa ~ 4.
+#:set SCALE_SMALL = {'dp': '1.0e-100', 'sp': '1.0e-12'}
+#:set SCALE_LARGE = {'dp': '1.0e+100', 'sp': '1.0e+11'}
+#:set TOL_SCALED = {'dp': '1.0e-13', 'sp': '1.0e-5'}
+#!
+#! First STOP code of each kind (dp keeps the historical codes 1-5; 6-7 are the contract tests
+#! added with single precision: optional KAPPA and the LU fallback checked by its residual).
+#:set STOP_BASE = {'dp': 0, 'sp': 10}
+
+module test_inverses_helpers
+    !! Dispatch over the matrix sizes of `muscle_math_inverses` and exact reference matrices,
+    !! for every real kind.
+    use muscle_kinds, only : sp, dp
+    use muscle_math_inverses, only : M33INV, M44INV, M55INV, M66INV, M99INV
+    implicit none
+
+    integer, parameter :: SIZES(5) = (/3, 4, 5, 6, 9/)
+        !! Sizes with a dedicated inverse.
+
+    interface invert
+        module procedure ${', '.join('invert_' + k for k in REAL_KINDS)}$
+    end interface invert
+
+    interface norm_inf
+        module procedure ${', '.join('norm_inf_' + k for k in REAL_KINDS)}$
+    end interface norm_inf
+
+contains
+
+#:for k in REAL_KINDS
+    subroutine invert_${k}$(n, a, x, ok, kappa)
+        !! Calls the `real(${k}$)` inverse routine of size n (`kappa` only for 3x3 and 4x4, else -1).
+        integer, intent(in) :: n
+            !! Matrix size (3, 4, 5, 6 or 9).
+        real(${k}$), intent(in) :: a(n,n)
+            !! Matrix to invert.
+        real(${k}$), intent(out) :: x(n,n)
+            !! Computed inverse.
+        logical, intent(out) :: ok
+            !! Success flag returned by the routine.
+        real(${k}$), intent(out) :: kappa
+            !! Condition number returned by M33INV/M44INV; -1 for the other sizes.
+        kappa = -1.0_${k}$
+        select case (n)
+        case (3); call M33INV(a, x, ok, kappa)
+        case (4); call M44INV(a, x, ok, kappa)
+        case (5); call M55INV(a, x, ok)
+        case (6); call M66INV(a, x, ok)
+        case (9); call M99INV(a, x, ok)
+        end select
+    end subroutine invert_${k}$
+
+    pure function hilbert_${k}$(n) result(h)
+        !! Hilbert matrix H_ij = 1 / (i + j - 1) in `real(${k}$)`.
+        integer, intent(in) :: n
+            !! Size.
+        real(${k}$) :: h(n,n)
+            !! Hilbert matrix.
+        integer :: i, j
+        do j = 1, n
+            do i = 1, n
+                h(i,j) = 1.0_${k}$ / real(i + j - 1, ${k}$)
+            end do
+        end do
+    end function hilbert_${k}$
+
+    pure function hilbert_inverse_${k}$(n) result(h)
+        !! Exact inverse of the Hilbert matrix (integer entries, exactly representable in
+        !! `real(${k}$)` for the sizes used with this kind):
+        !! (H^-1)_ij = (-1)^(i+j) (i+j-1) C(n+i-1, n-j) C(n+j-1, n-i) C(i+j-2, i-1)^2.
+        integer, intent(in) :: n
+            !! Size.
+        real(${k}$) :: h(n,n)
+            !! Exact inverse.
+        integer :: i, j
+        do j = 1, n
+            do i = 1, n
+                h(i,j) = (-1)**(i+j) * real(i+j-1, ${k}$) * binom_${k}$(n+i-1, n-j) &
+                         * binom_${k}$(n+j-1, n-i) * binom_${k}$(i+j-2, i-1)**2
+            end do
+        end do
+    end function hilbert_inverse_${k}$
+
+    pure real(${k}$) function binom_${k}$(n, k)
+        !! Binomial coefficient C(n, k) (exact in `real(${k}$)` for the sizes used here).
+        integer, intent(in) :: n
+            !! Upper index.
+        integer, intent(in) :: k
+            !! Lower index.
+        integer :: m
+        binom_${k}$ = 1.0_${k}$
+        do m = 1, k
+            binom_${k}$ = binom_${k}$ * real(n - k + m, ${k}$) / real(m, ${k}$)
+        end do
+    end function binom_${k}$
+
+    pure real(${k}$) function norm_inf_${k}$(a)
+        !! Infinity norm (maximum absolute row sum).
+        real(${k}$), intent(in) :: a(:,:)
+            !! Matrix.
+        norm_inf_${k}$ = maxval(sum(abs(a), dim=2))
+    end function norm_inf_${k}$
+
+#:endfor
+end module test_inverses_helpers
+
+
+program test_muscle_math_inverses
+    !! Tests of the small dense inverses of `muscle_math_inverses` (M33INV, M44INV, M55INV,
+    !! M66INV, M99INV) for every real kind: exact cases, Hilbert matrices with their exact integer
+    !! inverse (covers the adjugate and the LU-fallback paths of M33INV/M44INV), general matrices,
+    !! singular input, NaN input and extreme scaling. Single precision also checks the optional
+    !! KAPPA and the LU fallback of M33INV/M44INV by its residual.
+    use, intrinsic :: ieee_exceptions, only : ieee_set_flag, ieee_all
+    use muscle_test_utils
+    implicit none
+    logical :: passed
+
+#:for k in REAL_KINDS
+#:set b = STOP_BASE[k]
+    call test_exact_cases_${k}$(passed)
+    if (.not. passed) stop ${b + 1}$
+
+    call test_hilbert_${k}$(passed)
+    if (.not. passed) stop ${b + 2}$
+
+    call test_general_${k}$(passed)
+    if (.not. passed) stop ${b + 3}$
+
+    call test_singular_nan_${k}$(passed)
+    if (.not. passed) stop ${b + 4}$
+
+    call test_extreme_scaling_${k}$(passed)
+    if (.not. passed) stop ${b + 5}$
+
+    call test_optional_kappa_${k}$(passed)
+    if (.not. passed) stop ${b + 6}$
+
+    call test_lu_fallback_${k}$(passed)
+    if (.not. passed) stop ${b + 7}$
+
+#:endfor
+    ! The NaN and extreme-scaling cases raise IEEE invalid/overflow/underflow flags on purpose;
+    ! clear them so that the runtime does not report them as unexpected at STOP.
+    call ieee_set_flag(ieee_all, .false.)
+    print *, "Passed!"
+    stop 0
+end program test_muscle_math_inverses
+
+#:for k in REAL_KINDS
+
+subroutine test_exact_cases_${k}$(passed)
+    !! `real(${k}$)` inverses that are exact in binary, compared exactly (tol = 0):
+    !! - identity -> identity;
+    !! - diagonal with powers of two -> reciprocals (also powers of two);
+    !! - permutation matrix (needs pivoting / has zero leading pivots) -> its transpose.
+    !! All operations involve only 0, +-1 and powers of two, so no rounding occurs.
+    !! For 3x3/4x4 the returned kappa_inf must be exact as well (1, max/min diagonal, 1).
+    use muscle_kinds, only : ${k}$
+    use muscle_test_utils
+    use test_inverses_helpers
+    implicit none
+    logical, intent(out) :: passed
+    real(${k}$), allocatable :: a(:,:), x(:,:), expected(:,:)
+    real(${k}$) :: kap
+    integer :: s, n, i
+    logical :: ok
+    character(len=32) :: tag
+
+    passed = .true.
+    do s = 1, size(SIZES)
+        n = SIZES(s)
+        write(tag, '("[${k}$] ", i0, "x", i0)') n, n
+        allocate(a(n,n), x(n,n), expected(n,n))
+
+        a = 0.0_${k}$; expected = 0.0_${k}$
+        do i = 1, n
+            a(i,i) = 1.0_${k}$; expected(i,i) = 1.0_${k}$
+        end do
+        call invert(n, a, x, ok, kap)
+        call check_true(passed, trim(tag) // " identity: ok", ok)
+        call check_approx(passed, trim(tag) // " inverse of identity", x, expected, tol=0.0_${k}$)
+        if (n <= 4) call check_approx(passed, trim(tag) // " kappa(identity) = 1", kap, 1.0_${k}$, &
+                                      tol=0.0_${k}$)
+
+        a = 0.0_${k}$; expected = 0.0_${k}$
+        do i = 1, n
+            a(i,i) = 2.0_${k}$**(i - 3)
+            expected(i,i) = 2.0_${k}$**(3 - i)
+        end do
+        call invert(n, a, x, ok, kap)
+        call check_approx(passed, trim(tag) // " inverse of diag(2^(i-3))", x, expected, tol=0.0_${k}$)
+        if (n <= 4) call check_approx(passed, trim(tag) // " kappa(diag) = max/min", kap, &
+                                      2.0_${k}$**(n-1), tol=0.0_${k}$)
+
+        ! Cyclic permutation: e_i -> e_(i+1); zero diagonal, so LU must pivot
+        a = 0.0_${k}$
+        do i = 1, n
+            a(1 + mod(i, n), i) = 1.0_${k}$
+        end do
+        expected = transpose(a)
+        call invert(n, a, x, ok, kap)
+        call check_approx(passed, trim(tag) // " inverse of a permutation = transpose", x, expected, &
+                          tol=0.0_${k}$)
+
+        deallocate(a, x, expected)
+    end do
+end subroutine test_exact_cases_${k}$
+
+
+subroutine test_hilbert_${k}$(passed)
+    !! `real(${k}$)` Hilbert matrices against their exact integer inverse (n = ${HILBERT_SIZES[k]}$).
+    !! kappa_inf(H) grows from 748 (n = 3) to 1.1e12 (n = 9): H3 takes the adjugate path of M33INV
+    !! (kappa <= 1e3), H4 (kappa 2.8e4) the LU fallback of M44INV.
+    !! Tolerance: the relative error of a backward-stable inverse is O(kappa * eps); the benchmark of
+    !! 2026-10-14 measured at most 0.22 kappa * eps, so tol = 10 kappa_inf * eps leaves a wide margin.
+    !! For 3x3/4x4 the returned kappa_inf is compared with the exact one (from the exact inverse):
+    !! it is computed from the numerical inverse, so it carries the same relative error.
+    !! Only sizes with 10 kappa eps << 1 are run (single precision: n = 3, 4; see the header).
+    use muscle_kinds, only : ${k}$
+    use muscle_test_utils
+    use test_inverses_helpers
+    implicit none
+    logical, intent(out) :: passed
+    integer, parameter :: HSIZES(*) = (/${HILBERT_SIZES[k]}$/)
+    real(${k}$), allocatable :: h(:,:), x(:,:), hinv(:,:)
+    real(${k}$) :: kap, kexact
+    integer :: s, n
+    logical :: ok
+    character(len=32) :: tag
+
+    passed = .true.
+    do s = 1, size(HSIZES)
+        n = HSIZES(s)
+        write(tag, '("[${k}$] Hilbert ", i0, "x", i0)') n, n
+        allocate(h(n,n), x(n,n), hinv(n,n))
+        h = hilbert_${k}$(n)
+        hinv = hilbert_inverse_${k}$(n)
+        kexact = norm_inf(h) * norm_inf(hinv)
+        call invert(n, h, x, ok, kap)
+        call check_true(passed, trim(tag) // ": ok", ok)
+        call check_approx(passed, trim(tag) // " inverse vs exact", x, hinv, &
+                          tol=10.0_${k}$ * kexact * epsilon(1.0_${k}$))
+        if (n <= 4) call check_approx(passed, trim(tag) // " kappa_inf vs exact", kap, kexact, &
+                                      tol=10.0_${k}$ * kexact * epsilon(1.0_${k}$))
+        deallocate(h, x, hinv)
+    end do
+end subroutine test_hilbert_${k}$
+
+
+subroutine test_general_${k}$(passed)
+    !! General non-symmetric, diagonally dominant `real(${k}$)` matrices
+    !! (A_ij = sin(i + 3j) + 5 delta_ij, kappa_inf ~ 2-4): A * inv(A) = inv(A) * A = I.
+    !! The residual is a few ulp times kappa; tol ${TOL_GENERAL[k]}$ (absolute on entries of order 1).
+    use muscle_kinds, only : ${k}$
+    use muscle_test_utils
+    use test_inverses_helpers
+    implicit none
+    logical, intent(out) :: passed
+    real(${k}$), allocatable :: a(:,:), x(:,:), id(:,:)
+    real(${k}$) :: kap
+    integer :: s, n, i, j
+    logical :: ok
+    character(len=32) :: tag
+
+    passed = .true.
+    do s = 1, size(SIZES)
+        n = SIZES(s)
+        write(tag, '("[${k}$] ", i0, "x", i0)') n, n
+        allocate(a(n,n), x(n,n), id(n,n))
+        id = 0.0_${k}$
+        do j = 1, n
+            id(j,j) = 1.0_${k}$
+            do i = 1, n
+                a(i,j) = sin(real(i, ${k}$) + 3.0_${k}$*real(j, ${k}$)) + merge(5.0_${k}$, 0.0_${k}$, i == j)
+            end do
+        end do
+        call invert(n, a, x, ok, kap)
+        call check_true(passed, trim(tag) // " general: ok", ok)
+        call check_approx(passed, trim(tag) // " A * inv(A) = I", matmul(a, x), id, &
+                          tol=${TOL_GENERAL[k]}$_${k}$)
+        call check_approx(passed, trim(tag) // " inv(A) * A = I", matmul(x, a), id, &
+                          tol=${TOL_GENERAL[k]}$_${k}$)
+        if (n <= 4) call check_approx(passed, trim(tag) // " kappa_inf = |A| |inv(A)|", kap, &
+                                      norm_inf(a) * norm_inf(x), tol=${TOL_KAPPA[k]}$_${k}$)
+        deallocate(a, x, id)
+    end do
+end subroutine test_general_${k}$
+
+
+subroutine test_singular_nan_${k}$(passed)
+    !! A singular `real(${k}$)` matrix (rank 1, all entries equal) and a matrix containing a NaN
+    !! must give ok = .false. and a zero inverse (kappa = huge for 3x3/4x4).
+    use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan
+    use muscle_kinds, only : ${k}$
+    use muscle_test_utils
+    use test_inverses_helpers
+    implicit none
+    logical, intent(out) :: passed
+    real(${k}$), allocatable :: a(:,:), x(:,:), zero(:,:)
+    real(${k}$) :: kap
+    integer :: s, n
+    logical :: ok
+    character(len=32) :: tag
+
+    passed = .true.
+    do s = 1, size(SIZES)
+        n = SIZES(s)
+        write(tag, '("[${k}$] ", i0, "x", i0)') n, n
+        allocate(a(n,n), x(n,n), zero(n,n))
+        zero = 0.0_${k}$
+
+        a = 1.0_${k}$
+        call invert(n, a, x, ok, kap)
+        call check_true(passed, trim(tag) // " singular: ok = .false.", .not. ok)
+        call check_approx(passed, trim(tag) // " singular: inverse = 0", x, zero, tol=0.0_${k}$)
+        if (n <= 4) call check_approx(passed, trim(tag) // " singular: kappa = huge", kap, &
+                                      huge(1.0_${k}$), tol=0.0_${k}$)
+
+        a = 0.0_${k}$
+        a(1,1) = ieee_value(1.0_${k}$, ieee_quiet_nan)
+        call invert(n, a, x, ok, kap)
+        call check_true(passed, trim(tag) // " NaN input: ok = .false.", .not. ok)
+
+        deallocate(a, x, zero)
+    end do
+end subroutine test_singular_nan_${k}$
+
+
+subroutine test_extreme_scaling_${k}$(passed)
+    !! Well-conditioned `real(${k}$)` matrices with extreme scale: c * B with
+    !! c = ${SCALE_SMALL[k]}$ and ${SCALE_LARGE[k]}$ and B the general matrix of `test_general`. For 4x4
+    !! the adjugate determinant underflows to zero or overflows (c^4 out of range), so
+    !! M33INV/M44INV must fall back to LU instead of failing.
+    !! Expected: inv(c B) = inv(B) / c. The scaling c is not a power of two, so c*B and inv(B)/c
+    !! carry a few ulp of rounding; with kappa ~ 4, tol ${TOL_SCALED[k]}$ relative is a wide margin.
+    use muscle_kinds, only : ${k}$
+    use muscle_test_utils
+    use test_inverses_helpers
+    implicit none
+    logical, intent(out) :: passed
+    real(${k}$), allocatable :: b(:,:), xb(:,:), x(:,:)
+    real(${k}$) :: kap, c
+    integer :: s, n, i, j, ic
+    logical :: ok
+    character(len=48) :: tag
+
+    passed = .true.
+    do s = 1, size(SIZES)
+        n = SIZES(s)
+        allocate(b(n,n), xb(n,n), x(n,n))
+        do j = 1, n
+            do i = 1, n
+                b(i,j) = sin(real(i, ${k}$) + 3.0_${k}$*real(j, ${k}$)) + merge(5.0_${k}$, 0.0_${k}$, i == j)
+            end do
+        end do
+        call invert(n, b, xb, ok, kap)
+        do ic = 1, 2
+            c = merge(${SCALE_SMALL[k]}$_${k}$, ${SCALE_LARGE[k]}$_${k}$, ic == 1)
+            write(tag, '("[${k}$] ", i0, "x", i0, " scaled by ", es8.1)') n, n, c
+            call invert(n, c*b, x, ok, kap)
+            call check_true(passed, trim(tag) // ": ok", ok)
+            call check_approx(passed, trim(tag) // ": inv(cB) = inv(B)/c", x, xb/c, &
+                              tol=${TOL_SCALED[k]}$_${k}$)
+        end do
+        deallocate(b, xb, x)
+    end do
+end subroutine test_extreme_scaling_${k}$
+
+
+subroutine test_optional_kappa_${k}$(passed)
+    !! The optional KAPPA of M33INV/M44INV (`real(${k}$)`) does not change the result: calling
+    !! without it gives bitwise the same inverse and flag (tol = 0) on the adjugate path (general
+    !! matrix), on the LU-fallback path (Hilbert 3x3 scaled, Hilbert 4x4) and for a singular
+    !! matrix. Also checks that QUIET_NAN_${k}$ (filler of singular tensor inverses) is a NaN.
+    use, intrinsic :: ieee_arithmetic, only : ieee_is_nan
+    use muscle_kinds, only : ${k}$
+    use muscle_math_inverses, only : M33INV, M44INV, QUIET_NAN_${k}$, ADJ_KAPPA_MAX_${k}$
+    use muscle_test_utils
+    use test_inverses_helpers
+    implicit none
+    logical, intent(out) :: passed
+    real(${k}$), parameter :: U3(3) = (/7.0_${k}$, 4.0_${k}$, 5.0_${k}$/), V3(3) = (/1.0_${k}$, -1.0_${k}$, 1.0_${k}$/)
+    real(${k}$) :: a3(3,3), x3(3,3), y3(3,3), a4(4,4), x4(4,4), y4(4,4), kap
+    logical :: ok, ok2
+    integer :: c, i, j
+    character(len=48) :: tag
+
+    passed = .true.
+    do c = 1, 3
+        select case (c)
+        case (1)
+            tag = "[${k}$] general"
+            do j = 1, 4
+                do i = 1, 4
+                    a4(i,j) = sin(real(i, ${k}$) + 3.0_${k}$*real(j, ${k}$)) &
+                              + merge(5.0_${k}$, 0.0_${k}$, i == j)
+                end do
+            end do
+            a3 = a4(1:3,1:3)
+        case (2)
+            ! H4 (kappa 2.8e4); for 3x3, H3 (kappa 748) stays on the adjugate path, so use the
+            ! nearly singular u v^T + 2^-10 I of test_lu_fallback (kappa 5.4e4).
+            tag = "[${k}$] ill-conditioned (LU fallback)"
+            a4 = hilbert_${k}$(4)
+            do j = 1, 3
+                do i = 1, 3
+                    a3(i,j) = U3(i)*V3(j) + merge(2.0_${k}$**(-10), 0.0_${k}$, i == j)
+                end do
+            end do
+        case (3)
+            tag = "[${k}$] singular"
+            a3 = 1.0_${k}$
+            a4 = 1.0_${k}$
+        end select
+
+        call M33INV(a3, x3, ok, kap)
+        call M33INV(a3, y3, ok2)
+        call check_true(passed, trim(tag) // " 3x3: same OK_FLAG without KAPPA", ok .eqv. ok2)
+        call check_approx(passed, trim(tag) // " 3x3: same inverse without KAPPA", y3, x3, tol=0.0_${k}$)
+        if (c == 2) call check_true(passed, trim(tag) // " 3x3: kappa > ADJ_KAPPA_MAX", kap > ADJ_KAPPA_MAX_${k}$)
+
+        call M44INV(a4, x4, ok, kap)
+        call M44INV(a4, y4, ok2)
+        call check_true(passed, trim(tag) // " 4x4: same OK_FLAG without KAPPA", ok .eqv. ok2)
+        call check_approx(passed, trim(tag) // " 4x4: same inverse without KAPPA", y4, x4, tol=0.0_${k}$)
+        if (c == 2) call check_true(passed, trim(tag) // " 4x4: kappa > ADJ_KAPPA_MAX", kap > ADJ_KAPPA_MAX_${k}$)
+    end do
+
+    call check_true(passed, "[${k}$] QUIET_NAN_${k}$ is NaN", ieee_is_nan(QUIET_NAN_${k}$()))
+end subroutine test_optional_kappa_${k}$
+
+
+subroutine test_lu_fallback_${k}$(passed)
+    !! LU fallback of M33INV/M44INV in `real(${k}$)` (kappa_inf > ADJ_KAPPA_MAX_${k}$), checked by
+    !! its accuracy rather than against a fixed value.
+    !!
+    !! Matrices: A = u v^T + delta I (rank one plus a small shift), exactly representable
+    !! (small integers plus delta = 2^-p), with
+    !! u = (7, 4, 5), v = (1, -1, 1) for 3x3 and u = (7, 4, 5, 3), v = (1, -1, 1, -1) for 4x4.
+    !! Their exact inverse is known (Sherman-Morrison):
+    !! inv(A) = (I - u v^T / (delta + v.u)) / delta, evaluated in double precision.
+    !! delta = 2^-6 gives kappa_inf = 3.4e3 (3x3) / 8.2e3 (4x4); delta = 2^-10 gives 5.4e4 / 1.3e5
+    !! (sp: kappa eps = 6.4e-3 / 1.6e-2). Both are above ADJ_KAPPA_MAX = 1e3.
+    !!
+    !! Checks (eps = epsilon(1.0_${k}$), kappa = exact kappa_inf, n = size):
+    !! - ok and the returned kappa > ADJ_KAPPA_MAX_${k}$ (the case exercises the fallback);
+    !! - residual: entries of A inv(A) - I <= n kappa eps (a backward-stable inverse gives
+    !!   |A X - I| <= c n eps |A| |X|; measured <= 0.36 kappa eps in sp). With delta = 2^-10 the
+    !!   adjugate would give 2960 (3x3) / 488 (4x4) kappa eps, so this check detects a missing
+    !!   fallback;
+    !! - forward error: |X - inv(A)| <= n kappa eps relative to max|inv(A)| (measured <= 0.04);
+    !! - returned kappa vs exact: relative n kappa eps.
+    use muscle_kinds, only : ${k}$, dp
+    use muscle_math_inverses, only : M33INV, M44INV, ADJ_KAPPA_MAX_${k}$
+    use muscle_test_utils
+    implicit none
+    logical, intent(out) :: passed
+    integer, parameter :: P(2) = (/6, 10/)
+    integer :: n, ip, i, j
+    real(${k}$) :: delta, kap, kexact, tol
+    real(${k}$), allocatable :: u(:), v(:), a(:,:), x(:,:), id(:,:), xexact(:,:)
+    real(dp), allocatable :: xdp(:,:)
+    logical :: ok
+    character(len=48) :: tag
+
+    passed = .true.
+    do n = 3, 4
+        allocate(u(n), v(n), a(n,n), x(n,n), id(n,n), xexact(n,n), xdp(n,n))
+        if (n == 3) then
+            u = (/7.0_${k}$, 4.0_${k}$, 5.0_${k}$/)
+            v = (/1.0_${k}$, -1.0_${k}$, 1.0_${k}$/)
+        else
+            u = (/7.0_${k}$, 4.0_${k}$, 5.0_${k}$, 3.0_${k}$/)
+            v = (/1.0_${k}$, -1.0_${k}$, 1.0_${k}$, -1.0_${k}$/)
+        end if
+        do ip = 1, size(P)
+            delta = 2.0_${k}$**(-P(ip))
+            write(tag, '("[${k}$] ", i0, "x", i0, " u v^T + 2^-", i0, " I")') n, n, P(ip)
+            id = 0.0_${k}$
+            do j = 1, n
+                id(j,j) = 1.0_${k}$
+                do i = 1, n
+                    a(i,j) = u(i)*v(j) + merge(delta, 0.0_${k}$, i == j)
+                    xdp(i,j) = (merge(1.0_dp, 0.0_dp, i == j) - real(u(i), dp)*real(v(j), dp) &
+                                / (real(delta, dp) + dot_product(real(v, dp), real(u, dp)))) &
+                               / real(delta, dp)
+                end do
+            end do
+            xexact = real(xdp, ${k}$)
+            kexact = real(maxval(sum(abs(real(a, dp)), dim=2)) * maxval(sum(abs(xdp), dim=2)), ${k}$)
+            tol = real(n, ${k}$) * kexact * epsilon(1.0_${k}$)
+
+            if (n == 3) then
+                call M33INV(a, x, ok, kap)
+            else
+                call M44INV(a, x, ok, kap)
+            end if
+            call check_true(passed, trim(tag) // ": ok", ok)
+            call check_true(passed, trim(tag) // ": kappa > ADJ_KAPPA_MAX (LU fallback)", &
+                            kap > ADJ_KAPPA_MAX_${k}$)
+            call check_approx(passed, trim(tag) // ": residual A inv(A) - I <= n kappa eps", &
+                              matmul(a, x), id, tol=tol)
+            call check_approx(passed, trim(tag) // ": inverse vs exact <= n kappa eps", &
+                              x, xexact, tol=tol)
+            call check_approx(passed, trim(tag) // ": kappa vs exact", kap, kexact, tol=tol)
+        end do
+        deallocate(u, v, a, x, id, xexact, xdp)
+    end do
+end subroutine test_lu_fallback_${k}$
+#:endfor

@@ -161,3 +161,16 @@ generados se compilan con `Fortran_PREPROCESS ON`. Las plantillas no usan direct
 los interruptores de build (`USE_MKL`, `ENABLE_UDTIO`) llegan a fypp vía
 `MUSCLE_FYPP_DEFINES` y se prueban con `#:if defined(...)` (el lint lo comprueba).
 **Pendiente:** verificar `#line` con ifx/IntelLLVM (`-fpp`) cuando esté instalado.
+
+## D-010 — Constantes por kind de la Fase 1
+**Estado:** Aceptada (2026-10-28, Fase 1)
+**Decisión:**
+- `TOL_APPROX_sp = 1e-5` (~84 ulp) y `TOL_APPROX_dp = 1e-12` (histórico) en `muscle_kinds`:
+  tolerancia relativa por defecto de `.approx.` y de `check_approx`. `EPS_ABS_<k> = 1e-30`
+  (cota inferior de la escala, normal en ambos kinds).
+- `ADJ_KAPPA_MAX_sp = ADJ_KAPPA_MAX_dp = 1e3`: medido con 30k matrices aleatorias 3x3/4x4 por
+  kind, el adjunto en sp degrada igual que en dp en unidades de κ·ε.
+- `QUIET_NAN` (sin argumentos) sólo puede ser genérico de un específico: es el `dp`; las
+  plantillas llaman `QUIET_NAN_<k>`.
+**Pendiente (Fase 2–3):** tolerancia por defecto de `4O2sym` (hoy `1e-8` en dp) y paso de los
+literales `1E-12` de kind por defecto (≈9.9999998e-13) a `1.0e-12_dp` en `is_approx`.

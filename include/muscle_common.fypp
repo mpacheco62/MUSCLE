@@ -17,11 +17,16 @@
 #:assert 'dp' in REAL_KINDS
 #:set REAL_TYPES = ['real({})'.format(k) for k in REAL_KINDS]
 
-#! Space dimensions with a template instance.
-#:set DIMS = ['3D', '2D']
+#! Space dimensions and tensor families with a template instance.
+#:set DIMS = list(muscle_meta.DIMS)
+#:set FAMILIES = list(muscle_meta.FAMILIES)
 
 #! Concrete tensor type name: ${tname('3D2Osym', k)}$ -> ten_3D2Osym_dp
 #:set tname = muscle_meta.tname
+
+#! Storage layout of a tensor type (components, positions in `vals`, tensor indices):
+#! layout('2Osym', '2D').comps -> [Comp(name='xx', pos=(1,), idx=(1, 1)), ...]
+#:set layout = muscle_meta.layout
 
 #! Marks a procedure as callable from OpenMP target regions. Expands to nothing unless the
 #! build defines MUSCLE_GPU (Phase 8). Use `@:DEVICE()` instead of writing the directive.

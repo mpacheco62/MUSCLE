@@ -1,26 +1,27 @@
-! SPDX-License-Identifier: GPL-3.0-or-later
-! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-!
-! Body of the fixed-size LU inverses of muscle_math_inverses (M55INV, M66INV, M99INV and the
-! private LU fallbacks lu_inv3, lu_inv4 of M33INV, M44INV).
-!
-! It is INCLUDEd by subroutines that declare, before the INCLUDE line:
-!   integer, parameter :: N             -- matrix size (compile-time constant)
-!   real(real64), intent(in)  :: A(N,N) -- matrix to invert
-!   real(real64), intent(out) :: AINV(N,N)
-!   logical, intent(out)      :: OK_FLAG
-! A compile-time N lets the compiler unroll the loops: measured ~20 % faster than a single
-! routine with N as an argument for the 6x6 case.
-!
-! Algorithm (same as LAPACK DGETRF + DGETRI, unblocked, no external calls):
-!   1. P A = L U with partial pivoting (column-oriented, like DGETF2);
-!   2. inv(U) in place (like DTRTI2, upper, non-unit);
-!   3. solve inv(A) L = inv(U) (like DGETRI);
-!   4. undo the row interchanges as column interchanges, in reverse order.
-! Singular A (exactly zero pivot): OK_FLAG = .false. and AINV = 0.
-
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Body of the fixed-size LU inverses of muscle_math_inverses (M55INV, M66INV, M99INV and the
+#! private LU fallbacks lu_inv3, lu_inv4 of M33INV, M44INV).
+#!
+#! `$:lu_inverse_body(rk)` expands it, for the real kind `rk` ('sp' or 'dp'), at the end of the
+#! specification part of a subroutine that declares:
+#!   integer, parameter :: N            -- matrix size (compile-time constant)
+#!   real(rk), intent(in)  :: A(N,N)    -- matrix to invert
+#!   real(rk), intent(out) :: AINV(N,N)
+#!   logical, intent(out)  :: OK_FLAG
+#! A compile-time N lets the compiler unroll the loops: measured ~20 % faster than a single
+#! routine with N as an argument for the 6x6 case.
+#!
+#! Algorithm (same as LAPACK DGETRF + DGETRI, unblocked, no external calls):
+#!   1. P A = L U with partial pivoting (column-oriented, like DGETF2);
+#!   2. inv(U) in place (like DTRTI2, upper, non-unit);
+#!   3. solve inv(A) L = inv(U) (like DGETRI);
+#!   4. undo the row interchanges as column interchanges, in reverse order.
+#! Singular A (exactly zero pivot): OK_FLAG = .false. and AINV = 0.
+#:def lu_inverse_body(rk)
         integer :: ipiv(N), i, j, k, p
-        real(real64) :: r, tmp, ajj, s, work(N)
+        real(${rk}$) :: r, tmp, ajj, s, work(N)
 
         AINV = A
         ! --- 1. factorization P A = L U ---
@@ -30,9 +31,9 @@
                 if (abs(AINV(i,k)) > abs(AINV(p,k))) p = i
             end do
             ipiv(k) = p
-            if (.not. (abs(AINV(p,k)) > 0.0D0)) then     ! zero (or NaN) pivot: singular
+            if (.not. (abs(AINV(p,k)) > 0.0_${rk}$)) then     ! zero (or NaN) pivot: singular
                 OK_FLAG = .false.
-                AINV = 0.0D0
+                AINV = 0.0_${rk}$
                 return
             end if
             if (p /= k) then
@@ -40,7 +41,7 @@
                     tmp = AINV(k,j); AINV(k,j) = AINV(p,j); AINV(p,j) = tmp
                 end do
             end if
-            r = 1.0D0 / AINV(k,k)
+            r = 1.0_${rk}$ / AINV(k,k)
             do i = k+1, N
                 AINV(i,k) = AINV(i,k) * r
             end do
@@ -52,13 +53,13 @@
         end do
         ! --- 2. inv(U) in place ---
         do j = 1, N
-            AINV(j,j) = 1.0D0 / AINV(j,j)
+            AINV(j,j) = 1.0_${rk}$ / AINV(j,j)
             ajj = -AINV(j,j)
             do i = 1, j-1
                 work(i) = AINV(i,j)
             end do
             do i = 1, j-1
-                s = 0.0D0
+                s = 0.0_${rk}$
                 do k = i, j-1
                     s = s + AINV(i,k) * work(k)
                 end do
@@ -69,7 +70,7 @@
         do j = N-1, 1, -1
             do i = j+1, N
                 work(i) = AINV(i,j)
-                AINV(i,j) = 0.0D0
+                AINV(i,j) = 0.0_${rk}$
             end do
             do k = j+1, N
                 do i = 1, N
@@ -87,3 +88,4 @@
             end if
         end do
         OK_FLAG = .true.
+#:enddef

@@ -2,6 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 
 module muscle_math_linsolvers
+  use muscle_kinds, only: dp
   implicit none
   private
   public :: gauss_solve, gauss_seidel
@@ -18,15 +19,15 @@ contains
   !=========================================================
   subroutine gauss_solve(A, b, x, info)
     implicit none
-    real(8), intent(inout) :: A(:,:)   ! Matriz del sistema (se sobreescribe)
-    real(8), intent(inout) :: b(:)     ! RHS (se sobreescribe)
-    real(8), intent(out)   :: x(:)     ! Solución
+    real(dp), intent(inout) :: A(:,:)   ! Matriz del sistema (se sobreescribe)
+    real(dp), intent(inout) :: b(:)     ! RHS (se sobreescribe)
+    real(dp), intent(out)   :: x(:)     ! Solución
     integer, intent(out)   :: info     ! =0 OK, ≠0 hay problema
 
     integer :: n, k, i, j, pivot_row
-    real(8) :: maxval_col, factor
-    real(8), allocatable :: Awork(:,:), bwork(:)
-    real(8) :: tmp_r
+    real(dp) :: maxval_col, factor
+    real(dp), allocatable :: Awork(:,:), bwork(:)
+    real(dp) :: tmp_r
 
     n = size(A,1)
     if (size(A,2) /= n .or. size(b,1) /= n .or. size(x,1) /= n) then
@@ -112,15 +113,15 @@ contains
   !=========================================================
   subroutine gauss_seidel(A, b, x, tol, maxit, its, info)
     implicit none
-    real(8), intent(in)    :: A(:,:), b(:)
-    real(8), intent(inout) :: x(:)        ! x inicial y luego solución
-    real(8), intent(in)    :: tol         ! tolerancia (p.ej. 1.0d-10)
+    real(dp), intent(in)    :: A(:,:), b(:)
+    real(dp), intent(inout) :: x(:)        ! x inicial y luego solución
+    real(dp), intent(in)    :: tol         ! tolerancia (p.ej. 1.0d-10)
     integer, intent(in)    :: maxit       ! máx. iteraciones
     integer, intent(out)   :: its         ! iteraciones realizadas
     integer, intent(out)   :: info        ! 0=OK, 1=no converge
 
     integer :: n, i, j, k
-    real(8) :: sigma, res_norm
+    real(dp) :: sigma, res_norm
 
     n = size(A,1)
     if (size(A,2) /= n .or. size(b,1) /= n .or. size(x,1) /= n) then
@@ -187,23 +188,24 @@ contains
   subroutine mklsolve(A, b, x, tol, maxit, its, info)
     use, intrinsic :: iso_c_binding, only: c_int
     implicit none
-    real(8), intent(in)    :: A(:,:), b(:)
-    real(8), intent(out)   :: x(:)
-    real(8), intent(in)    :: tol
+    real(dp), intent(in)    :: A(:,:), b(:)
+    real(dp), intent(out)   :: x(:)
+    real(dp), intent(in)    :: tol
     integer, intent(in)    :: maxit
     integer, intent(out)   :: its, info
 
     integer :: n, lda, ldb, nrhs
-    real(8), allocatable :: A_loc(:,:), b_loc(:,:)
+    real(dp), allocatable :: A_loc(:,:), b_loc(:,:)
     integer, allocatable :: ipiv(:)
     integer :: i
 
     ! Interfaz explícita de dgesv
     interface
        subroutine dgesv(n, nrhs, a, lda, ipiv, b, ldb, info)
+         import :: dp
          integer :: n, nrhs, lda, ldb, info
          integer :: ipiv(*)
-         real(8) :: a(lda,*), b(ldb,*)
+         real(dp) :: a(lda,*), b(ldb,*)
        end subroutine dgesv
 
 #ifdef USE_MKL

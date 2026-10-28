@@ -1,0 +1,31 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Default relative tolerance of `.approx.` per kind: dp keeps the historical 1e-12; sp is
+#! ~84 ulp (epsilon(1.0_sp) = 1.2e-7), see .claude/rules/testing.md and D-010.
+#:set TOL_APPROX = {'sp': '1.0e-5', 'dp': '1.0e-12'}
+
+module muscle_kinds
+    !! Real kinds of MUSCLE and the constants that depend on them.
+    !!
+    !! Every module uses `sp`/`dp` from here instead of `real32`/`real64` or literal kinds.
+    !! The constants exist for both kinds even when a build instantiates only `dp`
+    !! (`MUSCLE_REAL_KINDS`), so code can reference them unconditionally.
+    use, intrinsic :: iso_fortran_env, only: real32, real64
+    implicit none
+    private
+
+    integer, parameter, public :: sp = real32
+        !! Single precision.
+    integer, parameter, public :: dp = real64
+        !! Double precision (the kind of the historical, unsuffixed type names).
+
+#:for k in ALL_KINDS
+    real(${k}$), parameter, public :: TOL_APPROX_${k}$ = ${TOL_APPROX[k]}$_${k}$
+        !! Default relative tolerance of `.approx.`/`is_approx` for `real(${k}$)` values (most
+        !! tensor types; `4O2sym` uses 1e-8 in dp, decision pending for its templates).
+    real(${k}$), parameter, public :: EPS_ABS_${k}$ = 1.0e-30_${k}$
+        !! Lower bound of the scale of relative comparisons in `real(${k}$)` (avoids a zero
+        !! threshold when both operands vanish; normal in both kinds).
+#:endfor
+end module muscle_kinds

@@ -97,6 +97,12 @@ rule kind "hard-coded or default real kind, use real(\${k}\$) or real(dp)" \
     '(?i)\breal\s*\(\s*(kind\s*=\s*)?(4|8|real32|real64)\s*\)|\breal\s*\*\s*[48]\b|\bdouble\s+precision\b|^\s*real\s*(::|,)' \
     "${fypp_files[@]}"
 rule kind "dble()/sngl(), use real(x, \${k}\$)" '(?i)\b(dble|sngl)\s*\(' "${fypp_files[@]}"
+# Sources not yet migrated: at least no literal real kinds (Phase 1 removed them). They still
+# use real(real64), which is replaced when each module is migrated.
+mapfile -t legacy_files < <(listed '*.f90' '*.F90' '*.inc')
+rule legacy-kind "literal kind in a non-template source, use real(dp)" \
+    '(?i)\breal\s*\(\s*(kind\s*=\s*)?[48]\s*\)|\breal\s*\*\s*[48]\b' \
+    "${legacy_files[@]}"
 rule literal "D-exponent literal, use 1.0e-5_\${k}\$" '(?i)(?<![\w.])\d+\.?\d*d[+-]?\d+\b' "${fypp_files[@]}"
 rule literal "real literal without kind (default real is single precision)" \
     '(?i)(?<![\w.])(\d+\.\d*|\.\d+)(e[+-]?\d+)?(?![\w.])|(?<![\w.])\d+e[+-]?\d+(?![\w.])' \

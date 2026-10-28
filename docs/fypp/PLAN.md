@@ -26,8 +26,8 @@ Estado: **borrador v1 (2026-10-25)** · Rama base: `dev` · Línea base: 60/60 t
 - `muscle_math_derivatives`: derivadas numéricas con `procedure(f_...) :: func` → los
   llamadores pasan **procedimientos internos** (closures). El linker ya avisa de stack
   ejecutable en `muscle_yield_base.f90.o` por los trampolines. Incompatible con GPU.
-- `muscle_math_linsolvers`: LAPACK/MKL con `real(8)` y arrays `allocatable`.
-- `muscle_math_lu_inverse.inc`: LU propia vía `include` → reutilizable para GPU.
+- `muscle_math_linsolvers`: LAPACK/MKL con arrays `allocatable` (`real(8)` → `real(dp)` en la Fase 1).
+- `muscle_math_lu_inverse.inc`: LU propia vía `include` → reutilizable para GPU (Fase 1: macro FYPP `muscle_math_lu_inverse.fypp`).
 
 **Modelos** (elasticidad, plasticidad, viscoelasticidad, cinemática)
 - Todo cuelga de tipos abstractos con bindings `deferred`: `Base_elasticity`,
@@ -49,7 +49,7 @@ Versiones `closest_point`, `_2`, `_time`, `_perzyna`, `cutting_plane` + un `*.f9
 include/muscle_common.fypp         REAL_KINDS, DIMS, macros de nombres, @:DEVICE(), registro de modelos
 tools/fypp/muscle_meta.py          Layouts de tensores (índices, pesos, etiquetas) + helpers de expresiones
 cmake/MuscleFypp.cmake             muscle_add_fypp_sources(), add_muscle_fypp_test()
-src/kinds/muscle_kinds.f90         sp, dp, tolerancias por kind
+src/common/muscle_kinds.fypp       sp, dp, tolerancias y EPS_ABS por kind
 src/tensors/types/*.fypp           Un template por familia (2Osym, 2O, 4O3sym, 4O2sym, 4O, iden_*) × DIMS × KINDS
 src/tensors/operators/*.fypp       Operadores generados desde tablas de pares de tipos
 src/tensors/muscle_tensors.f90     Fachada: re-exporta *_sp, *_dp y alias históricos (= dp)
@@ -100,13 +100,33 @@ anotar la fecha/commit.
 - **Salida**: build idéntico + infraestructura FYPP funcionando; todos los tests en verde.
 
 ### Fase 1 — Kinds y utilidades comunes
-- [ ] `muscle_kinds` (`sp`, `dp`, tolerancias por kind) y reemplazo de `real(8)` (15 usos) en el código existente.
-- [ ] `tools/fypp/muscle_meta.py` con los layouts de **todos** los tipos actuales copiados
-      exactamente de los `.f90` (+ test Python que verifica índices/pesos).
-- [ ] `muscle_test_utils` genérico en kind (plantilla) — necesario para tests `sp`.
-- [ ] `muscle_math_inverses` (M33INV, LU) genérico en kind.
-- [ ] Al cerrar la fase: extender la regla `kind` de `tools/check.sh` a todos los `.f90`
-      (que no vuelvan los `real(8)`).
+- [x] `src/common/muscle_kinds.fypp` (`sp`, `dp`, `TOL_APPROX_sp = 1e-5`, `TOL_APPROX_dp = 1e-12`);
+      `real(8)` → `real(dp)` en `muscle_math_linsolvers` y tests de OpenMP (en
+      `test_muscle_openmp.f90`, `real64`: el test tiene una variable `dp`). (2026-10-28)
+- [x] `tools/fypp/muscle_meta.py`: `layout(family, dim)` para los 10 tipos (los 4º orden se
+      derivan de los de 2º orden con la regla de cada familia). Tests: Python
+      (`tools-muscle_meta`, órdenes copiados de los `init2`) y Fortran generado
+      (`tensors-types-layouts`, contra `init`/`get` de los tipos actuales, con prueba de
+      mutación). Sin discrepancias. Los pesos de corte se añaden en la Fase 2. (2026-10-28)
+- [x] `tests/common/muscle_test_utils.fypp`: `check_approx` real en todos los kinds; checks de
+      tensores generados desde el layout (etiquetas `xxyz` en vez de `xx:yz` para 4º orden). (2026-10-28)
+- [x] Revisión independiente: aprobada con cambios menores, aplicados — consultas de layout
+      para la Fase 2 (`Layout.index`, `Comp.mult`, `Comp.voigt`, `Layout.base`, con tests),
+      `EPS_ABS_<k>` en `muscle_kinds`, `DIMS`/`FAMILIES` desde `muscle_meta`, tests de contrato
+      de inversas también en dp, fypp sin bytecode en el árbol fuente, D-010. (2026-10-28)
+- [x] `src/math/muscle_math_inverses.fypp` + `muscle_math_lu_inverse.fypp` (macro): rutinas
+      `_sp`/`_dp` con genéricos de nombre histórico; `QUIET_NAN` genérico = `dp`. (2026-10-28)
+- [x] Tests `sp` de las inversas: `test_muscle_math_inverses.fypp` (instancia dp idéntica a la
+      original; sp con tolerancias κ·ε, Hilbert sólo n=3,4, escalado 1e-12/1e+11, grupos nuevos
+      `KAPPA` opcional y respaldo LU con matrices u·vᵀ+2⁻ᵖI). Umbral `ADJ_KAPPA_MAX_sp = 1e3`
+      validado con 30k matrices aleatorias por kind: el adjunto en sp se comporta como en dp
+      (error/(κε) ≤ 0.13 medio, ≈4–10 máx. hasta κ≈1e3). (2026-10-28)
+- [x] Regla `legacy-kind` de `tools/check.sh` en todos los `.f90` (sin `real(8)`, `real*8`,
+      `kind=8`). (2026-10-28)
+- Hallazgos para la Fase 2–3: tolerancias por defecto de `is_approx` distintas por tipo
+  (`1e-12`, pero `1e-8` en `4O2sym`) y escritas como literal real por defecto (`1E-12` es
+  `real32` ≈ 9.9999998e-13): al templar, usar `1.0e-12_dp` cambia el umbral en ~2e-8 relativo
+  (registrar en DECISIONES al migrar). `EPS_ABS=1e-30` también es literal por defecto.
 - **Salida**: sin cambios de comportamiento; todos los tests en verde.
 
 ### Fase 2 — Piloto: tensores simétricos de 2º orden
@@ -168,6 +188,8 @@ Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yi
 - [ ] Instalar los compiladores de offload de gfortran (paquetes `gcc-15-offload-nvptx` /
       `gcc-15-offload-amdgcn`): gfortran 15.2 está configurado con offload pero faltan los backends.
 - [ ] `@:DEVICE()` expande a la directiva correspondiente.
+- [ ] Verificar `ieee_value` (usado por `QUIET_NAN_<k>`) en offload nvptx/amdgcn/spir64; si no
+      está soportado, generar el NaN con `transfer` de un patrón de bits.
 - [ ] Test/benchmark: N puntos de integración en un `parallel loop` en GPU vs CPU.
 - [ ] Prototipo FFT → MUSCLE → iFFT (cuFFT primero) con datos residentes: medir tráfico
       host↔device (sólo escalares) y rendimiento por vóxel; registros/spills por kernel.
@@ -207,3 +229,4 @@ Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yi
 | 2026-10-28 | D-007 aceptada, D-008 (materiales declarados, API por lotes GPU) | — (sin commit) | CLAUDE.md en .gitignore |
 | 2026-10-28 | Actualización desde `origin/dev` (`db0bc91`, +21 commits) | `fypp/f0-infra` | Nuevos: vp `chaboche`, viscoelástico `kelvin`; línea base 60/60 |
 | 2026-10-28 | Fase 0 completa (infra FYPP, check.sh, agentes, limpieza) | `fypp/f0-infra` (sin commit) | 61/61; revisión aplicada; D-001 y D-009 aceptadas |
+| 2026-10-28 | Fase 1 completa (kinds, layouts, test utils, inversas sp/dp) | `fypp/f1-kinds` (sin commit) | 63/63 (sp;dp y sólo dp); revisión aplicada; D-010 |

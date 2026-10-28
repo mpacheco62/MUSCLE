@@ -1,0 +1,279 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_test_utils
+    !! Assertions shared by the unit tests.
+    !!
+    !! Every check receives the accumulated `passed` flag, a label naming the operation under
+    !! test, the obtained value and the expected one. The flag is AND-ed with the result, so a
+    !! test can run all of its checks and report every failure instead of stopping at the first.
+    !!
+    !! On failure the check prints the label, the acceptance criterion with its numeric
+    !! threshold, and one line per component outside the tolerance with the obtained value,
+    !! the expected value and the absolute and relative differences:
+    !!
+    !! ```text
+    !!  FAIL: a + b [ten_2D2Osym]
+    !!    criterion: |got - expected| <= tol * scale = 1.00E-12 * 6.00E+00 = 6.00E-12
+    !!    scale = max(max|got|, max|expected|)
+    !!    1 of 4 component(s) outside tolerance:
+    !!    comp        got                       expected                  |diff|     |diff|/scale
+    !!    xy           2.000000000000000E+00     2.500000000000000E+00   5.00E-01   8.33E-02
+    !! ```
+    !!
+    !! Acceptance criteria:
+    !!
+    !! - Tensors: the verdict is the type's own `is_approx` (same default tolerance as
+    !!   `.approx.`), i.e. \( |a_I - b_I| \le tol \cdot \max(\max|a|, \max|b|, 10^{-30}) \).
+    !! - Real arrays: the same component-wise criterion; `tol = 0` means exact equality.
+    !! - Real scalars: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \) (absolute below 1,
+    !!   relative above); `tol = 0` means exact equality.
+    !!
+    !! Real checks exist for every kind in `MUSCLE_REAL_KINDS`; the default tolerance is that of
+    !! the kind (`TOL_APPROX_sp`/`TOL_APPROX_dp` of `muscle_kinds`). Tensor checks cover the
+    !! types that exist so far (double precision). Component labels come from the layout
+    !! metadata (`tools/fypp/muscle_meta.py`), e.g. `xy` or `xxyz`.
+    use, intrinsic :: iso_fortran_env, only : output_unit
+    use, intrinsic :: ieee_arithmetic, only : ieee_is_nan
+    use muscle_kinds, only : sp, dp, TOL_APPROX_sp, TOL_APPROX_dp, EPS_ABS_sp, EPS_ABS_dp
+    use muscle_tensors
+    implicit none
+    private
+
+    public :: check_approx, check_true
+
+#! Tensor types checked: every (family, dim), double precision only until the sp types exist.
+#:set TENSORS = [(fam, dim) for dim in DIMS for fam in FAMILIES]
+#:for k in REAL_KINDS
+    real(${k}$), parameter :: DEFAULT_TOL_${k}$ = TOL_APPROX_${k}$
+        !! Default relative tolerance for `real(${k}$)` values (same as `.approx.` for most tensor types).
+#:endfor
+    real(dp), parameter :: DEFAULT_TOL_4O2SYM = 1.0e-8_dp
+        !! Default tolerance of `.approx.` for the minor-symmetric 4th-order types.
+
+#:for fam, dim in TENSORS
+#:set comps = layout(fam, dim).comps
+    character(len=4), parameter :: NAMES_${dim}$${fam}$(${len(comps)}$) = [character(len=4) :: &
+        ${', '.join("'" + c.name + "'" for c in comps)}$]
+        !! Storage labels of `ten_${dim}$${fam}$` (column-major for matrix storage).
+#:endfor
+
+    interface check_approx
+        !! Approximate (or, with `tol = 0`, exact) comparison with a detailed failure report.
+#:for k in REAL_KINDS
+        module procedure check_real_${k}$
+        module procedure check_real_1d_${k}$
+        module procedure check_real_2d_${k}$
+#:endfor
+#:for fam, dim in TENSORS
+        module procedure check_${dim}$${fam}$
+#:endfor
+    end interface check_approx
+
+contains
+
+    subroutine check_true(passed, label, cond)
+        !! Checks a logical property (e.g. that two tensors are *not* approximately equal).
+        logical, intent(inout) :: passed
+            !! Accumulated test result; set to `.false.` if `cond` is false.
+        character(len=*), intent(in) :: label
+            !! Description of the property, printed on failure.
+        logical, intent(in) :: cond
+            !! Property to check.
+        if (.not. cond) then
+            print '(a)', ' FAIL: ' // label
+            print '(a)', '   expected condition evaluated to .false.'
+            flush(output_unit)
+        end if
+        passed = passed .and. cond
+    end subroutine check_true
+
+#:for k in REAL_KINDS
+    subroutine check_real_${k}$(passed, label, got, expected, tol)
+        !! Scalar `real(${k}$)` comparison: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \).
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got
+            !! Obtained value.
+        real(${k}$), intent(in) :: expected
+            !! Expected value.
+        real(${k}$), optional, intent(in) :: tol
+            !! Tolerance (default `DEFAULT_TOL_${k}$`; `0` = exact).
+        real(${k}$) :: t, scale, diff
+        logical :: ok
+
+        t = DEFAULT_TOL_${k}$
+        if (present(tol)) t = tol
+        scale = max(1.0_${k}$, abs(got), abs(expected))
+        diff = abs(got - expected)
+        ok = diff <= t*scale
+        if (.not. ok) then
+            print '(a)', ' FAIL: ' // label
+            call print_criterion_${k}$(t, scale, 'max(1, |got|, |expected|)')
+            print '(a)', '   got                       expected                  |diff|     |diff|/scale'
+            print '(3x, es24.15, 2x, es24.15, 2x, es9.2, 2x, es9.2)', got, expected, diff, diff/scale
+            flush(output_unit)
+        end if
+        passed = passed .and. ok
+    end subroutine check_real_${k}$
+
+    subroutine check_real_1d_${k}$(passed, label, got, expected, tol)
+        !! Component-wise comparison of two `real(${k}$)` vectors relative to their largest component.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got(:)
+            !! Obtained values.
+        real(${k}$), intent(in) :: expected(:)
+            !! Expected values (same size as `got`).
+        real(${k}$), optional, intent(in) :: tol
+            !! Relative tolerance (default `DEFAULT_TOL_${k}$`; `0` = exact).
+        real(${k}$) :: t
+        character(len=16) :: names(size(got))
+        integer :: i
+
+        t = DEFAULT_TOL_${k}$
+        if (present(tol)) t = tol
+        do i = 1, size(got)
+            write(names(i), '("(", i0, ")")') i
+        end do
+        call compare_${k}$(passed, label, got, expected, names, t)
+    end subroutine check_real_1d_${k}$
+
+    subroutine check_real_2d_${k}$(passed, label, got, expected, tol)
+        !! Component-wise comparison of two `real(${k}$)` matrices relative to their largest entry.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got(:,:)
+            !! Obtained values.
+        real(${k}$), intent(in) :: expected(:,:)
+            !! Expected values (same shape as `got`).
+        real(${k}$), optional, intent(in) :: tol
+            !! Relative tolerance (default `DEFAULT_TOL_${k}$`; `0` = exact).
+        real(${k}$) :: t
+        character(len=16) :: names(size(got))
+        integer :: i, j
+
+        t = DEFAULT_TOL_${k}$
+        if (present(tol)) t = tol
+        do j = 1, size(got, 2)
+            do i = 1, size(got, 1)
+                write(names(i + (j-1)*size(got, 1)), '("(", i0, ",", i0, ")")') i, j
+            end do
+        end do
+        call compare_${k}$(passed, label, reshape(got, [size(got)]), reshape(expected, [size(expected)]), &
+                     names, t)
+    end subroutine check_real_2d_${k}$
+
+#:endfor
+#:for fam, dim in TENSORS
+#:set tol_name = 'DEFAULT_TOL_4O2SYM' if fam == '4O2sym' else 'DEFAULT_TOL_dp'
+#:set n = len(layout(fam, dim).comps)
+    subroutine check_${dim}$${fam}$(passed, label, got, expected, tol)
+        !! Compares two `ten_${dim}$${fam}$` (verdict: `is_approx`).
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        type(ten_${dim}$${fam}$), intent(in) :: got
+            !! Obtained tensor.
+        type(ten_${dim}$${fam}$), intent(in) :: expected
+            !! Expected tensor.
+        real(dp), optional, intent(in) :: tol
+            !! Relative tolerance (default: that of `.approx.`, `${tol_name}$`).
+        real(dp) :: t
+        t = ${tol_name}$
+        if (present(tol)) t = tol
+        call report_dp(passed, label // ' [ten_${dim}$${fam}$]', got%is_approx(expected, tol=t), &
+                       reshape(got%vals, [${n}$]), reshape(expected%vals, [${n}$]), NAMES_${dim}$${fam}$, t)
+    end subroutine check_${dim}$${fam}$
+
+#:endfor
+    ! -------------------------------------------------------------------------
+    ! Private helpers
+    ! -------------------------------------------------------------------------
+
+#:for k in REAL_KINDS
+    subroutine compare_${k}$(passed, label, got, expected, names, tol)
+        !! Applies the component-wise relative criterion to `real(${k}$)` values and reports on failure.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got(:)
+            !! Obtained components.
+        real(${k}$), intent(in) :: expected(:)
+            !! Expected components.
+        character(len=*), intent(in) :: names(:)
+            !! Component labels.
+        real(${k}$), intent(in) :: tol
+            !! Relative tolerance.
+        real(${k}$) :: scale
+        scale = max(maxval(abs(got)), maxval(abs(expected)), EPS_ABS_${k}$)
+        call report_${k}$(passed, label, all(abs(got - expected) <= tol*scale), got, expected, names, tol)
+    end subroutine compare_${k}$
+
+    subroutine report_${k}$(passed, label, ok, got, expected, names, tol)
+        !! Updates `passed` and, if `ok` is false, prints the `real(${k}$)` components outside the tolerance.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        logical, intent(in) :: ok
+            !! Verdict of the comparison.
+        real(${k}$), intent(in) :: got(:)
+            !! Obtained components.
+        real(${k}$), intent(in) :: expected(:)
+            !! Expected components.
+        character(len=*), intent(in) :: names(:)
+            !! Component labels.
+        real(${k}$), intent(in) :: tol
+            !! Relative tolerance used for the verdict.
+        real(${k}$) :: scale, diff
+        integer :: i, n_bad
+        character(len=10) :: comp
+
+        passed = passed .and. ok
+        if (ok) return
+
+        scale = max(maxval(abs(got)), maxval(abs(expected)), EPS_ABS_${k}$)
+        n_bad = count(abs(got - expected) > tol*scale)
+        print '(a)', ' FAIL: ' // label
+        call print_criterion_${k}$(tol, scale, 'max(max|got|, max|expected|)')
+        if (any(ieee_is_nan(got)) .or. any(ieee_is_nan(expected))) then
+            print '(a)', '   (NaN present in the operands)'
+        end if
+        print '(3x, i0, a, i0, a)', n_bad, ' of ', size(got), ' component(s) outside tolerance:'
+        print '(a)', '   comp        got                       expected                  |diff|     |diff|/scale'
+        do i = 1, size(got)
+            diff = abs(got(i) - expected(i))
+            if (.not. (diff <= tol*scale)) then
+                comp = names(i)
+                print '(3x, a10, es24.15, 2x, es24.15, 2x, es9.2, 2x, es9.2)', &
+                    comp, got(i), expected(i), diff, diff/scale
+            end if
+        end do
+        flush(output_unit)
+    end subroutine report_${k}$
+
+    subroutine print_criterion_${k}$(tol, scale, scale_def)
+        !! Prints the acceptance criterion with its numeric threshold.
+        real(${k}$), intent(in) :: tol
+            !! Tolerance.
+        real(${k}$), intent(in) :: scale
+            !! Scale multiplying the tolerance.
+        character(len=*), intent(in) :: scale_def
+            !! Definition of the scale.
+        print '(a, es8.2, a, es8.2, a, es8.2)', &
+            '   criterion: |got - expected| <= tol * scale = ', tol, ' * ', scale, ' = ', tol*scale
+        print '(a)', '   scale = ' // scale_def
+    end subroutine print_criterion_${k}$
+
+#:endfor
+end module muscle_test_utils

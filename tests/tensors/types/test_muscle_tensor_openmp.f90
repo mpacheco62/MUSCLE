@@ -24,6 +24,7 @@ end program test_muscle_tensor_openmp
 
 subroutine test_openmp_tensor_ops(passed)
     use omp_lib
+    use muscle_kinds, only: dp
     use muscle_tensors
     implicit none
 
@@ -33,12 +34,12 @@ subroutine test_openmp_tensor_ops(passed)
 
     type(ten_3D2Osym), allocatable :: a(:), b(:)
     type(ten_3D2Osym), allocatable :: dev_seq(:), dev_par(:)
-    real(8), allocatable           :: ddot_seq(:), ddot_par(:)
+    real(dp), allocatable          :: ddot_seq(:), ddot_par(:)
 
     type(ten_3D2Osym):: tmp_dev
 
     integer :: i
-    real(8) :: t_start, t_seq, t_par, hydro
+    real(dp) :: t_start, t_seq, t_par, hydro
 
     passed = .FALSE.
 

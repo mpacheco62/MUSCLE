@@ -33,6 +33,7 @@ end program test_muscle_elasticity_linear_openmp
 ! =========================================================================
 subroutine test_openmp_elasticity_linear_shared(passed)
     use omp_lib
+    use muscle_kinds, only: dp
     use muscle_tensors
     use muscle_elasticity_linear
     implicit none
@@ -48,7 +49,7 @@ subroutine test_openmp_elasticity_linear_shared(passed)
 
     type(Elasticity_linear) :: elas
     integer :: i
-    real(8) :: t_start, t_seq, t_par
+    real(dp) :: t_start, t_seq, t_par
 
     passed = .FALSE.
 
@@ -117,6 +118,7 @@ end subroutine test_openmp_elasticity_linear_shared
 ! =========================================================================
 subroutine test_openmp_elasticity_linear_private(passed)
     use omp_lib
+    use muscle_kinds, only: dp
     use muscle_tensors
     use muscle_elasticity_linear
     implicit none
@@ -131,7 +133,7 @@ subroutine test_openmp_elasticity_linear_private(passed)
 
     type(Elasticity_linear) :: elas, elas_loc
     integer :: i
-    real(8) :: t_start, t_seq, t_par
+    real(dp) :: t_start, t_seq, t_par
 
     passed = .FALSE.
 

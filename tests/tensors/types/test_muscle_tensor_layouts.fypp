@@ -1,0 +1,149 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Tensor types whose `init` has a keyword per stored component (init2_*).
+#:set NAMED = [(d, f) for d in DIMS for f in ['2O', '2Osym', '4O2sym', '4O3sym']]
+#! General 4th-order types: `init(C4(3,3,3,3))` and `get(i,j,k,l)`.
+#:set FULL = [(d, '4O') for d in DIMS]
+#:set ALL = NAMED + FULL
+#!
+#! Fortran literal list of the integers in `seqs` (flattened), e.g. [(1, 2), (3, 4)] -> 1, 2, 3, 4
+#:def ints(seqs)
+${', '.join(str(i) for s in seqs for i in s)}$
+#:enddef
+#!
+#! Fortran literal list of the component names (the type-spec of the array constructor pads them)
+#:def names(comps)
+${', '.join("'{}'".format(c.name) for c in comps)}$
+#:enddef
+
+program test_muscle_tensor_layouts
+    !! Independent Fortran oracle of the storage layouts in `tools/fypp/muscle_meta.py` (D-004).
+    !!
+    !! For every tensor type ten_{3D,2D}{2O,2Osym,4O,4O2sym,4O3sym} (current dp types, used
+    !! through `muscle_tensors`) and every component `c` of `layout(family, dim)`:
+    !!
+    !! - types with a named-component `init`: `init` is called with every keyword set to 0
+    !!   except `c%name` = 1, and `vals` must be the unit array at `c%pos`;
+    !! - general 4th-order types: `init(C4)` with `C4` = 1 only at `c%idx` must give the unit
+    !!   array at `c%pos`, and `get(c%idx)` must return 1. Index quadruples not in the layout
+    !!   (2D out-of-plane couplings) must be discarded by `init` and read as 0 by `get`.
+    !!
+    !! All values are 0 or 1, so the comparisons are exact (tol = 0).
+    !! The calls and the expected positions are generated from muscle_meta by FYPP.
+    use muscle_tensors
+    implicit none
+    logical :: passed
+
+#:for n, df in enumerate(ALL, start=1)
+#:set d, f = df
+    call test_layout_${d}$${f}$(passed)
+    if (.not. passed) STOP ${n}$
+
+#:endfor
+    print *, "Passed!"
+    STOP 0
+
+contains
+
+#:for d, f in NAMED
+#:set L = layout(f, d)
+#:set N = len(L.comps)
+#:set R = len(L.shape)
+    subroutine test_layout_${d}$${f}$(passed)
+        !! `init` with keywords on ten_${d}$${f}$: each component lands at its layout position.
+        use muscle_kinds, only: dp
+        use muscle_test_utils
+        implicit none
+        logical, intent(out) :: passed
+        integer, parameter :: N = ${N}$
+            !! Number of stored components.
+        character(len=4), parameter :: names(N) = [character(len=4) :: ${names(L.comps)}$]
+            !! Component names (init keywords), in layout order.
+        integer, parameter :: pos(${R}$, N) = reshape([${ints(c.pos for c in L.comps)}$], [${R}$, N])
+            !! Storage position in `vals` of each component, from muscle_meta.
+        type(ten_${d}$${f}$) :: t
+        real(dp) :: e(N)
+        real(dp) :: expected(${', '.join(str(s) for s in L.shape)}$)
+        integer :: ic
+
+        passed = .true.
+        call check_true(passed, 'ten_${d}$${f}$: shape(vals) matches layout', &
+                        all(shape(t%vals) == [${', '.join(str(s) for s in L.shape)}$]))
+        do ic = 1, N
+            e = 0.0_dp
+            e(ic) = 1.0_dp
+            call t%init(${', '.join('{}=e({})'.format(c.name, i) for i, c in enumerate(L.comps, start=1))}$)
+            expected = 0.0_dp
+#:if R == 1
+            expected(pos(1, ic)) = 1.0_dp
+#:else
+            expected(pos(1, ic), pos(2, ic)) = 1.0_dp
+#:endif
+            call check_approx(passed, 'ten_${d}$${f}$: init(' // trim(names(ic)) // '=1) -> vals unit at layout pos', &
+                              t%vals, expected, tol=0.0_dp)
+        end do
+    end subroutine test_layout_${d}$${f}$
+
+#:endfor
+#:for d, f in FULL
+#:set L = layout(f, d)
+#:set N = len(L.comps)
+    subroutine test_layout_${d}$${f}$(passed)
+        !! `init(C4)` / `get` on ten_${d}$${f}$: each C_ijkl lands at its layout position.
+        use muscle_kinds, only: dp
+        use muscle_test_utils
+        implicit none
+        logical, intent(out) :: passed
+        integer, parameter :: N = ${N}$
+            !! Number of stored components.
+        integer, parameter :: idx(4, N) = reshape([${ints(c.idx for c in L.comps)}$], [4, N])
+            !! Tensor indices (i,j,k,l) of each component, from muscle_meta.
+        integer, parameter :: pos(2, N) = reshape([${ints(c.pos for c in L.comps)}$], [2, N])
+            !! Storage position (row, column) in `vals` of each component, from muscle_meta.
+        type(ten_${d}$${f}$) :: t
+        real(dp) :: C4(3, 3, 3, 3)
+        real(dp) :: expected(${', '.join(str(s) for s in L.shape)}$)
+        character(len=64) :: label
+        integer :: ic, i, j, k, l
+
+        passed = .true.
+        call check_true(passed, 'ten_${d}$${f}$: shape(vals) matches layout', &
+                        all(shape(t%vals) == [${', '.join(str(s) for s in L.shape)}$]))
+        do ic = 1, N
+            write(label, '("ten_${d}$${f}$: C(", 3(i0, ","), i0, ")")') idx(:, ic)
+            C4 = 0.0_dp
+            C4(idx(1, ic), idx(2, ic), idx(3, ic), idx(4, ic)) = 1.0_dp
+            call t%init(C4)
+            expected = 0.0_dp
+            expected(pos(1, ic), pos(2, ic)) = 1.0_dp
+            call check_approx(passed, trim(label) // ' = 1: init(C4) -> vals unit at layout pos', &
+                              t%vals, expected, tol=0.0_dp)
+            call check_approx(passed, trim(label) // ' = 1: get', &
+                              t%get(idx(1, ic), idx(2, ic), idx(3, ic), idx(4, ic)), 1.0_dp, tol=0.0_dp)
+        end do
+
+        ! Index quadruples outside the layout (none in 3D): discarded by init, read as 0 by get
+        expected = 0.0_dp
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        if (any(idx(1, :) == i .and. idx(2, :) == j .and. &
+                                idx(3, :) == k .and. idx(4, :) == l)) cycle
+                        write(label, '("ten_${d}$${f}$: C(", 3(i0, ","), i0, ")")') i, j, k, l
+                        C4 = 0.0_dp
+                        C4(i, j, k, l) = 1.0_dp
+                        call t%init(C4)
+                        call check_approx(passed, trim(label) // ' = 1 (not stored): init(C4) -> vals = 0', &
+                                          t%vals, expected, tol=0.0_dp)
+                        call check_approx(passed, trim(label) // ' = 1 (not stored): get', &
+                                          t%get(i, j, k, l), 0.0_dp, tol=0.0_dp)
+                    end do
+                end do
+            end do
+        end do
+    end subroutine test_layout_${d}$${f}$
+
+#:endfor
+end program test_muscle_tensor_layouts

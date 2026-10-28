@@ -37,7 +37,8 @@ endif()
 
 
 # Shared assertions (check_approx, check_true) used by the tests
-add_library(muscle_test_utils STATIC common/muscle_test_utils.f90)
+muscle_fypp_preprocess(MUSCLE_TEST_UTILS_SRC common/muscle_test_utils.fypp)
+add_library(muscle_test_utils STATIC ${MUSCLE_TEST_UTILS_SRC})
 target_link_libraries(muscle_test_utils PUBLIC muscle PRIVATE compile_options)
 set_target_properties(muscle_test_utils PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/tests)
 target_include_directories(muscle_test_utils PUBLIC ${CMAKE_BINARY_DIR}/modules/tests)
@@ -93,5 +94,6 @@ add_subdirectory(elasticity)
 add_subdirectory(viscoelasticity)
 add_subdirectory(plasticity)
 add_subdirectory(solvers)
+add_subdirectory(tools)
 
 
