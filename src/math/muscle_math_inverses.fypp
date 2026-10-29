@@ -60,6 +60,7 @@ module muscle_math_inverses
         !! `ten_3D4O2sym`.
         !!
         implicit none
+        @:DEVICE()
         integer, parameter :: N = 6
         REAL(${k}$), INTENT(IN)  :: A(N,N)
             !! Matrix to be inverted.
@@ -74,6 +75,7 @@ module muscle_math_inverses
         !! Inverse of a general 9x9 matrix by LU with partial pivoting in plain Fortran (algorithm of
         !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_inverse.fypp`). Used by `ten_3D4O`.
         implicit none
+        @:DEVICE()
         integer, parameter :: N = 9
         REAL(${k}$), INTENT(IN)  :: A(N,N)
             !! Matrix to be inverted.
@@ -94,6 +96,7 @@ module muscle_math_inverses
         !! `ieee_value` directly in the inverse routines made every inverse ~150 ns slower.
         use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan
         implicit none
+        @:DEVICE()
         REAL(${k}$) :: X
             !! Quiet NaN.
         X = ieee_value(1.0_${k}$, ieee_quiet_nan)
@@ -104,6 +107,7 @@ module muscle_math_inverses
         !! \( \kappa_\infty = \|A\|_\infty \|A^{-1}\|_\infty \) (maximum absolute row sums), from a
         !! matrix and its computed inverse. Costs \( 2n^2 \) operations.
         implicit none
+        @:DEVICE()
         REAL(${k}$), INTENT(IN) :: A(:,:)
             !! Matrix.
         REAL(${k}$), INTENT(IN) :: AINV(:,:)
@@ -123,6 +127,7 @@ module muscle_math_inverses
         !! recomputed by LU with partial pivoting.
         !!
         implicit none
+        @:DEVICE()
         REAL(${k}$), INTENT(IN)  :: A(3,3)
             !! Matrix to be inverted.
         REAL(${k}$), INTENT(OUT) :: AINV(3,3)
@@ -174,6 +179,7 @@ module muscle_math_inverses
         !! `ten_2D4O3sym` / `ten_2D4O2sym`).
         !!
         implicit none
+        @:DEVICE()
         REAL(${k}$), INTENT(IN)  :: A(4,4)
             !! Matrix to be inverted.
         REAL(${k}$), INTENT(OUT) :: AINV(4,4)
@@ -238,6 +244,7 @@ module muscle_math_inverses
     PURE SUBROUTINE lu_inv3_${k}$(A, AINV, OK_FLAG)
         !! 3x3 LU inverse (fallback of `M33INV`), see `muscle_math_lu_inverse.fypp`.
         implicit none
+        @:DEVICE()
         integer, parameter :: N = 3
         REAL(${k}$), INTENT(IN)  :: A(N,N)
             !! Matrix to be inverted.
@@ -251,6 +258,7 @@ module muscle_math_inverses
     PURE SUBROUTINE lu_inv4_${k}$(A, AINV, OK_FLAG)
         !! 4x4 LU inverse (fallback of `M44INV`), see `muscle_math_lu_inverse.fypp`.
         implicit none
+        @:DEVICE()
         integer, parameter :: N = 4
         REAL(${k}$), INTENT(IN)  :: A(N,N)
             !! Matrix to be inverted.
@@ -265,6 +273,7 @@ module muscle_math_inverses
         !! Inverse of a general 5x5 matrix by LU with partial pivoting in plain Fortran (algorithm of
         !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_inverse.fypp`). Used by `ten_2D4O`.
         implicit none
+        @:DEVICE()
         integer, parameter :: N = 5
         REAL(${k}$), INTENT(IN)  :: A(N,N)
             !! Matrix to be inverted.

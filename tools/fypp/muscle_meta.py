@@ -44,6 +44,13 @@ FAMILIES = ('2O', '2Osym', '4O', '4O2sym', '4O3sym')
 _AXES = 'xyz'
 
 
+def join_terms(terms, op='+', indent=12):
+    """Joins Fortran terms with ``op``, one term per line (free-form continuation), so that long
+    expressions stay below the 132-column limit: ``join_terms(['a', 'b'])`` ->
+    ``'a &\n            + b'``."""
+    return ' &\n{}{} '.format(' ' * indent, op).join(terms)
+
+
 def tname(base, kind):
     """Name of the concrete tensor type: ``tname('3D2Osym', 'dp')`` -> ``'ten_3D2Osym_dp'``."""
     if kind not in KINDS:
@@ -74,6 +81,15 @@ class Layout(namedtuple('Layout', 'family dim shape comps base')):
         """Storage position of the tensor component ``idx`` or ``None`` if it is not stored
         (structural zero of a 2D type)."""
         return _index_of(self)[_canonical(self.family, idx)]
+
+    def ref(self, var, *idx, zero='0'):
+        """Fortran reference to the tensor component ``idx`` stored in the array ``var``, or
+        ``zero`` (a symbolic zero) if the component is not stored:
+        ``layout('2Osym', '2D').ref('a%vals', 1, 3, zero='0.0_dp')`` -> ``'0.0_dp'``."""
+        pos = self.index(*idx)
+        if pos is None:
+            return zero
+        return '{}({})'.format(var, ', '.join(str(p) for p in pos))
 
 
 def _name(*idx):

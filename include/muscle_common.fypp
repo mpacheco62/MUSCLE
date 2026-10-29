@@ -28,6 +28,16 @@
 #! layout('2Osym', '2D').comps -> [Comp(name='xx', pos=(1,), idx=(1, 1)), ...]
 #:set layout = muscle_meta.layout
 
+#! One expression term per line: ${join_terms(['a', 'b'])}$ -> a &\n + b (keeps lines <= 132)
+#:set join_terms = muscle_meta.join_terms
+
+#! Comma-separated specific procedure names of a generic, one per dimension and kind of a family.
+#! Placeholders: {0} = dimension + family, {1} = kind (the kind goes last, once):
+#! ${specifics('ddot_{0}_{0}_{1}', '2Osym')}$ -> ddot_3D2Osym_3D2Osym_sp, ddot_3D2Osym_3D2Osym_dp, ...
+#:def specifics(fmt, family)
+${', '.join(fmt.format(d + family, k) for d in DIMS for k in REAL_KINDS)}$
+#:enddef
+
 #! Marks a procedure as callable from OpenMP target regions. Expands to nothing unless the
 #! build defines MUSCLE_GPU (Phase 8). Use `@:DEVICE()` instead of writing the directive.
 #:def DEVICE()

@@ -18,7 +18,7 @@ generar con script Python propio (reinventar FYPP).
 **Consecuencias:** FYPP pasa a ser dependencia de build.
 
 ## D-002 — Un tipo por kind con sufijo `_sp`/`_dp`
-**Estado:** Propuesta
+**Estado:** Aceptada (2026-10-29, implementada en el piloto de la Fase 2)
 **Contexto:** Fortran no tiene genéricos de tipo; los PDT (`type :: t(k)`) tienen bugs en
 gfortran y soporte incierto en compiladores GPU.
 **Decisión:** Tipos concretos `ten_3D2Osym_sp` / `ten_3D2Osym_dp`, procedimientos con sufijo,
@@ -26,7 +26,7 @@ genéricos que agrupan ambos.
 **Consecuencias:** Más símbolos; resolución de genéricos por kind; sin coste en tiempo de ejecución.
 
 ## D-003 — Nombres históricos = doble precisión
-**Estado:** Propuesta
+**Estado:** Aceptada (2026-10-29, implementada en el piloto de la Fase 2; mecanismo en D-011)
 **Decisión:** `muscle_tensors` re-exporta `ten_3D2Osym => ten_3D2Osym_dp` (y así para
 todos los tipos). Tests y código de usuario existentes compilan sin cambios.
 
@@ -172,5 +172,38 @@ los interruptores de build (`USE_MKL`, `ENABLE_UDTIO`) llegan a fypp vía
   kind, el adjunto en sp degrada igual que en dp en unidades de κ·ε.
 - `QUIET_NAN` (sin argumentos) sólo puede ser genérico de un específico: es el `dp`; las
   plantillas llaman `QUIET_NAN_<k>`.
-**Pendiente (Fase 2–3):** tolerancia por defecto de `4O2sym` (hoy `1e-8` en dp) y paso de los
-literales `1E-12` de kind por defecto (≈9.9999998e-13) a `1.0e-12_dp` en `is_approx`.
+**Resuelto en D-011:** `is_approx` usa `1.0e-12_dp` (antes literal real32 ≈9.9999998e-13).
+**Pendiente (Fase 3):** tolerancia por defecto de `4O2sym` (hoy `1e-8` en dp).
+
+## D-011 — Patrón de las plantillas de tipos (piloto 2Osym)
+**Estado:** Aceptada (2026-10-29, punto de control de la Fase 2 con el usuario; incluye los
+cambios de comportamiento listados abajo)
+**Decisión:** lo que copiarán los demás tipos (Fase 3) y operadores (Fase 4):
+1. **Un módulo por familia** (`muscle_tensor_2osym`) con todas las dims × kinds de esa familia,
+   generado desde `layout(familia, dim)`. Lo que es genuinamente distinto por dimensión y
+   cuyos bits importan (`square`, `det`) se escribe explícito en `#:if d == ...`.
+2. **Operaciones como procedimientos libres con `type`** marcados `@:DEVICE()`; genéricos
+   públicos del módulo de familia (`norm`, `det`, `square`, `is_approx`, `inverse`, operadores).
+   Los genéricos con nombre de función **no** se re-exportan en `muscle_tensors` (evita chocar
+   con variables `norm`/`det` del usuario); los kernels los importan del módulo de familia
+   (`use muscle_tensor_2osym, only: norm, det`). **Decisión del usuario (2026-10-29):** esto
+   ahora, y al terminar las familias (Fase 3–4) se crea `muscle_tensor_functions`, que reúne las
+   funciones libres de todas las familias en un solo `use` (fuera de `muscle_tensors`).
+3. **Type-bound procedures = envoltorios `*_tbp` con `class`** (Fortran exige `class` en el
+   passed-object), sólo para la API histórica; `init` y accesores (`%xx()`) sólo existen así.
+   Ningún operador ni kernel llama a un procedimiento con `class` (con `class` gfortran pasa
+   un contenedor con puntero a vtab). `tools/check.sh` lo verifica (reglas `oop`, `device`).
+4. **Nombres específicos:** operación + tipos + kind al final, una vez:
+   `ddot_3D2Osym_3D2Osym_dp`, `mul_3D2Osym_real_dp`; listas con la macro `specifics()`.
+5. **Compatibilidad:** `muscle_tensor_3d2osym` / `muscle_tensor_2d2osym` (`.f90`) re-exportan
+   `ten_3D2Osym => ten_3D2Osym_dp` y los operadores; se borran en la Fase 4, cuando los
+   operadores usen el módulo de familia. `muscle_tensors` (`.fypp`) exporta además `_sp/_dp`.
+6. **Salida formateada (UDTIO)** en `muscle_tensor_io` (host-only), generada del layout; opción
+   CMake `MUSCLE_UDTIO=AUTO|ON|OFF` y `tools/check.sh` compila el camino `ON`.
+**Cambios de comportamiento (verificados bit a bit, 200k entradas/operación, -O0/-O2/-O3):**
+- `is_approx`/`.approx.`: umbral `1.0e-12_dp` y `EPS_ABS = 1.0e-30_dp` (antes literales real32);
+  sólo cambia el veredicto en el borde exacto del umbral (aprobado por el usuario).
+- Inversa 3D: la diagonal ya no pasa por `0.5*(x + x)`: idéntica salvo |x_ii| > huge/2, donde
+  antes daba Inf y ahora el valor correcto (como ya hacía la 2D).
+- UDTIO 3D modo lista: orden de almacenamiento (`… xy, yz, xz`); antes `… xy, xz, yz`.
+Resto de operaciones: idénticas bit a bit. Benchmark `closest_point` Release: sin cambio.

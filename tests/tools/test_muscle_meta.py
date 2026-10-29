@@ -152,5 +152,18 @@ class TestQueries(unittest.TestCase):
                         self.assertEqual(c.voigt, c.pos)
 
 
+class TestHelpers(unittest.TestCase):
+
+    def test_ref(self):
+        lay = mm.layout('2Osym', '2D')
+        self.assertEqual(lay.ref('a%vals', 2, 1), 'a%vals(4)')
+        self.assertEqual(lay.ref('a%vals', 1, 3, zero='0.0_dp'), '0.0_dp')
+        self.assertEqual(mm.layout('4O2sym', '3D').ref('c', 1, 2, 3, 3), 'c(4, 3)')
+
+    def test_join_terms(self):
+        self.assertEqual(mm.join_terms(['a', 'b', 'c'], indent=4), 'a &\n    + b &\n    + c')
+        self.assertEqual(mm.join_terms(['x']), 'x')
+
+
 if __name__ == '__main__':
     unittest.main()

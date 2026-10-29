@@ -1,0 +1,887 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Relative tolerance for results that carry rounding error, per kind (see the module doc).
+#:set TOL = {'sp': '1.0e-5', 'dp': '1.0e-12'}
+#:set L3 = layout('2Osym', '3D')
+#:set L2 = layout('2Osym', '2D')
+#! Voigt order of the 6-value input vectors of sym_mat: (xx, yy, zz, xy, yz, xz)
+#:set ORDER6 = [(1, 1), (2, 2), (3, 3), (1, 2), (2, 3), (1, 3)]
+
+module test_2osym_kinds_lib
+    !! Helpers of `test_muscle_tensor_2osym_kinds`: conversions between `ten_<d>2Osym_<k>` and
+    !! full 3x3 matrices, double precision reference operations written on the 3x3 matrix
+    !! (independent of the Voigt formulas of the module under test), a deterministic random
+    !! generator and the 2D -> 3D embedding.
+    !!
+    !! Tolerances (`TOL_<k>`):
+    !!
+    !! - Operations that are exact for the inputs (component-wise `+ - * /`, accessors,
+    !!   `init`, assignment, and every operation on the small dyadic data set) use `tol = 0`.
+    !! - Operations with rounding are compared with a double precision reference computed from
+    !!   the same (exactly converted) inputs. They are a few flops deep, so the error is a few
+    !!   ulp relative to the natural scale of the result (max component, sum of |terms| of
+    !!   `.ddot.`/`det`): `sp` 1e-5 (= TOL_APPROX_sp, ~84 ulp of epsilon(1.0_sp) = 1.19e-7),
+    !!   `dp` 1e-12 (= TOL_APPROX_dp, ~4500 ulp). Both leave a margin >= 10x.
+    !! - Inverse: the error grows with the condition number, so `TOL_<k> * kappa_inf` (the
+    !!   matrices are diagonally dominant, kappa < 10).
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_value, ieee_quiet_nan
+    use muscle_kinds, only: sp, dp
+    use muscle_tensors
+    use muscle_test_utils
+    implicit none
+    public
+
+#:for k in REAL_KINDS
+    real(${k}$), parameter :: TOL_${k}$ = ${TOL[k]}$_${k}$
+        !! Relative tolerance for `real(${k}$)` results with rounding (see the module doc).
+#:endfor
+    interface vv
+        !! `vv(expr)`: the `vals` array of a tensor expression (a component of a function result
+        !! cannot be selected directly).
+#:for k in REAL_KINDS
+#:for d in DIMS
+        module procedure vv_${tname(d + '2Osym', k)}$
+#:endfor
+#:endfor
+    end interface vv
+
+    integer, parameter :: i8 = selected_int_kind(18)
+        !! Integer kind of the random generator state.
+    integer(i8) :: rng_state = 20261028_i8
+        !! State of the Park-Miller generator (deterministic sequence).
+
+contains
+
+    function rnd() result(r)
+        !! Uniform pseudo-random number in (-1, 1) (Park-Miller minimal standard; no overflow in int64).
+        real(dp) :: r
+        rng_state = mod(48271_i8*rng_state, 2147483647_i8)
+        r = 2.0_dp*real(rng_state, dp)/2147483647.0_dp - 1.0_dp
+    end function rnd
+
+    function det_ref(r) result(res)
+        !! Determinant by the Leibniz formula (reference, double precision).
+        real(dp), intent(in) :: r(3,3)
+            !! Matrix.
+        real(dp) :: res
+            !! Determinant.
+        res = r(1,1)*r(2,2)*r(3,3) + r(1,2)*r(2,3)*r(3,1) + r(1,3)*r(2,1)*r(3,2) &
+            - r(1,3)*r(2,2)*r(3,1) - r(1,1)*r(2,3)*r(3,2) - r(1,2)*r(2,1)*r(3,3)
+    end function det_ref
+
+    function det_scale(r) result(res)
+        !! Sum of |terms| of the Leibniz formula: natural scale of the rounding error of a determinant.
+        real(dp), intent(in) :: r(3,3)
+            !! Matrix.
+        real(dp) :: res
+            !! Scale.
+        res = abs(r(1,1)*r(2,2)*r(3,3)) + abs(r(1,2)*r(2,3)*r(3,1)) + abs(r(1,3)*r(2,1)*r(3,2)) &
+            + abs(r(1,3)*r(2,2)*r(3,1)) + abs(r(1,1)*r(2,3)*r(3,2)) + abs(r(1,2)*r(2,1)*r(3,3))
+    end function det_scale
+
+    function inv_ref(r) result(x)
+        !! Inverse by Gauss-Jordan elimination with partial pivoting (reference, double precision).
+        real(dp), intent(in) :: r(3,3)
+            !! Regular matrix.
+        real(dp) :: x(3,3)
+            !! Inverse.
+        real(dp) :: w(3,6), t(6)
+        integer :: i, j, p
+        w = 0.0_dp
+        w(:, 1:3) = r
+        do i = 1, 3
+            w(i, 3 + i) = 1.0_dp
+        end do
+        do j = 1, 3
+            p = maxloc(abs(w(j:3, j)), 1) + j - 1
+            if (p /= j) then
+                t = w(j, :)
+                w(j, :) = w(p, :)
+                w(p, :) = t
+            end if
+            w(j, :) = w(j, :)/w(j, j)
+            do i = 1, 3
+                if (i /= j) w(i, :) = w(i, :) - w(i, j)*w(j, :)
+            end do
+        end do
+        x = w(:, 4:6)
+    end function inv_ref
+
+    function norm_inf(r) result(res)
+        !! Infinity norm (max row sum).
+        real(dp), intent(in) :: r(3,3)
+            !! Matrix.
+        real(dp) :: res
+            !! Norm.
+        res = maxval(sum(abs(r), dim=2))
+    end function norm_inf
+
+    function eye() result(r)
+        !! 3x3 identity.
+        real(dp) :: r(3,3)
+        integer :: i
+        r = 0.0_dp
+        do i = 1, 3
+            r(i, i) = 1.0_dp
+        end do
+    end function eye
+
+    subroutine check_scaled(passed, label, got, expected, scale, tol)
+        !! Scalar check with an explicit error scale: \( |got - expected| \le tol \cdot scale \).
+        logical, intent(inout) :: passed
+            !! Accumulated result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(dp), intent(in) :: got
+            !! Obtained value.
+        real(dp), intent(in) :: expected
+            !! Reference value.
+        real(dp), intent(in) :: scale
+            !! Natural scale of the rounding error.
+        real(dp), intent(in) :: tol
+            !! Relative tolerance.
+        logical :: ok
+        ok = abs(got - expected) <= tol*max(scale, tiny(1.0_dp))
+        if (.not. ok) then
+            print '(a)', ' FAIL: ' // label
+            print '(a, es24.15, a, es24.15)', '   got ', got, '  expected ', expected
+            print '(a, es9.2, a, es9.2, a, es9.2)', '   |diff| ', abs(got - expected), &
+                '  tol*scale ', tol*scale, '  scale ', scale
+        end if
+        passed = passed .and. ok
+    end subroutine check_scaled
+
+#:for k in REAL_KINDS
+#:for d in DIMS
+    function sym_mat_${d}$_${k}$(v) result(m)
+        !! Symmetric 3x3 matrix from (xx, yy, zz, xy, yz, xz)${'; yz and xz are dropped (2D)' if d == '2D' else ''}$.
+        real(${k}$), intent(in) :: v(6)
+            !! Components.
+        real(${k}$) :: m(3,3)
+        m = 0.0_${k}$
+#:for p, ij in enumerate(ORDER6, start=1)
+#:set i, j = ij
+#:if d == '3D' or ij not in [(2, 3), (1, 3)]
+        m(${i}$,${j}$) = v(${p}$)
+        m(${j}$,${i}$) = v(${p}$)
+#:endif
+#:endfor
+    end function sym_mat_${d}$_${k}$
+
+    function rand_mat_${d}$_${k}$(scale, shift) result(m)
+        !! Random symmetric ${d}$ matrix: entries uniform in (-scale, scale), plus shift*scale on
+        !! the diagonal (shift > 2 makes it diagonally dominant).
+        real(dp), intent(in) :: scale
+            !! Magnitude of the entries.
+        real(dp), intent(in) :: shift
+            !! Diagonal shift relative to `scale`.
+        real(${k}$) :: m(3,3)
+        real(dp) :: v(6)
+        integer :: i
+        do i = 1, 6
+            v(i) = scale*rnd()
+        end do
+        v(1:3) = v(1:3) + shift*scale
+        m = sym_mat_${d}$_${k}$(real(v, ${k}$))
+    end function rand_mat_${d}$_${k}$
+
+#:set L = layout('2Osym', d)
+#:set T = tname(d + '2Osym', k)
+    function to_mat_${T}$(t) result(m)
+        !! Full 3x3 matrix of a `${T}$` (storage positions from the layout metadata).
+        type(${T}$), intent(in) :: t
+            !! Tensor.
+        real(${k}$) :: m(3,3)
+#:for j in range(1, 4)
+#:for i in range(1, 4)
+        m(${i}$,${j}$) = ${L.ref('t%vals', i, j, zero='0.0_' + k)}$
+#:endfor
+#:endfor
+    end function to_mat_${T}$
+
+    function from_mat_${T}$(m) result(t)
+        !! `${T}$` from a symmetric 3x3 matrix, through `init` with named components.
+        real(${k}$), intent(in) :: m(3,3)
+            !! Symmetric matrix${' (13 = 23 = 0)' if d == '2D' else ''}$.
+        type(${T}$) :: t
+        call t%init(${', '.join('{}=m({},{})'.format(c.name, *c.idx) for c in L.comps)}$)
+    end function from_mat_${T}$
+
+    function vv_${T}$(t) result(v)
+        !! Stored components of a `${T}$`.
+        type(${T}$), intent(in) :: t
+            !! Tensor.
+        real(${k}$) :: v(${len(L.comps)}$)
+        v = t%vals
+    end function vv_${T}$
+
+    function voigt_${T}$(m) result(v)
+        !! Voigt array (${', '.join(c.name for c in L.comps)}$) of a symmetric 3x3 matrix.
+        real(${k}$), intent(in) :: m(3,3)
+            !! Symmetric matrix.
+        real(${k}$) :: v(${len(L.comps)}$)
+        v = [${', '.join('m({},{})'.format(*c.idx) for c in L.comps)}$]
+    end function voigt_${T}$
+
+#:endfor
+    function embed_${k}$(a) result(r)
+        !! Embeds a `${tname('2D2Osym', k)}$` into a `${tname('3D2Osym', k)}$` (yz = xz = 0).
+        type(${tname('2D2Osym', k)}$), intent(in) :: a
+            !! 2D tensor.
+        type(${tname('3D2Osym', k)}$) :: r
+        call r%init([${', '.join(L2.ref('a%vals', *c.idx, zero='0.0_' + k) for c in L3.comps)}$])
+    end function embed_${k}$
+
+#:endfor
+end module test_2osym_kinds_lib
+
+
+program test_muscle_tensor_2osym_kinds
+    !! `ten_3D2Osym_<k>` and `ten_2D2Osym_<k>` for every kind in `MUSCLE_REAL_KINDS`.
+    !!
+    !! 1. Every operation of the module (`init` by array and by name, accessors, assignment,
+    !!    `+ - * /`, unary `-`, `.dev.`, `.ddot.`, `square`, `norm`, `det`, `inverse`/`.inv.`/
+    !!    `%inv()` with `ok`/`cond`, singular, zero and NaN inputs, `is_approx`/`.approx.` with
+    !!    the default and an explicit tolerance) against references written on the full 3x3
+    !!    matrix: exact results on dyadic data, double precision references on random data at
+    !!    scales 1e-3, 1 and 1e3.
+    !! 2. 2D vs 3D (`.claude/rules/dims-2d-3d.md`): every operation evaluated on a 2D tensor and
+    !!    embedded in 3D equals the 3D operation on the embedded operands.
+    !!
+    !! The tolerances are documented in `test_2osym_kinds_lib`.
+    !! Every test subroutine runs (all failures are reported); the exit code is that of the
+    !! first failing one.
+    implicit none
+    logical :: passed
+    integer :: code
+
+    code = 0
+#:set n = 0
+#:for k in REAL_KINDS
+#:for d in DIMS
+#:for t in ['ops', 'inverse', 'approx']
+#:set n = n + 1
+    call test_${t}$_${d}$_${k}$(passed)
+    call record(passed, ${n}$, 'test_${t}$_${d}$_${k}$')
+#:endfor
+#:endfor
+#:set n = n + 1
+    call test_embed_${k}$(passed)
+    call record(passed, ${n}$, 'test_embed_${k}$')
+#:endfor
+    ! Added after the first version of the test: appended so the earlier exit codes keep
+    ! their meaning.
+#:set n = n + 1
+    call test_constants(passed)
+    call record(passed, ${n}$, 'test_constants')
+#:set n = n + 1
+    call test_historical_aliases(passed)
+    call record(passed, ${n}$, 'test_historical_aliases')
+#:for k in REAL_KINDS
+#:for d in DIMS
+#:set n = n + 1
+    call test_free_generics_${d}$_${k}$(passed)
+    call record(passed, ${n}$, 'test_free_generics_${d}$_${k}$')
+#:endfor
+#:endfor
+#:if defined('ENABLE_UDTIO')
+#:for k in REAL_KINDS
+#:for d in DIMS
+#:set n = n + 1
+    call test_udtio_${d}$_${k}$(passed)
+    call record(passed, ${n}$, 'test_udtio_${d}$_${k}$')
+#:endfor
+#:endfor
+#:else
+    print '(a)', ' UDTIO tests skipped (built without ENABLE_UDTIO)'
+#:endif
+    if (code /= 0) stop code
+
+    print *, "Passed!"
+    stop 0
+
+contains
+
+    subroutine record(passed, n, name)
+        !! Reports a failed test subroutine and keeps the first failure code.
+        logical, intent(in) :: passed
+            !! Result of the test subroutine.
+        integer, intent(in) :: n
+            !! Its exit code.
+        character(len=*), intent(in) :: name
+            !! Its name.
+        if (passed) return
+        print '(a, i0, a)', ' FAILED (', n, '): ' // name
+        if (code == 0) code = n
+    end subroutine record
+
+#:for k in REAL_KINDS
+#:for d in DIMS
+#:set L = layout('2Osym', d)
+#:set N = len(L.comps)
+#:set T = tname(d + '2Osym', k)
+    subroutine test_ops_${d}$_${k}$(passed)
+        !! Construction, accessors, assignment and the arithmetic of `${T}$`.
+        use test_2osym_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(dp), parameter :: TD = real(TOL_${k}$, dp)
+        type(${T}$) :: a, b, c
+        real(${k}$) :: ma(3,3), mb(3,3), s
+        real(dp) :: ra(3,3), rb(3,3), hydro
+        real(dp), parameter :: SCALES(3) = [1.0e-3_dp, 1.0_dp, 1.0e3_dp]
+        integer :: is, it
+        character(len=*), parameter :: TN = ' [${T}$]'
+
+        passed = .true.
+        call check_true(passed, 'size(vals) = ${N}$' // TN, size(a%vals) == ${N}$)
+
+        ! ---- Dyadic data (exact in every kind): every result is exact, tol = 0 -------------
+        ma = sym_mat_${d}$_${k}$([1.5_${k}$, -2.0_${k}$, 0.75_${k}$, 0.5_${k}$, -1.25_${k}$, 2.5_${k}$])
+        mb = sym_mat_${d}$_${k}$([-0.5_${k}$, 3.0_${k}$, 1.0_${k}$, -1.5_${k}$, 0.25_${k}$, 0.125_${k}$])
+        ra = real(ma, dp)
+        rb = real(mb, dp)
+
+        ! init with named components and with an array in Voigt order
+        a = from_mat_${T}$(ma)
+        call check_approx(passed, 'init(named) -> matrix' // TN, to_mat_${T}$(a), ma, tol=ZERO)
+        call b%init(voigt_${T}$(ma))
+        call check_approx(passed, 'init(array) == init(named)' // TN, b%vals, a%vals, tol=ZERO)
+#:for c in L.comps
+        call check_approx(passed, 'accessor ${c.name}$()' // TN, a%${c.name}$(), ma(${c.idx[0]}$,${c.idx[1]}$), tol=ZERO)
+#:endfor
+
+        ! assignment of a scalar to every stored component
+        c = 2.5_${k}$
+        call check_approx(passed, 'c = 2.5' // TN, c%vals, spread(2.5_${k}$, 1, ${N}$), tol=ZERO)
+        c = ZERO
+        call check_approx(passed, 'c = 0' // TN, c%vals, spread(ZERO, 1, ${N}$), tol=ZERO)
+
+        b = from_mat_${T}$(mb)
+        call check_approx(passed, 'a + b (dyadic)' // TN, to_mat_${T}$(a + b), ma + mb, tol=ZERO)
+        call check_approx(passed, 'a - b (dyadic)' // TN, to_mat_${T}$(a - b), ma - mb, tol=ZERO)
+        call check_approx(passed, '-a (dyadic)' // TN, to_mat_${T}$(-a), -ma, tol=ZERO)
+        call check_approx(passed, '1.5*a (dyadic)' // TN, to_mat_${T}$(1.5_${k}$*a), 1.5_${k}$*ma, tol=ZERO)
+        call check_approx(passed, 'a*1.5 (dyadic)' // TN, to_mat_${T}$(a*1.5_${k}$), 1.5_${k}$*ma, tol=ZERO)
+        call check_approx(passed, 'a/4 (dyadic)' // TN, to_mat_${T}$(a/4.0_${k}$), 0.25_${k}$*ma, tol=ZERO)
+        call check_approx(passed, '(a + b) - b (dyadic)' // TN, vv((a + b) - b), a%vals, tol=ZERO)
+        call check_approx(passed, 'a .ddot. b (dyadic)', real(a .ddot. b, dp), sum(ra*rb), tol=0.0_dp)
+        call check_approx(passed, 'a .ddot. a (dyadic)', real(a .ddot. a, dp), sum(ra*ra), tol=0.0_dp)
+        call check_approx(passed, 'norm(a) (dyadic)', real(a%norm(), dp), sum(abs(ra)), tol=0.0_dp)
+        call check_approx(passed, 'det(a) (dyadic)', real(a%det(), dp), det_ref(ra), tol=0.0_dp)
+        call check_approx(passed, 'det(b) (dyadic)', real(b%det(), dp), det_ref(rb), tol=0.0_dp)
+        call check_approx(passed, 'square(a) (dyadic)', real(to_mat_${T}$(a%square()), dp), &
+                          matmul(ra, ra), tol=0.0_dp)
+        ! dev: tr/3 is not exact -> rounding tolerance
+        hydro = (ra(1,1) + ra(2,2) + ra(3,3))/3.0_dp
+        call check_approx(passed, '.dev. a (dyadic)', real(to_mat_${T}$(.dev. a), dp), &
+                          ra - hydro*eye(), tol=TD)
+
+        ! ---- Random data (not representable) at several scales, double precision reference --
+        do is = 1, size(SCALES)
+            do it = 1, 20
+                ma = rand_mat_${d}$_${k}$(SCALES(is), 0.0_dp)
+                mb = rand_mat_${d}$_${k}$(SCALES(is), 0.0_dp)
+                s = real(0.5_dp + abs(rnd()), ${k}$)
+                ra = real(ma, dp)
+                rb = real(mb, dp)
+                a = from_mat_${T}$(ma)
+                b = from_mat_${T}$(mb)
+                ! Component-wise operations are one correctly rounded IEEE operation per
+                ! component: identical to the same operation on the matrix entries (tol = 0).
+                call check_approx(passed, 'a + b' // TN, to_mat_${T}$(a + b), ma + mb, tol=ZERO)
+                call check_approx(passed, 'a - b' // TN, to_mat_${T}$(a - b), ma - mb, tol=ZERO)
+                call check_approx(passed, '-a' // TN, to_mat_${T}$(-a), -ma, tol=ZERO)
+                call check_approx(passed, 's*a' // TN, to_mat_${T}$(s*a), s*ma, tol=ZERO)
+                call check_approx(passed, 'a*s' // TN, to_mat_${T}$(a*s), ma*s, tol=ZERO)
+                call check_approx(passed, 'a/s' // TN, to_mat_${T}$(a/s), ma/s, tol=ZERO)
+                ! A few flops: rounding relative to the natural scale of each result
+                call check_scaled(passed, 'a .ddot. b' // TN, real(a .ddot. b, dp), sum(ra*rb), &
+                                  sum(abs(ra*rb)), TD)
+                call check_scaled(passed, 'norm(a)' // TN, real(a%norm(), dp), sum(abs(ra)), &
+                                  sum(abs(ra)), TD)
+                call check_scaled(passed, 'det(a)' // TN, real(a%det(), dp), det_ref(ra), &
+                                  det_scale(ra), TD)
+                call check_approx(passed, 'square(a)' // TN, real(to_mat_${T}$(a%square()), dp), &
+                                  matmul(ra, ra), tol=TD)
+                hydro = (ra(1,1) + ra(2,2) + ra(3,3))/3.0_dp
+                call check_approx(passed, '.dev. a' // TN, real(to_mat_${T}$(.dev. a), dp), &
+                                  ra - hydro*eye(), tol=TD)
+                c = .dev. a
+                call check_scaled(passed, 'tr(.dev. a) = 0' // TN, real(c%xx() + c%yy() + c%zz(), dp), &
+                                  0.0_dp, maxval(abs(ra)), TD)
+            end do
+        end do
+    end subroutine test_ops_${d}$_${k}$
+
+    subroutine test_inverse_${d}$_${k}$(passed)
+        !! `call inverse(a, x, ok [, cond])`, `.inv.` and `%inv()` of `${T}$`.
+        use test_2osym_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(dp), parameter :: TD = real(TOL_${k}$, dp)
+        type(${T}$) :: a, x, y
+        real(${k}$) :: ma(3,3), cond, nan
+        real(dp) :: ra(3,3), ri(3,3), kap
+        real(dp), parameter :: SCALES(3) = [1.0e-3_dp, 1.0_dp, 1.0e3_dp]
+        logical :: ok
+        integer :: is, it
+        character(len=*), parameter :: TN = ' [${T}$]'
+
+        passed = .true.
+
+        ! ---- Exact inverse (entries and determinant powers of two) ----------------------
+#:if d == '3D'
+        ! [[2,1,1],[1,2,1],[1,1,2]]^-1 = [[3,-1,-1],[-1,3,-1],[-1,-1,3]]/4, kappa_inf = 4 * 5/4 = 5
+        ma = sym_mat_${d}$_${k}$([2.0_${k}$, 2.0_${k}$, 2.0_${k}$, 1.0_${k}$, 1.0_${k}$, 1.0_${k}$])
+        ri = 0.25_dp*real(sym_mat_${d}$_${k}$([3.0_${k}$, 3.0_${k}$, 3.0_${k}$, -1.0_${k}$, -1.0_${k}$, -1.0_${k}$]), dp)
+        kap = 5.0_dp
+#:else
+        ! [[2,1,0],[1,1,0],[0,0,4]]^-1 = [[1,-1,0],[-1,2,0],[0,0,1/4]], kappa_inf = 4 * 3 = 12
+        ma = sym_mat_${d}$_${k}$([2.0_${k}$, 1.0_${k}$, 4.0_${k}$, 1.0_${k}$, ZERO, ZERO])
+        ri = real(sym_mat_${d}$_${k}$([1.0_${k}$, 2.0_${k}$, 0.25_${k}$, -1.0_${k}$, ZERO, ZERO]), dp)
+        kap = 12.0_dp
+#:endif
+        a = from_mat_${T}$(ma)
+        call inverse(a, x, ok, cond)
+        call check_true(passed, 'inverse (exact): ok' // TN, ok)
+        call check_approx(passed, 'inverse (exact)' // TN, real(to_mat_${T}$(x), dp), ri, tol=0.0_dp)
+        call check_approx(passed, 'inverse (exact): cond' // TN, real(cond, dp), kap, tol=0.0_dp)
+        call check_approx(passed, '.inv. a == inverse (exact)' // TN, vv(.inv. a), x%vals, tol=ZERO)
+        call check_approx(passed, 'a%inv() == inverse (exact)' // TN, vv(a%inv()), x%vals, tol=ZERO)
+
+        ! ---- Random diagonally dominant tensors (kappa < 10) ----------------------------
+        do is = 1, size(SCALES)
+            do it = 1, 20
+                ma = rand_mat_${d}$_${k}$(SCALES(is), 4.0_dp)
+                ra = real(ma, dp)
+                ri = inv_ref(ra)
+                kap = norm_inf(ra)*norm_inf(ri)
+                a = from_mat_${T}$(ma)
+                call inverse(a, x, ok, cond)
+                call check_true(passed, 'inverse: ok' // TN, ok)
+                call check_approx(passed, 'inverse vs reference' // TN, real(to_mat_${T}$(x), dp), ri, &
+                                  tol=TD*kap)
+                call check_approx(passed, 'a . inverse(a) = I' // TN, &
+                                  matmul(ra, real(to_mat_${T}$(x), dp)), eye(), tol=TD*kap)
+                call check_scaled(passed, 'inverse: cond = kappa_inf' // TN, real(cond, dp), kap, kap, TD*kap)
+                call inverse(a, y, ok)
+                call check_true(passed, 'inverse without cond: ok' // TN, ok)
+                call check_approx(passed, 'inverse without cond' // TN, y%vals, x%vals, tol=ZERO)
+                call check_approx(passed, '.inv. a == inverse' // TN, vv(.inv. a), x%vals, tol=ZERO)
+                call check_approx(passed, 'a%inv() == inverse' // TN, vv(a%inv()), x%vals, tol=ZERO)
+            end do
+        end do
+
+        ! ---- Singular tensors: ok = .false., quiet NaN everywhere, cond = huge ----------
+        ! zz = 0 (singular in both dimensions), the zero tensor, and a rank-1 in-plane block
+        do it = 1, 3
+            select case (it)
+            case (1)
+                ma = sym_mat_${d}$_${k}$([1.0_${k}$, 1.0_${k}$, ZERO, ZERO, ZERO, ZERO])
+            case (2)
+                ma = ZERO
+            case (3)
+                ma = sym_mat_${d}$_${k}$([1.0_${k}$, 4.0_${k}$, 1.0_${k}$, 2.0_${k}$, ZERO, ZERO])
+            end select
+            a = from_mat_${T}$(ma)
+            call inverse(a, x, ok, cond)
+            call check_true(passed, 'inverse (singular): ok = .false.' // TN, .not. ok)
+            call check_true(passed, 'inverse (singular): NaN' // TN, all(ieee_is_nan(x%vals)))
+            call check_true(passed, 'inverse (singular): cond = huge' // TN, cond == huge(1.0_${k}$))
+            call check_true(passed, '.inv. (singular): NaN' // TN, all(ieee_is_nan(vv(.inv. a))))
+            call check_true(passed, '%inv() (singular): NaN' // TN, all(ieee_is_nan(vv(a%inv()))))
+        end do
+
+        ! ---- NaN in the input: documented as a failed inversion --------------------------
+        nan = ieee_value(1.0_${k}$, ieee_quiet_nan)
+        a = from_mat_${T}$(sym_mat_${d}$_${k}$([2.0_${k}$, 2.0_${k}$, 2.0_${k}$, ZERO, ZERO, ZERO]))
+        a%vals(1) = nan
+        call inverse(a, x, ok, cond)
+        call check_true(passed, 'inverse (NaN input): ok = .false.' // TN, .not. ok)
+        call check_true(passed, 'inverse (NaN input): NaN' // TN, all(ieee_is_nan(x%vals)))
+    end subroutine test_inverse_${d}$_${k}$
+
+    subroutine test_approx_${d}$_${k}$(passed)
+        !! `is_approx` (default tolerance TOL_APPROX_${k}$ and explicit `tol`) and `.approx.` of `${T}$`.
+        use muscle_kinds, only: TOL_APPROX_${k}$
+        use test_2osym_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(${k}$), parameter :: TA = TOL_APPROX_${k}$
+        type(${T}$) :: a, b, z
+        real(${k}$) :: mx
+        integer :: p, it
+        character(len=48) :: lab
+
+        passed = .true.
+        do it = 1, 5
+            a = from_mat_${T}$(rand_mat_${d}$_${k}$(10.0_dp**(it - 3), 0.0_dp))
+            mx = maxval(abs(a%vals))
+            call check_true(passed, 'a .approx. a [${T}$]', a .approx. a)
+            call check_true(passed, 'a%is_approx(a) [${T}$]', a%is_approx(a))
+            ! A perturbation of each stored component, below and above the threshold tol*max|a|
+            do p = 1, ${N}$
+                write(lab, '(" (component ", i0, ") [${T}$]")') p
+                b = a
+                b%vals(p) = a%vals(p) + 0.5_${k}$*TA*mx
+                call check_true(passed, 'is_approx: 0.5 tol inside' // trim(lab), a%is_approx(b))
+                call check_true(passed, '.approx.: 0.5 tol inside' // trim(lab), a .approx. b)
+                call check_true(passed, 'is_approx: symmetric' // trim(lab), b%is_approx(a))
+                b%vals(p) = a%vals(p) - 4.0_${k}$*TA*mx
+                call check_true(passed, 'is_approx: 4 tol outside' // trim(lab), .not. a%is_approx(b))
+                call check_true(passed, '.approx.: 4 tol outside' // trim(lab), .not. (a .approx. b))
+                call check_true(passed, 'is_approx: symmetric outside' // trim(lab), .not. b%is_approx(a))
+                ! Explicit tolerance overrides the default
+                b%vals(p) = a%vals(p) + 1.0e-3_${k}$*mx
+                call check_true(passed, 'is_approx: 1e-3 vs default' // trim(lab), .not. a%is_approx(b))
+                call check_true(passed, 'is_approx(tol=1e-2): 1e-3' // trim(lab), a%is_approx(b, tol=1.0e-2_${k}$))
+                call check_true(passed, 'is_approx(tol=1e-4): 1e-3' // trim(lab), &
+                                .not. a%is_approx(b, tol=1.0e-4_${k}$))
+            end do
+        end do
+        ! Relative criterion: two zero tensors are equal, zero and a tiny tensor are not
+        z = ZERO
+        b = ZERO
+        call check_true(passed, '0 .approx. 0 [${T}$]', z .approx. b)
+        b%vals(1) = 1.0e-20_${k}$
+        call check_true(passed, '0 .approx. 1e-20 is false [${T}$]', .not. (z .approx. b))
+        call check_true(passed, '0 is_approx 1e-20 (tol=0.5) is false [${T}$]', .not. z%is_approx(b, tol=0.5_${k}$))
+    end subroutine test_approx_${d}$_${k}$
+
+    subroutine test_free_generics_${d}$_${k}$(passed)
+        !! The free generics of `muscle_tensor_2osym` (`norm`, `det`, `square`, `is_approx`,
+        !! `inverse`, the GPU-callable API) give exactly (tol = 0) the results of the type-bound
+        !! procedures of `${T}$` (`%norm()`, `%det()`, `%square()`, `%is_approx()`, `%inv()`).
+        use muscle_tensor_2osym, only: norm, det, square, is_approx, inverse
+        use muscle_kinds, only: TOL_APPROX_${k}$
+        use test_2osym_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(${k}$), parameter :: TA = TOL_APPROX_${k}$
+        type(${T}$) :: a, b, x
+        real(${k}$) :: cond, f
+        logical :: ok
+        integer :: is, it, p
+        character(len=*), parameter :: TN = ' [free vs type-bound, ${T}$]'
+
+        passed = .true.
+        do is = 1, 3
+            do it = 1, 10
+                ! Scales 1e-2, 1, 1e2
+                a = from_mat_${T}$(rand_mat_${d}$_${k}$(10.0_dp**(2*is - 4), 0.0_dp))
+                call check_approx(passed, 'norm(a)' // TN, norm(a), a%norm(), tol=ZERO)
+                call check_approx(passed, 'det(a)' // TN, det(a), a%det(), tol=ZERO)
+                call check_approx(passed, 'square(a)' // TN, vv(square(a)), vv(a%square()), tol=ZERO)
+                ! is_approx around the threshold (0.25 .. 4 times the tolerance), default and explicit tol
+                p = 1 + mod(it, ${N}$)
+                f = real(0.25_dp + 3.75_dp*(0.5_dp + 0.5_dp*rnd()), ${k}$)
+                b = a
+                b%vals(p) = a%vals(p) + f*TA*maxval(abs(a%vals))
+                call check_true(passed, 'is_approx(a, b)' // TN, is_approx(a, b) .eqv. a%is_approx(b))
+                call check_true(passed, 'is_approx(b, a)' // TN, is_approx(b, a) .eqv. b%is_approx(a))
+                call check_true(passed, 'is_approx(a, b, tol)' // TN, &
+                                is_approx(a, b, tol=2.0_${k}$*TA) .eqv. a%is_approx(b, tol=2.0_${k}$*TA))
+                call check_true(passed, 'is_approx(a, b, tol=TA)' // TN, &
+                                is_approx(a, b, TA) .eqv. a%is_approx(b, TA))
+                call check_true(passed, 'is_approx(a, a)' // TN, is_approx(a, a))
+                ! Inverse of a diagonally dominant tensor
+                a = from_mat_${T}$(rand_mat_${d}$_${k}$(10.0_dp**(2*is - 4), 4.0_dp))
+                call inverse(a, x, ok, cond)
+                call check_true(passed, 'inverse: ok' // TN, ok)
+                call check_approx(passed, 'inverse(a) == a%inv()' // TN, x%vals, vv(a%inv()), tol=ZERO)
+            end do
+        end do
+        ! Singular tensor: the free inverse fails, both give quiet NaN
+        a = ZERO
+        call inverse(a, x, ok)
+        call check_true(passed, 'inverse (singular): not ok' // TN, .not. ok)
+        call check_true(passed, 'inverse (singular): NaN, as a%inv()' // TN, &
+                        all(ieee_is_nan(x%vals)) .and. all(ieee_is_nan(vv(a%inv()))))
+        ! Zero tensor: norm and det vanish in both APIs
+        call check_approx(passed, 'norm(0)' // TN, norm(a), ZERO, tol=ZERO)
+        call check_approx(passed, 'det(0)' // TN, det(a), ZERO, tol=ZERO)
+    end subroutine test_free_generics_${d}$_${k}$
+
+#:if defined('ENABLE_UDTIO')
+    subroutine test_udtio_${d}$_${k}$(passed)
+        !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
+        !!
+        !! - list mode (`DT"LIST"`): `[` + the ${N}$ stored components in storage order
+        !!   (${', '.join(c.name for c in L.comps)}$) + `]`, `ES11.4` by default, `(w, d)` via `v_list`;
+        !! - matrix mode (`DT`): a leading empty record, then the full 3x3 matrix by rows
+        !!   ${'(the out-of-plane shear components print as zero)' if d == '2D' else ''}$.
+        !!
+        !! The 3D list order is that of `vals` (xx yy zz xy yz xz); the original code printed
+        !! xz before yz (changed by a recorded decision).
+        use test_2osym_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        type(${T}$) :: a
+        character(len=200) :: buf(4), line
+        real(${k}$) :: v(${N}$), m(3,3), ma(3,3)
+        integer :: ios, i, j, nl, u
+        character(len=*), parameter :: TN = ' [UDTIO, ${T}$]'
+
+        passed = .true.
+        ! Distinct components, exact in ES11.4 and ES9.2: (xx, yy, zz, xy, yz, xz)
+        ma = sym_mat_${d}$_${k}$([1.5_${k}$, -2.0_${k}$, 0.75_${k}$, 0.5_${k}$, -1.25_${k}$, 2.5_${k}$])
+        a = from_mat_${T}$(ma)
+
+        ! ---- List mode, default edit descriptor --------------------------------------------
+        buf = ''
+        write(buf(1), '(DT"LIST")', iostat=ios) a
+        call check_true(passed, 'list: iostat = 0' // TN, ios == 0)
+#:if d == '3D'
+        call check_true(passed, 'list: text' // TN, trim(buf(1)) == &
+            '[ 1.5000E+00 -2.0000E+00  7.5000E-01  5.0000E-01 -1.2500E+00  2.5000E+00 ]')
+#:else
+        call check_true(passed, 'list: text' // TN, trim(buf(1)) == &
+            '[ 1.5000E+00 -2.0000E+00  7.5000E-01  5.0000E-01 ]')
+#:endif
+        if (.not. passed) print '(a)', '   got: "' // trim(buf(1)) // '"'
+        line = buf(1)
+        nl = len_trim(line)
+        call check_true(passed, 'list: brackets' // TN, line(1:1) == '[' .and. line(nl:nl) == ']')
+        v = -99.0_${k}$
+        read(line(2:nl-1), *, iostat=ios) v
+        call check_true(passed, 'list: read back' // TN, ios == 0)
+        ! Storage order, written out explicitly (not taken from the layout)
+#:if d == '3D'
+        call check_approx(passed, 'list: xx yy zz xy yz xz' // TN, v, &
+                          [1.5_${k}$, -2.0_${k}$, 0.75_${k}$, 0.5_${k}$, -1.25_${k}$, 2.5_${k}$], tol=ZERO)
+#:else
+        call check_approx(passed, 'list: xx yy zz xy' // TN, v, &
+                          [1.5_${k}$, -2.0_${k}$, 0.75_${k}$, 0.5_${k}$], tol=ZERO)
+#:endif
+        call check_approx(passed, 'list == vals' // TN, v, a%vals, tol=ZERO)
+
+        ! ---- List mode with (w, d) = (9, 2) --------------------------------------------------
+        buf = ''
+        write(buf(1), '(DT"LIST"(9,2))', iostat=ios) a
+        call check_true(passed, 'list(9,2): iostat = 0' // TN, ios == 0)
+#:if d == '3D'
+        call check_true(passed, 'list(9,2): text' // TN, trim(buf(1)) == &
+            '[ 1.50E+00 -2.00E+00  7.50E-01  5.00E-01 -1.25E+00  2.50E+00 ]')
+#:else
+        call check_true(passed, 'list(9,2): text' // TN, trim(buf(1)) == &
+            '[ 1.50E+00 -2.00E+00  7.50E-01  5.00E-01 ]')
+#:endif
+        if (.not. passed) print '(a)', '   got: "' // trim(buf(1)) // '"'
+
+        ! ---- Matrix mode ---------------------------------------------------------------------
+        ! External (scratch) unit: gfortran 15 ignores the '/' record breaks of a child data
+        ! transfer to an internal unit (all rows end up in one record), so an internal unit
+        ! cannot observe the records.
+        buf = ''
+        open(newunit=u, status='scratch', form='formatted', action='readwrite')
+        write(u, '(DT)', iostat=ios) a
+        call check_true(passed, 'matrix: iostat = 0' // TN, ios == 0)
+        rewind(u)
+        do i = 1, 4
+            read(u, '(a)', iostat=ios) buf(i)
+            call check_true(passed, 'matrix: 4 records' // TN, ios == 0)
+        end do
+        read(u, '(a)', iostat=ios) line
+        call check_true(passed, 'matrix: no 5th record' // TN, ios /= 0)
+        close(u)
+        call check_true(passed, 'matrix: first record empty' // TN, len_trim(buf(1)) == 0)
+#:if d == '3D'
+        call check_true(passed, 'matrix: row 1 text' // TN, trim(buf(2)) == &
+            ' 1.5000E+00   5.0000E-01   2.5000E+00')
+#:else
+        call check_true(passed, 'matrix: row 3 text' // TN, trim(buf(4)) == &
+            ' 0.0000E+00   0.0000E+00   7.5000E-01')
+#:endif
+        if (.not. passed) then
+            do i = 1, 4
+                print '(a, i0, a)', '   record ', i, ': "' // trim(buf(i)) // '"'
+            end do
+        end if
+        m = -99.0_${k}$
+        read(buf(2:4), *, iostat=ios) ((m(i, j), j = 1, 3), i = 1, 3)
+        call check_true(passed, 'matrix: read back' // TN, ios == 0)
+        call check_approx(passed, 'matrix: full 3x3 by rows' // TN, m, ma, tol=ZERO)
+        call check_approx(passed, 'matrix == to_mat' // TN, m, to_mat_${T}$(a), tol=ZERO)
+    end subroutine test_udtio_${d}$_${k}$
+
+#:endif
+#:endfor
+#:set T2 = tname('2D2Osym', k)
+#:set T3 = tname('3D2Osym', k)
+    subroutine test_embed_${k}$(passed)
+        !! 2D vs 3D in `real(${k}$)`: op_2D(a, b) embedded in 3D == op_3D(embed(a), embed(b)).
+        !!
+        !! Component-wise operations, accessors, `init` and the inverse (both build the same 3x3
+        !! matrix) must agree exactly; the rest within TOL_${k}$ (the 3D formulas add exact
+        !! zero terms but may group the products differently, e.g. `det`).
+        use test_2osym_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(${k}$), parameter :: TK = TOL_${k}$
+        real(dp), parameter :: TD = real(TOL_${k}$, dp)
+        type(${T2}$) :: a2, b2, x2, c2
+        type(${T3}$) :: a3, b3, x3, c3
+        real(${k}$) :: m(3,3), s, cond2, cond3, f
+        real(dp) :: ra(3,3)
+        logical :: ok2, ok3
+        integer :: it, p
+        character(len=*), parameter :: TN = ' [2D vs 3D, ${k}$]'
+
+        passed = .true.
+        do it = 1, 200
+            m = rand_mat_2D_${k}$(10.0_dp**(mod(it, 7) - 3), 0.0_dp)
+            ra = real(m, dp)
+            a2 = from_mat_${T2}$(m)
+            a3 = embed_${k}$(a2)
+            b2 = from_mat_${T2}$(rand_mat_2D_${k}$(10.0_dp**(mod(it, 7) - 3), 0.0_dp))
+            b3 = embed_${k}$(b2)
+            s = real(0.5_dp + abs(rnd()), ${k}$)
+
+            ! Construction and accessors (exact)
+            call check_approx(passed, 'embed == init3D(named, yz = xz = 0)' // TN, a3%vals, &
+                              vv(from_mat_${T3}$(m)), tol=ZERO)
+#:for c in L2.comps
+            call check_approx(passed, '${c.name}$()' // TN, a2%${c.name}$(), a3%${c.name}$(), tol=ZERO)
+#:endfor
+            call check_true(passed, 'yz() = xz() = 0' // TN, a3%yz() == ZERO .and. a3%xz() == ZERO)
+
+            ! Component-wise operations (exact)
+            call check_approx(passed, 'a + b' // TN, vv(embed_${k}$(a2 + b2)), vv(a3 + b3), tol=ZERO)
+            call check_approx(passed, 'a - b' // TN, vv(embed_${k}$(a2 - b2)), vv(a3 - b3), tol=ZERO)
+            call check_approx(passed, '-a' // TN, vv(embed_${k}$(-a2)), vv(-a3), tol=ZERO)
+            call check_approx(passed, 's*a' // TN, vv(embed_${k}$(s*a2)), vv(s*a3), tol=ZERO)
+            call check_approx(passed, 'a*s' // TN, vv(embed_${k}$(a2*s)), vv(a3*s), tol=ZERO)
+            call check_approx(passed, 'a/s' // TN, vv(embed_${k}$(a2/s)), vv(a3/s), tol=ZERO)
+            ! Assignment fills the stored components only: 2D (s, s, s, s) is the 3D tensor
+            ! with yz = xz = 0, not the 3D assignment (which sets them to s too).
+            c2 = s
+            c3 = s
+            call check_approx(passed, 'c = s (stored components)' // TN, vv(embed_${k}$(c2)), &
+                              [c3%vals(1:4), ZERO, ZERO], tol=ZERO)
+
+            ! Operations with rounding
+            call check_approx(passed, '.dev. a' // TN, vv(embed_${k}$(.dev. a2)), vv(.dev. a3), tol=TK)
+            call check_approx(passed, 'square(a)' // TN, vv(embed_${k}$(a2%square())), &
+                              vv(a3%square()), tol=TK)
+            call check_scaled(passed, 'a .ddot. b' // TN, real(a2 .ddot. b2, dp), real(a3 .ddot. b3, dp), &
+                              sum(abs(ra*real(to_mat_${T2}$(b2), dp))), TD)
+            call check_scaled(passed, 'norm(a)' // TN, real(a2%norm(), dp), real(a3%norm(), dp), &
+                              sum(abs(ra)), TD)
+            call check_scaled(passed, 'det(a)' // TN, real(a2%det(), dp), real(a3%det(), dp), &
+                              det_scale(ra), TD)
+
+            ! Inverse of a diagonally dominant tensor: the same 3x3 matrix is inverted (exact)
+            m = rand_mat_2D_${k}$(10.0_dp**(mod(it, 7) - 3), 4.0_dp)
+            a2 = from_mat_${T2}$(m)
+            a3 = embed_${k}$(a2)
+            call inverse(a2, x2, ok2, cond2)
+            call inverse(a3, x3, ok3, cond3)
+            call check_true(passed, 'inverse: ok' // TN, ok2 .and. ok3)
+            call check_approx(passed, 'inverse' // TN, vv(embed_${k}$(x2)), x3%vals, tol=ZERO)
+            call check_approx(passed, 'inverse: cond' // TN, cond2, cond3, tol=ZERO)
+            call check_approx(passed, '.inv. a' // TN, vv(embed_${k}$(.inv. a2)), vv(.inv. a3), tol=ZERO)
+            call check_approx(passed, 'a%inv()' // TN, vv(embed_${k}$(a2%inv())), vv(a3%inv()), tol=ZERO)
+
+            ! is_approx / .approx.: same verdict around the threshold (the embedded zeros do
+            ! not change max|a| nor the differences)
+            p = 1 + mod(it, 4)
+            f = real(0.25_dp + 3.75_dp*(0.5_dp + 0.5_dp*rnd()), ${k}$)   ! 0.25 .. 4 times the tolerance
+            b2 = a2
+            b2%vals(p) = a2%vals(p) + f*TOL_${k}$*maxval(abs(a2%vals))
+            b3 = embed_${k}$(b2)
+            call check_true(passed, '.approx.' // TN, (a2 .approx. b2) .eqv. (a3 .approx. b3))
+            call check_true(passed, 'is_approx' // TN, a2%is_approx(b2) .eqv. a3%is_approx(b3))
+            call check_true(passed, 'is_approx(tol)' // TN, &
+                            a2%is_approx(b2, tol=TK) .eqv. a3%is_approx(b3, tol=TK))
+        end do
+
+        ! Singular 2D tensors are singular in 3D: both fail with NaN and cond = huge
+        do it = 1, 2
+            if (it == 1) then
+                m = sym_mat_2D_${k}$([1.0_${k}$, 1.0_${k}$, ZERO, ZERO, ZERO, ZERO])
+            else
+                m = sym_mat_2D_${k}$([1.0_${k}$, 4.0_${k}$, 1.0_${k}$, 2.0_${k}$, ZERO, ZERO])
+            end if
+            a2 = from_mat_${T2}$(m)
+            a3 = embed_${k}$(a2)
+            call inverse(a2, x2, ok2, cond2)
+            call inverse(a3, x3, ok3, cond3)
+            call check_true(passed, 'inverse (singular): not ok' // TN, .not. (ok2 .or. ok3))
+            call check_true(passed, 'inverse (singular): NaN' // TN, &
+                            all(ieee_is_nan(x2%vals)) .and. all(ieee_is_nan(x3%vals)))
+            call check_true(passed, 'inverse (singular): cond' // TN, cond2 == cond3)
+        end do
+    end subroutine test_embed_${k}$
+
+#:endfor
+    subroutine test_constants(passed)
+        !! Documents the threshold of `.approx.`/`is_approx`: the default relative tolerances of
+        !! `muscle_kinds` (they exist for every kind, whatever `MUSCLE_REAL_KINDS` is).
+        use muscle_kinds, only: sp, dp, TOL_APPROX_sp, TOL_APPROX_dp
+        use muscle_test_utils, only: check_true
+        logical, intent(out) :: passed
+        passed = .true.
+        call check_true(passed, 'TOL_APPROX_dp == 1.0e-12_dp (historical)', TOL_APPROX_dp == 1.0e-12_dp)
+        call check_true(passed, 'TOL_APPROX_sp == 1.0e-5_sp (D-010)', TOL_APPROX_sp == 1.0e-5_sp)
+    end subroutine test_constants
+
+    subroutine test_historical_aliases(passed)
+        !! The historical names (`ten_3D2Osym`, `ten_2D2Osym`) of `muscle_tensors` and of the
+        !! compatibility modules are the double precision instances (D-003): intrinsic assignment
+        !! in both directions (a compile error if they were different types), `same_type_as`,
+        !! and the generic operators accept them mixed.
+        use muscle_tensors, only: ten_3D2Osym, ten_2D2Osym, ten_3D2Osym_dp, ten_2D2Osym_dp, &
+                                  operator(+), operator(.approx.)
+        use muscle_tensor_3d2osym, only: compat_3D => ten_3D2Osym
+        use muscle_tensor_2d2osym, only: compat_2D => ten_2D2Osym
+        use muscle_kinds, only: dp
+        use muscle_test_utils, only: check_true, check_approx
+        logical, intent(out) :: passed
+        type(ten_3D2Osym) :: h3
+        type(ten_3D2Osym_dp) :: p3, q3
+        type(compat_3D) :: c3
+        type(ten_2D2Osym) :: h2
+        type(ten_2D2Osym_dp) :: p2, q2
+        type(compat_2D) :: c2
+
+        passed = .true.
+        call p3%init([1.5_dp, -2.0_dp, 0.75_dp, 0.5_dp, -1.25_dp, 2.5_dp])
+        call p2%init([1.5_dp, -2.0_dp, 0.75_dp, 0.5_dp])
+        h3 = p3
+        q3 = h3
+        c3 = p3
+        h2 = p2
+        q2 = h2
+        c2 = p2
+        call check_approx(passed, 'ten_3D2Osym = ten_3D2Osym_dp', h3%vals, p3%vals, tol=0.0_dp)
+        call check_approx(passed, 'ten_3D2Osym_dp = ten_3D2Osym', q3%vals, p3%vals, tol=0.0_dp)
+        call check_approx(passed, 'muscle_tensor_3d2osym alias', c3%vals, p3%vals, tol=0.0_dp)
+        call check_approx(passed, 'ten_2D2Osym = ten_2D2Osym_dp', h2%vals, p2%vals, tol=0.0_dp)
+        call check_approx(passed, 'ten_2D2Osym_dp = ten_2D2Osym', q2%vals, p2%vals, tol=0.0_dp)
+        call check_approx(passed, 'muscle_tensor_2d2osym alias', c2%vals, p2%vals, tol=0.0_dp)
+        call check_true(passed, 'same_type_as(ten_3D2Osym, ten_3D2Osym_dp)', same_type_as(h3, p3))
+        call check_true(passed, 'same_type_as(compat 3D, ten_3D2Osym_dp)', same_type_as(c3, p3))
+        call check_true(passed, 'same_type_as(ten_2D2Osym, ten_2D2Osym_dp)', same_type_as(h2, p2))
+        call check_true(passed, 'same_type_as(compat 2D, ten_2D2Osym_dp)', same_type_as(c2, p2))
+        call check_true(passed, 'ten_3D2Osym is not ten_2D2Osym', .not. same_type_as(h3, h2))
+        call check_true(passed, 'kind(vals) == dp (3D)', kind(h3%vals) == dp .and. size(h3%vals) == 6)
+        call check_true(passed, 'kind(vals) == dp (2D)', kind(h2%vals) == dp .and. size(h2%vals) == 4)
+#:if 'sp' in REAL_KINDS
+        block
+            use muscle_tensors, only: ten_3D2Osym_sp
+            type(ten_3D2Osym_sp) :: s3
+            call check_true(passed, 'ten_3D2Osym is not ten_3D2Osym_sp', .not. same_type_as(h3, s3))
+        end block
+#:endif
+        ! Mixed historical / suffixed operands in the generic operators
+        q3 = h3 + p3
+        call check_approx(passed, 'ten_3D2Osym + ten_3D2Osym_dp', q3%vals, 2.0_dp*p3%vals, tol=0.0_dp)
+        call check_true(passed, 'ten_3D2Osym .approx. ten_3D2Osym_dp', h3 .approx. p3)
+        q2 = h2 + p2
+        call check_approx(passed, 'ten_2D2Osym + ten_2D2Osym_dp', q2%vals, 2.0_dp*p2%vals, tol=0.0_dp)
+        call check_true(passed, 'ten_2D2Osym .approx. ten_2D2Osym_dp', h2 .approx. p2)
+    end subroutine test_historical_aliases
+
+end program test_muscle_tensor_2osym_kinds

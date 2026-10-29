@@ -1,5 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
 
 module muscle_tensors
     !! author: MPacheco
@@ -74,12 +75,14 @@ module muscle_tensors
     !! ### Derived Types:
     !!
     !! - [[ten_3D2O]]:       General 3D second-order tensor (from [[muscle_tensor_3d2o]]).
-    !! - [[ten_3D2Osym]]:    Symmetric 3D second-order tensor (from [[muscle_tensor_3d2osym]]).
+    !! - `ten_3D2Osym`:      Symmetric 3D second-order tensor, alias of [[ten_3D2Osym_dp]]
+    !!                      (also `ten_3D2Osym_sp`; from [[muscle_tensor_2osym]]).
     !! - [[ten_3D4O2sym]]:   3D fourth-order tensor with minor symmetries (from [[muscle_tensor_3d4o2sym]]).
     !! - [[ten_3D4O3sym]]:   3D fourth-order tensor with major and minor symmetries (from [[muscle_tensor_3d4o3sym]]).
     !! - [[ten_3D4O]]:       General (unsymmetric) 3D fourth-order tensor, 9x9 matrix (from [[muscle_tensor_3d4o]]).
     !! - [[ten_2D2O]]:       General 2D second-order tensor (from [[muscle_tensor_2d2o]]).
-    !! - [[ten_2D2Osym]]:    Symmetric 2D second-order tensor (from [[muscle_tensor_2d2osym]]).
+    !! - `ten_2D2Osym`:      Symmetric 2D second-order tensor, alias of [[ten_2D2Osym_dp]]
+    !!                      (also `ten_2D2Osym_sp`; from [[muscle_tensor_2osym]]).
     !! - [[ten_2D4O2sym]]:   2D fourth-order tensor with minor symmetries (from [[muscle_tensor_2d4o2sym]]).
     !! - [[ten_2D4O3sym]]:   2D fourth-order tensor with major and minor symmetries (from [[muscle_tensor_2d4o3sym]]).
     !! - [[ten_2D4O]]:       General (unsymmetric) 2D fourth-order tensor (from [[muscle_tensor_2d4o]]).
@@ -145,6 +148,7 @@ module muscle_tensors
     use muscle_tensor_3d2osym
     use muscle_tensor_2d2o
     use muscle_tensor_2d2osym
+    use muscle_tensor_2osym, only: ${', '.join(tname(d + '2Osym', k) for d in DIMS for k in REAL_KINDS)}$
     use muscle_tensor_3d4o3sym
     use muscle_tensor_2d4o3sym
     use muscle_tensor_2d4o2sym
@@ -181,6 +185,8 @@ module muscle_tensors
     public :: iden_4O3T
     public :: iden_4O4TS
     public :: iden_4O4T
+    ! Types with an instance per kind (historical names above are the dp ones, D-003)
+    public :: ${', '.join(tname(d + '2Osym', k) for d in DIMS for k in REAL_KINDS)}$
 
     private 
 
@@ -205,7 +211,7 @@ module muscle_tensors
 
     public :: assignment (=)
 
-#ifdef ENABLE_UDTIO
+#:if defined('ENABLE_UDTIO')
     public :: write(formatted)
-#endif
+#:endif
 end module muscle_tensors

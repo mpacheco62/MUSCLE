@@ -130,11 +130,20 @@ anotar la fecha/commit.
 - **Salida**: sin cambios de comportamiento; todos los tests en verde.
 
 ### Fase 2 — Piloto: tensores simétricos de 2º orden
-- [ ] Plantilla única `muscle_tensor_2osym.fypp` → `ten_3D2Osym_{sp,dp}`, `ten_2D2Osym_{sp,dp}`.
-- [ ] Alias históricos en `muscle_tensors`; tests existentes sin cambios.
-- [ ] Tests `sp` + test embedding 2D↔3D.
-- [ ] Comparar rendimiento con el benchmark (`MUSCLE_BUILD_BENCHMARKS=ON`) — no debe empeorar.
-- [ ] Revisión del enfoque con el usuario antes de escalar (punto de control).
+- [x] Plantilla única `muscle_tensor_2osym.fypp` → `ten_3D2Osym_{sp,dp}`, `ten_2D2Osym_{sp,dp}`
+      (patrón D-011). (2026-10-29)
+- [x] Alias históricos (módulos de compatibilidad + `muscle_tensors.fypp`); tests existentes
+      sin cambios. (2026-10-29)
+- [x] Tests `sp` + embebido 2D↔3D (`tensors-types-2osym_kinds`); verificación bit a bit contra
+      el original. (2026-10-29)
+- [x] Benchmark `closest_point` Release: 0.0958 s → 0.0965 s (mín.), dentro del ruido. (2026-10-29)
+- [x] Revisión independiente: "cambios necesarios", aplicados (procedimientos libres `type` +
+      envoltorios `_tbp`, `@:DEVICE()`, nombres con kind al final, `ref`/`join_terms`/`specifics`,
+      UDTIO aparte, reglas nuevas de `check.sh`). (2026-10-29)
+- Notas UDTIO: con `-DMUSCLE_UDTIO=ON` y gfortran 15, `elasticity-linear_openmp` y
+  `solvers-return_mapping-openmp_ts` fallan (el bug de UDTIO+OpenMP que motiva el AUTO); por eso
+  `check.sh` sólo compila ese camino. gfortran 15 ignora los `/` del modo matriz en unidades internas.
+- [x] Revisión del enfoque con el usuario antes de escalar: patrón D-011 aprobado. (2026-10-29)
 - **Salida**: patrón validado y documentado en `DECISIONES.md`.
 
 ### Fase 3 — Resto de tipos
@@ -144,6 +153,10 @@ anotar la fecha/commit.
 - [ ] UDTIO/`print` fuera de los módulos de tipo (módulo CPU aparte `muscle_tensors_io`).
 
 ### Fase 4 — Operadores entre tipos
+- [ ] **No olvidar (D-011, decisión del usuario 2026-10-29):** crear `muscle_tensor_functions`,
+      que re-exporta las funciones libres (`norm`, `det`, `square`, `is_approx`, `inverse`, ...)
+      de todos los módulos de familia en un solo `use`; NO exportarlas desde `muscle_tensors`.
+      Hacerlo en cuanto estén migradas todas las familias (fin de Fase 3 o inicio de Fase 4).
 - [ ] Tabla de pares por operador (`ddot`, `tdot`, `tdotsym`, `contraction_single`, `transform`,
       `assignment`, `addition_subtraction`) en `muscle_meta.py`.
 - [ ] Generación de cada módulo de operadores desde su tabla × DIMS × KINDS.
@@ -230,3 +243,4 @@ Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yi
 | 2026-10-28 | Actualización desde `origin/dev` (`db0bc91`, +21 commits) | `fypp/f0-infra` | Nuevos: vp `chaboche`, viscoelástico `kelvin`; línea base 60/60 |
 | 2026-10-28 | Fase 0 completa (infra FYPP, check.sh, agentes, limpieza) | `fypp/f0-infra` (sin commit) | 61/61; revisión aplicada; D-001 y D-009 aceptadas |
 | 2026-10-28 | Fase 1 completa (kinds, layouts, test utils, inversas sp/dp) | `fypp/f1-kinds` (sin commit) | 63/63 (sp;dp y sólo dp); revisión aplicada; D-010 |
+| 2026-10-29 | Fase 2 completa: piloto 2Osym (patrón D-011 aprobado) | `fypp/f2-ten2osym-pilot` | 64/64 (sp;dp y sólo dp), bit a bit = original salvo cambios D-011 |

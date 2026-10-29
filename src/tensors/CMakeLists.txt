@@ -15,11 +15,16 @@ target_sources(muscle PRIVATE
                    types/muscle_tensor_iden_4o3t.f90
                    types/muscle_tensor_iden_4o4ts.f90
                    types/muscle_tensor_iden_4o4t.f90
-                   muscle_tensors.f90
                    operators/muscle_tensor_ops_addition_subtraction.f90
                    operators/muscle_tensor_ops_contraction_double.f90
                    operators/muscle_tensor_ops_dyadic.f90
                    operators/muscle_tensor_ops_contraction_single.f90
                    operators/muscle_tensor_ops_assignment.f90
                    operators/muscle_tensor_ops_transform.f90
+                   )
+
+muscle_add_fypp_sources(muscle
+                   types/muscle_tensor_2osym.fypp
+                   muscle_tensor_io.fypp
+                   muscle_tensors.fypp
                    )

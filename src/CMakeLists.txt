@@ -2,9 +2,21 @@
 #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 add_library(muscle )
 
-# Detectar si el compilador soporta UDTIO (write(formatted)) de forma thread-safe en OpenMP
-if(NOT CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" OR CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER_EQUAL "16.3")
-    message(STATUS "MUSCLE: Habilitando soporte UDTIO write(formatted) [Compilador compatible]")
+# Detectar si el compilador soporta UDTIO (write(formatted)) de forma thread-safe en OpenMP.
+# MUSCLE_UDTIO=ON/OFF fuerza la decisión (tools/check.sh compila ese camino con ON).
+set(MUSCLE_UDTIO "AUTO" CACHE STRING "Formatted output of tensors (UDTIO): AUTO, ON or OFF")
+set_property(CACHE MUSCLE_UDTIO PROPERTY STRINGS AUTO ON OFF)
+if(MUSCLE_UDTIO STREQUAL "AUTO")
+    if(NOT CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" OR CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER_EQUAL "16.3")
+        set(_muscle_udtio ON)
+    else()
+        set(_muscle_udtio OFF)
+    endif()
+else()
+    set(_muscle_udtio ${MUSCLE_UDTIO})
+endif()
+if(_muscle_udtio)
+    message(STATUS "MUSCLE: Habilitando soporte UDTIO write(formatted) (MUSCLE_UDTIO=${MUSCLE_UDTIO})")
     target_compile_definitions(muscle PUBLIC ENABLE_UDTIO)
     list(APPEND MUSCLE_FYPP_DEFINES ENABLE_UDTIO)
 else()
@@ -18,6 +30,8 @@ if(BLAS_LIBRARIES MATCHES "mkl" OR LAPACK_LIBRARIES MATCHES "mkl")
     target_compile_definitions(muscle PRIVATE USE_MKL)
     list(APPEND MUSCLE_FYPP_DEFINES USE_MKL)
 endif()
+# The tests (sibling directory) preprocess their templates with the same switches
+set(MUSCLE_FYPP_DEFINES "${MUSCLE_FYPP_DEFINES}" PARENT_SCOPE)
 
 set_target_properties(muscle PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/muscle)
 target_include_directories(muscle PUBLIC

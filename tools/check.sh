@@ -14,7 +14,7 @@
 # Opt-outs:
 # - `! lint: allow(<rule>)` at the end of a line skips that rule on that line.
 # - `! lint: host-only` anywhere in a template exempts the whole file from the GPU kernel
-#   rules (oop, alloc, procarg, io): use it for host code such as dispatchers or drivers.
+#   rules (oop, device, alloc, procarg, io): use it for host code such as dispatchers or drivers.
 # Exit status != 0 on any failure.
 
 set -u
@@ -109,8 +109,28 @@ rule literal "real literal without kind (default real is single precision)" \
     "${fypp_files[@]}"
 
 # GPU kernel rules (gpu-static-dispatch.md)
-rule oop "dynamic dispatch (class/abstract/deferred/select type)" \
-    '(?i)\bclass\s*\(|\babstract\b(?!\s+interface)|\bdeferred\b|\bselect\s+type\b' "${kernel_files[@]}"
+rule oop "dynamic dispatch (abstract/deferred/select type)" \
+    '(?i)\babstract\b(?!\s+interface)|\bdeferred\b|\bselect\s+type\b' "${kernel_files[@]}"
+
+# Per-procedure kernel rules (D-011): a `class(...)` dummy only in the type-bound wrappers
+# (`*_tbp`, historical API), and every other pure/elemental procedure marked @:DEVICE().
+if (( ${#kernel_files[@]} > 0 )); then
+    report oop "class(...) outside a type-bound wrapper (*_tbp)" "$(perl -ne '
+        if (/^\s*(?:pure\s+|elemental\s+|recursive\s+)*(?:function|subroutine)\s+([\w\$\{\}.]+)/i) { $p = $1 }
+        $p = "" if /^\s*end\s+(function|subroutine)\b/i;
+        print "$ARGV:$.: $_" if /\bclass\s*\(/i && !/^\s*!/ && $p !~ /_tbp$/ && !/lint:\s*allow\(oop\)/;
+    } continue { close ARGV if eof' "${kernel_files[@]}")"
+    report device "pure/elemental kernel procedure without @:DEVICE()" "$(perl -ne '
+        if (/^\s*((?:pure|elemental)\s+(?:\w+\s+)*?(?:function|subroutine))\s+([\w\$\{\}.]+)/i) {
+            ($name, $line, $dev) = ($2, $., 0);
+        }
+        $dev = 1 if /^\s*\@:DEVICE\(\)/;
+        if (/^\s*end\s+(function|subroutine)\b/i && $name) {
+            print "$ARGV:$line: $name\n" unless $dev || $name =~ /_tbp$/;
+            $name = "";
+        }
+    } continue { close ARGV if eof' "${kernel_files[@]}")"
+fi
 rule alloc "allocatable/pointer" '(?i)\b(allocatable|pointer)\b' "${kernel_files[@]}"
 rule procarg "procedure arguments/pointers" '(?i)\bprocedure\s*\(' "${kernel_files[@]}"
 rule io "I/O or stop in kernel code" \
@@ -128,4 +148,21 @@ echo "== build: ${build_dir} (Debug, MUSCLE_REAL_KINDS=sp;dp)"
 cmake -S . -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DMUSCLE_REAL_KINDS=sp;dp" \
     > /dev/null || exit 1
 cmake --build "$build_dir" --target build_all_tests -j "$(nproc)" || exit 1
+
+# Generated code must fit the free-form limit (comments may run longer)
+long=$(find "$build_dir/fypp" -name '*.f90' -print0 2>/dev/null | xargs -0 -r perl -ne '
+    my $code = $_; $code =~ s/!.*//;
+    print "$ARGV:$.: ", length($code), " columns\n" if length($code) > 133;
+    close ARGV if eof')
+if [[ -n "$long" ]]; then
+    echo "LINT [line-length] generated code longer than 132 columns:"; echo "$long" | sed 's/^/    /'
+    exit 1
+fi
+
+# Formatted output (UDTIO) is disabled for gfortran < 16.3: compile that path anyway
+echo "== build: ${build_dir}-udtio (library with MUSCLE_UDTIO=ON)"
+cmake -S . -B "${build_dir}-udtio" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMUSCLE_UDTIO=ON > /dev/null || exit 1
+cmake --build "${build_dir}-udtio" --target muscle -j "$(nproc)" > /dev/null || {
+    echo "== build with MUSCLE_UDTIO=ON failed"; exit 1; }
+
 ctest --test-dir "$build_dir" --output-on-failure -j "$(nproc)"
