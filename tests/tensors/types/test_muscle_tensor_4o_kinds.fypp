@@ -1,0 +1,1114 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "../../common/muscle_test_tensor_cases.fypp"
+#:set L3 = layout('4O', '3D')
+#:set L2 = layout('4O', '2D')
+#! ---------------------------------------------------------------------------------------------
+#! Storage convention written out by hand from the original sources (muscle_tensor_3d4o.f90 and
+#! muscle_tensor_2d4o.f90 before the migration, commit ec6b13d), NOT taken from the layout
+#! metadata:
+#! - NB[d]:    order of the matrix vals(NB, NB);
+#! - PI[d]:    storage index I(i,j) of the pair (i,j), row i of the table (3D: 3(j-1) + i;
+#!             2D: the `idx5` map of the original, 0 for the pairs that are not stored);
+#!             C_ijkl is vals(I(i,j), I(k,l));
+#! - CONV[d]:  the rows/columns of vals copied by convert_2sym (`map6` / `map4` of the original);
+#! - VOIGT[d]: the Voigt pairs of the 4O2sym result (xx, yy, zz, xy[, yz, xz]);
+#! - OOP:      the 3D storage indices of the pairs that the 2D type does not store
+#!             ((3,1), (3,2), (1,3), (2,3)).
+#! The layout metadata is only used for one of the two 2D -> 3D embeddings and is cross-checked
+#! against these tables at run time (test_layout_tables).
+#! ---------------------------------------------------------------------------------------------
+#:set NB = {'3D': 9, '2D': 5}
+#:set PI = {'3D': [[1, 4, 7], [2, 5, 8], [3, 6, 9]], '2D': [[1, 3, 0], [2, 4, 0], [0, 0, 5]]}
+#:set CONV = {'3D': [1, 5, 9, 4, 8, 7], '2D': [1, 4, 5, 3]}
+#:set VOIGT = {'3D': [(1, 1), (2, 2), (3, 3), (1, 2), (2, 3), (1, 3)], '2D': [(1, 1), (2, 2), (3, 3), (1, 2)]}
+#:set OOP = [3, 6, 7, 8]
+
+module test_4o_kinds_lib
+    !! Helpers of `test_muscle_tensor_4o_kinds`: random (unsymmetric) matrices, the `vv` accessor
+    !! (matrix `vals` of a `ten_<d>4O_<k>` or of the `ten_<d>4O2sym_<k>` returned by
+    !! `convert_2sym`), the storage tables of the original code (independent of the module under
+    !! test), its own deterministic random sequence `rng` and the 2D -> 3D embeddings.
+    !!
+    !! Tolerances:
+    !!
+    !! - Operations that are exact for the inputs (component-wise `+ - * /`, `init`, `get`/`set`,
+    !!   assignment, `convert_2sym`, `norm` and the inverse on dyadic data) use `tol = 0`.
+    !! - Accuracy of operations with rounding, against a double precision reference computed from
+    !!   the same (exactly converted) inputs: `TOL_APPROX_<k>` (sp 1e-5, dp 1e-12). `norm` is a sum
+    !!   of at most 81 terms: error <= 81 eps sum|terms|, below TOL_APPROX_<k> * sum|terms|.
+    !! - Inverse: the error grows with the condition number, so `TOL_APPROX_<k> * kappa_inf` (the
+    !!   random matrices are diagonally dominant, kappa_inf < 10; LU of order <= 9 loses a few
+    !!   eps * kappa).
+    use muscle_kinds, only: sp, dp
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_test_helpers
+    implicit none
+    public
+
+#:for d in DIMS
+    integer, parameter :: PI_${d}$(3,3) = reshape([${', '.join(str(PI[d][i][j]) for j in range(3) for i in range(3))}$], [3, 3])
+        !! ${d}$ storage index I(i,j) of the pair (i,j) in the original (0: not stored).
+    integer, parameter :: CONV_${d}$(${len(CONV[d])}$) = [${', '.join(map(str, CONV[d]))}$]
+        !! ${d}$ rows/columns of `vals` sampled by convert_2sym (map of the original).
+    integer, parameter :: VI_${d}$(3,3) = reshape([${', '.join(str(VOIGT[d].index(tuple(sorted((i, j)))) + 1 if tuple(sorted((i, j))) in VOIGT[d] else 0) for j in range(1, 4) for i in range(1, 4))}$], [3, 3])
+        !! ${d}$ Voigt index of the pair (i,j) in the 4O2sym type (0: not stored).
+#:endfor
+    integer, parameter :: OOP_3D(4) = [${', '.join(map(str, OOP))}$]
+        !! 3D storage indices of the pairs (3,1), (3,2), (1,3), (2,3), not stored in 2D.
+
+    interface vv
+        !! `vv(expr)`: the `vals` matrix of a tensor expression (4O or 4O2sym).
+#:for k in REAL_KINDS
+#:for d in DIMS
+        module procedure vv_${tname(d + '4O', k)}$, vv_${tname(d + '4O2sym', k)}$
+#:endfor
+#:endfor
+    end interface vv
+
+    type(park_miller) :: rng = park_miller(20261031)
+        !! Random sequence of this test (deterministic).
+
+contains
+
+#:for k in REAL_KINDS
+#:for d in DIMS
+#:set nb = NB[d]
+#:set nv = len(CONV[d])
+#:set T = tname(d + '4O', k)
+#:set T2 = tname(d + '4O2sym', k)
+    function rand_mat_${d}$_${k}$(scale, shift) result(m)
+        !! Random (unsymmetric) ${nb}$x${nb}$ matrix: entries uniform in (-scale, scale), plus
+        !! shift*scale on the diagonal (shift > ${nb - 1}$ makes it diagonally dominant).
+        real(dp), intent(in) :: scale
+            !! Magnitude of the entries.
+        real(dp), intent(in) :: shift
+            !! Diagonal shift relative to `scale`.
+        real(${k}$) :: m(${nb}$,${nb}$)
+        real(dp) :: r(${nb}$,${nb}$)
+        integer :: i, j
+        do j = 1, ${nb}$
+            do i = 1, ${nb}$
+                r(i, j) = scale*rnd(rng)
+            end do
+            r(j, j) = r(j, j) + shift*scale
+        end do
+        m = real(r, ${k}$)
+    end function rand_mat_${d}$_${k}$
+
+    function rand_${T}$(scale, shift) result(t)
+        !! Random `${T}$` (see rand_mat_${d}$_${k}$), through `init` with a matrix.
+        real(dp), intent(in) :: scale
+            !! Magnitude of the entries.
+        real(dp), intent(in) :: shift
+            !! Diagonal shift relative to `scale`.
+        type(${T}$) :: t
+        call t%init(rand_mat_${d}$_${k}$(scale, shift))
+    end function rand_${T}$
+
+    function vv_${T}$(t) result(v)
+        !! Matrix `vals` of a `${T}$`.
+        type(${T}$), intent(in) :: t
+            !! Tensor.
+        real(${k}$) :: v(${nb}$,${nb}$)
+        v = t%vals
+    end function vv_${T}$
+
+    function vv_${T2}$(t) result(v)
+        !! Voigt matrix `vals` of a `${T2}$`.
+        type(${T2}$), intent(in) :: t
+            !! Tensor.
+        real(${k}$) :: v(${nv}$,${nv}$)
+        v = t%vals
+    end function vv_${T2}$
+
+    function c4_${T}$(m) result(c)
+        !! Full array \( C_{ijkl} \) of the ${nb}$x${nb}$ matrix `m` with the storage table of the
+        !! original: C_ijkl = m(I(i,j), I(k,l)), zero for the pairs that are not stored.
+        real(${k}$), intent(in) :: m(${nb}$,${nb}$)
+            !! Matrix in storage order.
+        real(${k}$) :: c(3,3,3,3)
+        integer :: i, j, k, l
+        c = 0.0_${k}$
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        if (PI_${d}$(i, j) > 0 .and. PI_${d}$(k, l) > 0) &
+                            c(i, j, k, l) = m(PI_${d}$(i, j), PI_${d}$(k, l))
+                    end do
+                end do
+            end do
+        end do
+    end function c4_${T}$
+
+    function minor_c4_${d}$_${k}$(s) result(c)
+        !! Full array with minor symmetries built from a ${nv}$x${nv}$ Voigt matrix `s` of the
+        !! 4O2sym type: C_ijkl = s(V(i,j), V(k,l)) (zero for the pairs without a Voigt index).
+        real(${k}$), intent(in) :: s(${nv}$,${nv}$)
+            !! Voigt matrix.
+        real(${k}$) :: c(3,3,3,3)
+        integer :: i, j, k, l
+        c = 0.0_${k}$
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        if (VI_${d}$(i, j) > 0 .and. VI_${d}$(k, l) > 0) &
+                            c(i, j, k, l) = s(VI_${d}$(i, j), VI_${d}$(k, l))
+                    end do
+                end do
+            end do
+        end do
+    end function minor_c4_${d}$_${k}$
+
+    function conv_ref_${T}$(m) result(v)
+        !! Reference Voigt matrix of `convert_2sym` of the matrix `m` (table CONV of the original).
+        real(${k}$), intent(in) :: m(${nb}$,${nb}$)
+            !! Matrix.
+        real(${k}$) :: v(${nv}$,${nv}$)
+        integer :: i, j
+        do j = 1, ${nv}$
+            do i = 1, ${nv}$
+                v(i, j) = m(CONV_${d}$(i), CONV_${d}$(j))
+            end do
+        end do
+    end function conv_ref_${T}$
+
+    pure function pure_conv_${T}$(a) result(r)
+        !! Compile-time check: the free generic `convert_2sym` of `muscle_tensor_4o` is `pure`
+        !! (needed in kernels, D-011).
+        use muscle_tensor_4o, only: convert_2sym
+        type(${T}$), intent(in) :: a
+            !! Tensor.
+        type(${T2}$) :: r
+        r = convert_2sym(a)
+    end function pure_conv_${T}$
+
+    subroutine reset_${T}$(t)
+        !! `intent(out)`: `t` takes the default initialization of the type.
+        type(${T}$), intent(out) :: t
+            !! Tensor reset to its default value.
+        if (.false.) t%vals(1, 1) = 1.0_${k}$
+    end subroutine reset_${T}$
+
+#:endfor
+    function embed_${k}$(a) result(r)
+        !! Embeds a `${tname('2D4O', k)}$` into a `${tname('3D4O', k)}$` with the storage tables of
+        !! the original: C^3D(I3(i,j), I3(k,l)) = C^2D(I2(i,j), I2(k,l)) when both pairs are stored
+        !! in 2D, zero otherwise.
+        type(${tname('2D4O', k)}$), intent(in) :: a
+            !! 2D tensor.
+        type(${tname('3D4O', k)}$) :: r
+        integer :: i, j, k, l
+        r%vals = 0.0_${k}$
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        if (PI_2D(i, j) > 0 .and. PI_2D(k, l) > 0) &
+                            r%vals(PI_3D(i, j), PI_3D(k, l)) = a%vals(PI_2D(i, j), PI_2D(k, l))
+                    end do
+                end do
+            end do
+        end do
+    end function embed_${k}$
+
+    function embed_layout_${k}$(a) result(r)
+        !! Same embedding from the layout metadata (layout('4O', d)).
+        type(${tname('2D4O', k)}$), intent(in) :: a
+            !! 2D tensor.
+        type(${tname('3D4O', k)}$) :: r
+#:for c in L3.comps
+        r%vals(${c.pos[0]}$, ${c.pos[1]}$) = ${L2.ref('a%vals', *c.idx, zero='0.0_' + k)}$
+#:endfor
+    end function embed_layout_${k}$
+
+    function embed2s_${k}$(a) result(r)
+        !! Embeds a `${tname('2D4O2sym', k)}$` into a `${tname('3D4O2sym', k)}$`: the 2D Voigt
+        !! indices 11, 22, 33, 12 are the first four 3D ones.
+        type(${tname('2D4O2sym', k)}$), intent(in) :: a
+            !! 2D tensor.
+        type(${tname('3D4O2sym', k)}$) :: r
+        r%vals = 0.0_${k}$
+        r%vals(1:4, 1:4) = a%vals
+    end function embed2s_${k}$
+
+#:endfor
+#:for k in REAL_KINDS
+#:for d in DIMS
+$:pure_use('4O', d, k, 'muscle_tensor_4o', ['norm', 'is_approx', 'inverse'], 'a/norm(a)')
+#:endfor
+#:endfor
+end module test_4o_kinds_lib
+
+
+program test_muscle_tensor_4o_kinds
+    !! `ten_3D4O_<k>` and `ten_2D4O_<k>` (module `muscle_tensor_4o`, general fourth-order tensors,
+    !! matrix `vals(9, 9)` / `vals(5, 5)`) for every kind in `MUSCLE_REAL_KINDS`.
+    !!
+    !! 1. Every public operation: default value, `init` (matrix and `C4(3,3,3,3)`), `get`/`set` on
+    !!    the 81 index combinations (in 2D: zero / ignored for the pairs that are not stored),
+    !!    assignment, `+ - * /`, unary `-`, `norm`, `convert_2sym` (free and type-bound, sp and
+    !!    dp), `is_approx` (historical keyword `other`)/`.approx.` with the default tolerance
+    !!    `TOL_APPROX_<k>`, `inverse`/`.inv.`/`%inv()` with `ok`/`cond` (exact unsymmetric case,
+    !!    identity and transposition, random cases against Gauss-Jordan; singular and NaN inputs),
+    !!    against references written with the storage tables copied by hand from the original.
+    !! 2. Free generics (`norm`, `convert_2sym`, `is_approx`, `inverse`) == type-bound (tol = 0).
+    !! 3. 2D vs 3D (`.claude/rules/dims-2d-3d.md`): every operation on a 2D tensor embedded in 3D
+    !!    equals the 3D operation on the embedded operands (inverse: with a decoupled out-of-plane
+    !!    block, see `test_embed_<k>`).
+    !! 4. Historical names `ten_3D4O`/`ten_2D4O` are the `dp` instances.
+    !! 5. Formatted output (UDTIO), only with `ENABLE_UDTIO`: the historical text.
+    !!
+    !! Every test subroutine runs (all failures are reported); the exit code is that of the
+    !! first failing one.
+    use muscle_test_helpers, only: record
+    implicit none
+    logical :: passed
+    integer :: code
+
+    code = 0
+#:set nt = 0
+#:for t in ['layout_tables']
+#:set nt = nt + 1
+    call test_${t}$(passed)
+    call record(passed, ${nt}$, 'test_${t}$', code)
+#:endfor
+#:for k in REAL_KINDS
+#:for d in DIMS
+#:for t in ['ops', 'get_set', 'convert', 'inverse', 'approx', 'free_generics']
+#:set nt = nt + 1
+    call test_${t}$_${d}$_${k}$(passed)
+    call record(passed, ${nt}$, 'test_${t}$_${d}$_${k}$', code)
+#:endfor
+#:endfor
+#:set nt = nt + 1
+    call test_embed_${k}$(passed)
+    call record(passed, ${nt}$, 'test_embed_${k}$', code)
+#:endfor
+#:set nt = nt + 1
+    call test_historical_aliases(passed)
+    call record(passed, ${nt}$, 'test_historical_aliases', code)
+#:if defined('ENABLE_UDTIO')
+#:for k in REAL_KINDS
+#:for d in DIMS
+#:set nt = nt + 1
+    call test_udtio_${d}$_${k}$(passed)
+    call record(passed, ${nt}$, 'test_udtio_${d}$_${k}$', code)
+#:endfor
+#:endfor
+#:else
+    print '(a)', ' UDTIO tests skipped (built without ENABLE_UDTIO)'
+#:endif
+    if (code /= 0) stop code
+
+    print *, "Passed!"
+    stop 0
+
+contains
+
+    subroutine test_layout_tables(passed)
+        !! The layout metadata used by the module template (`layout('4O', d)`) reproduces the
+        !! storage convention of the original sources (tables written by hand in this test):
+        !! shape, position (I(i,j), I(k,l)) of each component, column-major storage order, the
+        !! pair index of the base layout, and the Voigt pairs of `layout('4O2sym', d)` against the
+        !! map of convert_2sym.
+        use test_4o_kinds_lib
+        logical, intent(out) :: passed
+#:for d in DIMS
+#:set lay = layout('4O', d)
+        integer :: pos_${d}$(${len(lay.comps)}$, 2), idx_${d}$(${len(lay.comps)}$, 4), base_${d}$(3,3)
+        integer :: v2s_${d}$(${len(layout('4O2sym', d).comps)}$, 4)
+#:endfor
+        integer :: p
+        passed = .true.
+#:for d in DIMS
+#:set lay = layout('4O', d)
+#:set lay2 = layout('4O2sym', d)
+#:set nb = NB[d]
+        call check_true(passed, 'layout ${d}$: shape (${nb}$, ${nb}$), ${nb*nb}$ components', &
+                        ${len(lay.shape)}$ == 2 .and. ${lay.shape[0]}$ == ${nb}$ .and. ${lay.shape[-1]}$ == ${nb}$ &
+                        .and. ${len(lay.comps)}$ == ${nb*nb}$)
+#:for p, c in enumerate(lay.comps, start=1)
+        pos_${d}$(${p}$, :) = [${c.pos[0]}$, ${c.pos[1]}$]
+        idx_${d}$(${p}$, :) = [${', '.join(map(str, c.idx))}$]
+#:endfor
+        ! Each component C_ijkl is at (I(i,j), I(k,l)) of the original table
+        call check_true(passed, 'layout ${d}$: position (I(i,j), I(k,l)) == original', &
+                        all([(pos_${d}$(p, 1) == PI_${d}$(idx_${d}$(p, 1), idx_${d}$(p, 2)) .and. &
+                              pos_${d}$(p, 2) == PI_${d}$(idx_${d}$(p, 3), idx_${d}$(p, 4)), p = 1, ${len(lay.comps)}$)]))
+        call check_true(passed, 'layout ${d}$: column-major storage order', &
+                        all([(pos_${d}$(p, 1) == 1 + mod(p - 1, ${nb}$) .and. &
+                              pos_${d}$(p, 2) == 1 + (p - 1 - mod(p - 1, ${nb}$))/${nb}$, p = 1, ${len(lay.comps)}$)]))
+        ! Pair index of the base layout (0 for the pairs that are not stored)
+        base_${d}$ = reshape([${', '.join(str((lay.base.index(i, j) or (0,))[0]) for j in range(1, 4) for i in range(1, 4))}$], [3, 3])
+        call check_true(passed, 'layout ${d}$: base pair index == original', all(base_${d}$ == PI_${d}$))
+        ! convert_2sym: the 4O2sym component (I, J) of the pairs (i,j), (k,l) is vals(CONV(I), CONV(J))
+#:for p, c in enumerate(lay2.comps, start=1)
+        v2s_${d}$(${p}$, :) = [${c.pos[0]}$, ${c.pos[1]}$, ${PI[d][c.idx[0] - 1][c.idx[1] - 1]}$, ${PI[d][c.idx[2] - 1][c.idx[3] - 1]}$]
+#:endfor
+        call check_true(passed, 'layout ${d}$: 4O2sym Voigt pairs == convert_2sym map of the original', &
+                        all([(CONV_${d}$(v2s_${d}$(p, 1)) == v2s_${d}$(p, 3) .and. &
+                              CONV_${d}$(v2s_${d}$(p, 2)) == v2s_${d}$(p, 4), p = 1, ${len(lay2.comps)}$)]))
+#:endfor
+    end subroutine test_layout_tables
+
+#:for k in REAL_KINDS
+#:for d in DIMS
+#:set nb = NB[d]
+#:set nv = len(CONV[d])
+#:set N = nb*nb
+#:set T = tname(d + '4O', k)
+#:set T2 = tname(d + '4O2sym', k)
+    subroutine test_ops_${d}$_${k}$(passed)
+        !! Default value, construction (`init` with a matrix), assignment, the arithmetic, `norm`
+        !! and `is_approx` with the historical keyword `other` of `${T}$`.
+        use muscle_kinds, only: TOL_APPROX_${k}$
+        use test_4o_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(${k}$), parameter :: TK = TOL_APPROX_${k}$
+        real(dp), parameter :: TD = real(TOL_APPROX_${k}$, dp)
+        type(${T}$) :: a, b, c
+        real(${k}$) :: ma(${nb}$,${nb}$), mb(${nb}$,${nb}$), s, v(${nb}$,${nb}$)
+        real(dp) :: ra(${nb}$,${nb}$)
+        real(dp), parameter :: SCALES(3) = [1.0e-3_dp, 1.0_dp, 1.0e3_dp]
+        integer :: is, it, i, j
+        character(len=*), parameter :: TN = ' [${T}$]'
+
+        passed = .true.
+        call check_true(passed, 'shape(vals) = [${nb}$, ${nb}$]' // TN, all(shape(a%vals) == [${nb}$, ${nb}$]))
+        call check_true(passed, 'kind(vals) = ${k}$' // TN, kind(a%vals) == ${k}$)
+
+        ! ---- default value: every component is zero --------------------------------------
+        block
+            type(${T}$) :: fresh
+            call check_true(passed, 'default value: vals = 0' // TN, all(fresh%vals == ZERO))
+        end block
+        c = 3.0_${k}$
+        call reset_${T}$(c)
+        call check_true(passed, 'default value (intent(out)): vals = 0' // TN, all(c%vals == ZERO))
+
+        ! ---- init with a matrix: v(I, J) = 10 I + J (a transposition changes the value) ------
+        v = reshape([((real(10*i + j, ${k}$), i = 1, ${nb}$), j = 1, ${nb}$)], [${nb}$, ${nb}$])
+        call c%init(v)
+        call check_approx(passed, 'init(matrix)' // TN, c%vals, v, tol=ZERO)
+
+        ! ---- assignment of a scalar to every component ------------------------------------
+        c = 2.5_${k}$
+        call check_approx(passed, 'c = 2.5' // TN, c%vals, spread(spread(2.5_${k}$, 1, ${nb}$), 2, ${nb}$), tol=ZERO)
+        c = ZERO
+        call check_true(passed, 'c = 0' // TN, all(c%vals == ZERO))
+
+        ! ---- dyadic data (exact in every kind): every result is exact, tol = 0 ------------
+        do j = 1, ${nb}$
+            do i = 1, ${nb}$
+                ma(i, j) = real(mod(7*(i + ${nb}$*j), 13) - 6, ${k}$)*0.25_${k}$   ! -1.5 .. 1.5, step 0.25
+                mb(i, j) = real(mod(5*(i + ${nb}$*j) + 3, 11) - 5, ${k}$)*0.5_${k}$
+            end do
+        end do
+        call a%init(ma)
+        call b%init(mb)
+        ra = real(ma, dp)
+        call check_true(passed, 'dyadic data is unsymmetric' // TN, any(ma /= transpose(ma)))
+        call check_approx(passed, 'a + b (dyadic)' // TN, vv(a + b), ma + mb, tol=ZERO)
+        call check_approx(passed, 'a - b (dyadic)' // TN, vv(a - b), ma - mb, tol=ZERO)
+        call check_approx(passed, '-a (dyadic)' // TN, vv(-a), -ma, tol=ZERO)
+        call check_approx(passed, '1.5*a (dyadic)' // TN, vv(1.5_${k}$*a), 1.5_${k}$*ma, tol=ZERO)
+        call check_approx(passed, 'a*1.5 (dyadic)' // TN, vv(a*1.5_${k}$), 1.5_${k}$*ma, tol=ZERO)
+        call check_approx(passed, 'a/4 (dyadic)' // TN, vv(a/4.0_${k}$), 0.25_${k}$*ma, tol=ZERO)
+        call check_approx(passed, '(a + b) - b (dyadic)' // TN, vv((a + b) - b), ma, tol=ZERO)
+        ! norm = sum of |C_IJ| over the matrix (L1, no weights)
+        call check_approx(passed, 'norm(a) (dyadic)' // TN, real(a%norm(), dp), sum(abs(ra)), tol=0.0_dp)
+        c = -a
+        call check_approx(passed, 'norm(-a) = norm(a)' // TN, c%norm(), a%norm(), tol=ZERO)
+
+        ! ---- is_approx: historical keyword `other`, default tolerance TOL_APPROX_${k}$ -------
+        b = a
+        b%vals(${nb}$, 1) = a%vals(${nb}$, 1) + 0.5_${k}$*TK*maxval(abs(ma))
+        call check_true(passed, 'is_approx(other=b): 0.5 x default tol inside' // TN, a%is_approx(other=b))
+        call check_true(passed, 'a .approx. b: 0.5 x default tol inside' // TN, a .approx. b)
+        b%vals(${nb}$, 1) = a%vals(${nb}$, 1) + 2.0_${k}$*TK*maxval(abs(ma))
+        call check_true(passed, 'is_approx(other=b): 2 x default tol outside' // TN, .not. a%is_approx(other=b))
+        call check_true(passed, 'a .approx. b: 2 x default tol outside' // TN, .not. (a .approx. b))
+        call check_true(passed, 'is_approx(other=b, tol=4 TK)' // TN, a%is_approx(other=b, tol=4.0_${k}$*TK))
+        call check_true(passed, 'is_approx(tol=4 TK, other=b)' // TN, a%is_approx(tol=4.0_${k}$*TK, other=b))
+        call check_true(passed, 'is_approx default == tol=TOL_APPROX_${k}$' // TN, &
+                        a%is_approx(b) .eqv. a%is_approx(other=b, tol=TK))
+
+        ! ---- random data (not representable) at several scales -----------------------------
+        do is = 1, size(SCALES)
+            do it = 1, 20
+                ma = rand_mat_${d}$_${k}$(SCALES(is), 0.0_dp)
+                mb = rand_mat_${d}$_${k}$(SCALES(is), 0.0_dp)
+                s = real(0.5_dp + abs(rnd(rng)), ${k}$)
+                ra = real(ma, dp)
+                call a%init(ma)
+                call b%init(mb)
+                ! Component-wise operations: one correctly rounded IEEE operation per component,
+                ! identical to the same operation on the matrix entries (tol = 0).
+                call check_approx(passed, 'a + b' // TN, vv(a + b), ma + mb, tol=ZERO)
+                call check_approx(passed, 'a - b' // TN, vv(a - b), ma - mb, tol=ZERO)
+                call check_approx(passed, '-a' // TN, vv(-a), -ma, tol=ZERO)
+                call check_approx(passed, 's*a' // TN, vv(s*a), s*ma, tol=ZERO)
+                call check_approx(passed, 'a*s' // TN, vv(a*s), ma*s, tol=ZERO)
+                call check_approx(passed, 'a/s' // TN, vv(a/s), ma/s, tol=ZERO)
+                call check_scaled(passed, 'norm(a)' // TN, real(a%norm(), dp), sum(abs(ra)), &
+                                  sum(abs(ra)), TD)
+            end do
+        end do
+    end subroutine test_ops_${d}$_${k}$
+
+    subroutine test_get_set_${d}$_${k}$(passed)
+        !! `init(C4)`, `get(i, j, k, l)` and `set(i, j, k, l, val)` of `${T}$` on the 81 index
+        !! combinations, against the storage table of the original: C_ijkl in vals(I(i,j), I(k,l));
+        !! in 2D the pairs (1,3), (3,1), (2,3), (3,2) are not stored (`get` -> 0, `set` ignored,
+        !! `init(C4)` discards them).
+        use test_4o_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(${k}$), parameter :: VAL = -7.5_${k}$
+        type(${T}$) :: a, b, base
+        real(${k}$) :: c4(3,3,3,3), got(3,3,3,3), expg(3,3,3,3), e(${nb}$,${nb}$)
+        integer :: i, j, k, l, r, c
+        character(len=64) :: lab
+        character(len=*), parameter :: TN = ' [${T}$]'
+
+        passed = .true.
+        ! ---- init(C4) with C4_ijkl = 1000 i + 100 j + 10 k + l (every component distinct) ----
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        c4(i, j, k, l) = real(1000*i + 100*j + 10*k + l, ${k}$)
+                    end do
+                end do
+            end do
+        end do
+        e = -1.0_${k}$
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        r = PI_${d}$(i, j)
+                        c = PI_${d}$(k, l)
+                        if (r > 0 .and. c > 0) e(r, c) = c4(i, j, k, l)
+                    end do
+                end do
+            end do
+        end do
+        call check_true(passed, 'table: every stored component comes from C4' // TN, all(e > ZERO))
+        a = 3.0_${k}$
+        call a%init(c4)
+        call check_approx(passed, 'init(C4): vals(I(i,j), I(k,l)) = C4(i,j,k,l)' // TN, a%vals, e, tol=ZERO)
+        call b%init(e)
+        call check_approx(passed, 'init(matrix) == init(C4)' // TN, b%vals, a%vals, tol=ZERO)
+
+        ! ---- get on the 81 combinations ----------------------------------------------------
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        got(i, j, k, l) = a%get(i, j, k, l)
+                        expg(i, j, k, l) = ZERO
+                        if (PI_${d}$(i, j) > 0 .and. PI_${d}$(k, l) > 0) expg(i, j, k, l) = c4(i, j, k, l)
+                    end do
+                end do
+            end do
+        end do
+        call check_approx(passed, 'get(i,j,k,l), 81 combinations (0 if not stored)' // TN, &
+                          reshape(got, [81]), reshape(expg, [81]), tol=ZERO)
+        call check_approx(passed, 'get == C4 of the table' // TN, reshape(got, [81]), &
+                          reshape(c4_${T}$(a%vals), [81]), tol=ZERO)
+
+        ! ---- set on the 81 combinations, on a tensor with every component non-zero ----------
+        call base%init(rand_mat_${d}$_${k}$(1.0_dp, 3.0_dp))
+        base%vals = base%vals + sign(2.0_${k}$, base%vals)
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        write(lab, '("set(", 3(i0, ","), i0, ")")') i, j, k, l
+                        b = base
+                        call b%set(i, j, k, l, VAL)
+                        e = base%vals
+                        r = PI_${d}$(i, j)
+                        c = PI_${d}$(k, l)
+                        if (r > 0 .and. c > 0) then
+                            e(r, c) = VAL
+                            call check_approx(passed, trim(lab) // ': get returns the value' // TN, &
+                                              b%get(i, j, k, l), VAL, tol=ZERO)
+                        else
+                            call check_approx(passed, trim(lab) // ': not stored, get = 0' // TN, &
+                                              b%get(i, j, k, l), ZERO, tol=ZERO)
+                        end if
+                        call check_approx(passed, trim(lab) // ': only vals(I(i,j), I(k,l)) changes' // TN, &
+                                          b%vals, e, tol=ZERO)
+                    end do
+                end do
+            end do
+        end do
+        ! set every stored combination from C4 on a zero tensor == init(C4)
+        b = ZERO
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        call b%set(i, j, k, l, c4(i, j, k, l))
+                    end do
+                end do
+            end do
+        end do
+        call check_approx(passed, 'set of the 81 components == init(C4)' // TN, b%vals, a%vals, tol=ZERO)
+    end subroutine test_get_set_${d}$_${k}$
+
+    subroutine test_convert_${d}$_${k}$(passed)
+        !! `convert_2sym` (free generic and `%convert_2sym()`) of `${T}$`: the minor-symmetric
+        !! `${T2}$` (same kind) sampling the rows/columns ${', '.join(map(str, CONV[d]))}$ of `vals`
+        !! (no symmetrization, as the original).
+        use muscle_tensor_4o, only: convert_2sym
+        use test_4o_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        type(${T}$) :: a, b
+        type(${T2}$) :: r, q
+        real(${k}$) :: ma(${nb}$,${nb}$), s(${nv}$,${nv}$)
+        integer :: it
+        character(len=*), parameter :: TN = ' [${T}$]'
+
+        passed = .true.
+        call check_true(passed, 'convert_2sym: kind ${k}$' // TN, kind(r%vals) == ${k}$)
+        do it = 1, 20
+            ma = rand_mat_${d}$_${k}$(10.0_dp**(mod(it, 5) - 2), 0.0_dp)
+            call a%init(ma)
+            r = convert_2sym(a)
+            call check_approx(passed, 'convert_2sym(a) == vals(CONV, CONV) (original map)' // TN, &
+                              r%vals, conv_ref_${T}$(ma), tol=ZERO)
+            call check_approx(passed, 'a%convert_2sym() == convert_2sym(a)' // TN, vv(a%convert_2sym()), &
+                              r%vals, tol=ZERO)
+            call check_approx(passed, 'pure caller of convert_2sym' // TN, vv(pure_conv_${T}$(a)), r%vals, tol=ZERO)
+            ! Round trip: a tensor with minor symmetries built from a Voigt matrix s gives back s
+            ma = rand_mat_${d}$_${k}$(10.0_dp**(mod(it, 5) - 2), 0.0_dp)
+            s = ma(1:${nv}$, 1:${nv}$)
+            call b%init(minor_c4_${d}$_${k}$(s))
+            q = convert_2sym(b)
+            call check_approx(passed, 'convert_2sym of a minor-symmetric tensor keeps its Voigt matrix' // TN, &
+                              q%vals, s, tol=ZERO)
+        end do
+        a = ZERO
+        call check_true(passed, 'convert_2sym(0) = 0' // TN, all(vv(convert_2sym(a)) == ZERO))
+    end subroutine test_convert_${d}$_${k}$
+
+    subroutine test_inverse_${d}$_${k}$(passed)
+        !! `call inverse(a, x, ok [, cond])`, `.inv.` and `%inv()` of `${T}$`: the inverse of the
+        !! ${nb}$x${nb}$ matrix (A : A^-1 = I with I_ijkl = d_ik d_jl, the identity matrix).
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_nan, ieee_value, ieee_quiet_nan
+        use muscle_kinds, only: TOL_APPROX_${k}$
+        use test_4o_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(dp), parameter :: TD = real(TOL_APPROX_${k}$, dp)
+        type(${T}$) :: a, x, y, e
+        real(${k}$) :: ma(${nb}$,${nb}$), cond, nan
+        real(dp) :: ra(${nb}$,${nb}$), kap
+        real(dp), parameter :: SCALES(3) = [1.0e-3_dp, 1.0_dp, 1.0e3_dp]
+        logical :: ok
+        integer :: is, it, i, j
+        character(len=*), parameter :: TN = ' [${T}$]'
+#:if d == '3D'
+        integer, parameter :: BLK(2, 4) = reshape([1, 5, 2, 3, 4, 9, 6, 7], [2, 4])
+            !! 2x2 blocks (pairs xx-yy, yx-zx, xy-zz, zy-xz); index 8 (yz) alone
+        integer, parameter :: SINGLE = 8
+#:else
+        integer, parameter :: BLK(2, 2) = reshape([1, 4, 2, 3], [2, 2])
+            !! 2x2 blocks (pairs xx-yy, yx-xy); index 5 (zz) alone
+        integer, parameter :: SINGLE = 5
+#:endif
+
+        passed = .true.
+
+        ! ---- Exact unsymmetric inverse: 2x2 blocks [[2,3],[1,2]]^-1 = [[2,-3],[-1,2]] --------
+        ! plus a single diagonal 2 -> 0.5; every intermediate of the LU (pivot 2, multiplier 1/2)
+        ! is dyadic -> exact. kappa_inf = ||C||_inf ||C^-1||_inf = 5 * 5.
+        a = ZERO
+        e = ZERO
+        do j = 1, size(BLK, 2)
+            a%vals(BLK(1, j), BLK(1, j)) = 2.0_${k}$
+            a%vals(BLK(1, j), BLK(2, j)) = 3.0_${k}$
+            a%vals(BLK(2, j), BLK(1, j)) = 1.0_${k}$
+            a%vals(BLK(2, j), BLK(2, j)) = 2.0_${k}$
+            e%vals(BLK(1, j), BLK(1, j)) = 2.0_${k}$
+            e%vals(BLK(1, j), BLK(2, j)) = -3.0_${k}$
+            e%vals(BLK(2, j), BLK(1, j)) = -1.0_${k}$
+            e%vals(BLK(2, j), BLK(2, j)) = 2.0_${k}$
+        end do
+        a%vals(SINGLE, SINGLE) = 2.0_${k}$
+        e%vals(SINGLE, SINGLE) = 0.5_${k}$
+        call inverse(a, x, ok, cond)
+        call check_true(passed, 'inverse (exact): ok' // TN, ok)
+        call check_approx(passed, 'inverse (exact)' // TN, x%vals, e%vals, tol=ZERO)
+        call check_approx(passed, 'inverse (exact): cond' // TN, cond, 25.0_${k}$, tol=ZERO)
+        call check_approx(passed, 'inverse (exact) == Gauss-Jordan' // TN, real(x%vals, dp), &
+                          inv_ref(real(a%vals, dp)), tol=0.0_dp)
+        call check_approx(passed, '.inv. a == inverse (exact)' // TN, vv(.inv. a), x%vals, tol=ZERO)
+        call check_approx(passed, 'a%inv() == inverse (exact)' // TN, vv(a%inv()), x%vals, tol=ZERO)
+        call check_approx(passed, '.inv. .inv. a (exact)' // TN, vv(.inv. (.inv. a)), a%vals, tol=ZERO)
+
+        ! ---- Identity I_ijkl = d_ik d_jl and transposition T_ijkl = d_il d_jk (through set) ---
+        a = ZERO
+        e = ZERO
+        do j = 1, 3
+            do i = 1, 3
+                call a%set(i, j, i, j, 1.0_${k}$)
+                call e%set(i, j, j, i, 1.0_${k}$)
+            end do
+        end do
+        call check_approx(passed, 'identity: vals = eye' // TN, real(a%vals, dp), eye(${nb}$), tol=0.0_dp)
+        call check_true(passed, 'transposition: a permutation' // TN, &
+                        all(sum(e%vals, dim=1) == 1.0_${k}$) .and. all(sum(e%vals, dim=2) == 1.0_${k}$) &
+                        .and. any(e%vals /= a%vals))
+        call inverse(a, x, ok, cond)
+        call check_true(passed, 'inverse (identity): ok' // TN, ok .and. cond == 1.0_${k}$)
+        call check_approx(passed, 'inverse (identity) = identity' // TN, x%vals, a%vals, tol=ZERO)
+        call inverse(e, x, ok, cond)
+        call check_true(passed, 'inverse (transposition): ok' // TN, ok .and. cond == 1.0_${k}$)
+        call check_approx(passed, 'inverse (transposition) = transposition' // TN, x%vals, e%vals, tol=ZERO)
+
+        ! ---- Random diagonally dominant (unsymmetric) tensors ---------------------------------
+        do is = 1, size(SCALES)
+            do it = 1, 20
+                ma = rand_mat_${d}$_${k}$(SCALES(is), ${nb + 2}$.0_dp)
+                ra = real(ma, dp)
+                kap = norm_inf(ra)*norm_inf(inv_ref(ra))
+                call a%init(ma)
+                call inverse(a, x, ok, cond)
+                call check_true(passed, 'inverse: ok' // TN, ok)
+                call check_approx(passed, 'inverse vs Gauss-Jordan' // TN, real(x%vals, dp), inv_ref(ra), tol=TD*kap)
+                ! A : A^-1 = A^-1 : A = I (matrix products; no symmetry)
+                call check_approx(passed, 'A : A^-1 = I' // TN, matmul(ra, real(x%vals, dp)), eye(${nb}$), tol=TD*kap)
+                call check_approx(passed, 'A^-1 : A = I' // TN, matmul(real(x%vals, dp), ra), eye(${nb}$), tol=TD*kap)
+                call check_scaled(passed, 'inverse: cond = kappa_inf' // TN, real(cond, dp), kap, kap, TD*kap)
+                call inverse(a, y, ok)
+                call check_true(passed, 'inverse without cond: ok' // TN, ok)
+                call check_approx(passed, 'inverse without cond' // TN, y%vals, x%vals, tol=ZERO)
+                call check_approx(passed, '.inv. a == inverse' // TN, vv(.inv. a), x%vals, tol=ZERO)
+                call check_approx(passed, 'a%inv() == inverse' // TN, vv(a%inv()), x%vals, tol=ZERO)
+                call check_approx(passed, '.inv. .inv. a == a' // TN, real(vv(.inv. (.inv. a)), dp), ra, tol=TD*kap)
+            end do
+        end do
+
+        ! ---- Singular tensors: ok = .false., quiet NaN everywhere, cond = huge ----------------
+        do it = 1, 3
+            a = ZERO
+            select case (it)
+            case (1)
+                ! the zero tensor
+            case (2)
+                ! no zzzz stiffness: row and column of zz vanish (unsymmetric rest)
+                do i = 1, ${nb}$
+                    a%vals(i, i) = 2.0_${k}$
+                end do
+                a%vals(1, 2) = 0.5_${k}$
+                a%vals(4, 1) = 0.25_${k}$
+                a%vals(${nb}$, ${nb}$) = ZERO
+            case (3)
+                ! rows of xx and yx equal (rank deficient, non-zero diagonal)
+                do i = 1, ${nb}$
+                    a%vals(i, i) = 1.0_${k}$
+                end do
+                a%vals(1, 2) = 1.0_${k}$
+                a%vals(2, 1) = 1.0_${k}$
+                a%vals(1, 4) = 0.5_${k}$
+                a%vals(2, 4) = 0.5_${k}$
+            end select
+            call inverse(a, x, ok, cond)
+            call check_true(passed, 'inverse (singular): ok = .false.' // TN, .not. ok)
+            call check_true(passed, 'inverse (singular): NaN' // TN, all(ieee_is_nan(x%vals)))
+            call check_true(passed, 'inverse (singular): cond = huge' // TN, cond == huge(1.0_${k}$))
+            call inverse(a, y, ok)
+            call check_true(passed, 'inverse (singular, no cond): ok = .false.' // TN, .not. ok)
+            call check_true(passed, '.inv. (singular): NaN' // TN, all(ieee_is_nan(vv(.inv. a))))
+            call check_true(passed, '%inv() (singular): NaN' // TN, all(ieee_is_nan(vv(a%inv()))))
+        end do
+
+        ! ---- NaN in the first diagonal entry: a failed inversion ------------------------------
+        nan = ieee_value(1.0_${k}$, ieee_quiet_nan)
+        a = ZERO
+        do i = 1, ${nb}$
+            a%vals(i, i) = 2.0_${k}$
+        end do
+        a%vals(1, 1) = nan
+        call inverse(a, x, ok, cond)
+        call check_true(passed, 'inverse (NaN input): ok = .false.' // TN, .not. ok)
+        call check_true(passed, 'inverse (NaN input): NaN' // TN, all(ieee_is_nan(x%vals)))
+        call check_true(passed, 'inverse (NaN input): cond = huge' // TN, cond == huge(1.0_${k}$))
+    end subroutine test_inverse_${d}$_${k}$
+
+$:test_approx('4O', d, k, 'test_4o_kinds_lib', zero_pos=N, loop_checks=[('a%is_approx(other=a)', 'a%is_approx(other=a)')])
+
+$:test_free_generics('4O', d, k, 'test_4o_kinds_lib', 'muscle_tensor_4o', scalars=['norm'], &
+    & unary=['convert_2sym'], inv_shift='{}.0_dp'.format(nb + 2), p_mult=7, pure_ref='b/b%norm()', &
+    & pure_fresh_b=True)
+
+#:if defined('ENABLE_UDTIO')
+#:set VALS = [(-1)**(p + 1)*p/2 for p in range(1, N + 1)]
+#! vals(I, J) = VALS[(J-1)*nb + I - 1] (column-major); historical record: ES<w>.<d> + 1X per entry
+#:set ROWS = [[VALS[J*nb + I] for J in range(nb)] for I in range(nb)]
+#:set R11 = [''.join('{:11.4E} '.format(v) for v in row) for row in ROWS]
+#:set R9 = [''.join('{:9.2E} '.format(v) for v in row) for row in ROWS]
+    subroutine test_udtio_${d}$_${k}$(passed)
+        !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
+        !! the historical text of the original (captured from commit ec6b13d), the same in every
+        !! mode (`DT`, `DT"LIST"`, list-directed; `(w, d)` via `v_list`): a leading record (empty;
+        !! one blank in list-directed output), then the ${nb}$x${nb}$ matrix `vals`, one row per
+        !! record, each entry as `ES<w>.<d>` followed by one blank (`1X`), and nothing more.
+        !!
+        !! Data: vals in storage order = (-1)**(p+1) * p/2, exact in ES11.4 and ES9.2.
+        use, intrinsic :: iso_fortran_env, only: iostat_end, iostat_eor
+        use test_4o_kinds_lib
+        logical, intent(out) :: passed
+        type(${T}$) :: a
+        character(len=200) :: buf
+        character(len=40) :: lab
+        integer :: ios, i, u, p, mode, sz
+        character(len=${len(R11[0])}$), parameter :: ROW11(${nb}$) = [character(len=${len(R11[0])}$) :: &
+#:for I in range(nb)
+            '${R11[I]}$'${', &' if I < nb - 1 else ']'}$
+#:endfor
+            !! Records of the rows with the default ES11.4.
+        character(len=${len(R9[0])}$), parameter :: ROW9(${nb}$) = [character(len=${len(R9[0])}$) :: &
+#:for I in range(nb)
+            '${R9[I]}$'${', &' if I < nb - 1 else ']'}$
+#:endfor
+            !! Records of the rows with (w, d) = (9, 2).
+        integer, parameter :: LEAD(5) = [0, 0, 0, 0, 1]
+            !! Length of the leading record in each mode (list-directed: one blank).
+
+        passed = .true.
+        call a%init(reshape([(real((-1)**(p + 1)*p, ${k}$)*0.5_${k}$, p = 1, ${N}$)], [${nb}$, ${nb}$]))
+        ! External (scratch) unit: gfortran 15 ignores the '/' record breaks of a child data
+        ! transfer to an internal unit, so an internal unit cannot observe the records.
+        do mode = 1, 5
+            write(lab, '(" [mode ", i0, ", UDTIO, ${T}$]")') mode
+            open(newunit=u, status='scratch', form='formatted', action='readwrite')
+            select case (mode)
+            case (1)
+                write(u, '(DT)', iostat=ios) a
+            case (2)
+                write(u, '(DT"LIST")', iostat=ios) a
+            case (3)
+                write(u, '(DT(9,2))', iostat=ios) a
+            case (4)
+                write(u, '(DT"LIST"(9,2))', iostat=ios) a
+            case default
+                write(u, *, iostat=ios) a
+            end select
+            call check_true(passed, 'iostat = 0' // trim(lab), ios == 0)
+            rewind(u)
+            do i = 0, ${nb}$
+                buf = ''
+                sz = -1
+                read(u, '(a)', advance='no', size=sz, iostat=ios) buf
+                call check_true(passed, 'record read to its end' // trim(lab), ios == iostat_eor)
+                if (i == 0) then
+                    call check_true(passed, 'leading record' // trim(lab), &
+                                    sz == LEAD(mode) .and. len_trim(buf) == 0)
+                else if (mode == 3 .or. mode == 4) then
+                    call check_true(passed, 'row record, (9, 2)' // trim(lab), &
+                                    sz == len(ROW9) .and. buf(1:max(sz, 0)) == ROW9(i))
+                else
+                    call check_true(passed, 'row record, ES11.4' // trim(lab), &
+                                    sz == len(ROW11) .and. buf(1:max(sz, 0)) == ROW11(i))
+                end if
+                if (.not. passed) print '(a, i0, a, i0, a)', '   record ', i, ' (', sz, ' chars): "' // &
+                                                             buf(1:max(sz, 0)) // '"'
+            end do
+            ! (non-advancing, as above: after an end-of-record condition gfortran 15 returns
+            ! iostat = 0 for an advancing read at the end of the file)
+            read(u, '(a)', advance='no', size=sz, iostat=ios) buf
+            call check_true(passed, 'no record after the last row' // trim(lab), ios == iostat_end)
+            close(u)
+        end do
+    end subroutine test_udtio_${d}$_${k}$
+#:endif
+
+#:endfor
+#:set T2D = tname('2D4O', k)
+#:set T3D = tname('3D4O', k)
+    subroutine test_embed_${k}$(passed)
+        !! 2D vs 3D in `real(${k}$)`: op_2D(a, b) embedded in 3D == op_3D(embed(a), embed(b)).
+        !!
+        !! - Construction, `get`/`set` (81 combinations), component-wise operations, assignment,
+        !!   `convert_2sym` and `is_approx` must agree exactly.
+        !! - `norm`: within TOL_APPROX_${k}$ (sums of the same non-zero terms, the 3D sum adds exact
+        !!   zeros).
+        !! - Inverse: the plain embedding has zero rows/columns for the pairs (3,1), (3,2), (1,3),
+        !!   (2,3) (singular in 3D: ok = .false.). With a decoupled out-of-plane block (diagonal g,
+        !!   no coupling) the in-plane part of the 3D inverse equals the 2D inverse (LU 9x9 vs 5x5:
+        !!   TOL_APPROX_${k}$ * kappa), the out-of-plane part is 1/g and, with g = ||C_2D||_inf,
+        !!   kappa_inf(3D) = kappa_inf(2D).
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
+        use muscle_kinds, only: TOL_APPROX_${k}$
+        use muscle_tensor_4o, only: convert_2sym
+        use test_4o_kinds_lib
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(${k}$), parameter :: TK = TOL_APPROX_${k}$
+        real(dp), parameter :: TD = real(TOL_APPROX_${k}$, dp)
+        type(${T2D}$) :: a2, b2, x2, c2
+        type(${T3D}$) :: a3, b3, x3, c3, g3
+        real(${k}$) :: m(5,5), s, cond2, cond3, f, g, c4(3,3,3,3), got2, got3
+        real(dp) :: ra(5,5), kap
+        logical :: ok2, ok3, stored
+        integer :: it, p, i, j, k, l
+        character(len=64) :: lab
+        character(len=*), parameter :: TN = ' [2D vs 3D, ${k}$]'
+
+        passed = .true.
+        do it = 1, 100
+            m = rand_mat_2D_${k}$(10.0_dp**(mod(it, 7) - 3), 0.0_dp)
+            ra = real(m, dp)
+            call a2%init(m)
+            a3 = embed_${k}$(a2)
+            b2 = rand_${T2D}$(10.0_dp**(mod(it, 7) - 3), 0.0_dp)
+            b3 = embed_${k}$(b2)
+            s = real(0.5_dp + abs(rnd(rng)), ${k}$)
+
+            ! Construction (exact): table embedding == layout embedding == 3D init(C4 of the 2D)
+            call check_approx(passed, 'embed (tables) == embed (layout)' // TN, a3%vals, &
+                              vv(embed_layout_${k}$(a2)), tol=ZERO)
+            c4 = c4_${T2D}$(m)
+            call c3%init(c4)
+            call check_approx(passed, 'embed == 3D init(C4 of the 2D tensor)' // TN, a3%vals, c3%vals, tol=ZERO)
+            call c2%init(c4_${T3D}$(rand_mat_3D_${k}$(1.0_dp, 0.0_dp)))
+            c3 = embed_${k}$(c2)
+            call check_true(passed, 'out-of-plane rows/columns = 0' // TN, &
+                            all(c3%vals(OOP_3D, :) == ZERO) .and. all(c3%vals(:, OOP_3D) == ZERO))
+
+            ! get / set on the 81 combinations (exact)
+            do l = 1, 3
+                do k = 1, 3
+                    do j = 1, 3
+                        do i = 1, 3
+                            write(lab, '("(", 3(i0, ","), i0, ")")') i, j, k, l
+                            got2 = a2%get(i, j, k, l)
+                            got3 = a3%get(i, j, k, l)
+                            call check_approx(passed, 'get' // trim(lab) // TN, got2, got3, tol=ZERO)
+                            stored = PI_2D(i, j) > 0 .and. PI_2D(k, l) > 0
+                            b2 = a2
+                            call b2%set(i, j, k, l, s)
+                            c3 = a3
+                            if (stored) call c3%set(i, j, k, l, s)
+                            call check_approx(passed, 'set' // trim(lab) // TN, vv(embed_${k}$(b2)), c3%vals, tol=ZERO)
+                        end do
+                    end do
+                end do
+            end do
+            b2 = rand_${T2D}$(10.0_dp**(mod(it, 7) - 3), 0.0_dp)
+            b3 = embed_${k}$(b2)
+
+            ! Component-wise operations (exact)
+            call check_approx(passed, 'a + b' // TN, vv(embed_${k}$(a2 + b2)), vv(a3 + b3), tol=ZERO)
+            call check_approx(passed, 'a - b' // TN, vv(embed_${k}$(a2 - b2)), vv(a3 - b3), tol=ZERO)
+            call check_approx(passed, '-a' // TN, vv(embed_${k}$(-a2)), vv(-a3), tol=ZERO)
+            call check_approx(passed, 's*a' // TN, vv(embed_${k}$(s*a2)), vv(s*a3), tol=ZERO)
+            call check_approx(passed, 'a*s' // TN, vv(embed_${k}$(a2*s)), vv(a3*s), tol=ZERO)
+            call check_approx(passed, 'a/s' // TN, vv(embed_${k}$(a2/s)), vv(a3/s), tol=ZERO)
+            ! Assignment fills the stored components only: 2D c = s embedded is the 3D tensor
+            ! with s in the in-plane components and 0 out of plane, not the 3D assignment.
+            c2 = s
+            c3 = s
+            c3%vals(OOP_3D, :) = ZERO
+            c3%vals(:, OOP_3D) = ZERO
+            call check_approx(passed, 'c = s (stored components)' // TN, vv(embed_${k}$(c2)), c3%vals, tol=ZERO)
+            ! convert_2sym (exact): 2D result embedded == 3D result of the embedded tensor
+            call check_approx(passed, 'convert_2sym' // TN, vv(embed2s_${k}$(convert_2sym(a2))), &
+                              vv(convert_2sym(a3)), tol=ZERO)
+            call check_approx(passed, '%convert_2sym()' // TN, vv(embed2s_${k}$(a2%convert_2sym())), &
+                              vv(a3%convert_2sym()), tol=ZERO)
+
+            ! norm (rounding: same terms, different grouping allowed)
+            call check_scaled(passed, 'norm(a)' // TN, real(a2%norm(), dp), real(a3%norm(), dp), &
+                              sum(abs(ra)), TD)
+
+            ! is_approx / .approx.: same verdict around the threshold (the embedded zeros do
+            ! not change max|a| nor the differences)
+            p = 1 + mod(it, 25)
+            f = real(0.25_dp + 3.75_dp*(0.5_dp + 0.5_dp*rnd(rng)), ${k}$)   ! 0.25 .. 4 times the tolerance
+            b2 = a2
+            ${at('b2%vals', '4O', '2D', 'p')}$ = ${at('a2%vals', '4O', '2D', 'p')}$ + f*TK*maxval(abs(a2%vals))
+            b3 = embed_${k}$(b2)
+            call check_true(passed, '.approx.' // TN, (a2 .approx. b2) .eqv. (a3 .approx. b3))
+            call check_true(passed, 'is_approx' // TN, a2%is_approx(other=b2) .eqv. a3%is_approx(other=b3))
+            call check_true(passed, 'is_approx(tol)' // TN, &
+                            a2%is_approx(b2, tol=2.0_${k}$*TK) .eqv. a3%is_approx(b3, tol=2.0_${k}$*TK))
+
+            ! ---- Inverse ------------------------------------------------------------------
+            m = rand_mat_2D_${k}$(10.0_dp**(mod(it, 7) - 3), 7.0_dp)
+            ra = real(m, dp)
+            kap = norm_inf(ra)*norm_inf(inv_ref(ra))
+            call a2%init(m)
+            a3 = embed_${k}$(a2)
+            call inverse(a2, x2, ok2, cond2)
+            ! plain embedding: singular in 3D
+            call inverse(a3, x3, ok3, cond3)
+            call check_true(passed, 'inverse: 2D ok' // TN, ok2)
+            call check_true(passed, 'inverse (plain embedding): 3D singular' // TN, &
+                            (.not. ok3) .and. all(ieee_is_nan(x3%vals)) .and. cond3 == huge(1.0_${k}$))
+            ! with a decoupled out-of-plane block of stiffness g = ||C_2D||_inf
+            g = maxval(sum(abs(m), dim=2))
+            g3 = a3
+            do i = 1, size(OOP_3D)
+                g3%vals(OOP_3D(i), OOP_3D(i)) = g
+            end do
+            call inverse(g3, x3, ok3, cond3)
+            call check_true(passed, 'inverse (with out-of-plane block): 3D ok' // TN, ok3)
+            c3 = x3
+            do i = 1, size(OOP_3D)
+                c3%vals(OOP_3D(i), OOP_3D(i)) = ZERO
+            end do
+            call check_approx(passed, 'inverse: in-plane part' // TN, vv(embed_${k}$(x2)), c3%vals, tol=TK*real(kap, ${k}$))
+            call check_approx(passed, 'inverse: out-of-plane 1/g' // TN, &
+                              [(x3%vals(OOP_3D(i), OOP_3D(i)), i = 1, 4)], spread(1.0_${k}$/g, 1, 4), tol=TK)
+            call check_scaled(passed, 'inverse: cond 2D == 3D' // TN, real(cond2, dp), real(cond3, dp), &
+                              kap, TD*kap)
+            call check_approx(passed, '.inv.: in-plane part' // TN, vv(embed_${k}$(.inv. a2)), c3%vals, &
+                              tol=TK*real(kap, ${k}$))
+            call check_approx(passed, '%inv(): in-plane part' // TN, vv(embed_${k}$(a2%inv())), c3%vals, &
+                              tol=TK*real(kap, ${k}$))
+        end do
+
+        ! Singular 2D tensors are singular in 3D (also with the out-of-plane block)
+        do it = 1, 2
+            a2 = ZERO
+            if (it == 1) then
+                a2%vals(1, 1) = 2.0_${k}$     ! no zzzz stiffness
+                a2%vals(2, 2) = 2.0_${k}$
+                a2%vals(3, 3) = 2.0_${k}$
+                a2%vals(4, 4) = 1.0_${k}$
+                a2%vals(1, 4) = 0.5_${k}$
+            else
+                a2%vals(1, 1) = 1.0_${k}$     ! rows of xx and yx equal
+                a2%vals(1, 2) = 1.0_${k}$
+                a2%vals(2, 1) = 1.0_${k}$
+                a2%vals(2, 2) = 1.0_${k}$
+                a2%vals(3, 3) = 1.0_${k}$
+                a2%vals(4, 4) = 1.0_${k}$
+                a2%vals(5, 5) = 1.0_${k}$
+            end if
+            g3 = embed_${k}$(a2)
+            do i = 1, size(OOP_3D)
+                g3%vals(OOP_3D(i), OOP_3D(i)) = 1.0_${k}$
+            end do
+            call inverse(a2, x2, ok2, cond2)
+            call inverse(g3, x3, ok3, cond3)
+            call check_true(passed, 'inverse (singular): not ok' // TN, .not. (ok2 .or. ok3))
+            call check_true(passed, 'inverse (singular): NaN' // TN, &
+                            all(ieee_is_nan(x2%vals)) .and. all(ieee_is_nan(x3%vals)))
+            call check_true(passed, 'inverse (singular): cond' // TN, cond2 == cond3)
+        end do
+    end subroutine test_embed_${k}$
+
+#:endfor
+    subroutine test_historical_aliases(passed)
+        !! The historical names (`ten_3D4O`, `ten_2D4O`) of `muscle_tensors` and of the
+        !! compatibility modules are the double precision instances (D-003): intrinsic assignment
+        !! in both directions (a compile error if they were different types), `same_type_as`, the
+        !! generic operators accept them mixed, and the historical bindings (`get`, `set`,
+        !! `is_approx(other=)`, `convert_2sym` into the historical `ten_<d>4O2sym`) work on them.
+        use muscle_tensors, only: ten_3D4O, ten_2D4O, ten_3D4O_dp, ten_2D4O_dp, ten_3D4O2sym, ten_2D4O2sym, &
+                                  operator(+), operator(.approx.), operator(.inv.), inverse
+        use muscle_tensor_3d4o, only: compat_3D => ten_3D4O
+        use muscle_tensor_2d4o, only: compat_2D => ten_2D4O
+        use muscle_kinds, only: dp
+        use muscle_test_utils, only: check_true, check_approx
+        logical, intent(out) :: passed
+        type(ten_3D4O) :: h3
+        type(ten_3D4O_dp) :: p3, q3
+        type(compat_3D) :: c3
+        type(ten_2D4O) :: h2
+        type(ten_2D4O_dp) :: p2, q2
+        type(compat_2D) :: c2
+        type(ten_3D4O2sym) :: s3
+        type(ten_2D4O2sym) :: s2
+        logical :: ok
+        integer :: i
+
+        passed = .true.
+        call p3%init(reshape([(0.25_dp*real(i, dp), i = 1, 81)], [9, 9]))
+        call p2%init(reshape([(0.25_dp*real(i, dp), i = 1, 25)], [5, 5]))
+        h3 = p3
+        q3 = h3
+        c3 = p3
+        h2 = p2
+        q2 = h2
+        c2 = p2
+        call check_approx(passed, 'ten_3D4O = ten_3D4O_dp', h3%vals, p3%vals, tol=0.0_dp)
+        call check_approx(passed, 'ten_3D4O_dp = ten_3D4O', q3%vals, p3%vals, tol=0.0_dp)
+        call check_approx(passed, 'muscle_tensor_3d4o alias', c3%vals, p3%vals, tol=0.0_dp)
+        call check_approx(passed, 'ten_2D4O = ten_2D4O_dp', h2%vals, p2%vals, tol=0.0_dp)
+        call check_approx(passed, 'ten_2D4O_dp = ten_2D4O', q2%vals, p2%vals, tol=0.0_dp)
+        call check_approx(passed, 'muscle_tensor_2d4o alias', c2%vals, p2%vals, tol=0.0_dp)
+        call check_true(passed, 'same_type_as(ten_3D4O, ten_3D4O_dp)', same_type_as(h3, p3))
+        call check_true(passed, 'same_type_as(compat 3D, ten_3D4O_dp)', same_type_as(c3, p3))
+        call check_true(passed, 'same_type_as(ten_2D4O, ten_2D4O_dp)', same_type_as(h2, p2))
+        call check_true(passed, 'same_type_as(compat 2D, ten_2D4O_dp)', same_type_as(c2, p2))
+        call check_true(passed, 'ten_3D4O is not ten_2D4O', .not. same_type_as(h3, h2))
+        call check_true(passed, 'kind(vals) == dp (3D)', kind(h3%vals) == dp .and. all(shape(h3%vals) == [9, 9]))
+        call check_true(passed, 'kind(vals) == dp (2D)', kind(h2%vals) == dp .and. all(shape(h2%vals) == [5, 5]))
+#:if 'sp' in REAL_KINDS
+        block
+            use muscle_tensors, only: ten_3D4O_sp, ten_2D4O_sp
+            type(ten_3D4O_sp) :: f3
+            type(ten_2D4O_sp) :: f2
+            call check_true(passed, 'ten_3D4O is not ten_3D4O_sp', .not. same_type_as(h3, f3))
+            call check_true(passed, 'ten_2D4O is not ten_2D4O_sp', .not. same_type_as(h2, f2))
+        end block
+#:endif
+        ! Mixed historical / suffixed operands in the generic operators
+        q3 = h3 + p3
+        call check_approx(passed, 'ten_3D4O + ten_3D4O_dp', q3%vals, 2.0_dp*p3%vals, tol=0.0_dp)
+        call check_true(passed, 'ten_3D4O .approx. ten_3D4O_dp', h3 .approx. p3)
+        call check_true(passed, 'ten_3D4O%is_approx(other=)', h3%is_approx(other=p3, tol=0.0_dp))
+        q2 = h2 + p2
+        call check_approx(passed, 'ten_2D4O + ten_2D4O_dp', q2%vals, 2.0_dp*p2%vals, tol=0.0_dp)
+        call check_true(passed, 'ten_2D4O .approx. ten_2D4O_dp', h2 .approx. p2)
+        call check_true(passed, 'ten_2D4O%is_approx(other=)', h2%is_approx(other=p2, tol=0.0_dp))
+        ! get/set (3D: row 3(j-1)+i, column 3(l-1)+k; 2D: zero / ignored out of plane)
+        call h3%set(2, 3, 1, 2, -7.5_dp)
+        call check_approx(passed, 'ten_3D4O%set(2,3,1,2) -> vals(8,4)', h3%vals(8, 4), -7.5_dp, tol=0.0_dp)
+        call check_approx(passed, 'ten_3D4O%get(2,3,1,2)', h3%get(2, 3, 1, 2), -7.5_dp, tol=0.0_dp)
+        call h2%set(1, 2, 2, 1, -7.5_dp)
+        call h2%set(1, 3, 1, 1, 99.0_dp)
+        call check_approx(passed, 'ten_2D4O%set(1,2,2,1) -> vals(3,2)', h2%vals(3, 2), -7.5_dp, tol=0.0_dp)
+        call check_approx(passed, 'ten_2D4O%get(1,3,1,1) = 0', h2%get(1, 3, 1, 1), 0.0_dp, tol=0.0_dp)
+        call check_approx(passed, 'ten_2D4O%set(1,3,...) ignored', sum(h2%vals), sum(p2%vals) - p2%vals(3, 2) - 7.5_dp, &
+                          tol=0.0_dp)
+        ! convert_2sym into the historical 4O2sym types
+        s3 = p3%convert_2sym()
+        call check_approx(passed, 'ten_3D4O%convert_2sym() -> ten_3D4O2sym', s3%vals(4, 6), p3%vals(4, 7), tol=0.0_dp)
+        s2 = p2%convert_2sym()
+        call check_approx(passed, 'ten_2D4O%convert_2sym() -> ten_2D4O2sym', s2%vals(2, 4), p2%vals(4, 3), tol=0.0_dp)
+        ! inverse through the historical generic, on historical-name tensors
+        h2%vals = 0.0_dp
+        do i = 1, 5
+            h2%vals(i, i) = 2.0_dp
+        end do
+        h2%vals(1, 5) = 1.0_dp
+        call inverse(h2, q2, ok)
+        call check_true(passed, 'inverse(ten_2D4O): ok', ok)
+        call check_approx(passed, 'inverse(ten_2D4O)', [q2%vals(1, 1), q2%vals(1, 5), q2%vals(5, 5), sum(abs(q2%vals))], &
+                          [0.5_dp, -0.25_dp, 0.5_dp, 2.75_dp], tol=0.0_dp)
+        h3%vals = 0.0_dp
+        do i = 1, 9
+            h3%vals(i, i) = 4.0_dp
+        end do
+        q3 = .inv. h3
+        call check_approx(passed, '.inv. ten_3D4O', [q3%vals(1, 1), q3%vals(9, 9), sum(abs(q3%vals))], &
+                          [0.25_dp, 0.25_dp, 2.25_dp], tol=0.0_dp)
+    end subroutine test_historical_aliases
+
+end program test_muscle_tensor_4o_kinds

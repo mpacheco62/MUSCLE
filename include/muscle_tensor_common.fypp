@@ -1,0 +1,283 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Pieces shared by the tensor family templates (src/tensors/types/muscle_tensor_<family>.fypp,
+#! pattern of D-011, D-012): the operations whose code does not depend on the family or on the
+#! layout (they act on the whole `vals` array), their generic interfaces and the type-bound
+#! wrappers of the historical API. Include after muscle_common.fypp:
+#!
+#!   #:include "muscle_common.fypp"
+#!   #:include "muscle_tensor_common.fypp"
+#!
+#! Every family module provides, besides what these macros generate, the specific procedures
+#! `inverse_<dim><family>_<k>(a, a_inv, ok, cond)` (used by `.inv.`) and the module variables
+#! `TOL_APPROX_<k>`, `EPS_ABS_<k>` (from muscle_kinds) used by `is_approx`.
+#! Rules: .claude/rules/fypp-templates.md
+#:mute
+
+#! Generic interfaces common to every tensor family F (all dimensions and kinds):
+#! `.approx.`, `+`, `-` (binary and unary), `*` and `/` by a scalar, assignment of a scalar,
+#! `.inv.` and the generic functions `inverse` and `is_approx`. Expand it in the specification
+#! part of the module; the family-specific interfaces (`norm`, `.ddot.`, ...) stay in the template.
+#:def TENSOR_COMMON_INTERFACES(F)
+    public :: operator(.approx.)
+    interface operator (.approx.)
+        module procedure ${specifics('approx_{0}_{1}', F)}$
+    end interface
+
+    public :: operator(+)
+    interface operator (+)
+        module procedure ${specifics('sum_{0}_{1}', F)}$
+    end interface
+
+    public :: operator(-)
+    interface operator (-)
+        module procedure ${specifics('sub_{0}_{1}', F)}$
+        module procedure ${specifics('subU_{0}_{1}', F)}$
+    end interface
+
+    public :: operator(*)
+    interface operator (*)
+        module procedure ${specifics('mul_real_{0}_{1}', F)}$
+        module procedure ${specifics('mul_{0}_real_{1}', F)}$
+    end interface
+
+    public :: operator( / )
+    interface operator ( / )
+        module procedure ${specifics('div_{0}_real_{1}', F)}$
+    end interface
+
+    public :: assignment (=)
+    interface assignment (=)
+        module procedure ${specifics('assign_{0}_real_{1}', F)}$
+    end interface
+
+    public :: operator(.inv.)
+    interface operator (.inv.)
+        module procedure ${specifics('inv_{0}_{1}', F)}$
+    end interface
+
+    public :: inverse
+    interface inverse
+        !! `call inverse(a, a_inv, ok [, cond])`: inverse with a success flag and condition number.
+        module procedure ${specifics('inverse_{0}_{1}', F)}$
+    end interface
+
+    public :: is_approx
+    interface is_approx
+        !! Component-wise approximate equality, optional relative tolerance.
+        module procedure ${specifics('is_approx_{0}_{1}', F)}$
+    end interface
+#:enddef
+
+#! Kernel procedures common to every tensor family, for the type of family F, dimension d and
+#! kind k: assignment of a scalar, `is_approx` and `.approx.`, `+`, `-` (binary and unary),
+#! `*` and `/` by a scalar (all component-wise on `vals`) and `.inv.` (calls the family's
+#! `inverse_<d><F>_<k>`). Expand it inside the `contains` part of the module.
+#! tol_default: Fortran constant used as the default tolerance of `is_approx` (default
+#! `TOL_APPROX_<k>`); a family with its own default (D-010, 4O2sym) passes it here.
+#:def TENSOR_COMMON_PROCEDURES(d, F, k, tol_default=None)
+#:set S = d + F
+#:set tol_def = tol_default if tol_default else 'TOL_APPROX_' + k
+#:set T = tname(S, k)
+#:set P = S + '_' + k
+#:set n = len(layout(F, d).comps)
+    pure subroutine assign_${S}$_real_${k}$(a, b)
+        !! `${T}$ = scalar`: assigns `b` to every stored component.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(out) :: a
+            !! Target tensor.
+        real(${k}$), intent(in) :: b
+            !! Scalar value copied to all ${n}$ components.
+        a%vals = b
+    end subroutine assign_${S}$_real_${k}$
+
+    pure function is_approx_${P}$(a, b, tol) result(res)
+        !! Component-wise approximate equality of two `${T}$` with a relative tolerance:
+        !! \( |a_I - b_I| \le tol \cdot \max(\max|a|, \max|b|, \epsilon_{abs}) \) for all I.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! First tensor.
+        type(${T}$), intent(in) :: b
+            !! Second tensor.
+        real(${k}$), optional, intent(in) :: tol
+            !! Relative tolerance (default `${tol_def}$`).
+        logical :: res
+            !! `.true.` if both tensors are approximately equal.
+        real(${k}$) :: tol2, max_val
+
+        tol2 = ${tol_def}$
+        if (present(tol)) tol2 = tol
+        max_val = max(maxval(abs(a%vals)), maxval(abs(b%vals)), EPS_ABS_${k}$)
+        res = all(abs(a%vals - b%vals) .le. tol2 * max_val)
+    end function is_approx_${P}$
+
+    pure function approx_${P}$(a, b) result(res)
+        !! `${T}$ .approx. ${T}$`: `is_approx` with its default tolerance.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! First tensor.
+        type(${T}$), intent(in) :: b
+            !! Second tensor.
+        logical :: res
+            !! `.true.` if both tensors are approximately equal.
+        res = is_approx_${P}$(a, b)
+    end function approx_${P}$
+
+    pure function sum_${P}$(a, b) result(res)
+        !! Component-wise sum of two `${T}$`.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! First operand.
+        type(${T}$), intent(in) :: b
+            !! Second operand.
+        type(${T}$) :: res
+            !! Sum.
+        res%vals = a%vals + b%vals
+    end function sum_${P}$
+
+    pure function sub_${P}$(a, b) result(res)
+        !! Component-wise difference of two `${T}$`.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Minuend.
+        type(${T}$), intent(in) :: b
+            !! Subtrahend.
+        type(${T}$) :: res
+            !! Difference.
+        res%vals = a%vals - b%vals
+    end function sub_${P}$
+
+    pure function subU_${P}$(a) result(res)
+        !! Unary negation of a `${T}$`.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Operand.
+        type(${T}$) :: res
+            !! Negated tensor.
+        res%vals = -a%vals
+    end function subU_${P}$
+
+    pure function mul_real_${P}$(a, b) result(res)
+        !! `real(${k}$) * ${T}$`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: a
+            !! Scalar factor.
+        type(${T}$), intent(in) :: b
+            !! Tensor.
+        type(${T}$) :: res
+            !! Scaled tensor.
+        res%vals = a * b%vals
+    end function mul_real_${P}$
+
+    pure function mul_${S}$_real_${k}$(a, b) result(res)
+        !! `${T}$ * real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor.
+        real(${k}$), intent(in) :: b
+            !! Scalar factor.
+        type(${T}$) :: res
+            !! Scaled tensor.
+        res%vals = a%vals * b
+    end function mul_${S}$_real_${k}$
+
+    pure function div_${S}$_real_${k}$(a, b) result(res)
+        !! `${T}$ / real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor.
+        real(${k}$), intent(in) :: b
+            !! Scalar divisor (must be non-zero).
+        type(${T}$) :: res
+            !! Scaled tensor.
+        res%vals = a%vals/b
+    end function div_${S}$_real_${k}$
+
+    pure function inv_${P}$(a) result(res)
+        !! `.inv. ${T}$`: inverse; quiet NaN if singular (use the generic `inverse` to get a
+        !! success flag and the condition number).
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor to invert.
+        type(${T}$) :: res
+            !! Inverse tensor.
+        logical :: ok
+        call inverse_${P}$(a, res, ok)
+    end function inv_${P}$
+#:enddef
+
+#! Type-bound wrappers (historical API; `class` passed object, not for kernels) common to every
+#! tensor family, for the type of family F, dimension d and kind k:
+#! - `init_<d><F>_<k>_tbp(self, vals)`: `%init(vals)` from an array in storage order;
+#! - `<op>_<d><F>_<k>_tbp(self)` for each name in `scalar_ops` (result `real(k)`) and in
+#!   `tensor_ops` (result of the tensor type): `%<op>()` calls the free function `<op>_<d><F>_<k>`;
+#! - `is_approx_<d><F>_<k>_tbp(self, b, tol)`: `%is_approx(b [, tol])`; `other` renames the
+#!   dummy `b` for a family whose historical keyword differs (4O: `other`).
+#! The named-component `init2` (and `set`) stay in the template: their argument order is family
+#! specific. Expand it inside the `contains` part of the module.
+#:def TENSOR_COMMON_TBP(d, F, k, scalar_ops, tensor_ops, other='b')
+#:set S = d + F
+#:set T = tname(S, k)
+#:set P = S + '_' + k
+#:set lay = layout(F, d)
+#:set n = len(lay.comps)
+    pure subroutine init_${P}$_tbp(self, vals)
+        !! `%init(vals)`: initializes a `${T}$` from an array with the shape of `vals`
+        !! (${'x'.join(map(str, lay.shape))}$, storage order).
+        implicit none
+        class(${T}$), intent(inout) :: self
+            !! Tensor to initialize.
+        real(${k}$), intent(in) :: vals(${', '.join(map(str, lay.shape))}$)
+            !! Components in storage order.
+        self%vals = vals
+    end subroutine init_${P}$_tbp
+
+#:for op, rtype in [(o, 'real(' + k + ')') for o in scalar_ops] + [(o, 'type(' + T + ')') for o in tensor_ops]
+    pure function ${op}$_${P}$_tbp(self) result(res)
+        !! `%${op}$()`: type-bound wrapper of `${op}$_${P}$`.
+        implicit none
+        class(${T}$), intent(in) :: self
+            !! Tensor.
+        ${rtype}$ :: res
+            !! Result.
+        res = ${op}$_${P}$(self)
+    end function ${op}$_${P}$_tbp
+
+#:endfor
+    pure function is_approx_${P}$_tbp(self, ${other}$, tol) result(res)
+        !! `%is_approx(${other}$ [, tol])`: type-bound wrapper of `is_approx_${P}$`.
+        implicit none
+        class(${T}$), intent(in) :: self
+            !! First tensor.
+        type(${T}$), intent(in) :: ${other}$
+            !! Second tensor.
+        real(${k}$), optional, intent(in) :: tol
+            !! Relative tolerance (default: that of `is_approx_${P}$`).
+        logical :: res
+            !! `.true.` if both tensors are approximately equal.
+        res = is_approx_${P}$(self, ${other}$, tol)
+    end function is_approx_${P}$_tbp
+#:enddef
+
+#! Copies the matrix shown to the user of a tensor (`Layout.matrix`: the full 3x3 matrix of a
+#! 2nd-order tensor, the matrix of the base 2nd-order layout of a 4th-order one) stored in `src`
+#! into the square array `m`, column by column (`m(:,j) = (/ ... /)`); components that are not
+#! stored (2D structural zeros) become `0.0_<k>`.
+#:def LOAD_MATRIX(m, lay, k, src='a%vals')
+#:for j, col in enumerate(zip(*lay.matrix(src, zero='0.0_' + k)), start=1)
+        ${m}$(:,${j}$) = (/ ${', '.join(col)}$ /)
+#:endfor
+#:enddef
+
+#:endmute

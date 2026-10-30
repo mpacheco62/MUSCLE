@@ -1,0 +1,245 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Test cases shared by the tests of the tensor families (tests/tensors/types/*_kinds.fypp).
+#! Include it with a path relative to the test (`#:include "../../common/muscle_test_tensor_cases.fypp"`)
+#! and list it in the DEPENDS of add_muscle_fypp_test.
+#!
+#! Contract with the including test: its helper module (`lib`) provides, for the tensor type
+#! T = tname(d + fam, k),
+#!   - `rand_<T>(scale, shift)`: a random tensor with entries uniform in (-scale, scale) plus
+#!     shift*scale on the diagonal (its matrix or Voigt matrix), drawn from `rng`;
+#!   - `rng` (type(park_miller)) and the generic `vv(t)` (the `vals` of a tensor expression).
+#! The random numbers are drawn in a fixed order, so the data of a test does not depend on the
+#! macro but only on the seed of `lib` and on the calls of the test program.
+#!
+#! Storage: `vals` is a vector (layout rank 1: 2O, 2Osym, 4O3sym) or a matrix vals(n1, n2)
+#! (rank 2: 4O2sym). The macros address the p-th stored component (storage order of
+#! layout(fam, d).comps) with `at`, and `vv` may return a vector or a matrix (check_approx
+#! has both forms). For vector storage the generated code is the same as before the matrix
+#! case was added.
+
+
+#! at(var, fam, d, p): reference to the p-th stored component of `var` (the `vals` of a tensor of
+#! family `fam` and dimension `d`), p in the storage order of layout(fam, d).comps. Vector
+#! storage: `var(p)`. Matrix storage: the position `c.pos` of the layout when p is an integer,
+#! otherwise the column-major position of the run-time index p (the order of the layout
+#! components, asserted at preprocessing time; the column is written as an exact division to
+#! avoid the -Winteger-division warning that gfortran -fcheck=all emits on loop bounds).
+#:def at(var, fam, d, p)
+#:set lay = layout(fam, d)
+#:if len(lay.shape) == 1
+$:'{}({})'.format(var, p)
+#:else
+#:assert all(c.pos == (1 + i % lay.shape[0], 1 + i // lay.shape[0]) for i, c in enumerate(lay.comps))
+#:if isinstance(p, int)
+$:'{}({})'.format(var, ', '.join(str(i) for i in lay.comps[p - 1].pos))
+#:else
+$:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var, p, lay.shape[0])
+#:endif
+#:endif
+#:enddef at
+
+
+#! pure_use(fam, d, k, mod, free, expr): `pure` function `pure_use_<T>(a, b)` that calls the free
+#! generics `free` of module `mod` (and `.inv.`): a compile-time check that they are `pure`, as
+#! needed in kernels (D-011). It returns `expr + .inv. b`, `expr` written with the free generics
+#! of `a` (`a` must make it finite, `b` must be regular).
+#:def pure_use(fam, d, k, mod, free, expr)
+#:set T = tname(d + fam, k)
+    pure function pure_use_${T}$(a, b) result(r)
+        !! Compile-time check: the free generics of `${mod}$` (${', '.join(free)}$) and the
+        !! operators are `pure` (needed in kernels, D-011). Returns ${expr}$ + .inv. b.
+        use ${mod}$, only: ${', '.join(free)}$
+        type(${T}$), intent(in) :: a
+            !! First tensor (non-zero).
+        type(${T}$), intent(in) :: b
+            !! Second tensor (regular).
+        type(${T}$) :: r, x
+        logical :: ok
+        call inverse(b, x, ok)
+        r = ${expr}$ + .inv. b
+        ! Uses is_approx and inverse inside this pure function (the test is that it compiles)
+        if (.not. is_approx(r, r)) r = x
+    end function pure_use_${T}$
+#:enddef pure_use
+
+
+#! test_approx(fam, d, k, lib, zero_pos, loop_checks=(), tol_name='TOL_APPROX'): subroutine
+#! `test_approx_<d>_<k>`, `is_approx` (default tolerance `<tol_name>_<k>` of muscle_kinds, e.g.
+#! TOL_APPROX_<k> or TOL_APPROX_4O2SYM_<k>, and explicit `tol`) and `.approx.` of T:
+#! - random tensors at the scales 1e-2 .. 1e2: a perturbation of each stored component at 0.5
+#!   and 4 times the threshold tol*max|a| (both operand orders), explicit tolerances 1e-2/1e-4
+#!   around a 1e-3 perturbation, plus `loop_checks` (list of (label, condition) on `a`);
+#! - the relative criterion: 0 ~ 0, 0 !~ 1e-20 (at `vals(zero_pos)`), the absolute floor
+#!   EPS_ABS_<k>, the scale max(max|a|, max|b|), the inclusive threshold and NaN.
+#:def test_approx(fam, d, k, lib, zero_pos, loop_checks=(), tol_name='TOL_APPROX')
+#:set T = tname(d + fam, k)
+#:set N = len(layout(fam, d).comps)
+    subroutine test_approx_${d}$_${k}$(passed)
+        !! `is_approx` (default tolerance ${tol_name}$_${k}$ and explicit `tol`) and `.approx.` of `${T}$`.
+        use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+        use muscle_kinds, only: ${tol_name}$_${k}$, EPS_ABS_${k}$
+        use ${lib}$
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(${k}$), parameter :: TA = ${tol_name}$_${k}$
+        type(${T}$) :: a, b, z
+        real(${k}$) :: mx
+        integer :: p, it
+        character(len=48) :: lab
+
+        passed = .true.
+        do it = 1, 5
+            a = rand_${T}$(10.0_dp**(it - 3), 0.0_dp)
+            mx = maxval(abs(a%vals))
+            call check_true(passed, 'a .approx. a [${T}$]', a .approx. a)
+            call check_true(passed, 'a%is_approx(a) [${T}$]', a%is_approx(a))
+            ! A perturbation of each stored component, below and above the threshold tol*max|a|
+            do p = 1, ${N}$
+                write(lab, '(" (component ", i0, ") [${T}$]")') p
+                b = a
+                ${at('b%vals', fam, d, 'p')}$ = ${at('a%vals', fam, d, 'p')}$ + 0.5_${k}$*TA*mx
+                call check_true(passed, 'is_approx: 0.5 tol inside' // trim(lab), a%is_approx(b))
+                call check_true(passed, '.approx.: 0.5 tol inside' // trim(lab), a .approx. b)
+                call check_true(passed, 'is_approx: symmetric' // trim(lab), b%is_approx(a))
+                ${at('b%vals', fam, d, 'p')}$ = ${at('a%vals', fam, d, 'p')}$ - 4.0_${k}$*TA*mx
+                call check_true(passed, 'is_approx: 4 tol outside' // trim(lab), .not. a%is_approx(b))
+                call check_true(passed, '.approx.: 4 tol outside' // trim(lab), .not. (a .approx. b))
+                call check_true(passed, 'is_approx: symmetric outside' // trim(lab), .not. b%is_approx(a))
+                ! Explicit tolerance overrides the default
+                ${at('b%vals', fam, d, 'p')}$ = ${at('a%vals', fam, d, 'p')}$ + 1.0e-3_${k}$*mx
+                call check_true(passed, 'is_approx: 1e-3 vs default' // trim(lab), .not. a%is_approx(b))
+                call check_true(passed, 'is_approx(tol=1e-2): 1e-3' // trim(lab), a%is_approx(b, tol=1.0e-2_${k}$))
+                call check_true(passed, 'is_approx(tol=1e-4): 1e-3' // trim(lab), &
+                                .not. a%is_approx(b, tol=1.0e-4_${k}$))
+            end do
+#:for label, cond in loop_checks
+            call check_true(passed, '${label}$ [${T}$]', ${cond}$)
+#:endfor
+        end do
+        ! Relative criterion: two zero tensors are equal, zero and a tiny tensor are not
+        z = ZERO
+        b = ZERO
+        call check_true(passed, '0 .approx. 0 [${T}$]', z .approx. b)
+        ${at('b%vals', fam, d, zero_pos)}$ = 1.0e-20_${k}$
+        call check_true(passed, '0 .approx. 1e-20 is false [${T}$]', .not. (z .approx. b))
+        call check_true(passed, '0 is_approx 1e-20 (tol=0.5) is false [${T}$]', .not. z%is_approx(b, tol=0.5_${k}$))
+        ! Absolute floor EPS_ABS_${k}$ of the scale: below it the criterion is absolute
+        b = ZERO
+        ${at('b%vals', fam, d, 1)}$ = 0.1_${k}$*EPS_ABS_${k}$
+        call check_true(passed, '0 is_approx 0.1*EPS_ABS (tol=0.5) [${T}$]', z%is_approx(b, tol=0.5_${k}$))
+        call check_true(passed, '0 is_approx 0.1*EPS_ABS (tol=0.05) is false [${T}$]', &
+                        .not. z%is_approx(b, tol=0.05_${k}$))
+        ! The scale is max(max|a|, max|b|) (not max|a|): |a - b| = 999 <= 1 * 1000 only with max|b|
+        a = 1.0_${k}$
+        b = a
+        ${at('b%vals', fam, d, N)}$ = 1000.0_${k}$
+        call check_true(passed, 'is_approx scale uses max|b| [${T}$]', a%is_approx(b, tol=1.0_${k}$))
+        call check_true(passed, 'is_approx scale uses max|a| [${T}$]', b%is_approx(a, tol=1.0_${k}$))
+        ! The threshold is inclusive (.le.): |a - b| = 1 == 0.5 * max(1, 2), exact in every kind
+        b = a
+        ${at('b%vals', fam, d, 2)}$ = 2.0_${k}$
+        call check_true(passed, 'is_approx: |a-b| == tol*max is accepted [${T}$]', a%is_approx(b, tol=0.5_${k}$))
+        call check_true(passed, 'is_approx: |a-b| > tol*max is rejected [${T}$]', &
+                        .not. a%is_approx(b, tol=0.4375_${k}$))
+        ! NaN is never approximately equal (not even to itself)
+        a = 1.0_${k}$
+        ${at('a%vals', fam, d, 2)}$ = ieee_value(1.0_${k}$, ieee_quiet_nan)
+        call check_true(passed, 'NaN .approx. NaN is false [${T}$]', .not. (a .approx. a))
+    end subroutine test_approx_${d}$_${k}$
+#:enddef test_approx
+
+
+#! test_free_generics(fam, d, k, lib, mod, scalars, unary, inv_shift, p_mult, pure_ref,
+#!                    pure_fresh_b=False, tol_name='TOL_APPROX'): subroutine
+#! `test_free_generics_<d>_<k>` (default tolerance of is_approx: `<tol_name>_<k>`). The free
+#! generics of `mod` (the GPU-callable API) give exactly (tol = 0) the results of the type-bound
+#! procedures of T:
+#! - `scalars` (e.g. ['norm', 'det']) and `unary` (tensor results, e.g. ['transpose']):
+#!   f(a) == a%f() on random tensors at the scales 1e-2, 1, 1e2;
+#! - is_approx in both argument orders, with default, explicit and positional tolerance, and
+#!   equal to `.approx.`, around the threshold (component `1 + mod(p_mult*it, N)` perturbed by
+#!   0.25 .. 4 times the tolerance);
+#! - inverse(a, x, ok, cond) == a%inv() == .inv. a on diagonally dominant tensors (diagonal shift
+#!   `inv_shift`), and on the zero tensor (ok = .false., NaN); norm (and det) of zero;
+#! - the `pure` caller `pure_use_<T>` (see pure_use) gives the result of the same expression
+#!   written with type-bound procedures, `pure_ref` (in terms of `b`) + a%inv(). Its first
+#!   argument is the perturbed `b`, or a fresh random tensor if `pure_fresh_b`.
+#! Note: p_mult and pure_fresh_b only reproduce the random sequences of the tests written before
+#! D-012 (2O, 2Osym, 4O3sym); new families can use p_mult=7 and pure_fresh_b=True.
+#:def test_free_generics(fam, d, k, lib, mod, scalars, unary, inv_shift, p_mult, pure_ref, pure_fresh_b=False, &
+    & tol_name='TOL_APPROX')
+#:set T = tname(d + fam, k)
+#:set N = len(layout(fam, d).comps)
+#:set free = scalars + unary + ['is_approx', 'inverse']
+    subroutine test_free_generics_${d}$_${k}$(passed)
+        !! The free generics of `${mod}$` (${', '.join('`' + f + '`' for f in free)}$, the
+        !! GPU-callable API) give exactly (tol = 0) the results of the type-bound procedures of
+        !! `${T}$` (${', '.join('`%' + f + '()`' for f in scalars + unary)}$, `%is_approx()`, `%inv()`).
+        use, intrinsic :: ieee_arithmetic, only: ieee_is_nan
+        use ${mod}$, only: ${', '.join(free)}$
+        use muscle_kinds, only: ${tol_name}$_${k}$
+        use ${lib}$
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        real(${k}$), parameter :: TA = ${tol_name}$_${k}$
+        type(${T}$) :: a, b, x
+        real(${k}$) :: cond, f
+        logical :: ok
+        integer :: is, it, p
+        character(len=*), parameter :: TN = ' [free vs type-bound, ${T}$]'
+
+        passed = .true.
+        do is = 1, 3
+            do it = 1, 10
+                ! Scales 1e-2, 1, 1e2
+                a = rand_${T}$(10.0_dp**(2*is - 4), 0.0_dp)
+#:for fn in scalars
+                call check_approx(passed, '${fn}$(a)' // TN, ${fn}$(a), a%${fn}$(), tol=ZERO)
+#:endfor
+#:for fn in unary
+                call check_approx(passed, '${fn}$(a)' // TN, vv(${fn}$(a)), vv(a%${fn}$()), tol=ZERO)
+#:endfor
+                ! is_approx around the threshold (0.25 .. 4 times the tolerance), default and explicit tol
+                p = 1 + mod(${'' if p_mult == 1 else str(p_mult) + '*'}$it, ${N}$)
+                f = real(0.25_dp + 3.75_dp*(0.5_dp + 0.5_dp*rnd(rng)), ${k}$)
+                b = a
+                ${at('b%vals', fam, d, 'p')}$ = ${at('a%vals', fam, d, 'p')}$ + f*TA*maxval(abs(a%vals))
+                call check_true(passed, 'is_approx(a, b)' // TN, is_approx(a, b) .eqv. a%is_approx(b))
+                call check_true(passed, 'is_approx(b, a)' // TN, is_approx(b, a) .eqv. b%is_approx(a))
+                call check_true(passed, 'is_approx(a, b, tol)' // TN, &
+                                is_approx(a, b, tol=2.0_${k}$*TA) .eqv. a%is_approx(b, tol=2.0_${k}$*TA))
+                call check_true(passed, 'is_approx(a, b, tol=TA)' // TN, &
+                                is_approx(a, b, TA) .eqv. a%is_approx(b, TA))
+                call check_true(passed, 'is_approx(a, b, tol=TA) == default' // TN, &
+                                is_approx(a, b, TA) .eqv. is_approx(a, b))
+                call check_true(passed, 'is_approx(a, b) .eqv. a .approx. b' // TN, &
+                                is_approx(a, b) .eqv. (a .approx. b))
+                call check_true(passed, 'is_approx(a, a)' // TN, is_approx(a, a))
+                ! Inverse of a diagonally dominant tensor
+                a = rand_${T}$(10.0_dp**(2*is - 4), ${inv_shift}$)
+                call inverse(a, x, ok, cond)
+                call check_true(passed, 'inverse: ok' // TN, ok)
+                call check_approx(passed, 'inverse(a) == a%inv()' // TN, x%vals, vv(a%inv()), tol=ZERO)
+                call check_approx(passed, 'inverse(a) == .inv. a' // TN, x%vals, vv(.inv. a), tol=ZERO)
+                ! pure caller (compile-time purity check), same result as the inline expression
+#:if pure_fresh_b
+                b = rand_${T}$(10.0_dp**(2*is - 4), 0.0_dp)
+#:endif
+                call check_approx(passed, 'pure caller' // TN, vv(pure_use_${T}$(b, a)), &
+                                  vv(${pure_ref}$ + a%inv()), tol=ZERO)
+            end do
+        end do
+        ! Singular tensor: the free inverse fails, both give quiet NaN
+        a = ZERO
+        call inverse(a, x, ok)
+        call check_true(passed, 'inverse (singular): not ok' // TN, .not. ok)
+        call check_true(passed, 'inverse (singular): NaN, as a%inv()' // TN, &
+                        all(ieee_is_nan(x%vals)) .and. all(ieee_is_nan(vv(a%inv()))))
+        ! Zero tensor: ${' and '.join(scalars)}$ vanish in both APIs
+#:for fn in scalars
+        call check_approx(passed, '${fn}$(0)' // TN, ${fn}$(a), ZERO, tol=ZERO)
+#:endfor
+    end subroutine test_free_generics_${d}$_${k}$
+#:enddef test_free_generics

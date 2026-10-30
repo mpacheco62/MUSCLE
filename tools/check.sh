@@ -151,6 +151,7 @@ cmake --build "$build_dir" --target build_all_tests -j "$(nproc)" || exit 1
 
 # Generated code must fit the free-form limit (comments may run longer)
 long=$(find "$build_dir/fypp" -name '*.f90' -print0 2>/dev/null | xargs -0 -r perl -ne '
+    next if /^#/;                      # #line markers (paths can be long in worktrees)
     my $code = $_; $code =~ s/!.*//;
     print "$ARGV:$.: ", length($code), " columns\n" if length($code) > 133;
     close ARGV if eof')
@@ -160,9 +161,13 @@ if [[ -n "$long" ]]; then
 fi
 
 # Formatted output (UDTIO) is disabled for gfortran < 16.3: compile that path anyway
-echo "== build: ${build_dir}-udtio (library with MUSCLE_UDTIO=ON)"
+# (library and tests; only the tensor tests run there: the OpenMP tests hit the gfortran bug)
+echo "== build: ${build_dir}-udtio (MUSCLE_UDTIO=ON, tensor tests)"
 cmake -S . -B "${build_dir}-udtio" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMUSCLE_UDTIO=ON > /dev/null || exit 1
-cmake --build "${build_dir}-udtio" --target muscle -j "$(nproc)" > /dev/null || {
+cmake --build "${build_dir}-udtio" --target build_all_tests -j "$(nproc)" > /dev/null || {
     echo "== build with MUSCLE_UDTIO=ON failed"; exit 1; }
+ctest --test-dir "${build_dir}-udtio" -R 'tensors-types-.*_kinds' --output-on-failure -j "$(nproc)" \
+    > "${build_dir}-udtio/ctest-udtio.log" || {
+    echo "== UDTIO tensor tests failed (see ${build_dir}-udtio/ctest-udtio.log)"; exit 1; }
 
 ctest --test-dir "$build_dir" --output-on-failure -j "$(nproc)"

@@ -29,6 +29,8 @@ module muscle_test_utils
     !! - Real arrays: the same component-wise criterion; `tol = 0` means exact equality.
     !! - Real scalars: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \) (absolute below 1,
     !!   relative above); `tol = 0` means exact equality.
+    !! - `check_scaled`: \( |a - b| \le tol \cdot scale \) with the natural scale of the rounding
+    !!   error given by the caller (sum of |terms| of a dot product or of a determinant).
     !!
     !! Real checks exist for every kind in `MUSCLE_REAL_KINDS`; the default tolerance is that of
     !! the kind (`TOL_APPROX_sp`/`TOL_APPROX_dp` of `muscle_kinds`). Tensor checks cover the
@@ -41,7 +43,7 @@ module muscle_test_utils
     implicit none
     private
 
-    public :: check_approx, check_true
+    public :: check_approx, check_true, check_scaled
 
 #! Tensor types checked: every (family, dim), double precision only until the sp types exist.
 #:set TENSORS = [(fam, dim) for dim in DIMS for fam in FAMILIES]
@@ -70,6 +72,13 @@ module muscle_test_utils
         module procedure check_${dim}$${fam}$
 #:endfor
     end interface check_approx
+
+    interface check_scaled
+        !! Scalar comparison with an explicit error scale: \( |got - expected| \le tol \cdot scale \).
+#:for k in REAL_KINDS
+        module procedure check_scaled_${k}$
+#:endfor
+    end interface check_scaled
 
 contains
 
@@ -119,6 +128,33 @@ contains
         end if
         passed = passed .and. ok
     end subroutine check_real_${k}$
+
+    subroutine check_scaled_${k}$(passed, label, got, expected, scale, tol)
+        !! Scalar `real(${k}$)` check with an explicit error scale (e.g. the sum of |terms| of a dot
+        !! product or of a determinant): \( |got - expected| \le tol \cdot \max(scale, tiny) \).
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got
+            !! Obtained value.
+        real(${k}$), intent(in) :: expected
+            !! Reference value.
+        real(${k}$), intent(in) :: scale
+            !! Natural scale of the rounding error.
+        real(${k}$), intent(in) :: tol
+            !! Relative tolerance.
+        logical :: ok
+        ok = abs(got - expected) <= tol*max(scale, tiny(1.0_${k}$))
+        if (.not. ok) then
+            print '(a)', ' FAIL: ' // label
+            print '(a, es24.15, a, es24.15)', '   got ', got, '  expected ', expected
+            print '(a, es9.2, a, es9.2, a, es9.2)', '   |diff| ', abs(got - expected), &
+                '  tol*max(scale, tiny) ', tol*max(scale, tiny(1.0_${k}$)), '  scale ', scale
+            flush(output_unit)
+        end if
+        passed = passed .and. ok
+    end subroutine check_scaled_${k}$
 
     subroutine check_real_1d_${k}$(passed, label, got, expected, tol)
         !! Component-wise comparison of two `real(${k}$)` vectors relative to their largest component.

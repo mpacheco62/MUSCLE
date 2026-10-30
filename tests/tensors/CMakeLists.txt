@@ -1,2 +1,4 @@
 add_subdirectory(operators)
 add_subdirectory(types)
+
+add_muscle_fypp_test(functions test_muscle_tensor_functions.fypp)

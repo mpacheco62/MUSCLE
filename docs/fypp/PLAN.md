@@ -147,16 +147,59 @@ anotar la fecha/commit.
 - **Salida**: patrón validado y documentado en `DECISIONES.md`.
 
 ### Fase 3 — Resto de tipos
-- [ ] `2O` general (3D 9 comps / 2D 5 comps).
-- [ ] `4O3sym` (21 / 10), `4O2sym` (6x6 / 4x4), `4O` general (9x9 / 5x5).
-- [ ] Identidades `iden_2O`, `iden_2OS`, `iden_4O3T(S)`, `iden_4O4T(S)` (las escaladas llevan kind).
-- [ ] UDTIO/`print` fuera de los módulos de tipo (módulo CPU aparte `muscle_tensors_io`).
+- [x] `2O` general (3D 9 comps / 2D 5 comps): `muscle_tensor_2o.fypp`, test `2o_kinds`. (2026-10-29)
+- [x] `4O3sym` (21 / 10): `muscle_tensor_4o3sym.fypp`, test `4o3sym_kinds` (con UDTIO nuevo). (2026-10-29)
+- [x] **PRIORIDAD antes de la segunda tanda (pedido del usuario, 2026-10-29): commit `refactor`,
+      verificado bit a bit, registrado como D-012 (enmienda a D-011):**
+      1. Macros comunes en `include/` para lo idéntico en las plantillas de tipo (~145 líneas:
+         assign, sum, sub, subU, mul ×2, div, is_approx, approx, inv, envoltorios `_tbp` e
+         interfaces de operadores) y aplicarlas a 2Osym, 2O y 4O3sym.
+      2. `KAPPA` opcional en `M55INV`/`M66INV`/`M99INV` (con `COND_INF` tras el LU, mismos bits) para
+         quitar los `#:if d` de las inversas de 4º orden; confirmar que no cambia el camino de `M44INV`.
+      3. Helpers de tests a `tests/common/` (Park-Miller `rnd`, `inv_ref`/`eye`/`norm_inf`/`det_ref`
+         n×n, `check_scaled`, `record`) y tests de `approx`/`free_generics` como macros.
+      4. Consistencia: `Layout.matrix()` en las inversas en vez de Python inline (ampliar su test a
+         4O/4O2sym), llamar siempre a la rutina específica `_<k>` de `muscle_math_inverses`, y
+         comprobación de `pure` en el test de 4O3sym.
+      Detalle completo: revisión de la tanda 1 (hallazgos 1–5).
+      Hecho 2026-10-30 (D-012), con revisión aplicada: `init_tbp` con la forma del layout,
+      `tol_default` por familia, test directo del `KAPPA` de `M55/M66/M99INV`.
+- Instrucciones del usuario para la segunda tanda (2026-10-30, ejecución programada):
+  sólo 4O2sym y 4O (identidades después); commits locales si `check.sh` pasa y el revisor
+  aprueba (sin autoría de Claude, sin push); 4O2sym gana salida formateada igual que 4O3sym
+  (lista + matriz 6x6/4x4, sólo con `ENABLE_UDTIO`); ante una decisión no cubierta o un cambio de
+  comportamiento inevitable, detener esa parte, no commitearla y dejar la pregunta al usuario.
+- [x] `4O2sym` (6x6 / 4x4) y `4O` general (9x9 / 5x5) — segunda tanda (ejecución programada,
+      2026-10-30): plantillas `muscle_tensor_4o2sym.fypp`, `muscle_tensor_4o.fypp`; tests
+      `4o2sym_kinds`, `4o_kinds`; macros de test con soporte `vals(n,n)`; 68/68; revisión aprobada.
+- [x] **Pregunta abierta para el usuario (tanda 2) — resuelta 2026-10-30 (D-013: `ADJ_KAPPA_MAX_sp = 1e2`,
+      tolerancia sp de 4O2sym se mantiene y se documenta):** el `test-builder` de 4O2sym midió que con
+      `ADJ_KAPPA_MAX_sp = 1e3`, `M44INV_sp` por adjunta es ~8× menos preciso que LU para κ∞ en
+      [3e2, 1e3] (p99 3.5e-5 vs 4.6e-6; máx 9.4e-5 vs 1.1e-5), al límite de la tolerancia sp 1e-4 de
+      4O2sym; sugiere ~1e2 para sp (contradice la medición de la Fase 1, que lo daba por bueno).
+      No se cambió nada. Además: la tolerancia sp 1e-4 de 4O2sym es adecuada hasta κ∞≈1e3 y
+      estricta para κ≥1e4 (documentar: pasar `tol ≈ 2·κ·ε_sp` al comparar inversas mal
+      condicionadas). Tolerancia por defecto de `4O2sym`
+      decidida (D-010): 1e-8 dp / 1e-4 sp, con `tol_default`. Las macros de test
+      (`muscle_test_tensor_cases.fypp`) indexan `vals` como vector: adaptarlas a `vals(n,n)` (p.ej.
+      un `perturb_<T>`/`set_<T>` por índice lineal aportado por cada test).
+- [x] Identidades `iden_2O`, `iden_2OS`, `iden_4O3T(S)`, `iden_4O4T(S)` (las escaladas llevan kind).
+      Decisiones D-014 (2026-10-30). Plantilla `muscle_tensor_iden.fypp` + 6 módulos de
+      compatibilidad; test `iden_kinds`; 69/69; bit a bit = original en dp; revisión aprobada.
+      Álgebra de las de 4º orden (`+`, `-`, `.approx.`, `%init`): el usuario decidió no añadirla por
+      ahora (2026-10-30); se agrega si un modelo la necesita (lista `ALGEBRA`, una línea + test).
+- [x] UDTIO fuera de los módulos de tipo: `muscle_tensor_io` (todas las familias e identidades).
 
 ### Fase 4 — Operadores entre tipos
-- [ ] **No olvidar (D-011, decisión del usuario 2026-10-29):** crear `muscle_tensor_functions`,
-      que re-exporta las funciones libres (`norm`, `det`, `square`, `is_approx`, `inverse`, ...)
-      de todos los módulos de familia en un solo `use`; NO exportarlas desde `muscle_tensors`.
-      Hacerlo en cuanto estén migradas todas las familias (fin de Fase 3 o inicio de Fase 4).
+- [ ] Operadores mixtos tensor–identidad (hoy sólo dp con nombres históricos): al generarlos, las
+      identidades sin escalar (`iden_2O`, `iden_4O3T`, `iden_4O4T`) se combinan con tensores de
+      ambos kinds, y cada `iden_*S_<k>` sólo con tensores de su mismo kind (D-014).
+- [x] `muscle_tensor_functions` (D-011): re-exporta las funciones libres de todas las familias
+      (`norm`, `det`, `square`, `transpose`, `is_approx`, `inverse`, `convert_3sym`, `convert_2sym`)
+      en un solo `use`, sin exportarlas desde `muscle_tensors`; test `tensors-functions`. Hecho al
+      cerrar la Fase 3 (2026-10-30).
+- La Fase 4 se trabaja en la rama nueva `fypp/f4-operators` desde `fypp/f3-types` (decisión del
+      usuario, 2026-10-30).
 - [ ] Tabla de pares por operador (`ddot`, `tdot`, `tdotsym`, `contraction_single`, `transform`,
       `assignment`, `addition_subtraction`) en `muscle_meta.py`.
 - [ ] Generación de cada módulo de operadores desde su tabla × DIMS × KINDS.
@@ -201,8 +244,22 @@ Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yi
 - [ ] Instalar los compiladores de offload de gfortran (paquetes `gcc-15-offload-nvptx` /
       `gcc-15-offload-amdgcn`): gfortran 15.2 está configurado con offload pero faltan los backends.
 - [ ] `@:DEVICE()` expande a la directiva correspondiente.
-- [ ] Verificar `ieee_value` (usado por `QUIET_NAN_<k>`) en offload nvptx/amdgcn/spir64; si no
-      está soportado, generar el NaN con `transfer` de un patrón de bits.
+- [x] Verificar `ieee_value` (usado por `QUIET_NAN_<k>`) en offload: funciona con ifx/spir64,
+      pero con gfortran nvptx/amdgcn el enlace falla (`_gfortran_ieee_procedure_entry/exit` no
+      existen en el dispositivo). Con `transfer(int(z'7FC00000', int32), 1.0_sp)` /
+      `z'7FF8000000000000'` (bits idénticos a `ieee_value`) enlaza en ambos. (2026-10-30)
+- [x] `QUIET_NAN_<k>` con `transfer` en vez de `ieee_value` en `src/math/muscle_math_inverses.fypp`
+      (bits idénticos; sin el coste de ~150 ns del módulo IEEE). (2026-10-30)
+- Prototipo GPU (2026-10-30, scratchpad, sin cambios en el repo): kernel con las 5 familias,
+  identidades e inversas.
+  - **Intel UHD 770 (ifx, spir64):** corre en GPU en sp; error máx. vs CPU 2.9 ε (3D) / 1.9 ε (2D)
+    relativo a la escala del punto (FMA/orden). 200k puntos: kernel 0.21 s vs CPU 0.30 s (1 hilo) /
+    0.039 s (8 hilos); 1ª llamada 4.2 s (JIT). dp sólo con emulación (`OverrideDefaultFP64Settings=1
+    IGC_EnableDPEmulation=1`): kernels chicos funcionan, el completo no carga (límite de la
+    emulación). Bugs de ifx/IGC encontrados: ver `.claude/rules/gpu-static-dispatch.md`.
+  - **NVIDIA (nvptx-none) y AMD (amdgcn-amdhsa), gfortran 15.2:** todos los módulos compilan; el
+    programa enlaza en sp y dp tras el cambio de `QUIET_NAN`. Sin hardware para ejecutar.
+  - Pendiente: uso de registros por kernel (PTX/GCN) y ejecución en GPU con FP64 nativo.
 - [ ] Test/benchmark: N puntos de integración en un `parallel loop` en GPU vs CPU.
 - [ ] Prototipo FFT → MUSCLE → iFFT (cuFFT primero) con datos residentes: medir tráfico
       host↔device (sólo escalares) y rendimiento por vóxel; registros/spills por kernel.
@@ -244,3 +301,10 @@ Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yi
 | 2026-10-28 | Fase 0 completa (infra FYPP, check.sh, agentes, limpieza) | `fypp/f0-infra` (sin commit) | 61/61; revisión aplicada; D-001 y D-009 aceptadas |
 | 2026-10-28 | Fase 1 completa (kinds, layouts, test utils, inversas sp/dp) | `fypp/f1-kinds` (sin commit) | 63/63 (sp;dp y sólo dp); revisión aplicada; D-010 |
 | 2026-10-29 | Fase 2 completa: piloto 2Osym (patrón D-011 aprobado) | `fypp/f2-ten2osym-pilot` | 64/64 (sp;dp y sólo dp), bit a bit = original salvo cambios D-011 |
+| 2026-10-29 | Fase 3, tanda 1: 2O y 4O3sym (2 migradores + 2 test-builder en worktrees) | `fypp/f3-types` | 66/66; bit a bit = original; revisión: aprobar con cambios menores |
+| 2026-10-30 | Refactor D-012 (macros comunes, KAPPA en inversas LU, helpers de tests) | `fypp/f3-types` | 66/66; bit a bit = eaee906; revisión aplicada |
+| 2026-10-30 | Fase 3, tanda 2: 4O2sym y 4O (ejecución programada) | `fypp/f3-types` | 68/68 (sp;dp, sólo dp, UDTIO); bit a bit = original; revisión: aprobar con cambios menores |
+| 2026-10-30 | D-013: `ADJ_KAPPA_MAX_sp = 1e2` (medición de confirmación), doc. tolerancia sp 4O2sym | `fypp/f3-types` | 68/68; dp sin cambios |
+| 2026-10-30 | Fase 3: identidades (D-014) | `fypp/f3-types` | 69/69 (sp;dp, sólo dp, UDTIO); bit a bit = original salvo D-014.5; revisión aplicada |
+| 2026-10-30 | `muscle_tensor_functions` (cierre de la Fase 3) | `fypp/f3-types` | 70/70 |
+| 2026-10-30 | Prototipo GPU: Intel (corre, sp), NVIDIA/AMD (compila y enlaza) | scratchpad | `QUIET_NAN` con `transfer` aplicado; 2 bugs de ifx/IGC documentados |

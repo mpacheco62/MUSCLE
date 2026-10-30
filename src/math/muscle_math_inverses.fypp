@@ -13,7 +13,7 @@ module muscle_math_inverses
     !!   \( \kappa_\infty \) exceeds `ADJ_KAPPA_MAX` (the adjugate loses accuracy much faster than
     !!   LU as the matrix becomes ill-conditioned).
     !! - 5x5, 6x6 and 9x9 (`M55INV`, `M66INV`, `M99INV`): LU with partial pivoting in plain
-    !!   Fortran.
+    !!   Fortran; the optional `KAPPA` is \( \kappa_\infty \) computed afterwards with `COND_INF`.
     !!
     !! A singular matrix (exactly zero determinant or pivot) gives `OK_FLAG = .false.` and a zero
     !! inverse.
@@ -41,12 +41,15 @@ module muscle_math_inverses
         module procedure QUIET_NAN_dp
     end interface QUIET_NAN
 
+#! Adjugate/LU switch per kind. dp: 1e3, the result is as accurate as LU for every condition
+#! number. sp: 1e2 (D-013): measured with random 3x3/4x4 matrices, above kappa ~ 1e2 the sp adjugate
+#! is 2-8 times less accurate than LU (p99 errors), below it they match.
+#:set ADJ_KAPPA_MAX = {'sp': '1.0e2', 'dp': '1.0e3'}
 #:for k in REAL_KINDS
-    real(${k}$), parameter :: ADJ_KAPPA_MAX_${k}$ = 1.0e3_${k}$
+    real(${k}$), parameter :: ADJ_KAPPA_MAX_${k}$ = ${ADJ_KAPPA_MAX[k]}$_${k}$
         !! Largest \( \kappa_\infty \) accepted for the `real(${k}$)` adjugate inverses (`M33INV`,
-        !! `M44INV`); above it they are recomputed by LU. With 1e3 the result is as accurate as LU for
-        !! every condition number, while well-conditioned matrices keep the fast adjugate path
-        !! (tuned in double precision; the same bound is used in single precision).
+        !! `M44INV`); above it they are recomputed by LU, which is more accurate for ill-conditioned
+        !! matrices, while well-conditioned ones keep the fast adjugate path.
 #:endfor
     real(dp), parameter :: ADJ_KAPPA_MAX = ADJ_KAPPA_MAX_dp
         !! Historical name of `ADJ_KAPPA_MAX_dp`.
@@ -54,7 +57,7 @@ module muscle_math_inverses
     contains
 
 #:for k in REAL_KINDS
-    PURE SUBROUTINE M66INV_${k}$(A, AINV, OK_FLAG)
+    PURE SUBROUTINE M66INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 6x6 matrix by LU with partial pivoting in plain Fortran,
         !! see `muscle_math_lu_inverse.fypp`. Used by `ten_3D4O3sym` and
         !! `ten_3D4O2sym`.
@@ -68,10 +71,13 @@ module muscle_math_inverses
             !! Inverse of `A`; zero when `A` is singular.
         LOGICAL, INTENT(OUT)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
-        $:lu_inverse_body(k)
+        REAL(${k}$), INTENT(OUT), OPTIONAL :: KAPPA
+            !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
+            !! inverse); `huge(1.0_${k}$)` when `A` is singular.
+        $:lu_inverse_body(k, kappa=True)
     END SUBROUTINE M66INV_${k}$
     
-    PURE SUBROUTINE M99INV_${k}$(A, AINV, OK_FLAG)
+    PURE SUBROUTINE M99INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 9x9 matrix by LU with partial pivoting in plain Fortran (algorithm of
         !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_inverse.fypp`). Used by `ten_3D4O`.
         implicit none
@@ -83,23 +89,27 @@ module muscle_math_inverses
             !! Inverse of `A`; zero when `A` is singular.
         LOGICAL, INTENT(OUT)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
-        $:lu_inverse_body(k)
+        REAL(${k}$), INTENT(OUT), OPTIONAL :: KAPPA
+            !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
+            !! inverse); `huge(1.0_${k}$)` when `A` is singular.
+        $:lu_inverse_body(k, kappa=True)
     END SUBROUTINE M99INV_${k}$
 
+#! Bit pattern of the IEEE quiet NaN, identical to ieee_value(1.0_k, ieee_quiet_nan)
+#:set NAN_BITS = {'sp': ('int32', "z'7FC00000'"), 'dp': ('int64', "z'7FF8000000000000'")}
     PURE FUNCTION QUIET_NAN_${k}$() RESULT(X)
-        !! IEEE quiet NaN (`ieee_value`), used to fill the inverse of a singular tensor.
+        !! IEEE quiet NaN, used to fill the inverse of a singular tensor.
         !!
-        !! It is a separate function on purpose and must only be called on the (rare) failure path:
-        !! gfortran saves and restores the floating-point state on entry and exit of every procedure
-        !! that uses the IEEE intrinsic modules (~150 ns per call, measured 2026-10-14). Keeping the
-        !! `use ieee_arithmetic` inside this function confines that cost to the singular case; using
-        !! `ieee_value` directly in the inverse routines made every inverse ~150 ns slower.
-        use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan
+        !! Built from its bit pattern (the same bits as `ieee_value`) instead of using the IEEE
+        !! intrinsic modules: with them gfortran saves/restores the floating-point state around the
+        !! procedure (~150 ns per call) through library routines that do not exist on the GPU
+        !! (nvptx/amdgcn offload fails to link).
+        use, intrinsic :: iso_fortran_env, only : ${NAN_BITS[k][0]}$
         implicit none
         @:DEVICE()
         REAL(${k}$) :: X
             !! Quiet NaN.
-        X = ieee_value(1.0_${k}$, ieee_quiet_nan)
+        X = transfer(int(${NAN_BITS[k][1]}$, ${NAN_BITS[k][0]}$), 1.0_${k}$)
     END FUNCTION QUIET_NAN_${k}$
 
     PURE FUNCTION COND_INF_${k}$(A, AINV) RESULT(KAPPA)
@@ -269,7 +279,7 @@ module muscle_math_inverses
         $:lu_inverse_body(k)
     END SUBROUTINE lu_inv4_${k}$
 
-    PURE SUBROUTINE M55INV_${k}$(A, AINV, OK_FLAG)
+    PURE SUBROUTINE M55INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 5x5 matrix by LU with partial pivoting in plain Fortran (algorithm of
         !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_inverse.fypp`). Used by `ten_2D4O`.
         implicit none
@@ -281,7 +291,10 @@ module muscle_math_inverses
             !! Inverse of `A`; zero when `A` is singular.
         LOGICAL, INTENT(OUT)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
-        $:lu_inverse_body(k)
+        REAL(${k}$), INTENT(OUT), OPTIONAL :: KAPPA
+            !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
+            !! inverse); `huge(1.0_${k}$)` when `A` is singular.
+        $:lu_inverse_body(k, kappa=True)
     END SUBROUTINE M55INV_${k}$
 
 #:endfor

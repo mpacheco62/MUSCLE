@@ -19,7 +19,12 @@
 #!   3. solve inv(A) L = inv(U) (like DGETRI);
 #!   4. undo the row interchanges as column interchanges, in reverse order.
 #! Singular A (exactly zero pivot): OK_FLAG = .false. and AINV = 0.
-#:def lu_inverse_body(rk)
+#!
+#! `$:lu_inverse_body(rk, kappa=True)` also sets the optional dummy
+#!   real(rk), intent(out), optional :: KAPPA
+#! when present: \kappa_\infty(A) = COND_INF_<rk>(A, AINV) after the inversion, huge(1.0_<rk>) if
+#! A is singular. It does not change AINV or OK_FLAG.
+#:def lu_inverse_body(rk, kappa=False)
         integer :: ipiv(N), i, j, k, p
         real(${rk}$) :: r, tmp, ajj, s, work(N)
 
@@ -34,6 +39,9 @@
             if (.not. (abs(AINV(p,k)) > 0.0_${rk}$)) then     ! zero (or NaN) pivot: singular
                 OK_FLAG = .false.
                 AINV = 0.0_${rk}$
+#:if kappa
+                if (present(KAPPA)) KAPPA = huge(1.0_${rk}$)
+#:endif
                 return
             end if
             if (p /= k) then
@@ -88,4 +96,7 @@
             end if
         end do
         OK_FLAG = .true.
+#:if kappa
+        if (present(KAPPA)) KAPPA = COND_INF_${rk}$(A, AINV)
+#:endif
 #:enddef

@@ -1,0 +1,263 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_tensor_common.fypp"
+#! General (unsymmetric) fourth-order tensors, one type per dimension and kind (pattern of D-011,
+#! D-012):
+#! - everything that depends on the component layout comes from layout('4O', dim): `vals` is the
+#!   square matrix C(I(i,j), I(k,l)) indexed by the storage of the base 2O layout (9x9 in 3D, 5x5
+#!   in 2D), so the inverted matrix is `vals` itself (M99INV in 3D, M55INV in 2D);
+#! - the operations common to every family (+, -, *, /, =, .approx., .inv., is_approx and the
+#!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp;
+#! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
+#!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
+#! - formatted output lives in muscle_tensor_io (host only);
+#! - the historical names (ten_3D4O, ten_2D4O = dp) come from the compatibility modules
+#!   muscle_tensor_3d4o / muscle_tensor_2d4o and from muscle_tensors (D-003).
+#! - convert_2sym returns the minor-symmetric 4O2sym type of the same kind, taken from the
+#!   family module muscle_tensor_4o2sym (not from its compatibility modules, which re-export
+#!   muscle_tensor_io and would close a module cycle with UDTIO).
+
+module muscle_tensor_4o
+    !! Module muscle_tensor_4o
+    !! =======================
+    !!
+    !! General (unsymmetric) fourth-order tensors in 3D and 2D, in single and double precision:
+    !! `ten_3D4O_sp`, `ten_3D4O_dp`, `ten_2D4O_sp`, `ten_2D4O_dp`. Useful for tangents lacking
+    !! minor/major symmetries, such as the 1st Piola-Kirchhoff tangent stiffness
+    !! \( \mathbb{A}_{iAjB} = \partial P_{iA} / \partial F_{jB} \).
+    !!
+    !! Storage: `vals(I(i,j), I(k,l))` = \( C_{ijkl} \), where \( I(i,j) \) is the storage index
+    !! of the general second-order tensor of the same dimension ([[muscle_tensor_2o]],
+    !! column-major):
+    !!
+    !! - 3D: `vals(9,9)`, \( I(i,j) = 3(j-1) + i \).
+    !! - 2D (plane strain/stress, axisymmetry): `vals(5,5)`, \( I \) = (1,1)->1, (2,1)->2,
+    !!   (1,2)->3, (2,2)->4, (3,3)->5. Pairs that couple the plane with the out-of-plane direction
+    !!   ((1,3), (3,1), (2,3), (3,2)) are identically zero and not stored.
+    !!
+    !! All components are zero by default (default initialization of `vals`).
+    !!
+    !! Operations (generic over dimension and kind; operands must share the kind):
+    !!
+    !! - Operators: `.approx.`, `+`, `-` (binary and unary), `*` and `/` by a scalar of the same
+    !!   kind, `.inv.`, assignment of a scalar.
+    !! - Generic functions (usable in GPU kernels): `norm(a)`, `is_approx(a, b [, tol])`,
+    !!   `call inverse(a, a_inv, ok [, cond])` and `convert_2sym(a)`.
+    !! - Type-bound (historical API, not for kernels): `init` (matrix or `C4(3,3,3,3)` array),
+    !!   `get(i, j, k, l)`, `set(i, j, k, l, val)`, `is_approx`, `norm`, `inv` and `convert_2sym`.
+    !!
+    !! ```fortran
+    !! use muscle_tensors                      ! ten_3D4O is ten_3D4O_dp
+    !! type(ten_3D4O) :: A, Ainv
+    !! call A%set(1, 2, 1, 2, 3.0_dp)           ! A_1212 = 3 (the others stay 0)
+    !! Ainv = .inv. A                          ! quiet NaN: A is singular
+    !! ```
+    !!
+    !! For more information see [[muscle_tensors]]
+    use muscle_kinds, only: sp, dp
+#:for k in REAL_KINDS
+    use muscle_kinds, only: TOL_APPROX_${k}$, EPS_ABS_${k}$
+#:endfor
+    use muscle_tensor_4o2sym, only: ${', '.join(tname(d + '4O2sym', k) for d in DIMS for k in REAL_KINDS)}$
+    implicit none
+    private
+
+#:set F = '4O'
+#:for d in DIMS
+#:set lay = layout(F, d)
+#:set n = lay.shape[0]
+#:set S = d + F
+#! I(i,j) in column-major order of (i,j), 0 for the pairs that are not stored
+#:set pair_index = [(lay.base.index(i, j) or (0,))[0] for j in range(1, 4) for i in range(1, 4)]
+    integer, parameter :: PAIR_INDEX_${d}$(3,3) = reshape((/ ${', '.join(map(str, pair_index))}$ /), (/3, 3/))
+        !! ${d}$ storage index \( I(i,j) \) of the pair (i,j) (column `j` of the table), 0 for the
+        !! pairs that are not stored.
+
+#:for k in REAL_KINDS
+#:set T = tname(S, k)
+    type, public :: ${T}$
+        !! General ${d}$ fourth-order tensor in `real(${k}$)`: ${n}$x${n}$ matrix
+        !! \( C_{IJ} = C_{ijkl} \) with \( I = I(i,j) \), \( J = I(k,l) \) (storage of `ten_${d}$2O`).
+        real(${k}$), dimension(${n}$,${n}$) :: vals = 0.0_${k}$
+            !! ${n}$x${n}$ matrix representation (zero by default).
+        contains
+            generic, public :: init => init_${S}$_${k}$_tbp, init_array_${S}$_${k}$_tbp
+                !! Initializes from a ${n}$x${n}$ matrix or from a full `C4(3,3,3,3)` array.
+            procedure, private :: init_${S}$_${k}$_tbp, init_array_${S}$_${k}$_tbp
+            procedure, public :: get => get_${S}$_${k}$_tbp
+                !! Returns \(C_{ijkl}\) (zero for the pairs that are not stored).
+            procedure, public :: set => set_${S}$_${k}$_tbp
+                !! Sets \(C_{ijkl}\) (ignored for the pairs that are not stored).
+            procedure, public :: is_approx => is_approx_${S}$_${k}$_tbp
+                !! Component-wise approximate equality.
+            procedure, public :: norm => norm_${S}$_${k}$_tbp
+                !! L1 norm of the ${n}$x${n}$ matrix.
+            procedure, public :: convert_2sym => convert_2sym_${S}$_${k}$_tbp
+                !! Projection onto the minor-symmetric `${tname(d + '4O2sym', k)}$`.
+            procedure, public :: inv => inv_${S}$_${k}$_tbp
+                !! Inverse tensor (quiet NaN if singular).
+    end type ${T}$
+
+#:endfor
+#:endfor
+$:TENSOR_COMMON_INTERFACES(F)
+
+    public :: norm
+    interface norm
+        !! L1 norm of the matrix, \( \sum_{IJ} |C_{IJ}| \).
+        module procedure ${specifics('norm_{0}_{1}', F)}$
+    end interface
+
+    public :: convert_2sym
+    interface convert_2sym
+        !! Projection onto the minor-symmetric fourth-order tensor of the same kind.
+        module procedure ${specifics('convert_2sym_{0}_{1}', F)}$
+    end interface
+
+contains
+
+#:for d in DIMS
+#:set lay = layout(F, d)
+#:set n = lay.shape[0]
+#:set S = d + F
+#! Stored only when every pair is in the base layout (3D): get/set need no zero check
+#:set all_stored = all(lay.base.index(i, j) for i in range(1, 4) for j in range(1, 4))
+#:for k in REAL_KINDS
+#:set T = tname(S, k)
+#:set P = S + '_' + k
+    ! ---------------------------------------------------------------------------------------
+    ! ${T}$
+    ! ---------------------------------------------------------------------------------------
+
+$:TENSOR_COMMON_PROCEDURES(d, F, k)
+
+    pure function norm_${P}$(a) result(res)
+        !! L1 norm of a `${T}$`, \( \sum_{IJ} |C_{IJ}| \) over its ${n}$x${n}$ matrix.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor whose norm is computed.
+        real(${k}$) :: res
+            !! L1 norm.
+        res = sum(abs(a%vals))
+    end function norm_${P}$
+
+    pure subroutine inverse_${P}$(a, a_inv, ok, cond)
+        !! Inverse of a `${T}$` with a success flag (generic `inverse`, also used by `.inv.`).
+        !!
+        !! The ${n}$x${n}$ matrix `vals` is inverted with `M${n}$${n}$INV` (LU with partial pivoting).
+        !!
+        !! If the matrix is singular (or contains NaN): `ok = .false.`, `a_inv` is filled with quiet
+        !! NaN and `cond = huge(1.0_${k}$)`.
+        use muscle_math_inverses, only : M${n}$${n}$INV_${k}$, QUIET_NAN_${k}$
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor to invert.
+        type(${T}$), intent(out) :: a_inv
+            !! Inverse tensor (quiet NaN if `a` is singular).
+        logical, intent(out) :: ok
+            !! `.true.` if the inversion succeeded, `.false.` if `a` is singular.
+        real(${k}$), intent(out), optional :: cond
+            !! Condition number \( \kappa_\infty \) of the matrix that is inverted;
+            !! `huge(1.0_${k}$)` if singular.
+        real(${k}$) :: x(${n}$,${n}$)
+
+        ! The storage is the matrix itself (no LOAD_MATRIX). The inverse routine sets cond (if
+        ! present): kappa_inf, or huge if singular
+        call M${n}$${n}$INV_${k}$(a%vals, x, ok, cond)
+        if (.not. ok) then
+            a_inv%vals = QUIET_NAN_${k}$()
+            return
+        end if
+        a_inv%vals = x
+    end subroutine inverse_${P}$
+
+#:set lay2 = layout('4O2sym', d)
+#:set T2 = tname(d + '4O2sym', k)
+    pure function convert_2sym_${P}$(a) result(res)
+        !! Projects a `${T}$` onto the minor-symmetric `${T2}$` by sampling the rows/columns of the
+        !! symmetric pairs (${', '.join(c.name for c in lay2.base.comps)}$); no symmetrization, so it
+        !! is meaningful when the minor symmetries hold.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor to convert.
+        type(${T2}$) :: res
+            !! Minor-symmetric tensor.
+#:for c in lay2.comps
+        res%vals(${c.pos[0]}$, ${c.pos[1]}$) = ${lay.ref('a%vals', *c.idx)}$
+#:endfor
+    end function convert_2sym_${P}$
+
+    ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
+
+$:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm'], tensor_ops=['inv'], other='other')
+
+    pure function convert_2sym_${P}$_tbp(self) result(res)
+        !! `%convert_2sym()`: type-bound wrapper of `convert_2sym_${P}$`.
+        implicit none
+        class(${T}$), intent(in) :: self
+            !! Tensor.
+        type(${T2}$) :: res
+            !! Minor-symmetric tensor.
+        res = convert_2sym_${P}$(self)
+    end function convert_2sym_${P}$_tbp
+
+    pure subroutine init_array_${P}$_tbp(self, C4)
+        !! `%init(C4)`: initializes a `${T}$` from a full 3x3x3x3 array \(C_{ijkl}\)
+        !! (components of pairs that are not stored are discarded).
+        implicit none
+        class(${T}$), intent(inout) :: self
+            !! Tensor to initialize.
+        real(${k}$), intent(in) :: C4(3,3,3,3)
+            !! Full fourth-order array \(C_{ijkl}\).
+#:for c in lay.comps
+        self%vals(${c.pos[0]}$, ${c.pos[1]}$) = C4(${', '.join(map(str, c.idx))}$)
+#:endfor
+    end subroutine init_array_${P}$_tbp
+
+    pure function get_${P}$_tbp(self, i, j, k, l) result(res)
+        !! `%get(i, j, k, l)`: returns \(C_{ijkl}\) (zero for the pairs that are not stored).
+        implicit none
+        class(${T}$), intent(in) :: self
+            !! Tensor.
+        integer, intent(in) :: i, j, k, l
+            !! Tensor indices (1..3).
+        real(${k}$) :: res
+            !! Component value.
+#:if all_stored
+        res = self%vals(PAIR_INDEX_${d}$(i, j), PAIR_INDEX_${d}$(k, l))
+#:else
+        integer :: row, col
+        row = PAIR_INDEX_${d}$(i, j)
+        col = PAIR_INDEX_${d}$(k, l)
+        res = 0.0_${k}$
+        if (row > 0 .and. col > 0) res = self%vals(row, col)
+#:endif
+    end function get_${P}$_tbp
+
+    pure subroutine set_${P}$_tbp(self, i, j, k, l, val)
+        !! `%set(i, j, k, l, val)`: sets \(C_{ijkl}\) (silently ignored for the pairs that are not
+        !! stored).
+        implicit none
+        class(${T}$), intent(inout) :: self
+            !! Tensor.
+        integer, intent(in) :: i, j, k, l
+            !! Tensor indices (1..3).
+        real(${k}$), intent(in) :: val
+            !! Value to set.
+#:if all_stored
+        self%vals(PAIR_INDEX_${d}$(i, j), PAIR_INDEX_${d}$(k, l)) = val
+#:else
+        integer :: row, col
+        row = PAIR_INDEX_${d}$(i, j)
+        col = PAIR_INDEX_${d}$(k, l)
+        if (row > 0 .and. col > 0) self%vals(row, col) = val
+#:endif
+    end subroutine set_${P}$_tbp
+
+#:endfor
+#:endfor
+end module muscle_tensor_4o

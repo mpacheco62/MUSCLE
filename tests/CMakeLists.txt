@@ -36,8 +36,9 @@ else()
 endif()
 
 
-# Shared assertions (check_approx, check_true) used by the tests
-muscle_fypp_preprocess(MUSCLE_TEST_UTILS_SRC common/muscle_test_utils.fypp)
+# Shared assertions (muscle_test_utils: check_approx, check_true, check_scaled) and helpers
+# (muscle_test_helpers: random generator, reference matrix operations, record) of the tests
+muscle_fypp_preprocess(MUSCLE_TEST_UTILS_SRC common/muscle_test_utils.fypp common/muscle_test_helpers.fypp)
 add_library(muscle_test_utils STATIC ${MUSCLE_TEST_UTILS_SRC})
 target_link_libraries(muscle_test_utils PUBLIC muscle PRIVATE compile_options)
 set_target_properties(muscle_test_utils PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/tests)
@@ -80,8 +81,11 @@ endfunction()
 
 
 function(add_muscle_fypp_test NAME SOURCE)
-    # Same as add_muscle_test, for a single .fypp template (see cmake/MuscleFypp.cmake)
-    muscle_fypp_preprocess(GENERATED ${SOURCE})
+    # Same as add_muscle_test, for a single .fypp template (see cmake/MuscleFypp.cmake).
+    # DEPENDS lists the files the template includes (e.g. tests/common/*.fypp macros) so that
+    # it is regenerated when they change.
+    cmake_parse_arguments(PARSE_ARGV 2 arg "" "" "DEPENDS")
+    muscle_fypp_preprocess(GENERATED ${SOURCE} DEPENDS ${arg_DEPENDS})
     add_muscle_test(${NAME} ${GENERATED})
 endfunction()
 

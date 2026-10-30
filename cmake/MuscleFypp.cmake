@@ -55,6 +55,7 @@ set(MUSCLE_FYPP_META_DIR "${MUSCLE_SOURCE_DIR}/tools/fypp")
 # Every template is regenerated when one of these files changes.
 set(MUSCLE_FYPP_DEPENDS
     "${MUSCLE_FYPP_INCLUDE_DIR}/muscle_common.fypp"
+    "${MUSCLE_FYPP_INCLUDE_DIR}/muscle_tensor_common.fypp"
     "${MUSCLE_FYPP_META_DIR}/muscle_meta.py")
 
 # Python list literal for fypp, e.g. "sp;dp" -> "['sp','dp']"

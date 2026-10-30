@@ -1,0 +1,162 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_test_helpers
+    !! Reference mathematics and plumbing shared by the unit tests (the assertions themselves,
+    !! `check_*`, live in `muscle_test_utils`).
+    !!
+    !! - `park_miller` / `rnd`: deterministic pseudo-random numbers with an explicit state, so
+    !!   that each test owns its sequence (same seed -> same data on every compiler and kind).
+    !! - Reference operations on plain matrices, written independently of the tensor modules:
+    !!   `inv_ref` (Gauss-Jordan, n x n), `det_ref` / `det_scale` (Leibniz, 3x3), `norm_inf`
+    !!   (n x n) and `eye` (n x n identity, double precision). The tests compute their references
+    !!   in double precision from inputs converted exactly, whatever the kind under test; the
+    !!   `real(sp)` specifics are kept so that a test can also evaluate a reference in the kind under test.
+    !! - `record`: bookkeeping of a test program made of several test subroutines.
+    use muscle_kinds, only : sp, dp
+    implicit none
+    private
+
+    public :: park_miller, rnd, inv_ref, det_ref, det_scale, norm_inf, eye, record
+
+    integer, parameter :: i8 = selected_int_kind(18)
+        !! Integer kind of the generator state.
+
+    type :: park_miller
+        !! State of a Park-Miller "minimal standard" generator (multiplier 48271, modulus
+        !! 2^31 - 1). Initialise it with the seed: `type(park_miller) :: rng = park_miller(20261029)`.
+        integer(i8) :: state = 1_i8
+            !! Current state, in [1, 2^31 - 2].
+    end type park_miller
+
+    interface inv_ref
+        !! Inverse of a regular square matrix (Gauss-Jordan with partial pivoting).
+#:for k in REAL_KINDS
+        module procedure inv_ref_${k}$
+#:endfor
+    end interface inv_ref
+
+    interface det_ref
+        !! Determinant of a 3x3 matrix by the Leibniz formula.
+#:for k in REAL_KINDS
+        module procedure det_ref_${k}$
+#:endfor
+    end interface det_ref
+
+    interface det_scale
+        !! Sum of |terms| of the Leibniz formula of a 3x3 determinant.
+#:for k in REAL_KINDS
+        module procedure det_scale_${k}$
+#:endfor
+    end interface det_scale
+
+    interface norm_inf
+        !! Infinity norm (max row sum) of a matrix.
+#:for k in REAL_KINDS
+        module procedure norm_inf_${k}$
+#:endfor
+    end interface norm_inf
+
+contains
+
+    function rnd(rng) result(r)
+        !! Next uniform pseudo-random number in (-1, 1) of the sequence `rng` (no overflow in int64).
+        type(park_miller), intent(inout) :: rng
+            !! Generator; its state advances by one step.
+        real(dp) :: r
+            !! Pseudo-random number.
+        rng%state = mod(48271_i8*rng%state, 2147483647_i8)
+        r = 2.0_dp*real(rng%state, dp)/2147483647.0_dp - 1.0_dp
+    end function rnd
+
+    function eye(n) result(r)
+        !! n x n identity in double precision (the precision of the references).
+        integer, intent(in) :: n
+            !! Order.
+        real(dp) :: r(n, n)
+            !! Identity.
+        integer :: i
+        r = 0.0_dp
+        do i = 1, n
+            r(i, i) = 1.0_dp
+        end do
+    end function eye
+
+    subroutine record(passed, n, name, code)
+        !! Reports a failed test subroutine and keeps the first failure code: a test program
+        !! runs all its test subroutines (every failure is printed) and stops with `code`.
+        logical, intent(in) :: passed
+            !! Result of the test subroutine.
+        integer, intent(in) :: n
+            !! Its exit code.
+        character(len=*), intent(in) :: name
+            !! Its name.
+        integer, intent(inout) :: code
+            !! Exit code of the program: 0 until the first failure, then that failure's `n`.
+        if (passed) return
+        print '(a, i0, a)', ' FAILED (', n, '): ' // name
+        if (code == 0) code = n
+    end subroutine record
+
+#:for k in REAL_KINDS
+    function inv_ref_${k}$(r) result(x)
+        !! Inverse by Gauss-Jordan elimination with partial pivoting (reference, `real(${k}$)`).
+        real(${k}$), intent(in) :: r(:,:)
+            !! Regular square matrix.
+        real(${k}$) :: x(size(r, 1), size(r, 1))
+            !! Inverse.
+        real(${k}$) :: w(size(r, 1), 2*size(r, 1)), t(2*size(r, 1))
+        integer :: i, j, p, n
+        n = size(r, 1)
+        w = 0.0_${k}$
+        w(:, 1:n) = r
+        do i = 1, n
+            w(i, n + i) = 1.0_${k}$
+        end do
+        do j = 1, n
+            p = maxloc(abs(w(j:n, j)), 1) + j - 1
+            if (p /= j) then
+                t = w(j, :)
+                w(j, :) = w(p, :)
+                w(p, :) = t
+            end if
+            w(j, :) = w(j, :)/w(j, j)
+            do i = 1, n
+                if (i /= j) w(i, :) = w(i, :) - w(i, j)*w(j, :)
+            end do
+        end do
+        x = w(:, n + 1:2*n)
+    end function inv_ref_${k}$
+
+    function det_ref_${k}$(r) result(res)
+        !! Determinant by the Leibniz formula (reference, `real(${k}$)`).
+        real(${k}$), intent(in) :: r(3,3)
+            !! Matrix.
+        real(${k}$) :: res
+            !! Determinant.
+        res = r(1,1)*r(2,2)*r(3,3) + r(1,2)*r(2,3)*r(3,1) + r(1,3)*r(2,1)*r(3,2) &
+            - r(1,3)*r(2,2)*r(3,1) - r(1,1)*r(2,3)*r(3,2) - r(1,2)*r(2,1)*r(3,3)
+    end function det_ref_${k}$
+
+    function det_scale_${k}$(r) result(res)
+        !! Sum of |terms| of the Leibniz formula: natural scale of the rounding error of a determinant.
+        real(${k}$), intent(in) :: r(3,3)
+            !! Matrix.
+        real(${k}$) :: res
+            !! Scale.
+        res = abs(r(1,1)*r(2,2)*r(3,3)) + abs(r(1,2)*r(2,3)*r(3,1)) + abs(r(1,3)*r(2,1)*r(3,2)) &
+            + abs(r(1,3)*r(2,2)*r(3,1)) + abs(r(1,1)*r(2,3)*r(3,2)) + abs(r(1,2)*r(2,1)*r(3,3))
+    end function det_scale_${k}$
+
+    function norm_inf_${k}$(r) result(res)
+        !! Infinity norm (max row sum) of a `real(${k}$)` matrix.
+        real(${k}$), intent(in) :: r(:,:)
+            !! Matrix.
+        real(${k}$) :: res
+            !! Norm.
+        res = maxval(sum(abs(r), dim=2))
+    end function norm_inf_${k}$
+
+#:endfor
+end module muscle_test_helpers

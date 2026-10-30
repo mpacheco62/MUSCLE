@@ -160,6 +160,60 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(lay.ref('a%vals', 1, 3, zero='0.0_dp'), '0.0_dp')
         self.assertEqual(mm.layout('4O2sym', '3D').ref('c', 1, 2, 3, 3), 'c(4, 3)')
 
+    def test_matrix(self):
+        m = mm.layout('2Osym', '2D').matrix('v', zero='0')
+        self.assertEqual(m, [['v(1)', 'v(4)', '0'], ['v(4)', 'v(2)', '0'], ['0', '0', 'v(3)']])
+        m = mm.layout('4O3sym', '3D').matrix('v')
+        self.assertEqual((len(m), len(m[0])), (6, 6))
+        self.assertEqual([m[i][i] for i in range(6)], ['v({})'.format(i) for i in range(1, 7)])
+        self.assertEqual((m[0][1], m[1][0], m[0][5]), ('v(7)', 'v(7)', 'v(21)'))
+        self.assertEqual(len(mm.layout('4O3sym', '2D').matrix('v')), 4)
+        # 2D 4O3sym: the whole 4x4 Voigt matrix is stored (symmetric, no structural zeros)
+        m = mm.layout('4O3sym', '2D').matrix('v')
+        self.assertEqual(m, [['v(1)', 'v(5)', 'v(8)', 'v(10)'], ['v(5)', 'v(2)', 'v(6)', 'v(9)'],
+                             ['v(8)', 'v(6)', 'v(3)', 'v(7)'], ['v(10)', 'v(9)', 'v(7)', 'v(4)']])
+
+    def test_matrix_2o(self):
+        # ten_3D2O: column-major 3x3; ten_2D2O: (xx, yx, xy, yy, zz), no out-of-plane coupling
+        self.assertEqual(mm.layout('2O', '3D').matrix('v'),
+                         [['v(1)', 'v(4)', 'v(7)'], ['v(2)', 'v(5)', 'v(8)'], ['v(3)', 'v(6)', 'v(9)']])
+        self.assertEqual(mm.layout('2O', '2D').matrix('v', zero='0'),
+                         [['v(1)', 'v(3)', '0'], ['v(2)', 'v(4)', '0'], ['0', '0', 'v(5)']])
+
+    def test_matrix_4o_4o2sym(self):
+        # Matrix storage: the matrix shown to the user is vals itself, C(I, J) = vals(I, J), with
+        # I, J the storage indices of the base layout (2O for 4O, 2Osym for 4O2sym).
+        for family, dim, n in [('4O', '3D', 9), ('4O', '2D', 5), ('4O2sym', '3D', 6), ('4O2sym', '2D', 4)]:
+            m = mm.layout(family, dim).matrix('v', zero='0')
+            self.assertEqual(m, [['v({}, {})'.format(i, j) for j in range(1, n + 1)]
+                                 for i in range(1, n + 1)], (family, dim))
+        # Spot checks against the original sources (see test_4o_matrix_uses_2o_index and
+        # test_4o2sym_matrix): C_1223 of ten_3D4O at (4, 8), C_1123 of ten_3D4O2sym at (1, 5)
+        self.assertEqual(mm.layout('4O', '3D').matrix('c')[3][7], 'c(4, 8)')
+        self.assertEqual(mm.layout('4O', '3D').ref('c', 1, 2, 2, 3), 'c(4, 8)')
+        self.assertEqual(mm.layout('4O2sym', '3D').matrix('c')[0][4], 'c(1, 5)')
+        self.assertEqual(mm.layout('4O2sym', '3D').ref('c', 1, 1, 3, 2), 'c(1, 5)')
+
+    def test_iname(self):
+        self.assertEqual(mm.iname('2O'), 'iden_2O')
+        self.assertEqual(mm.iname('4O4TS', 'sp'), 'iden_4O4TS_sp')
+        with self.assertRaises(ValueError):
+            mm.iname('2OS', 'qp')
+
+    def test_iden_matrix(self):
+        # 2O: delta_ij
+        self.assertEqual(mm.iden_matrix('2O', 'c', 'h', '0'),
+                         [['c', '0', '0'], ['0', 'c', '0'], ['0', '0', 'c']])
+        # 4O3T: delta_ij delta_kl, ones in the normal block (assign_3D4O3sym_I4O3TS)
+        m3 = mm.iden_matrix('4O3T', 'c', 'h', '0')
+        self.assertEqual(m3, [['c' if i < 3 and j < 3 else '0' for j in range(6)] for i in range(6)])
+        # 4O4T: symmetric identity, diag(1, 1, 1, 1/2, 1/2, 1/2) (assign_3D4O2sym_I4O4T)
+        m4 = mm.iden_matrix('4O4T', 'c', 'h', '0')
+        diag = ['c', 'c', 'c', 'h', 'h', 'h']
+        self.assertEqual(m4, [[diag[i] if i == j else '0' for j in range(6)] for i in range(6)])
+        with self.assertRaises(ValueError):
+            mm.iden_matrix('4O1T', 'c', 'h', '0')
+
     def test_join_terms(self):
         self.assertEqual(mm.join_terms(['a', 'b', 'c'], indent=4), 'a &\n    + b &\n    + c')
         self.assertEqual(mm.join_terms(['x']), 'x')

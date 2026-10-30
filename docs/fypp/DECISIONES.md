@@ -160,7 +160,9 @@ multi-config comparten el `.f90`; errores y cobertura apuntan al `.fypp`). Los `
 generados se compilan con `Fortran_PREPROCESS ON`. Las plantillas no usan directivas `cpp`:
 los interruptores de build (`USE_MKL`, `ENABLE_UDTIO`) llegan a fypp vía
 `MUSCLE_FYPP_DEFINES` y se prueban con `#:if defined(...)` (el lint lo comprueba).
-**Pendiente:** verificar `#line` con ifx/IntelLLVM (`-fpp`) cuando esté instalado.
+**Pendiente:** verificar `#line` con ifx/IntelLLVM (`-fpp`) cuando esté instalado. *(2026-10-30:
+ifx 2026.2 acepta los marcadores en todos los módulos generados; falta comprobar que los errores
+apunten al `.fypp`.)*
 
 ## D-010 — Constantes por kind de la Fase 1
 **Estado:** Aceptada (2026-10-28, Fase 1)
@@ -173,9 +175,12 @@ los interruptores de build (`USE_MKL`, `ENABLE_UDTIO`) llegan a fypp vía
 - `QUIET_NAN` (sin argumentos) sólo puede ser genérico de un específico: es el `dp`; las
   plantillas llaman `QUIET_NAN_<k>`.
 **Resuelto en D-011:** `is_approx` usa `1.0e-12_dp` (antes literal real32 ≈9.9999998e-13).
-**Pendiente (Fase 3):** tolerancia por defecto de `4O2sym` (hoy `1e-8` en dp).
+**Resuelto (2026-10-30, decisión del usuario):** tolerancia por defecto de `4O2sym`: `1e-8` en dp
+(se mantiene) y `1e-4` en sp (10× la base sp), a validar midiendo errores reales de 4O2sym en sp;
+se pasa con `tol_default` de `TENSOR_COMMON_PROCEDURES` (D-012).
 
 ## D-011 — Patrón de las plantillas de tipos (piloto 2Osym)
+*(Enmendada por D-012: código común en macros.)*
 **Estado:** Aceptada (2026-10-29, punto de control de la Fase 2 con el usuario; incluye los
 cambios de comportamiento listados abajo)
 **Decisión:** lo que copiarán los demás tipos (Fase 3) y operadores (Fase 4):
@@ -188,7 +193,8 @@ cambios de comportamiento listados abajo)
    con variables `norm`/`det` del usuario); los kernels los importan del módulo de familia
    (`use muscle_tensor_2osym, only: norm, det`). **Decisión del usuario (2026-10-29):** esto
    ahora, y al terminar las familias (Fase 3–4) se crea `muscle_tensor_functions`, que reúne las
-   funciones libres de todas las familias en un solo `use` (fuera de `muscle_tensors`).
+   funciones libres de todas las familias en un solo `use` (fuera de `muscle_tensors`). Hecho
+   2026-10-30: `src/tensors/muscle_tensor_functions.f90`.
 3. **Type-bound procedures = envoltorios `*_tbp` con `class`** (Fortran exige `class` en el
    passed-object), sólo para la API histórica; `init` y accesores (`%xx()`) sólo existen así.
    Ningún operador ni kernel llama a un procedimiento con `class` (con `class` gfortran pasa
@@ -206,4 +212,77 @@ cambios de comportamiento listados abajo)
 - Inversa 3D: la diagonal ya no pasa por `0.5*(x + x)`: idéntica salvo |x_ii| > huge/2, donde
   antes daba Inf y ahora el valor correcto (como ya hacía la 2D).
 - UDTIO 3D modo lista: orden de almacenamiento (`… xy, yz, xz`); antes `… xy, xz, yz`.
+- (Fase 3, decisión del usuario 2026-10-29) El umbral `1.0e-12_dp` aplica a todas las familias.
+  UDTIO de `ten_3D2O` en modo matriz: las tres filas en `ES` (el original imprimía las filas 2–3
+  con `F`, errata). `4O3sym` gana salida formateada (no tenía): lista = componentes en orden de
+  almacenamiento, matriz = matriz de Voigt simétrica \(C_{IJ}\) (6x6 / 4x4, componentes
+  tensoriales); igual que el resto, sólo con `ENABLE_UDTIO` (`MUSCLE_UDTIO`) por el bug de gfortran.
+- (Fase 3, tanda 2, 2026-10-30) 4O2sym: umbral por defecto `1.0e-8_dp` (antes literal real32 `1E-8`
+  ≈9.99999994e-9) y `EPS_ABS_dp` (antes `1e-30` real32): sólo cambia el veredicto en el borde, como
+  el `1e-12` de arriba. 4O2sym gana salida formateada (lista + matriz 6x6/4x4, decisión del usuario).
+  4O conserva su salida histórica en cualquier modo (`IO_MATRIX_ONLY`); única diferencia: el 3D
+  ahora rellena `iomsg` al fallar (el 2D ya lo hacía). API nueva: genéricos libres `norm`,
+  `is_approx`, `convert_3sym` (4O2sym) y `norm`, `is_approx`, `convert_2sym` (4O), más las
+  variantes `sp`. Explícito por dimensión (bits): orden de suma de `norm` en 4O2sym (por filas en
+  3D, por columnas en 2D, como los originales).
 Resto de operaciones: idénticas bit a bit. Benchmark `closest_point` Release: sin cambio.
+
+## D-012 — Enmienda a D-011: código común de las plantillas de tipo
+**Estado:** Aceptada (2026-10-30; refactor pedido por el usuario como prioridad antes de la
+segunda tanda de la Fase 3)
+**Contexto:** tras migrar 2Osym, 2O y 4O3sym, ~145 líneas eran idénticas carácter a carácter
+entre las tres plantillas, y la inversa de 4O3sym necesitaba `#:if d` sólo porque `M66INV` no
+devolvía el número de condición y `M44INV` sí.
+**Decisión:**
+1. `include/muscle_tensor_common.fypp` con macros que generan lo común a toda familia:
+   `TENSOR_COMMON_INTERFACES(F)`, `TENSOR_COMMON_PROCEDURES(d, F, k)` (assign, is_approx,
+   approx, sum, sub, subU, mul ×2, div, inv), `TENSOR_COMMON_TBP(...)` (init_tbp, envoltorios
+   `%op()`, is_approx_tbp) y `LOAD_MATRIX` (matriz desde `Layout.matrix()`). Se llaman con `$:`.
+   En cada plantilla queda sólo lo específico de la familia (init2/set, fórmulas, escritura de la
+   inversa).
+2. Todas las inversas de `muscle_math_inverses` aceptan `KAPPA` opcional (`M55INV`, `M66INV`,
+   `M99INV` lo calculan con `COND_INF` tras el LU, sólo si se pide); las plantillas pasan `cond`
+   directamente y llaman siempre a la rutina específica por kind (`M66INV_${k}$`).
+3. Los tests comparten helpers en `tests/common/`: `muscle_test_helpers` (generador, referencias
+   dp, `record`), `check_scaled` en `muscle_test_utils` y macros de test por familia en
+   `muscle_test_tensor_cases.fypp` (ver `.claude/rules/testing.md`). Inventario dinámico de checks:
+   ninguno se pierde; mutaciones detectadas 74/78 (antes 73/78).
+**Verificación:** resultados bit a bit idénticos a `eaee906` (20 000 casos × 12 tipos, todas las
+operaciones, librería -O0/-O3 × programa -O0/-O2/-O3); mismos símbolos exportados.
+**Consecuencia:** una familia nueva (4O2sym, 4O) sólo escribe lo específico; cambiar un criterio
+común (p.ej. `is_approx`) se hace en un solo lugar.
+
+## D-013 — Umbral adjunta/LU en precisión simple y tolerancia sp de 4O2sym
+**Estado:** Aceptada (2026-10-30, decisión del usuario tras la tanda 2 de la Fase 3)
+**Contexto:** el `test-builder` de 4O2sym midió que con `ADJ_KAPPA_MAX_sp = 1e3` la inversa por
+adjunta en sp pierde precisión frente a LU para κ∞ entre 1e2 y 1e3 (contradiciendo la medición de
+la Fase 1, D-010). Medición de confirmación (matrices aleatorias U·diag·Vᵀ, 2000 por banda de κ):
+| κ∞ | 4x4 adjunta p99 / LU p99 | 3x3 adjunta p99 / LU p99 |
+|---|---|---|
+| 30–100 | 1.3e-6 / 6.6e-7 | 9.1e-7 / 6.8e-7 |
+| 100–300 | 5.9e-6 / 1.7e-6 (3.5×) | 3.7e-6 / 1.7e-6 (2.1×) |
+| 300–1000 | 3.5e-5 / 4.6e-6 (7.6×) | 1.8e-5 / 5.9e-6 (3.0×) |
+**Decisión:**
+1. `ADJ_KAPPA_MAX_sp = 1e2` (dp sigue en 1e3: sin cambios en dp). Afecta sólo a `M33INV_sp`/`M44INV_sp`.
+2. La tolerancia por defecto de 4O2sym en sp se mantiene en 1e-4: adecuada hasta κ∞ ≈ 1e3
+   (elasticidad hasta ν = 0.499, tangentes con endurecimiento moderado); para inversas peor
+   condicionadas se documenta pasar `tol ≈ 2·κ∞·ε` explícito.
+
+## D-014 — Identidades (`iden_*`) en simple y doble precisión
+**Estado:** Aceptada (2026-10-30, decisiones del usuario antes de migrar las identidades)
+**Contexto:** las identidades no dependen de la dimensión (valen para 2D y 3D) y las no escaladas
+(`iden_2O`, `iden_4O3T`, `iden_4O4T`) no guardan ningún número.
+**Decisión:**
+1. Las identidades sin escalar siguen siendo **un único tipo sin kind** (`iden_2O`, ...): sirven
+   para sp y dp; el kind del resultado lo fija el escalar (`2.0_sp * I` → `iden_2OS_sp`).
+2. Las escaladas tienen una versión por kind (`iden_2OS_sp`, `iden_2OS_dp`, ...) y el nombre
+   histórico es el dp (`iden_2OS => iden_2OS_dp`, D-003).
+3. Las operaciones entre identidades sin escalar, que no tienen escalar que fije el kind:
+   `I + I`, `I - I`, `-I` devuelven **`iden_2OS_dp`** (doble precisión), y `I * I` devuelve
+   `iden_2O`, como hoy.
+4. Salida formateada: la de `iden_2O`/`iden_2OS` se conserva (movida a `muscle_tensor_io`) y las de
+   4º orden (`iden_4O3T(S)`, `iden_4O4T(S)`) **ganan** salida formateada; todo sólo con `ENABLE_UDTIO`.
+5. (Tras migrar, decisión del usuario) Tolerancia de `.approx.` de las identidades escaladas:
+   `1.0e-10_dp` (antes el literal real32 `1e-10` ≈ 1.00000001335e-10: sólo cambia el veredicto en el
+   borde, como D-011) y `1.0e-5_sp`. El mensaje de error de la salida de `iden_2O`/`iden_2OS`, que
+   decía `print_ten_3D2Osym` (errata), nombra ahora su propia rutina.

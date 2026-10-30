@@ -1,12 +1,15 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
+#:include "muscle_tensor_common.fypp"
 #! Symmetric second-order tensors, one type per dimension and kind (pattern of D-011):
 #! - everything that depends on the component layout comes from layout('2Osym', dim); the few
 #!   formulas that are genuinely different per dimension (square, det) are written explicitly
 #!   to keep the evaluation order (and the bits) of the original code;
 #! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
+#! - the operations common to every family (+, -, *, /, =, .approx., .inv., is_approx and the
+#!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp (D-012);
 #! - formatted output lives in muscle_tensor_io (host only);
 #! - the historical names (ten_3D2Osym, ten_2D2Osym = dp) come from the compatibility modules
 #!   muscle_tensor_3d2osym / muscle_tensor_2d2osym and from muscle_tensors (D-003).
@@ -84,32 +87,7 @@ module muscle_tensor_2osym
 
 #:endfor
 #:endfor
-    public :: operator(.approx.)
-    interface operator (.approx.)
-        module procedure ${specifics('approx_{0}_{1}', F)}$
-    end interface
-
-    public :: operator(+)
-    interface operator (+)
-        module procedure ${specifics('sum_{0}_{1}', F)}$
-    end interface
-
-    public :: operator(-)
-    interface operator (-)
-        module procedure ${specifics('sub_{0}_{1}', F)}$
-        module procedure ${specifics('subU_{0}_{1}', F)}$
-    end interface
-
-    public :: operator(*)
-    interface operator (*)
-        module procedure ${specifics('mul_real_{0}_{1}', F)}$
-        module procedure ${specifics('mul_{0}_real_{1}', F)}$
-    end interface
-
-    public :: operator( / )
-    interface operator ( / )
-        module procedure ${specifics('div_{0}_real_{1}', F)}$
-    end interface
+$:TENSOR_COMMON_INTERFACES(F)
 
     public :: operator(.dev.)
     interface operator (.dev.)
@@ -119,22 +97,6 @@ module muscle_tensor_2osym
     public :: operator(.ddot.)
     interface operator (.ddot.)
         module procedure ${specifics('ddot_{0}_{0}_{1}', F)}$
-    end interface
-
-    public :: assignment (=)
-    interface assignment (=)
-        module procedure ${specifics('assign_{0}_real_{1}', F)}$
-    end interface
-
-    public :: operator(.inv.)
-    interface operator (.inv.)
-        module procedure ${specifics('inv_{0}_{1}', F)}$
-    end interface
-
-    public :: inverse
-    interface inverse
-        !! `call inverse(a, a_inv, ok [, cond])`: inverse with a success flag and condition number.
-        module procedure ${specifics('inverse_{0}_{1}', F)}$
     end interface
 
     public :: norm
@@ -155,12 +117,6 @@ module muscle_tensor_2osym
         module procedure ${specifics('square_{0}_{1}', F)}$
     end interface
 
-    public :: is_approx
-    interface is_approx
-        !! Component-wise approximate equality, optional relative tolerance.
-        module procedure ${specifics('is_approx_{0}_{1}', F)}$
-    end interface
-
 contains
 
 #:for d in DIMS
@@ -177,16 +133,7 @@ contains
     ! ${T}$
     ! ---------------------------------------------------------------------------------------
 
-    pure subroutine assign_${S}$_real_${k}$(a, b)
-        !! `${T}$ = scalar`: assigns `b` to every stored component.
-        implicit none
-        @:DEVICE()
-        type(${T}$), intent(out) :: a
-            !! Target tensor.
-        real(${k}$), intent(in) :: b
-            !! Scalar value copied to all ${n}$ components.
-        a%vals = b
-    end subroutine assign_${S}$_real_${k}$
+$:TENSOR_COMMON_PROCEDURES(d, F, k)
 
     pure function norm_${P}$(a) result(res)
         !! Modified L1 norm of a `${T}$`, shear components weighted by 2:
@@ -199,116 +146,6 @@ contains
             !! Modified L1 norm.
         res = ${join_terms([('{}*'.format(c.mult) if c.mult > 1 else '') + 'abs(a%vals({}))'.format(c.pos[0]) for c in lay.comps])}$
     end function norm_${P}$
-
-    pure function is_approx_${P}$(a, b, tol) result(res)
-        !! Component-wise approximate equality of two `${T}$` with a relative tolerance:
-        !! \( |a_I - b_I| \le tol \cdot \max(\max|a|, \max|b|, \epsilon_{abs}) \) for all I.
-        implicit none
-        @:DEVICE()
-        type(${T}$), intent(in) :: a
-            !! First tensor.
-        type(${T}$), intent(in) :: b
-            !! Second tensor.
-        real(${k}$), optional, intent(in) :: tol
-            !! Relative tolerance (default `TOL_APPROX_${k}$`).
-        logical :: res
-            !! `.true.` if both tensors are approximately equal.
-        real(${k}$) :: tol2, max_val
-
-        tol2 = TOL_APPROX_${k}$
-        if (present(tol)) tol2 = tol
-        max_val = max(maxval(abs(a%vals)), maxval(abs(b%vals)), EPS_ABS_${k}$)
-        res = all(abs(a%vals - b%vals) .le. tol2 * max_val)
-    end function is_approx_${P}$
-
-    pure function approx_${P}$(a, b) result(res)
-        !! `${T}$ .approx. ${T}$`: `is_approx` with its default tolerance.
-        implicit none
-        @:DEVICE()
-        type(${T}$), intent(in) :: a
-            !! First tensor.
-        type(${T}$), intent(in) :: b
-            !! Second tensor.
-        logical :: res
-            !! `.true.` if both tensors are approximately equal.
-        res = is_approx_${P}$(a, b)
-    end function approx_${P}$
-
-    pure function sum_${P}$(a, b) result(res)
-        !! Component-wise sum of two `${T}$`.
-        implicit none
-        @:DEVICE()
-        type(${T}$), intent(in) :: a
-            !! First operand.
-        type(${T}$), intent(in) :: b
-            !! Second operand.
-        type(${T}$) :: res
-            !! Sum.
-        res%vals = a%vals + b%vals
-    end function sum_${P}$
-
-    pure function sub_${P}$(a, b) result(res)
-        !! Component-wise difference of two `${T}$`.
-        implicit none
-        @:DEVICE()
-        type(${T}$), intent(in) :: a
-            !! Minuend.
-        type(${T}$), intent(in) :: b
-            !! Subtrahend.
-        type(${T}$) :: res
-            !! Difference.
-        res%vals = a%vals - b%vals
-    end function sub_${P}$
-
-    pure function subU_${P}$(a) result(res)
-        !! Unary negation of a `${T}$`.
-        implicit none
-        @:DEVICE()
-        type(${T}$), intent(in) :: a
-            !! Operand.
-        type(${T}$) :: res
-            !! Negated tensor.
-        res%vals = -a%vals
-    end function subU_${P}$
-
-    pure function mul_real_${P}$(a, b) result(res)
-        !! `real(${k}$) * ${T}$`.
-        implicit none
-        @:DEVICE()
-        real(${k}$), intent(in) :: a
-            !! Scalar factor.
-        type(${T}$), intent(in) :: b
-            !! Tensor.
-        type(${T}$) :: res
-            !! Scaled tensor.
-        res%vals = a * b%vals
-    end function mul_real_${P}$
-
-    pure function mul_${S}$_real_${k}$(a, b) result(res)
-        !! `${T}$ * real(${k}$)`.
-        implicit none
-        @:DEVICE()
-        type(${T}$), intent(in) :: a
-            !! Tensor.
-        real(${k}$), intent(in) :: b
-            !! Scalar factor.
-        type(${T}$) :: res
-            !! Scaled tensor.
-        res%vals = a%vals * b
-    end function mul_${S}$_real_${k}$
-
-    pure function div_${S}$_real_${k}$(a, b) result(res)
-        !! `${T}$ / real(${k}$)`.
-        implicit none
-        @:DEVICE()
-        type(${T}$), intent(in) :: a
-            !! Tensor.
-        real(${k}$), intent(in) :: b
-            !! Scalar divisor (must be non-zero).
-        type(${T}$) :: res
-            !! Scaled tensor.
-        res%vals = a%vals/b
-    end function div_${S}$_real_${k}$
 
     pure function ddot_${S}$_${P}$(a, b) result(res)
         !! Double contraction of two `${T}$`, \(a_{ij} b_{ij}\) (shear products counted twice).
@@ -389,7 +226,7 @@ contains
         !! The full symmetric 3x3 matrix is inverted with `M33INV` (adjugate + \( \kappa_\infty \),
         !! LU fallback); the off-diagonal result is symmetrized. If it is singular (or contains
         !! NaN): `ok = .false.`, `a_inv` is filled with quiet NaN and `cond = huge(1.0_${k}$)`.
-        use muscle_math_inverses, only : M33INV, QUIET_NAN_${k}$
+        use muscle_math_inverses, only : M33INV_${k}$, QUIET_NAN_${k}$
         implicit none
         @:DEVICE()
         type(${T}$), intent(in) :: a
@@ -400,15 +237,13 @@ contains
             !! `.true.` if the inversion succeeded, `.false.` if `a` is singular.
         real(${k}$), intent(out), optional :: cond
             !! Condition number \( \kappa_\infty \) of the inverted 3x3 matrix; `huge(1.0_${k}$)` if singular.
-        real(${k}$) :: m(3,3), x(3,3), kap
+        real(${k}$) :: m(3,3), x(3,3)
 
-#:for j in range(1, 4)
-        m(:,${j}$) = (/ ${', '.join(lay.ref('a%vals', i, j, zero='0.0_' + k) for i in range(1, 4))}$ /)
-#:endfor
-        call M33INV(m, x, ok, kap)
+$:LOAD_MATRIX('m', lay, k)
+        ! The inverse routine sets cond (if present): kappa_inf, or huge if singular
+        call M33INV_${k}$(m, x, ok, cond)
         if (.not. ok) then
             a_inv%vals = QUIET_NAN_${k}$()
-            if (present(cond)) cond = huge(1.0_${k}$)
             return
         end if
 #:for c in lay.comps
@@ -419,34 +254,11 @@ contains
         a_inv%vals(${c.pos[0]}$) = 0.5_${k}$*(x(${i}$,${j}$) + x(${j}$,${i}$))
 #:endif
 #:endfor
-        if (present(cond)) cond = kap
     end subroutine inverse_${P}$
-
-    pure function inv_${P}$(a) result(res)
-        !! `.inv. ${T}$`: inverse; quiet NaN if singular (use the generic `inverse` to get a
-        !! success flag and the condition number).
-        implicit none
-        @:DEVICE()
-        type(${T}$), intent(in) :: a
-            !! Tensor to invert.
-        type(${T}$) :: res
-            !! Inverse tensor.
-        logical :: ok
-        call inverse_${P}$(a, res, ok)
-    end function inv_${P}$
 
     ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
 
-    pure subroutine init_${P}$_tbp(self, vals)
-        !! `%init(vals)`: initializes a `${T}$` from a ${n}$-element array in Voigt order
-        !! (${', '.join(c.name for c in lay.comps)}$).
-        implicit none
-        class(${T}$), intent(inout) :: self
-            !! Tensor to initialize.
-        real(${k}$), intent(in) :: vals(${n}$)
-            !! Components in Voigt order.
-        self%vals = vals
-    end subroutine init_${P}$_tbp
+$:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm', 'det'], tensor_ops=['square', 'inv'])
 
     pure subroutine init2_${P}$_tbp(self, ${', '.join(c.name for c in lay.comps)}$)
         !! `%init(${', '.join(c.name for c in lay.comps)}$)`: initializes a `${T}$` from its
@@ -473,32 +285,6 @@ contains
     end function ${c.name}$_${P}$_tbp
 
 #:endfor
-#:for op, rtype in [('square', 'type(' + T + ')'), ('norm', 'real(' + k + ')'), ('det', 'real(' + k + ')'), ('inv', 'type(' + T + ')')]
-    pure function ${op}$_${P}$_tbp(self) result(res)
-        !! `%${op}$()`: type-bound wrapper of `${op}$_${P}$`.
-        implicit none
-        class(${T}$), intent(in) :: self
-            !! Tensor.
-        ${rtype}$ :: res
-            !! Result.
-        res = ${op}$_${P}$(self)
-    end function ${op}$_${P}$_tbp
-
-#:endfor
-    pure function is_approx_${P}$_tbp(self, b, tol) result(res)
-        !! `%is_approx(b [, tol])`: type-bound wrapper of `is_approx_${P}$`.
-        implicit none
-        class(${T}$), intent(in) :: self
-            !! First tensor.
-        type(${T}$), intent(in) :: b
-            !! Second tensor.
-        real(${k}$), optional, intent(in) :: tol
-            !! Relative tolerance (default `TOL_APPROX_${k}$`).
-        logical :: res
-            !! `.true.` if both tensors are approximately equal.
-        res = is_approx_${P}$(self, b, tol)
-    end function is_approx_${P}$_tbp
-
 #:endfor
 #:endfor
 end module muscle_tensor_2osym

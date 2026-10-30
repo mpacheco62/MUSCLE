@@ -23,6 +23,13 @@ Families: ``'2O'``, ``'2Osym'``, ``'4O'``, ``'4O2sym'``, ``'4O3sym'``; dims: ``'
 
 Indices are 1-based, as in Fortran.
 
+Identities
+----------
+``IDENTITIES`` lists the identity tensors (``iden_2O``, ``iden_4O3T``, ``iden_4O4T``): they do
+not depend on the dimension. The unscaled type has no kind and no components; the scaled one
+(``iden_<name>S_<k>``) stores the factor ``val``. ``iname`` builds their type names and
+``iden_matrix`` the matrix shown by their formatted output.
+
 Queries for the templates: ``Layout.index(i, j[, k, l])`` (storage position of any tensor
 component, applying the symmetries of the family; ``None`` for a structural zero in 2D),
 ``Comp.mult`` (how many tensor components the stored value represents, e.g. 2 for a symmetric
@@ -41,6 +48,10 @@ DIMS = ('3D', '2D')
 #: Tensor families.
 FAMILIES = ('2O', '2Osym', '4O', '4O2sym', '4O3sym')
 
+#: Identity tensors (unscaled names; the scaled ones append ``S``): ``2O`` is \delta_ij,
+#: ``4O3T`` is \delta_ij \delta_kl and ``4O4T`` is (\delta_ik \delta_jl + \delta_il \delta_jk)/2.
+IDENTITIES = ('2O', '4O3T', '4O4T')
+
 _AXES = 'xyz'
 
 
@@ -56,6 +67,42 @@ def tname(base, kind):
     if kind not in KINDS:
         raise ValueError(f"unknown kind '{kind}', expected one of {KINDS}")
     return f"ten_{base}_{kind}"
+
+
+def iname(base, kind=None):
+    """Name of an identity type: ``iname('2O')`` -> ``'iden_2O'`` (unscaled, no kind);
+    ``iname('2OS', 'dp')`` -> ``'iden_2OS_dp'`` (scaled, one type per kind)."""
+    if kind is None:
+        return f"iden_{base}"
+    if kind not in KINDS:
+        raise ValueError(f"unknown kind '{kind}', expected one of {KINDS}")
+    return f"iden_{base}_{kind}"
+
+
+def iden_matrix(name, one, half, zero):
+    """Rows of the matrix of the identity ``iden_<name>`` (``IDENTITIES``) shown by its formatted
+    output, as Fortran expressions: ``one`` for the entries equal to the factor, ``half`` for half
+    of it and ``zero`` for zeros. ``2O``: the 3x3 matrix \\delta_ij. ``4O3T`` / ``4O4T``: the 6x6
+    Voigt matrix C_IJ (3D ``2Osym`` order 11, 22, 33, 12, 23, 13; tensorial components, no shear
+    factors) of \\delta_ij \\delta_kl (ones in the normal 3x3 block) and of
+    (\\delta_ik \\delta_jl + \\delta_il \\delta_jk)/2 (``diag(1, 1, 1, 1/2, 1/2, 1/2)``)."""
+    def delta(a, b):
+        return 1 if a == b else 0
+
+    def entry(i, j, k, l):
+        if name == '4O3T':
+            return delta(i, j) * delta(k, l)
+        return (delta(i, k) * delta(j, l) + delta(i, l) * delta(j, k)) / 2
+
+    if name not in IDENTITIES:
+        raise ValueError(f"unknown identity '{name}', expected one of {IDENTITIES}")
+    if name == '2O':
+        coef = [[delta(i, j) for j in range(1, 4)] for i in range(1, 4)]
+    else:
+        pairs = [c.idx for c in layout('2Osym', '3D').comps]
+        coef = [[entry(*r, *c) for c in pairs] for r in pairs]
+    expr = {0: zero, 1: one, 0.5: half}
+    return [[expr[v] for v in row] for row in coef]
 
 
 Comp = namedtuple('Comp', 'name pos idx mult voigt')
@@ -90,6 +137,15 @@ class Layout(namedtuple('Layout', 'family dim shape comps base')):
         if pos is None:
             return zero
         return '{}({})'.format(var, ', '.join(str(p) for p in pos))
+
+    def matrix(self, var, zero='0'):
+        """Rows of the matrix shown to the user, as Fortran references (``ref``): the full 3x3
+        matrix for 2nd order; for 4th order the matrix of the base layout (``C(I, J)`` with I, J
+        the rows/columns of the 2nd-order storage, e.g. 6x6 Voigt for ``4O3sym`` in 3D)."""
+        if self.base is None:
+            return [[self.ref(var, i, j, zero=zero) for j in range(1, 4)] for i in range(1, 4)]
+        rows = [c.idx for c in self.base.comps]
+        return [[self.ref(var, *r, *c, zero=zero) for c in rows] for r in rows]
 
 
 def _name(*idx):

@@ -1,4 +1,5 @@
 target_sources(muscle PRIVATE
+                   muscle_tensor_functions.f90
                    types/muscle_tensor_3d2o.f90
                    types/muscle_tensor_3d2osym.f90
                    types/muscle_tensor_2d2o.f90
@@ -25,6 +26,11 @@ target_sources(muscle PRIVATE
 
 muscle_add_fypp_sources(muscle
                    types/muscle_tensor_2osym.fypp
+                   types/muscle_tensor_2o.fypp
+                   types/muscle_tensor_4o3sym.fypp
+                   types/muscle_tensor_4o2sym.fypp
+                   types/muscle_tensor_4o.fypp
+                   types/muscle_tensor_iden.fypp
                    muscle_tensor_io.fypp
                    muscle_tensors.fypp
                    )

@@ -1,0 +1,223 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_tensor_common.fypp"
+#! Fourth-order tensors with major and minor symmetries, one type per dimension and kind
+#! (pattern of D-011, D-012):
+#! - everything that depends on the component layout comes from layout('4O3sym', dim): the
+#!   storage is the upper triangle of the symmetric Voigt matrix of the base 2Osym layout, stored
+#!   diagonal by diagonal (D-004); the only per-dimension difference is the size of the inverted
+#!   Voigt matrix (M66INV in 3D, M44INV in 2D);
+#! - the operations common to every family (+, -, *, /, =, .approx., .inv., is_approx and the
+#!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp;
+#! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
+#!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
+#! - the historical names (ten_3D4O3sym, ten_2D4O3sym = dp) come from the compatibility modules
+#!   muscle_tensor_3d4o3sym / muscle_tensor_2d4o3sym and from muscle_tensors (D-003).
+
+module muscle_tensor_4o3sym
+    !! Module muscle_tensor_4o3sym
+    !! ===========================
+    !!
+    !! Fourth-order tensors with major and minor symmetries
+    !! \( C_{ijkl} = C_{jikl} = C_{ijlk} = C_{klij} \) (e.g. the linear elasticity tensor) in 3D
+    !! and 2D, in single and double precision: `ten_3D4O3sym_sp`, `ten_3D4O3sym_dp`,
+    !! `ten_2D4O3sym_sp`, `ten_2D4O3sym_dp`.
+    !!
+    !! Storage: the upper triangle of the symmetric Voigt matrix \( C_{IJ} \) (Voigt indices of
+    !! [[muscle_tensor_2osym]]), stored diagonal by diagonal: (1,1), (2,2), ..., then (1,2), (2,3),
+    !! ..., and finally (1,n). Shear entries are not scaled (tensorial convention).
+    !!
+    !! - 3D: `vals(21)` = (1111, 2222, 3333, 1212, 2323, 1313, 1122, 2233, 3312, 1223, 2313, 1133,
+    !!   2212, 3323, 1213, 1112, 2223, 3313, 1123, 2213, 1113), Voigt order (11, 22, 33, 12, 23, 13).
+    !! - 2D (plane strain/stress, axisymmetry): `vals(10)` = (1111, 2222, 3333, 1212, 1122, 2233,
+    !!   3312, 1133, 2212, 1112), Voigt order (11, 22, 33, 12); the out-of-plane shear couplings
+    !!   vanish.
+    !!
+    !! Operations (generic over dimension and kind; operands must share the kind):
+    !!
+    !! - Operators: `.approx.`, `+`, `-` (binary and unary), `*` and `/` by a scalar of the same
+    !!   kind, `.inv.`, assignment of a scalar.
+    !! - Generic functions (usable in GPU kernels): `norm(a)`, `is_approx(a, b [, tol])` and
+    !!   `call inverse(a, a_inv, ok [, cond])`.
+    !! - Type-bound (historical API, not for kernels): `init` (array or named components), `set`
+    !!   (optional named components), `norm`, `is_approx`, `inv`.
+    !!
+    !! ```fortran
+    !! use muscle_tensors                      ! ten_3D4O3sym is ten_3D4O3sym_dp
+    !! type(ten_3D4O3sym) :: C, S
+    !! C = 0.0_dp
+    !! call C%set(xxxx=280.0_dp, yyyy=280.0_dp, zzzz=280.0_dp, xyxy=80.0_dp, yzyz=80.0_dp, &
+    !!            xzxz=80.0_dp, xxyy=120.0_dp, yyzz=120.0_dp, xxzz=120.0_dp)
+    !! S = .inv. C                             ! compliance, S : C = I^S
+    !! ```
+    !!
+    !! For more information see [[muscle_tensors]]
+    use muscle_kinds, only: sp, dp
+#:for k in REAL_KINDS
+    use muscle_kinds, only: TOL_APPROX_${k}$, EPS_ABS_${k}$
+#:endfor
+    implicit none
+    private
+
+#:set F = '4O3sym'
+#:for d in DIMS
+#:set lay = layout(F, d)
+#:set n = len(lay.comps)
+#:set nb = len(lay.base.comps)
+#:set S = d + F
+#:for k in REAL_KINDS
+#:set T = tname(S, k)
+    type, public :: ${T}$
+        !! ${d}$ fourth-order tensor with major and minor symmetries in `real(${k}$)`: upper
+        !! triangle of the symmetric ${nb}$x${nb}$ Voigt matrix, stored diagonal by diagonal.
+        real(${k}$), dimension(${n}$) :: vals
+            !! Independent components (${', '.join(c.name for c in lay.comps)}$).
+        contains
+            generic, public :: init => init_${S}$_${k}$_tbp, init2_${S}$_${k}$_tbp
+                !! Initializes from a ${n}$-element array (storage order) or from the named components.
+            procedure, private :: init_${S}$_${k}$_tbp, init2_${S}$_${k}$_tbp
+            procedure, public :: norm => norm_${S}$_${k}$_tbp
+                !! Modified L1 norm (off-diagonal Voigt entries weighted by 2).
+            procedure, public :: set => set_${S}$_${k}$_tbp
+                !! Sets the components given as (optional) keyword arguments.
+            procedure, public :: is_approx => is_approx_${S}$_${k}$_tbp
+                !! Component-wise approximate equality.
+            procedure, public :: inv => inv_${S}$_${k}$_tbp
+                !! Inverse tensor (quiet NaN if singular).
+    end type ${T}$
+
+#:endfor
+#:endfor
+$:TENSOR_COMMON_INTERFACES(F)
+
+    public :: norm
+    interface norm
+        !! Modified L1 norm (off-diagonal Voigt entries weighted by 2).
+        module procedure ${specifics('norm_{0}_{1}', F)}$
+    end interface
+
+contains
+
+#:for d in DIMS
+#:set lay = layout(F, d)
+#:set n = len(lay.comps)
+#:set base = lay.base.comps
+#:set nb = len(base)
+#:set S = d + F
+#! Component names grouped by diagonal of the Voigt matrix (storage order), for argument lists
+#:set diags = [[c.name for c in lay.comps if c.voigt[1] - c.voigt[0] == o] for o in range(nb)]
+#! norm relies on the Voigt diagonal (weight 1) being stored first
+#:assert [c.voigt[0] == c.voigt[1] for c in lay.comps] == [True] * nb + [False] * (n - nb)
+#:for k in REAL_KINDS
+#:set T = tname(S, k)
+#:set P = S + '_' + k
+#! Inverse of the nb x nb Voigt matrix (M66INV_<k> in 3D, M44INV_<k> in 2D)
+#:set minv = 'M{0}{0}INV_{1}'.format(nb, k)
+    ! ---------------------------------------------------------------------------------------
+    ! ${T}$
+    ! ---------------------------------------------------------------------------------------
+
+$:TENSOR_COMMON_PROCEDURES(d, F, k)
+
+    pure function norm_${P}$(a) result(res)
+        !! Modified L1 norm of a `${T}$` over its ${nb}$x${nb}$ Voigt matrix:
+        !! \( \sum_I |C_{II}| + 2 \sum_{I<J} |C_{IJ}| \).
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor whose norm is computed.
+        real(${k}$) :: res
+            !! Modified L1 norm.
+        res = sum(abs(a%vals(1:${nb}$))) + 2.0_${k}$ * sum(abs(a%vals(${nb + 1}$:${n}$)))
+    end function norm_${P}$
+
+    pure subroutine inverse_${P}$(a, a_inv, ok, cond)
+        !! Inverse of a `${T}$` with a success flag (generic `inverse`, also used by `.inv.`).
+        !!
+        !! \( \mathbb{A}^{-1} : \mathbb{A} = \mathbb{I}^S \). The symmetric ${nb}$x${nb}$ Voigt matrix
+        !! is inverted with `M${nb}$${nb}$INV` and symmetrized (the inverse is symmetric only up to
+        !! round-off and a single triangle is stored). The shear blocks are scaled by 1/2
+        !! (normal-shear) and 1/4 (shear-shear) for the tensorial-shear convention of `.ddot.`.
+        !!
+        !! If the matrix is singular (or contains NaN): `ok = .false.`, `a_inv` is filled with quiet
+        !! NaN and `cond = huge(1.0_${k}$)`.
+        use muscle_math_inverses, only : ${minv}$, QUIET_NAN_${k}$
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor to invert.
+        type(${T}$), intent(out) :: a_inv
+            !! Inverse tensor (quiet NaN if `a` is singular).
+        logical, intent(out) :: ok
+            !! `.true.` if the inversion succeeded, `.false.` if `a` is singular.
+        real(${k}$), intent(out), optional :: cond
+            !! Condition number \( \kappa_\infty \) of the Voigt matrix that is inverted;
+            !! `huge(1.0_${k}$)` if singular.
+        real(${k}$) :: mat_a(${nb}$,${nb}$), x(${nb}$,${nb}$)
+
+$:LOAD_MATRIX('mat_a', lay, k)
+        ! The inverse routine sets cond (if present): kappa_inf, or huge if singular
+        call ${minv}$(mat_a, x, ok, cond)
+        if (.not. ok) then
+            a_inv%vals = QUIET_NAN_${k}$()
+            return
+        end if
+        x = 0.5_${k}$*(x + transpose(x))
+#:for c in lay.comps
+#:set I, J = c.voigt
+#:set w = base[I - 1].mult * base[J - 1].mult
+#:if w == 1
+        a_inv%vals(${c.pos[0]}$) = x(${I}$,${J}$)
+#:else
+        a_inv%vals(${c.pos[0]}$) = x(${I}$,${J}$)/${w}$.0_${k}$
+#:endif
+#:endfor
+    end subroutine inverse_${P}$
+
+    ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
+
+$:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm'], tensor_ops=['inv'])
+
+    pure subroutine init2_${P}$_tbp(self, &
+#:for o, names in enumerate(diags)
+                                        ${', '.join(names)}$${', &' if o < nb - 1 else ')'}$
+#:endfor
+        !! `%init(...)`: initializes a `${T}$` from its ${n}$ individual components (keywords and
+        !! positional order = storage order).
+        implicit none
+        class(${T}$), intent(inout) :: self
+            !! Tensor to initialize.
+#:for c in lay.comps
+        real(${k}$), intent(in) :: ${c.name}$
+            !! Component ${c.idx}$, Voigt entry ${c.voigt}$.
+#:endfor
+        self%vals = (/ &
+#:for o, names in enumerate(diags)
+                     ${', '.join(names)}$${', &' if o < nb - 1 else ' &'}$
+#:endfor
+                     /)
+    end subroutine init2_${P}$_tbp
+
+    pure subroutine set_${P}$_tbp(self, &
+#:for o, names in enumerate(diags)
+                                      ${', '.join(names)}$${', &' if o < nb - 1 else ')'}$
+#:endfor
+        !! `%set(...)`: sets the components of a `${T}$` given as keyword arguments; the others are
+        !! left unchanged.
+        implicit none
+        class(${T}$), intent(inout) :: self
+            !! Tensor to modify.
+#:for c in lay.comps
+        real(${k}$), optional, intent(in) :: ${c.name}$
+            !! Component ${c.idx}$, Voigt entry ${c.voigt}$.
+#:endfor
+
+#:for c in lay.comps
+        if (present(${c.name}$)) self%vals(${c.pos[0]}$) = ${c.name}$
+#:endfor
+    end subroutine set_${P}$_tbp
+
+#:endfor
+#:endfor
+end module muscle_tensor_4o3sym

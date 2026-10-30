@@ -4,6 +4,12 @@
 #! Default relative tolerance of `.approx.` per kind: dp keeps the historical 1e-12; sp is
 #! ~84 ulp (epsilon(1.0_sp) = 1.2e-7), see .claude/rules/testing.md and D-010.
 #:set TOL_APPROX = {'sp': '1.0e-5', 'dp': '1.0e-12'}
+#! Default of the 4O2sym family (D-010, user decision 2026-10-30): dp keeps the historical 1e-8 of
+#! ten_3D4O2sym/ten_2D4O2sym; sp is 10x the sp base tolerance.
+#:set TOL_APPROX_4O2SYM = {'sp': '1.0e-4', 'dp': '1.0e-8'}
+#! Tolerance of `.approx.` of the scaled identities (D-014): dp keeps the historical 1e-10, sp
+#! uses the general sp tolerance.
+#:set TOL_APPROX_IDEN = {'sp': '1.0e-5', 'dp': '1.0e-10'}
 
 module muscle_kinds
     !! Real kinds of MUSCLE and the constants that depend on them.
@@ -23,7 +29,17 @@ module muscle_kinds
 #:for k in ALL_KINDS
     real(${k}$), parameter, public :: TOL_APPROX_${k}$ = ${TOL_APPROX[k]}$_${k}$
         !! Default relative tolerance of `.approx.`/`is_approx` for `real(${k}$)` values (most
-        !! tensor types; `4O2sym` uses 1e-8 in dp, decision pending for its templates).
+        !! tensor types; `4O2sym` uses `TOL_APPROX_4O2SYM_${k}$`).
+    real(${k}$), parameter, public :: TOL_APPROX_4O2SYM_${k}$ = ${TOL_APPROX_4O2SYM[k]}$_${k}$
+        !! Default relative tolerance of `.approx.`/`is_approx` of the fourth-order tensors with
+        !! minor symmetries (`4O2sym`) in `real(${k}$)`: looser than `TOL_APPROX_${k}$` (historical
+        !! 1e-8 in dp, 1e-4 in sp; D-010). In sp it covers inverses with \(\kappa_\infty \lesssim
+        !! 10^3\) (measured); to compare inverses of worse-conditioned tensors pass an explicit
+        !! `tol` of about \(2\,\kappa_\infty\,\epsilon\).
+    real(${k}$), parameter, public :: TOL_APPROX_IDEN_${k}$ = ${TOL_APPROX_IDEN[k]}$_${k}$
+        !! Tolerance of `.approx.` of the scaled identities in `real(${k}$)`: \( |a - b| \le
+        !! tol \cdot \max(1, |a|, |b|) \) (absolute below 1, relative above); 1e-10 in dp (the
+        !! historical value, formerly a default-real literal) and 1e-5 in sp (D-014).
     real(${k}$), parameter, public :: EPS_ABS_${k}$ = 1.0e-30_${k}$
         !! Lower bound of the scale of relative comparisons in `real(${k}$)` (avoids a zero
         !! threshold when both operands vanish; normal in both kinds).
