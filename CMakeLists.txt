@@ -39,6 +39,18 @@ if(MUSCLE_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
 
+# Documentation (FORD, optional): `cmake --build <dir> --target doc` writes <dir>/doc. FORD runs
+# from the source root because the fypp module path (-M tools/fypp) in my_project.md is relative.
+find_program(FORD_EXECUTABLE ford)
+if(FORD_EXECUTABLE)
+    add_custom_target(doc
+        COMMAND ${CMAKE_COMMAND} -E env PYTHONDONTWRITEBYTECODE=1
+                ${FORD_EXECUTABLE} --output_dir "${PROJECT_BINARY_DIR}/doc" my_project.md
+        WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+        COMMENT "FORD documentation in ${PROJECT_BINARY_DIR}/doc"
+        VERBATIM)
+endif()
+
 
 # Solo configurar el reporte si estamos en el modo de cobertura
 if(CMAKE_BUILD_TYPE STREQUAL "Profile_unittests")

@@ -1,0 +1,71 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_tensor_ops_common.fypp"
+#! Mixed-type `+` and `-`, generated from the pair table of muscle_meta (OP_TABLE['+'/'-'], D-015)
+#! for every dimension and kind. The body depends on which operands are identities (op_iden):
+#! - tensor +- tensor (2O +- 2Osym): component by component over the layout of the result;
+#! - tensor +- identity: copy of the tensor (negated for `I - T`), then the non-zero components
+#!   of the identity (iden_combination) added (subtracted for `T - I`) one by one;
+#! - identity +- identity (only 3D, result ten_3D4O3sym): zero, then each non-zero component.
+#! IEEE addition is commutative and x - y = x + (-y) exactly, so the mirrored rows and the
+#! former 2D helpers (`add_iden_2D2O(-a, c)`, ...) give the same bits as these expressions.
+#:set MODULE = 'addition_subtraction'
+
+module muscle_tensor_ops_${MODULE}$
+    !! This module defines the mixed-type addition `+` and subtraction `-` operators between
+    !! second and fourth-order tensors and the (scaled or unscaled) identity tensors, in 3D and
+    !! 2D, single and double precision (operands of the same kind; unscaled identities serve
+    !! every kind):
+    !!
+    !! - `I +- A`, `A +- I` with `I` = `iden_2O`, `iden_2OS` and `A` = `ten_<d>2O`,
+    !!   `ten_<d>2Osym`; `I` = `iden_4O3T(S)`, `iden_4O4T(S)` and `A` = `ten_<d>4O2sym`,
+    !!   `ten_<d>4O3sym` (\(c\) on the normal block for \(c\,\delta_{ij}\delta_{kl}\); \(c\) and
+    !!   \(c/2\) on the normal and shear diagonals for \(c\,\mathbb{I}^S\)).
+    !! - `ten_<d>2O +- ten_<d>2Osym` (both orders): result `ten_<d>2O`.
+    !! - Sums and differences of one `iden_4O3T(S)` and one `iden_4O4T(S)` (both orders): result
+    !!   `ten_3D4O3sym` (only 3D). Between unscaled identities it is double precision (D-015).
+$:OP_USES(MODULE)
+    implicit none
+    private
+
+$:OP_INTERFACES(MODULE)
+contains
+
+#:for g in OP_MODULES[MODULE]
+#:for d in DIMS
+#:for k in REAL_KINDS
+#:for e in op_entries(g, d, k)
+#:set x, y = op_args(e)
+#:set A, B, R = op_symbols(e)
+#:set ia, ib = op_iden(e.tag_a), op_iden(e.tag_b)
+#:set what = 'Sum' if g == '+' else 'Difference'
+#:call OP_FUNCTION(e, '{} \\({} = {} {} {}\\)'.format(what, R, A, g, B))
+#:if ia is None and ib is None
+#:set la, lb, lr = op_layout(e.tag_a), op_layout(e.tag_b), op_layout(e.tag_res)
+#:for c in lr.comps
+        ${lr.ref('res%vals', *c.idx)}$ = ${la.ref(x + '%vals', *c.idx)}$ ${g}$ ${lb.ref(y + '%vals', *c.idx)}$
+#:endfor
+#:elif ia is None or ib is None
+#! t: the tensor operand, I: the identity; `I - T` negates the tensor, `T - I` subtracts the
+#! identity.
+#:set t, I, tag = (x, y, e.tag_b) if ia is None else (y, x, e.tag_a)
+#:set neg = '-' if g == '-' and t == y else ''
+#:set op = '-' if g == '-' and t == x else '+'
+        res%vals = ${neg}$${t}$%vals
+#:for p, v in iden_combination(op_layout(e.tag_res), [op_iden_term(tag, I + '%val')], k)
+        res%vals(${p}$) = res%vals(${p}$) ${op}$ ${v}$
+#:endfor
+#:else
+        res%vals = 0.0_${k}$
+#:set terms = [op_iden_term(e.tag_a, x + '%val'), op_iden_term(e.tag_b, y + '%val', g)]
+#:for p, v in iden_combination(op_layout(e.tag_res), terms, k)
+        res%vals(${p}$) = ${v}$
+#:endfor
+#:endif
+#:endcall OP_FUNCTION
+#:endfor
+#:endfor
+#:endfor
+#:endfor
+end module muscle_tensor_ops_${MODULE}$

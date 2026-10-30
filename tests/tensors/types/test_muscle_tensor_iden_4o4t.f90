@@ -1,5 +1,5 @@
 program test_muscle_tensor_iden_4o4t
-    use muscle_tensor_iden_4o4t
+    use muscle_tensors
     implicit none
     logical :: passed
 
@@ -20,8 +20,7 @@ end program test_muscle_tensor_iden_4o4t
 ! ==========================================
 subroutine test_iden_4O4T_mul(passed)
     use, intrinsic :: iso_fortran_env
-    use muscle_tensor_iden_4o4t
-    use muscle_tensor_iden_4o4ts
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     
@@ -58,8 +57,7 @@ end subroutine test_iden_4O4T_mul
 ! ==========================================
 subroutine test_iden_4O4T_div(passed)
     use, intrinsic :: iso_fortran_env
-    use muscle_tensor_iden_4o4t
-    use muscle_tensor_iden_4o4ts
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     real(real64), parameter :: EPS=1D-10

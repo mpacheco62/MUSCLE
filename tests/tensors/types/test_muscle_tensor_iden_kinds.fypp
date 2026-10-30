@@ -38,10 +38,9 @@ module test_iden_kinds_compat
 contains
 
     subroutine test_compat_2o(passed)
-        !! `muscle_tensor_iden_2o` + `muscle_tensor_iden_2os`: iden_2O, iden_2OS (dp) and their
-        !! operations, as in the original modules.
-        use muscle_tensor_iden_2o
-        use muscle_tensor_iden_2os
+        !! Historical names from `muscle_tensors`: iden_2O, iden_2OS (dp) and their operations, as in
+        !! the original modules.
+        use muscle_tensors
         logical, intent(out) :: passed
         type(iden_2O) :: I
         type(iden_2OS) :: S, T
@@ -87,10 +86,9 @@ contains
 
 #:for X in ['4O3T', '4O4T']
     subroutine test_compat_${X.lower()}$(passed)
-        !! `muscle_tensor_iden_${X.lower()}$` + `muscle_tensor_iden_${X.lower()}$s`: ${iname(X)}$,
-        !! ${iname(X + 'S')}$ (dp) and `*`, `/` by a dp scalar.
-        use muscle_tensor_iden_${X.lower()}$
-        use muscle_tensor_iden_${X.lower()}$s
+        !! Historical names from `muscle_tensors`: ${iname(X)}$, ${iname(X + 'S')}$ (dp) and `*`, `/`
+        !! by a dp scalar.
+        use muscle_tensors
         logical, intent(out) :: passed
         type(${iname(X)}$) :: I
         type(${iname(X + 'S')}$) :: S, T

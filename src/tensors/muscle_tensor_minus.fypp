@@ -1,0 +1,21 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_tensor_minus
+    !! The generic `operator(-)` of every tensor family, the identities and the operators between
+    !! types (unary and binary), merged in one module and re-exported by [[muscle_tensors]].
+    !!
+    !! Workaround for ifx 2026.2: when a module merges the families' `operator(-)` (which has unary
+    !! specifics) with the binary one of `muscle_tensor_ops_addition_subtraction` and other
+    !! generics, a program that uses it loses the unary minus (`b = -a`: error #6549). Merging
+    !! `operator(-)` alone here and importing it from this module only avoids it.
+#:for F in FAMILIES
+    use muscle_tensor_${F.lower()}$, only: operator(-)
+#:endfor
+    use muscle_tensor_iden, only: operator(-)
+    use muscle_tensor_ops_addition_subtraction, only: operator(-)
+    implicit none
+    private
+    public :: operator(-)
+end module muscle_tensor_minus

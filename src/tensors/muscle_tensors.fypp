@@ -110,8 +110,9 @@ module muscle_tensors
     !! ### Operators:
     !!
     !! The following operators are overloaded for various combinations of the public tensor types
-    !! and intrinsic types (like `real(real64)`). The implementations are provided by the
-    !! `mod_operator_*` modules.
+    !! and scalars of the same kind. Operations within a family come from its module
+    !! (`muscle_tensor_<family>`); operators between types from the `muscle_tensor_ops_*` modules,
+    !! generated from the pair table of `tools/fypp/muscle_meta.py` (D-015).
     !!
     !! - `+`: Addition (e.g., `tensor + tensor`).
     !! - `-`: Subtraction (e.g., `tensor - tensor`).
@@ -158,29 +159,31 @@ module muscle_tensors
     !! ```
 
     use, intrinsic :: iso_fortran_env
-    use muscle_tensor_3d2o
-    use muscle_tensor_3d2osym
-    use muscle_tensor_2d2o
-    use muscle_tensor_2d2osym
-    use muscle_tensor_2osym, only: ${', '.join(tname(d + '2Osym', k) for d in DIMS for k in REAL_KINDS)}$
-    use muscle_tensor_2o, only: ${', '.join(tname(d + '2O', k) for d in DIMS for k in REAL_KINDS)}$
-    use muscle_tensor_3d4o3sym
-    use muscle_tensor_2d4o3sym
-    use muscle_tensor_4o3sym, only: ${', '.join(tname(d + '4O3sym', k) for d in DIMS for k in REAL_KINDS)}$
-    use muscle_tensor_2d4o2sym
-    use muscle_tensor_4o2sym, only: ${', '.join(tname(d + '4O2sym', k) for d in DIMS for k in REAL_KINDS)}$
-    use muscle_tensor_2d4o
-    use muscle_tensor_3d4o2sym
-    use muscle_tensor_3d4o
-    use muscle_tensor_4o, only: ${', '.join(tname(d + '4O', k) for d in DIMS for k in REAL_KINDS)}$
-    use muscle_tensor_iden_2os
-    use muscle_tensor_iden_2o
-    use muscle_tensor_iden_4o3ts
-    use muscle_tensor_iden_4o3t
-    use muscle_tensor_iden_4o4ts
-    use muscle_tensor_iden_4o4t
-    use muscle_tensor_iden, only: ${', '.join(iname(X + 'S', k) for X in IDENTITIES for k in REAL_KINDS)}$
-    use muscle_tensor_ops_addition_subtraction
+    ! Types of every kind and the historical names, which are the double precision ones (D-003)
+#:for F in FAMILIES
+    use muscle_tensor_${F.lower()}$, only: ${', '.join(tname(d + F, k) for d in DIMS for k in REAL_KINDS)}$, &
+        & ${', '.join('{0} => {1}'.format(tname(d + F, 'dp')[:-3], tname(d + F, 'dp')) for d in DIMS)}$
+#:endfor
+    use muscle_tensor_iden, only: ${', '.join(iname(X) for X in IDENTITIES)}$, &
+        & ${', '.join(iname(X + 'S', k) for X in IDENTITIES for k in REAL_KINDS)}$, &
+        & ${', '.join('{0} => {1}'.format(iname(X + 'S', 'dp')[:-3], iname(X + 'S', 'dp')) for X in IDENTITIES)}$
+    ! Operations defined with each family (the generics merge across modules)
+    use muscle_tensor_2osym, only: operator(.approx.), operator(+), operator(*), &
+        & operator(/), operator(.dev.), operator(.ddot.), operator(.inv.), assignment(=), inverse
+    use muscle_tensor_2o, only: operator(.approx.), operator(+), operator(*), &
+        & operator(/), operator(.dev.), operator(.ddot.), operator(.inv.), assignment(=), inverse, &
+        & transpose
+#:for F in ['4O3sym', '4O2sym', '4O']
+    use muscle_tensor_${F.lower()}$, only: operator(.approx.), operator(+), &
+        & operator(*), operator(/), operator(.inv.), assignment(=), inverse
+#:endfor
+    use muscle_tensor_iden, only: operator(+), operator(*), operator(/), operator(.approx.)
+#:if defined('ENABLE_UDTIO')
+    use muscle_tensor_io, only: write(formatted)
+#:endif
+    ! operator(-) only through muscle_tensor_minus (ifx: see the note there)
+    use muscle_tensor_minus, only: operator(-)
+    use muscle_tensor_ops_addition_subtraction, only: operator(+)
     use muscle_tensor_ops_contraction_double
     use muscle_tensor_ops_dyadic
     use muscle_tensor_ops_contraction_single

@@ -1,0 +1,537 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! ---------------------------------------------------------------------------------------------
+#! Operators between tensor types checked against the same operation on the FULL tensors (not
+#! on the compact Voigt storage), for every specific of the operator table:
+#! op_entries(g, d, k) for every generic g in FULL_GENERICS, d in DIMS and k in REAL_KINDS.
+#!
+#! Included by the `test_ops_<...>_full.fypp` templates after they set:
+#!   FULL_NAME      program name, e.g. 'test_ops_ddot_full' (the helper module is <name>_lib)
+#!   FULL_GENERICS  generics of OP_TABLE checked, e.g. ['.ddot.'] or ['+', '-']
+#!
+#! Each operand is expanded to its full real(dp) tensor t(3,3) or t(3,3,3,3) through the layout
+#! metadata (`layout(family, dim)`, cross-checked against the original sources by
+#! tensors-types-layouts and the *_kinds tests): the symmetric layouts store tensorial
+#! components (no factor 2), the 4O3sym layout has major and minor symmetries, 4O2sym only the
+#! minor ones; in 2D the 13/23 components are structural zeros. Identities are written here by
+#! hand: delta_ij, (delta_ik delta_jl + delta_il delta_jk)/2 (4O4T), delta_ij delta_kl (4O3T),
+#! times `val` when scaled. The reference is the plain index operation in double precision:
+#!
+#!   +, -          A +- B
+#!   =             the left-hand side, pre-filled with random values, must be EXACTLY the
+#!                 expansion of the right-hand side (tolerance 0)
+#!   *             C_ij = A_ik B_kj
+#!   .ddot.        A_ij B_ij, A_ijkl B_kl, A_ij B_ijkl, A_ijmn B_mnkl
+#!   .tdot.        A_ij B_kl
+#!   .tdotsym.     (A_ij B_kl + B_ij A_kl)/2; unary: A_ij A_kl
+#!   .transform.   F_ia S_ab F_jb; F_ia F_jb F_kc F_ld C_abcd
+#!
+#! In 2D the reference is restricted to the components that the result type can hold (the
+#! structural zeros 13/23 of the 2D layouts are set to 0 in the reference): e.g. the 2D
+#! I4O4T has no 1313 component. The library result is expanded the same way and compared
+#! component by component.
+#!
+#! Tolerance: every component of the result is compared with
+#! |got - ref| <= FACTOR eps_k sum|terms|, where sum|terms| is the same operation on absolute
+#! values (the natural scale of the rounding error of a sum of products). FACTOR = 16 for every
+#! operation whose library and reference rounding chains are short: at most 9 products summed
+#! (.ddot., 6 weighted Voigt terms in 3D), 3 (*, 2nd-order transform done as (F S) F^T in both),
+#! one product (.tdot., .tdotsym.) or one sum (+, -): worst case <= (9 + 9) u = 9 eps (u = eps/2).
+#! The 4th-order transform has a longer chain: the library builds T (products of two F
+#! components summed in pairs, 2u), W = T C (6 terms, +6u) and R = W T^T (6 terms, +6u, with the
+#! error of T again, +2u): about 17u; the reference contracts one index at a time (4 levels of
+#! 3-term dot products, 4 x 4u = 16u): about 33u = 16.5 eps in the worst case, so FACTOR = 32
+#! there (the same margin of about 2 as for the others). A wrong weight, a wrong/missing
+#! component or a swapped index changes a component by O(1) relative to that scale, far above
+#! the tolerance in both kinds.
+#! ---------------------------------------------------------------------------------------------
+#:include "muscle_common.fypp"
+#:include "muscle_tensor_ops_common.fypp"
+#:set TENSOR_FAMILIES = ['2O', '2Osym', '4O2sym', '4O3sym']
+#:set IDX2 = [(i, j) for j in range(1, 4) for i in range(1, 4)]
+#:set IDX4 = [(i, j, k, l) for l in range(1, 4) for k in range(1, 4) for j in range(1, 4) for i in range(1, 4)]
+#! Linear (column-major) storage position of the full component idx, 0 for a structural zero
+#:set lin = lambda lay, idx: (lambda pos: 0 if pos is None else (pos[0] if len(pos) == 1 else pos[0] + (pos[1] - 1)*lay.shape[0]))(lay.index(*idx))
+#! Comma-separated list broken into continuation lines of 20 items
+#:set wrap = lambda xs: ', &\n        & '.join(', '.join(str(x) for x in xs[n:n + 20]) for n in range(0, len(xs), 20))
+#! Tensor order of a table tag ('3D2Osym', 'I4O4TS', 'real' -> 2, 4, 0)
+#:set order = lambda tag: 0 if tag == 'real' else (2 if (tag[2:] if tag[:2] in DIMS else tag[1:])[0] == '2' else 4)
+#! Shape of a full tensor of order o
+#:set fshape = lambda o: '3, 3' if o == 2 else '3, 3, 3, 3'
+#! Call of the expansion function of a tag on `var` (unscaled identities: no kind, no argument)
+#:set full = lambda tag, k, var: 'full_' + tag + ('()' if op_iden(tag) is not None and not op_iden(tag)[1] else '_' + k + '(' + var + ')')
+#! Tolerance factor (see above): longer rounding chain of the 4th-order transform
+#:set tol_factor = lambda e: '32' if e.generic == '.transform.' and order(e.tag_b) == 4 else '16'
+#:set ALL_ENTRIES = [e for g in FULL_GENERICS for d in DIMS for k in REAL_KINDS for e in op_entries(g, d, k)]
+
+module ${FULL_NAME}$_lib
+    !! Helpers of `${FULL_NAME}$`: expansion of every operand/result type to its full tensor in
+    !! double precision, reference operations on full tensors, its own random sequence and the
+    !! component-wise comparison (tolerance: see tests/tensors/operators/ops_full_common.fypp).
+    use muscle_kinds, only: ${', '.join(REAL_KINDS)}$
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_test_helpers
+    implicit none
+    public
+
+#:for d in DIMS
+#:for f in TENSOR_FAMILIES
+#:set L = layout(f, d)
+#:set IDX = IDX2 if f.startswith('2') else IDX4
+    integer, parameter :: POS_${d}$${f}$(${len(IDX)}$) = [ &
+        & ${wrap([lin(L, idx) for idx in IDX])}$]
+        !! Linear storage position (column-major `vals`) of each full component (i fastest), 0 if
+        !! it is a structural zero of ten_${d}$${f}$.
+#:endfor
+#:endfor
+
+    type(park_miller) :: rng = park_miller(20261030)
+        !! Random sequence of this test (deterministic).
+
+contains
+
+    ! ---- expansion to full tensors ------------------------------------------------------------
+#:for d in DIMS
+#:for f in TENSOR_FAMILIES
+#:for k in REAL_KINDS
+#:set L = layout(f, d)
+#:set n = 9 if f.startswith('2') else 81
+#:set nv = L.shape[0] if len(L.shape) == 1 else L.shape[0]*L.shape[1]
+#:set shp = '3, 3' if n == 9 else '3, 3, 3, 3'
+    pure function full_${d}$${f}$_${k}$(x) result(t)
+        !! Full tensor of a `${tname(d + f, k)}$`.
+        type(${tname(d + f, k)}$), intent(in) :: x
+            !! Tensor.
+        real(dp) :: t(${shp}$)
+            !! Its components, structural zeros included.
+        real(dp) :: v(0:${nv}$)
+        v(0) = 0.0_dp
+        v(1:${nv}$) = real(reshape(x%vals, [${nv}$]), dp)
+        t = reshape(v(POS_${d}$${f}$), [${shp}$])
+    end function full_${d}$${f}$_${k}$
+
+    subroutine fill_${d}$${f}$_${k}$(x)
+        !! Random components in (-1, 1) for a `${tname(d + f, k)}$`.
+        type(${tname(d + f, k)}$), intent(out) :: x
+            !! Tensor.
+        real(dp) :: v(${nv}$)
+        integer :: p
+        do p = 1, ${nv}$
+            v(p) = rnd(rng)
+        end do
+        x%vals = reshape(real(v, ${k}$), shape(x%vals))
+    end subroutine fill_${d}$${f}$_${k}$
+
+#:endfor
+#:endfor
+#:endfor
+    pure function delta2() result(t)
+        !! \( \delta_{ij} \).
+        real(dp) :: t(3, 3)
+            !! Identity.
+        integer :: i
+        t = 0.0_dp
+        do i = 1, 3
+            t(i, i) = 1.0_dp
+        end do
+    end function delta2
+
+    pure function delta4s() result(t)
+        !! \( (\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})/2 \).
+        real(dp) :: t(3, 3, 3, 3)
+            !! Symmetric fourth-order identity.
+        real(dp) :: dl(3, 3)
+        integer :: i, j, k, l
+        dl = delta2()
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        t(i, j, k, l) = 0.5_dp*(dl(i, k)*dl(j, l) + dl(i, l)*dl(j, k))
+                    end do
+                end do
+            end do
+        end do
+    end function delta4s
+
+    pure function delta4v() result(t)
+        !! \( \delta_{ij}\delta_{kl} \).
+        real(dp) :: t(3, 3, 3, 3)
+            !! Volumetric fourth-order identity.
+        real(dp) :: dl(3, 3)
+        integer :: i, j, k, l
+        dl = delta2()
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        t(i, j, k, l) = dl(i, j)*dl(k, l)
+                    end do
+                end do
+            end do
+        end do
+    end function delta4v
+
+    pure function full_I2O() result(t)
+        !! Full tensor of `iden_2O` (symbolic: no components).
+        real(dp) :: t(3, 3)
+            !! Components.
+        t = delta2()
+    end function full_I2O
+
+    pure function full_I4O4T() result(t)
+        !! Full tensor of `iden_4O4T` (symbolic: no components).
+        real(dp) :: t(3, 3, 3, 3)
+            !! Components.
+        t = delta4s()
+    end function full_I4O4T
+
+    pure function full_I4O3T() result(t)
+        !! Full tensor of `iden_4O3T` (symbolic: no components).
+        real(dp) :: t(3, 3, 3, 3)
+            !! Components.
+        t = delta4v()
+    end function full_I4O3T
+
+#:for k in REAL_KINDS
+    pure function full_I2OS_${k}$(x) result(t)
+        !! Full tensor of `iden_2OS_${k}$`.
+        type(iden_2OS_${k}$), intent(in) :: x
+            !! Scaled identity.
+        real(dp) :: t(3, 3)
+            !! Components.
+        t = real(x%val, dp)*delta2()
+    end function full_I2OS_${k}$
+
+    pure function full_I4O4TS_${k}$(x) result(t)
+        !! Full tensor of `iden_4O4TS_${k}$`.
+        type(iden_4O4TS_${k}$), intent(in) :: x
+            !! Scaled identity.
+        real(dp) :: t(3, 3, 3, 3)
+            !! Components.
+        t = real(x%val, dp)*delta4s()
+    end function full_I4O4TS_${k}$
+
+    pure function full_I4O3TS_${k}$(x) result(t)
+        !! Full tensor of `iden_4O3TS_${k}$`.
+        type(iden_4O3TS_${k}$), intent(in) :: x
+            !! Scaled identity.
+        real(dp) :: t(3, 3, 3, 3)
+            !! Components.
+        t = real(x%val, dp)*delta4v()
+    end function full_I4O3TS_${k}$
+
+    function scale_${k}$() result(c)
+        !! Non-trivial scalar of an identity: in (-1.6, -1.0) (not a power of 2, negative).
+        real(${k}$) :: c
+            !! Scalar.
+        c = real(-1.3_dp + 0.3_dp*rnd(rng), ${k}$)
+    end function scale_${k}$
+
+#:endfor
+    ! ---- reference operations on full tensors (value and sum of |terms|) ----------------------
+    pure subroutine ddot22(a, b, r, s)
+        !! \( r = A_{ij} B_{ij} \).
+        real(dp), intent(in) :: a(3, 3), b(3, 3)
+            !! Operands.
+        real(dp), intent(out) :: r, s
+            !! Value and sum of |terms|.
+        r = sum(a*b)
+        s = sum(abs(a*b))
+    end subroutine ddot22
+
+    pure subroutine ddot42(a, b, r, s)
+        !! \( R_{ij} = A_{ijkl} B_{kl} \).
+        real(dp), intent(in) :: a(3, 3, 3, 3), b(3, 3)
+            !! Operands.
+        real(dp), intent(out) :: r(3, 3), s(3, 3)
+            !! Value and sum of |terms|.
+        integer :: i, j
+        do j = 1, 3
+            do i = 1, 3
+                r(i, j) = sum(a(i, j, :, :)*b)
+                s(i, j) = sum(abs(a(i, j, :, :)*b))
+            end do
+        end do
+    end subroutine ddot42
+
+    pure subroutine ddot24(a, b, r, s)
+        !! \( R_{kl} = A_{ij} B_{ijkl} \).
+        real(dp), intent(in) :: a(3, 3), b(3, 3, 3, 3)
+            !! Operands.
+        real(dp), intent(out) :: r(3, 3), s(3, 3)
+            !! Value and sum of |terms|.
+        integer :: k, l
+        do l = 1, 3
+            do k = 1, 3
+                r(k, l) = sum(a*b(:, :, k, l))
+                s(k, l) = sum(abs(a*b(:, :, k, l)))
+            end do
+        end do
+    end subroutine ddot24
+
+    pure subroutine ddot44(a, b, r, s)
+        !! \( R_{ijkl} = A_{ijmn} B_{mnkl} \).
+        real(dp), intent(in) :: a(3, 3, 3, 3), b(3, 3, 3, 3)
+            !! Operands.
+        real(dp), intent(out) :: r(3, 3, 3, 3), s(3, 3, 3, 3)
+            !! Value and sum of |terms|.
+        integer :: i, j, k, l
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        r(i, j, k, l) = sum(a(i, j, :, :)*b(:, :, k, l))
+                        s(i, j, k, l) = sum(abs(a(i, j, :, :)*b(:, :, k, l)))
+                    end do
+                end do
+            end do
+        end do
+    end subroutine ddot44
+
+    pure subroutine dot22(a, b, r, s)
+        !! \( C_{ij} = A_{ik} B_{kj} \).
+        real(dp), intent(in) :: a(3, 3), b(3, 3)
+            !! Operands.
+        real(dp), intent(out) :: r(3, 3), s(3, 3)
+            !! Value and sum of |terms|.
+        r = matmul(a, b)
+        s = matmul(abs(a), abs(b))
+    end subroutine dot22
+
+    pure subroutine dyad(a, b, r, s)
+        !! \( R_{ijkl} = A_{ij} B_{kl} \).
+        real(dp), intent(in) :: a(3, 3), b(3, 3)
+            !! Operands.
+        real(dp), intent(out) :: r(3, 3, 3, 3), s(3, 3, 3, 3)
+            !! Value and sum of |terms|.
+        integer :: i, j, k, l
+        do l = 1, 3
+            do k = 1, 3
+                do j = 1, 3
+                    do i = 1, 3
+                        r(i, j, k, l) = a(i, j)*b(k, l)
+                    end do
+                end do
+            end do
+        end do
+        s = abs(r)
+    end subroutine dyad
+
+    pure subroutine dyad_sym(a, b, r, s)
+        !! \( R_{ijkl} = (A_{ij} B_{kl} + B_{ij} A_{kl})/2 \).
+        real(dp), intent(in) :: a(3, 3), b(3, 3)
+            !! Operands.
+        real(dp), intent(out) :: r(3, 3, 3, 3), s(3, 3, 3, 3)
+            !! Value and sum of |terms|.
+        real(dp) :: rab(3, 3, 3, 3), sab(3, 3, 3, 3), rba(3, 3, 3, 3), sba(3, 3, 3, 3)
+        call dyad(a, b, rab, sab)
+        call dyad(b, a, rba, sba)
+        r = 0.5_dp*(rab + rba)
+        s = 0.5_dp*(sab + sba)
+    end subroutine dyad_sym
+
+    pure subroutine transform22(f, a, r, s)
+        !! \( R_{ij} = F_{ia} A_{ab} F_{jb} \), as \( (F A) F^T \).
+        real(dp), intent(in) :: f(3, 3), a(3, 3)
+            !! Transformation and tensor.
+        real(dp), intent(out) :: r(3, 3), s(3, 3)
+            !! Value and sum of |terms|.
+        r = matmul(matmul(f, a), transpose(f))
+        s = matmul(matmul(abs(f), abs(a)), transpose(abs(f)))
+    end subroutine transform22
+
+    pure function contract_rotate(f, x) result(y)
+        !! \( y_{bcdi} = F_{ia} x_{abcd} \): contracts the first index and moves the new one last
+        !! (four applications give \( F_{ia} F_{jb} F_{kc} F_{ld} x_{abcd} \) in order ijkl).
+        real(dp), intent(in) :: f(3, 3), x(3, 3, 3, 3)
+            !! Transformation and tensor.
+        real(dp) :: y(3, 3, 3, 3)
+            !! Result.
+        integer :: b, c, d, i
+        do i = 1, 3
+            do d = 1, 3
+                do c = 1, 3
+                    do b = 1, 3
+                        y(b, c, d, i) = sum(f(i, :)*x(:, b, c, d))
+                    end do
+                end do
+            end do
+        end do
+    end function contract_rotate
+
+    pure subroutine transform24(f, a, r, s)
+        !! \( R_{ijkl} = F_{ia} F_{jb} F_{kc} F_{ld} A_{abcd} \), one index at a time.
+        real(dp), intent(in) :: f(3, 3), a(3, 3, 3, 3)
+            !! Transformation and tensor.
+        real(dp), intent(out) :: r(3, 3, 3, 3), s(3, 3, 3, 3)
+            !! Value and sum of |terms|.
+        integer :: n
+        r = a
+        s = abs(a)
+        do n = 1, 4
+            r = contract_rotate(f, r)
+            s = contract_rotate(abs(f), s)
+        end do
+    end subroutine transform24
+
+    ! ---- comparison ---------------------------------------------------------------------------
+    subroutine compare(passed, label, got, ref, s, tol)
+        !! Component-wise check of a full result (flattened) with the scale of each component.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(dp), intent(in) :: got(:), ref(:), s(:)
+            !! Library result, reference and sum of |terms| (same flattening, i fastest).
+        real(dp), intent(in) :: tol
+            !! Relative tolerance (0: exact).
+        integer :: p, q, idx(4), nidx
+        character(len=16) :: comp
+        nidx = 4
+        if (size(got) == 9) nidx = 2
+        if (size(got) == 1) nidx = 0
+        do p = 1, size(got)
+            q = p - 1
+            idx(1) = mod(q, 3) + 1
+            idx(2) = mod(q/3, 3) + 1
+            idx(3) = mod(q/9, 3) + 1
+            idx(4) = mod(q/27, 3) + 1
+            comp = ''
+            if (nidx > 0) write(comp, '(a, 4i1)') ' ', idx(1:nidx)
+            call check_scaled(passed, label // trim(comp), got(p), ref(p), s(p), tol)
+        end do
+    end subroutine compare
+
+end module ${FULL_NAME}$_lib
+
+program ${FULL_NAME}$
+    !! ${', '.join('`' + g + '`' for g in FULL_GENERICS)}$ of every specific of the operator table
+    !! (op_entries, ${len(ALL_ENTRIES)}$ entries: ${', '.join(DIMS)}$ x ${', '.join(REAL_KINDS)}$)
+    !! against the same operation on the full tensors.
+    use ${FULL_NAME}$_lib
+    implicit none
+    integer :: code
+    logical :: passed
+
+    code = 0
+#:for n, e in enumerate(ALL_ENTRIES, start=1)
+    call test_${e.name}$(passed)
+    call record(passed, ${min(n, 255)}$, '${e.name}$ (${e.dim}$)', code)
+#:endfor
+    if (code /= 0) stop code
+    print '(a, i0, a)', ' ${FULL_NAME}$: ', ${len(ALL_ENTRIES)}$, ' entries passed'
+
+contains
+
+#:for e in ALL_ENTRIES
+#:set k = e.kind
+#:set g = e.generic
+#:set oa = order(e.tag_a)
+#:set ob = order(e.tag_b) if e.tag_b else oa
+#:set tag_r = e.tag_a if g == '=' else e.tag_res
+#:set orr = order(tag_r)
+#:set sr = '' if orr == 0 else '(' + fshape(orr) + ')'
+    subroutine test_${e.name}$(passed)
+#:if g == '='
+        !! `${e.a}$ = ${e.b}$` (left-hand side pre-filled with random values; exact).
+#:elif e.b is None
+        !! `${g}$ ${e.a}$ -> ${e.res}$`.
+#:else
+        !! `${e.a}$ ${g}$ ${e.b}$ -> ${e.res}$`.
+#:endif
+        logical, intent(out) :: passed
+            !! Result.
+        type(${e.a}$) :: a
+#:if e.b is not None
+        type(${e.b}$) :: b
+#:endif
+#:if g == '='
+#:elif e.res.startswith('real')
+        ${e.res}$ :: r
+#:else
+        type(${e.res}$) :: r
+#:endif
+#:if g != '='
+        real(dp) :: fa(${fshape(oa)}$)
+#:endif
+#:if e.b is not None and g != '='
+        real(dp) :: fb(${fshape(ob)}$)
+#:endif
+        real(dp) :: fr${sr}$, ref${sr}$, s${sr}$
+        real(dp) :: tol
+
+        passed = .true.
+#:if g == '='
+        tol = 0.0_dp
+#:else
+        tol = ${tol_factor(e)}$.0_dp*real(epsilon(1.0_${k}$), dp)
+#:endif
+#:for var, tag in (('a', e.tag_a), ('b', e.tag_b))
+#:set iden = op_iden(tag)
+#:if tag is None
+#:elif iden is None
+        call fill_${tag}$_${k}$(${var}$)
+#:elif iden[1]
+        ${var}$%val = scale_${k}$()
+#:endif
+#:endfor
+#:if g == '='
+        a = b
+        fr = ${full(e.tag_a, k, 'a')}$
+        ref = ${full(e.tag_b, k, 'b')}$
+        s = 1.0_dp
+#:else
+#:if e.b is None
+        r = ${g}$ a
+#:else
+        r = a ${g}$ b
+#:endif
+        fa = ${full(e.tag_a, k, 'a')}$
+#:if e.b is not None
+        fb = ${full(e.tag_b, k, 'b')}$
+#:endif
+#:if g == '+'
+        ref = fa + fb
+        s = abs(fa) + abs(fb)
+#:elif g == '-'
+        ref = fa - fb
+        s = abs(fa) + abs(fb)
+#:elif g == '*'
+        call dot22(fa, fb, ref, s)
+#:elif g == '.ddot.'
+        call ddot${oa}$${ob}$(fa, fb, ref, s)
+#:elif g == '.tdot.'
+        call dyad(fa, fb, ref, s)
+#:elif g == '.tdotsym.' and e.b is None
+        call dyad_sym(fa, fa, ref, s)
+#:elif g == '.tdotsym.'
+        call dyad_sym(fa, fb, ref, s)
+#:elif g == '.transform.'
+        call transform2${ob}$(fa, fb, ref, s)
+#:else
+#:stop 'ops_full_common.fypp: no reference for generic ' + g
+#:endif
+#:endif
+#:if orr == 0
+        fr = real(r, dp)
+        call compare(passed, '${e.name}$', [fr], [ref], [s], tol)
+#:else
+#:if g != '='
+        fr = ${full(tag_r, k, 'r')}$
+#:endif
+#:if 0 in [lin(op_layout(tag_r), idx) for idx in (IDX2 if orr == 2 else IDX4)]
+        ! 2D: only the components that ${tname(tag_r, k)}$ can hold (13/23 are structural zeros)
+        where (reshape(POS_${tag_r}$, [${fshape(orr)}$]) == 0)
+            ref = 0.0_dp
+            s = 0.0_dp
+        end where
+#:endif
+        call compare(passed, '${e.name}$', reshape(fr, [size(fr)]), reshape(ref, [size(ref)]), &
+                     reshape(s, [size(s)]), tol)
+#:endif
+    end subroutine test_${e.name}$
+
+#:endfor
+end program ${FULL_NAME}$

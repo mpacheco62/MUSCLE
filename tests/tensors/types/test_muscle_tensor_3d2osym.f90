@@ -81,7 +81,7 @@ end subroutine
 
 subroutine test_ten_3D2Osym_sum(passed)
     use, intrinsic :: iso_fortran_env
-    use muscle_tensor_3d2osym
+    use muscle_tensors
     implicit none
     
     logical, intent(out) :: passed

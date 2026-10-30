@@ -1,7 +1,6 @@
 python/
 bin/
-build/
-build-check/
+build*/
 __pycache__/
 modFiles/
 output/

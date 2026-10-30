@@ -12,11 +12,10 @@
 #! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
 #! - formatted output lives in muscle_tensor_io (host only);
-#! - the historical names (ten_3D4O, ten_2D4O = dp) come from the compatibility modules
-#!   muscle_tensor_3d4o / muscle_tensor_2d4o and from muscle_tensors (D-003).
+#! - the historical names (ten_3D4O, ten_2D4O = dp) come from muscle_tensors (D-003).
 #! - convert_2sym returns the minor-symmetric 4O2sym type of the same kind, taken from the
-#!   family module muscle_tensor_4o2sym (not from its compatibility modules, which re-export
-#!   muscle_tensor_io and would close a module cycle with UDTIO).
+#!   family module muscle_tensor_4o2sym (not from muscle_tensors, which uses muscle_tensor_io
+#!   and would close a module cycle with UDTIO).
 
 module muscle_tensor_4o
     !! Module muscle_tensor_4o

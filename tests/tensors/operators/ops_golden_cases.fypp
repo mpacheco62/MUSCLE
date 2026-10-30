@@ -1,0 +1,600 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! Golden (characterization) test of the operators between tensor types, double precision.
+#!
+#! Included by the six `test_ops_golden_<module>.fypp` templates, one per operator module of
+#! `src/tensors/operators/`, after they set:
+#!   GOLDEN_NAME      test name, e.g. 'addition_subtraction' (reference file
+#!                    `tests/reference/tensors/operators/ops_<GOLDEN_NAME>_dp.txt`)
+#!   GOLDEN_GENERICS  generics of that module, e.g. ['operator(+)', 'operator(-)']
+#!
+#! Every signature of `ALL_SIGNATURES` (a copy of `tools/fypp/ref/ops_signatures_dp.txt`, the
+#! inventory of the historical double precision operators, D-015) whose generic is in
+#! GOLDEN_GENERICS becomes one subroutine that builds deterministic operands and evaluates the
+#! *generic* operator (never a specific name, so the test is valid before and after the FYPP
+#! migration, which renames the specifics). The result is passed to an `emit_<type>` routine
+#! whose dummy has exactly the result type of the signature, so a call that resolved to a
+#! specific with another result type does not compile (no defined assignment in between). For
+#! `assignment(=)` the left-hand side is pre-filled with random values, so components that the
+#! assignment does not write are characterized too.
+#!
+#! Each signature runs NCASES cases (operands of magnitude ~1, ~250 and ~0.03; identity scalars
+#! positive, negative, small). Every result is compared **bit for bit** with the reference
+#! captured from the original code; on a mismatch the relative error is printed (testing.md:
+#! <= 1e-14 relative may be accepted only with explicit approval, the test still fails).
+#!
+#! Regeneration (only from code whose behaviour is the reference!):
+#! `tests/reference/tensors/operators/regenerate.sh BUILD_DIR`, which runs each test executable
+#! with `--write FILE`. The test itself (as run by ctest) never writes the reference.
+#:include "muscle_common.fypp"
+
+#! Inventory of the historical double precision signatures (copy of
+#! tools/fypp/ref/ops_signatures_dp.txt; tests/tools/test_ops_golden_coverage.py checks the copy).
+#:set ALL_SIGNATURES = [ &
+    & 'assignment(=) (type(ten_2d2o), type(ten_2d2osym))', &
+    & 'assignment(=) (type(ten_2d2osym), type(iden_2o))', &
+    & 'assignment(=) (type(ten_2d2osym), type(iden_2os))', &
+    & 'assignment(=) (type(ten_2d4o2sym), type(iden_4o4t))', &
+    & 'assignment(=) (type(ten_2d4o2sym), type(iden_4o4ts))', &
+    & 'assignment(=) (type(ten_2d4o2sym), type(ten_2d4o3sym))', &
+    & 'assignment(=) (type(ten_2d4o3sym), type(iden_4o3ts))', &
+    & 'assignment(=) (type(ten_2d4o3sym), type(iden_4o4ts))', &
+    & 'assignment(=) (type(ten_3d2o), type(ten_3d2osym))', &
+    & 'assignment(=) (type(ten_3d2osym), type(iden_2o))', &
+    & 'assignment(=) (type(ten_3d2osym), type(iden_2os))', &
+    & 'assignment(=) (type(ten_3d4o2sym), type(iden_4o4t))', &
+    & 'assignment(=) (type(ten_3d4o2sym), type(iden_4o4ts))', &
+    & 'assignment(=) (type(ten_3d4o2sym), type(ten_3d4o3sym))', &
+    & 'assignment(=) (type(ten_3d4o3sym), type(iden_4o3ts))', &
+    & 'assignment(=) (type(ten_3d4o3sym), type(iden_4o4ts))', &
+    & 'operator(*) (type(iden_2o), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(*) (type(iden_2o), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(*) (type(iden_2o), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(*) (type(iden_2o), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(*) (type(iden_2os), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(*) (type(iden_2os), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(*) (type(iden_2os), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(*) (type(iden_2os), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(*) (type(ten_2d2o), type(iden_2o)) -> type(ten_2d2o)', &
+    & 'operator(*) (type(ten_2d2o), type(iden_2os)) -> type(ten_2d2o)', &
+    & 'operator(*) (type(ten_2d2o), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(*) (type(ten_2d2o), type(ten_2d2osym)) -> type(ten_2d2o)', &
+    & 'operator(*) (type(ten_2d2osym), type(iden_2o)) -> type(ten_2d2osym)', &
+    & 'operator(*) (type(ten_2d2osym), type(iden_2os)) -> type(ten_2d2osym)', &
+    & 'operator(*) (type(ten_2d2osym), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(*) (type(ten_2d2osym), type(ten_2d2osym)) -> type(ten_2d2o)', &
+    & 'operator(*) (type(ten_3d2o), type(iden_2o)) -> type(ten_3d2o)', &
+    & 'operator(*) (type(ten_3d2o), type(iden_2os)) -> type(ten_3d2o)', &
+    & 'operator(*) (type(ten_3d2o), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(*) (type(ten_3d2o), type(ten_3d2osym)) -> type(ten_3d2o)', &
+    & 'operator(*) (type(ten_3d2osym), type(iden_2o)) -> type(ten_3d2osym)', &
+    & 'operator(*) (type(ten_3d2osym), type(iden_2os)) -> type(ten_3d2osym)', &
+    & 'operator(*) (type(ten_3d2osym), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(*) (type(ten_3d2osym), type(ten_3d2osym)) -> type(ten_3d2o)', &
+    & 'operator(+) (type(iden_2o), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(+) (type(iden_2o), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(+) (type(iden_2o), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(+) (type(iden_2o), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(+) (type(iden_2os), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(+) (type(iden_2os), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(+) (type(iden_2os), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(+) (type(iden_2os), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(+) (type(iden_4o3t), type(iden_4o4t)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o3t), type(iden_4o4ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o3t), type(ten_2d4o2sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(+) (type(iden_4o3t), type(ten_2d4o3sym)) -> type(ten_2d4o3sym)', &
+    & 'operator(+) (type(iden_4o3t), type(ten_3d4o2sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(+) (type(iden_4o3t), type(ten_3d4o3sym)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o3ts), type(iden_4o4t)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o3ts), type(iden_4o4ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o3ts), type(ten_2d4o2sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(+) (type(iden_4o3ts), type(ten_2d4o3sym)) -> type(ten_2d4o3sym)', &
+    & 'operator(+) (type(iden_4o3ts), type(ten_3d4o2sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(+) (type(iden_4o3ts), type(ten_3d4o3sym)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o4t), type(iden_4o3t)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o4t), type(iden_4o3ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o4t), type(ten_2d4o2sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(+) (type(iden_4o4t), type(ten_2d4o3sym)) -> type(ten_2d4o3sym)', &
+    & 'operator(+) (type(iden_4o4t), type(ten_3d4o2sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(+) (type(iden_4o4t), type(ten_3d4o3sym)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o4ts), type(iden_4o3t)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o4ts), type(iden_4o3ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(iden_4o4ts), type(ten_2d4o2sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(+) (type(iden_4o4ts), type(ten_2d4o3sym)) -> type(ten_2d4o3sym)', &
+    & 'operator(+) (type(iden_4o4ts), type(ten_3d4o2sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(+) (type(iden_4o4ts), type(ten_3d4o3sym)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(ten_2d2o), type(iden_2o)) -> type(ten_2d2o)', &
+    & 'operator(+) (type(ten_2d2o), type(iden_2os)) -> type(ten_2d2o)', &
+    & 'operator(+) (type(ten_2d2o), type(ten_2d2osym)) -> type(ten_2d2o)', &
+    & 'operator(+) (type(ten_2d2osym), type(iden_2o)) -> type(ten_2d2osym)', &
+    & 'operator(+) (type(ten_2d2osym), type(iden_2os)) -> type(ten_2d2osym)', &
+    & 'operator(+) (type(ten_2d2osym), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(+) (type(ten_2d4o2sym), type(iden_4o3t)) -> type(ten_2d4o2sym)', &
+    & 'operator(+) (type(ten_2d4o2sym), type(iden_4o3ts)) -> type(ten_2d4o2sym)', &
+    & 'operator(+) (type(ten_2d4o2sym), type(iden_4o4t)) -> type(ten_2d4o2sym)', &
+    & 'operator(+) (type(ten_2d4o2sym), type(iden_4o4ts)) -> type(ten_2d4o2sym)', &
+    & 'operator(+) (type(ten_2d4o3sym), type(iden_4o3t)) -> type(ten_2d4o3sym)', &
+    & 'operator(+) (type(ten_2d4o3sym), type(iden_4o3ts)) -> type(ten_2d4o3sym)', &
+    & 'operator(+) (type(ten_2d4o3sym), type(iden_4o4t)) -> type(ten_2d4o3sym)', &
+    & 'operator(+) (type(ten_2d4o3sym), type(iden_4o4ts)) -> type(ten_2d4o3sym)', &
+    & 'operator(+) (type(ten_3d2o), type(iden_2o)) -> type(ten_3d2o)', &
+    & 'operator(+) (type(ten_3d2o), type(iden_2os)) -> type(ten_3d2o)', &
+    & 'operator(+) (type(ten_3d2o), type(ten_3d2osym)) -> type(ten_3d2o)', &
+    & 'operator(+) (type(ten_3d2osym), type(iden_2o)) -> type(ten_3d2osym)', &
+    & 'operator(+) (type(ten_3d2osym), type(iden_2os)) -> type(ten_3d2osym)', &
+    & 'operator(+) (type(ten_3d2osym), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(+) (type(ten_3d4o2sym), type(iden_4o3t)) -> type(ten_3d4o2sym)', &
+    & 'operator(+) (type(ten_3d4o2sym), type(iden_4o3ts)) -> type(ten_3d4o2sym)', &
+    & 'operator(+) (type(ten_3d4o2sym), type(iden_4o4t)) -> type(ten_3d4o2sym)', &
+    & 'operator(+) (type(ten_3d4o2sym), type(iden_4o4ts)) -> type(ten_3d4o2sym)', &
+    & 'operator(+) (type(ten_3d4o3sym), type(iden_4o3t)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(ten_3d4o3sym), type(iden_4o3ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(ten_3d4o3sym), type(iden_4o4t)) -> type(ten_3d4o3sym)', &
+    & 'operator(+) (type(ten_3d4o3sym), type(iden_4o4ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_2o), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(-) (type(iden_2o), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(-) (type(iden_2o), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(-) (type(iden_2o), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(-) (type(iden_2os), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(-) (type(iden_2os), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(-) (type(iden_2os), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(-) (type(iden_2os), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(-) (type(iden_4o3t), type(iden_4o4t)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o3t), type(iden_4o4ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o3t), type(ten_2d4o2sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(-) (type(iden_4o3t), type(ten_2d4o3sym)) -> type(ten_2d4o3sym)', &
+    & 'operator(-) (type(iden_4o3t), type(ten_3d4o2sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(-) (type(iden_4o3t), type(ten_3d4o3sym)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o3ts), type(iden_4o4t)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o3ts), type(iden_4o4ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o3ts), type(ten_2d4o2sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(-) (type(iden_4o3ts), type(ten_2d4o3sym)) -> type(ten_2d4o3sym)', &
+    & 'operator(-) (type(iden_4o3ts), type(ten_3d4o2sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(-) (type(iden_4o3ts), type(ten_3d4o3sym)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o4t), type(iden_4o3t)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o4t), type(iden_4o3ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o4t), type(ten_2d4o2sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(-) (type(iden_4o4t), type(ten_2d4o3sym)) -> type(ten_2d4o3sym)', &
+    & 'operator(-) (type(iden_4o4t), type(ten_3d4o2sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(-) (type(iden_4o4t), type(ten_3d4o3sym)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o4ts), type(iden_4o3t)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o4ts), type(iden_4o3ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(iden_4o4ts), type(ten_2d4o2sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(-) (type(iden_4o4ts), type(ten_2d4o3sym)) -> type(ten_2d4o3sym)', &
+    & 'operator(-) (type(iden_4o4ts), type(ten_3d4o2sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(-) (type(iden_4o4ts), type(ten_3d4o3sym)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(ten_2d2o), type(iden_2o)) -> type(ten_2d2o)', &
+    & 'operator(-) (type(ten_2d2o), type(iden_2os)) -> type(ten_2d2o)', &
+    & 'operator(-) (type(ten_2d2o), type(ten_2d2osym)) -> type(ten_2d2o)', &
+    & 'operator(-) (type(ten_2d2osym), type(iden_2o)) -> type(ten_2d2osym)', &
+    & 'operator(-) (type(ten_2d2osym), type(iden_2os)) -> type(ten_2d2osym)', &
+    & 'operator(-) (type(ten_2d2osym), type(ten_2d2o)) -> type(ten_2d2o)', &
+    & 'operator(-) (type(ten_2d4o2sym), type(iden_4o3t)) -> type(ten_2d4o2sym)', &
+    & 'operator(-) (type(ten_2d4o2sym), type(iden_4o3ts)) -> type(ten_2d4o2sym)', &
+    & 'operator(-) (type(ten_2d4o2sym), type(iden_4o4t)) -> type(ten_2d4o2sym)', &
+    & 'operator(-) (type(ten_2d4o2sym), type(iden_4o4ts)) -> type(ten_2d4o2sym)', &
+    & 'operator(-) (type(ten_2d4o3sym), type(iden_4o3t)) -> type(ten_2d4o3sym)', &
+    & 'operator(-) (type(ten_2d4o3sym), type(iden_4o3ts)) -> type(ten_2d4o3sym)', &
+    & 'operator(-) (type(ten_2d4o3sym), type(iden_4o4t)) -> type(ten_2d4o3sym)', &
+    & 'operator(-) (type(ten_2d4o3sym), type(iden_4o4ts)) -> type(ten_2d4o3sym)', &
+    & 'operator(-) (type(ten_3d2o), type(iden_2o)) -> type(ten_3d2o)', &
+    & 'operator(-) (type(ten_3d2o), type(iden_2os)) -> type(ten_3d2o)', &
+    & 'operator(-) (type(ten_3d2o), type(ten_3d2osym)) -> type(ten_3d2o)', &
+    & 'operator(-) (type(ten_3d2osym), type(iden_2o)) -> type(ten_3d2osym)', &
+    & 'operator(-) (type(ten_3d2osym), type(iden_2os)) -> type(ten_3d2osym)', &
+    & 'operator(-) (type(ten_3d2osym), type(ten_3d2o)) -> type(ten_3d2o)', &
+    & 'operator(-) (type(ten_3d4o2sym), type(iden_4o3t)) -> type(ten_3d4o2sym)', &
+    & 'operator(-) (type(ten_3d4o2sym), type(iden_4o3ts)) -> type(ten_3d4o2sym)', &
+    & 'operator(-) (type(ten_3d4o2sym), type(iden_4o4t)) -> type(ten_3d4o2sym)', &
+    & 'operator(-) (type(ten_3d4o2sym), type(iden_4o4ts)) -> type(ten_3d4o2sym)', &
+    & 'operator(-) (type(ten_3d4o3sym), type(iden_4o3t)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(ten_3d4o3sym), type(iden_4o3ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(ten_3d4o3sym), type(iden_4o4t)) -> type(ten_3d4o3sym)', &
+    & 'operator(-) (type(ten_3d4o3sym), type(iden_4o4ts)) -> type(ten_3d4o3sym)', &
+    & 'operator(.ddot.) (type(iden_2o), type(ten_2d2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(iden_2o), type(ten_2d2osym)) -> real(dp)', &
+    & 'operator(.ddot.) (type(iden_2o), type(ten_3d2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(iden_2o), type(ten_3d2osym)) -> real(dp)', &
+    & 'operator(.ddot.) (type(iden_2os), type(ten_2d2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(iden_2os), type(ten_2d2osym)) -> real(dp)', &
+    & 'operator(.ddot.) (type(iden_2os), type(ten_3d2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(iden_2os), type(ten_3d2osym)) -> real(dp)', &
+    & 'operator(.ddot.) (type(iden_4o4t), type(ten_2d2o)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(iden_4o4t), type(ten_3d2o)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(iden_4o4ts), type(ten_2d2o)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(iden_4o4ts), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(iden_4o4ts), type(ten_3d2o)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(iden_4o4ts), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(ten_2d2o), type(iden_2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_2d2o), type(iden_2os)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_2d2o), type(iden_4o4t)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(ten_2d2o), type(iden_4o4ts)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(ten_2d2o), type(ten_2d2osym)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_2d2osym), type(iden_2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_2d2osym), type(iden_2os)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_2d2osym), type(iden_4o4ts)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(ten_2d2osym), type(ten_2d2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o2sym)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o3sym)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(ten_2d4o2sym), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(ten_2d4o3sym), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(.ddot.) (type(ten_2d4o3sym), type(ten_2d4o3sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(.ddot.) (type(ten_3d2o), type(iden_2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_3d2o), type(iden_2os)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_3d2o), type(iden_4o4t)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(ten_3d2o), type(iden_4o4ts)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(ten_3d2o), type(ten_3d2osym)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_3d2osym), type(iden_2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_3d2osym), type(iden_2os)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_3d2osym), type(iden_4o4ts)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(ten_3d2osym), type(ten_3d2o)) -> real(dp)', &
+    & 'operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o2sym)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o3sym)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(ten_3d4o2sym), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(ten_3d4o3sym), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(.ddot.) (type(ten_3d4o3sym), type(ten_3d4o3sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(.tdot.) (type(iden_2o), type(ten_2d2osym)) -> type(ten_2d4o2sym)', &
+    & 'operator(.tdot.) (type(iden_2o), type(ten_3d2osym)) -> type(ten_3d4o2sym)', &
+    & 'operator(.tdot.) (type(ten_2d2osym), type(iden_2o)) -> type(ten_2d4o2sym)', &
+    & 'operator(.tdot.) (type(ten_2d2osym), type(ten_2d2osym)) -> type(ten_2d4o2sym)', &
+    & 'operator(.tdot.) (type(ten_3d2osym), type(iden_2o)) -> type(ten_3d4o2sym)', &
+    & 'operator(.tdot.) (type(ten_3d2osym), type(ten_3d2osym)) -> type(ten_3d4o2sym)', &
+    & 'operator(.tdotsym.) (type(iden_2o), type(ten_2d2osym)) -> type(ten_2d4o3sym)', &
+    & 'operator(.tdotsym.) (type(iden_2o), type(ten_3d2osym)) -> type(ten_3d4o3sym)', &
+    & 'operator(.tdotsym.) (type(ten_2d2osym)) -> type(ten_2d4o3sym)', &
+    & 'operator(.tdotsym.) (type(ten_2d2osym), type(iden_2o)) -> type(ten_2d4o3sym)', &
+    & 'operator(.tdotsym.) (type(ten_2d2osym), type(ten_2d2osym)) -> type(ten_2d4o3sym)', &
+    & 'operator(.tdotsym.) (type(ten_3d2osym)) -> type(ten_3d4o3sym)', &
+    & 'operator(.tdotsym.) (type(ten_3d2osym), type(iden_2o)) -> type(ten_3d4o3sym)', &
+    & 'operator(.tdotsym.) (type(ten_3d2osym), type(ten_3d2osym)) -> type(ten_3d4o3sym)', &
+    & 'operator(.transform.) (type(ten_2d2o), type(ten_2d2osym)) -> type(ten_2d2osym)', &
+    & 'operator(.transform.) (type(ten_2d2o), type(ten_2d4o2sym)) -> type(ten_2d4o2sym)', &
+    & 'operator(.transform.) (type(ten_2d2o), type(ten_2d4o3sym)) -> type(ten_2d4o3sym)', &
+    & 'operator(.transform.) (type(ten_3d2o), type(ten_3d2osym)) -> type(ten_3d2osym)', &
+    & 'operator(.transform.) (type(ten_3d2o), type(ten_3d4o2sym)) -> type(ten_3d4o2sym)', &
+    & 'operator(.transform.) (type(ten_3d2o), type(ten_3d4o3sym)) -> type(ten_3d4o3sym)', &
+    & ]
+
+#! ---- Signature parsing (format of tools/fypp/ops_signatures.py) ---------------------------
+#:set sig_generic = lambda s: s.split(' (', 1)[0]
+#:set sig_args = lambda s: [a[5:-1] for a in s.split(' (', 1)[1].split(' -> ')[0][:-1].split(', ')]
+#:set sig_result = lambda s: (s.split(' -> ')[1] if ' -> ' in s else None)
+#:set type_of = lambda t: (t[5:-1] if t.startswith('type(') else t)
+#:set op_token = lambda g: g[len('operator('):-1]
+#:set is_tensor = lambda t: t.startswith('ten_')
+#:set is_scaled_iden = lambda t: t.startswith('iden_') and t.endswith('s')
+#:set seed_of = lambda s: 1 + (sum([(i + 1)*ord(c) for i, c in enumerate(s)]) * 7919) % 2147483000
+#:set SIGNATURES = [s for s in ALL_SIGNATURES if sig_generic(s) in GOLDEN_GENERICS]
+#:set RESULT_TYPES = sorted(set([type_of(sig_result(s)) for s in SIGNATURES if sig_result(s)] &
+    & + [sig_args(s)[0] for s in SIGNATURES if sig_result(s) is None]))
+#:set EMIT_TYPES = [t for t in RESULT_TYPES if t != 'real(dp)']
+
+module ops_golden_driver_${GOLDEN_NAME}$
+    !! Bookkeeping of the golden operator test: deterministic operands, reference file reading
+    !! (compare mode) or writing (`--write FILE`, regeneration only) and the bit-for-bit check.
+    use, intrinsic :: iso_fortran_env, only : int64, output_unit
+    use muscle_kinds, only : dp
+    use muscle_test_helpers, only : park_miller, rnd
+    implicit none
+    private
+
+    public :: NCASES, driver_init, driver_finish, record_values, draw, scalar, case_rng
+
+    integer, parameter :: NCASES = 3
+        !! Cases per signature.
+    integer, parameter :: MAXV = 36
+        !! Largest number of stored components of a result (`ten_3D4O2sym`, 6x6).
+    integer, parameter :: MAXREC = 4096
+        !! Largest number of records of a reference file.
+    real(dp), parameter :: MAGNITUDE(NCASES) = [1.0_dp, 250.0_dp, 0.03_dp]
+        !! Magnitude of the tensor components of each case.
+    real(dp), parameter :: SCALAR_SIGN(NCASES) = [1.0_dp, -1.0_dp, 1.0_dp]
+        !! Sign of the identity scalars of each case.
+    real(dp), parameter :: ACCEPTABLE_REL = 1.0e-14_dp
+        !! Relative error reported as "within the approvable bound" of testing.md (still a failure).
+
+    logical :: writing = .false.
+        !! Regeneration mode (`--write FILE`).
+    integer :: wunit = -1
+        !! Unit of the reference being written.
+    integer :: nref = 0
+        !! Records read from the reference.
+    character(len=128) :: ref_key(MAXREC)
+        !! `<signature> | case <c>` of each record.
+    integer :: ref_n(MAXREC)
+        !! Number of values of each record.
+    integer(int64) :: ref_bits(MAXV, MAXREC)
+        !! Bit patterns of the values.
+    logical :: ref_used(MAXREC) = .false.
+        !! Record already matched by a computed result.
+    integer :: code = 0
+        !! Exit code: first failure found.
+    integer :: n_checked = 0, n_bad = 0
+        !! Statistics.
+
+contains
+
+    subroutine driver_init(refname)
+        !! Reads the reference `$MUSCLE_TEST_REFERENCE_DIR/tensors/operators/<refname>`, or opens
+        !! the output file in regeneration mode (`--write FILE`).
+        character(len=*), intent(in) :: refname
+            !! Reference file name.
+        character(len=4096) :: arg, dir, line
+        integer :: u, ios, p1, p2, p3, n
+
+        if (command_argument_count() >= 2) then
+            call get_command_argument(1, arg)
+            if (trim(arg) == '--write') then
+                call get_command_argument(2, arg)
+                open(newunit=wunit, file=trim(arg), status='replace', action='write', iostat=ios)
+                if (ios /= 0) then
+                    print '(a)', ' FAIL: cannot open for writing ' // trim(arg)
+                    stop 4
+                end if
+                writing = .true.
+                write(wunit, '(a)') '# Golden values of the tensor operators (double precision), ' // &
+                    'written by the test with --write.'
+                write(wunit, '(a)') '# <signature> | case <c> | <n> | <IEEE-754 bits of each stored ' // &
+                    'value, hex, storage order of vals>'
+                return
+            end if
+        end if
+
+        call get_environment_variable('MUSCLE_TEST_REFERENCE_DIR', dir, status=ios)
+        if (ios /= 0) then
+            print '(a)', ' FAIL: MUSCLE_TEST_REFERENCE_DIR is not set (run the test through ctest)'
+            stop 4
+        end if
+        open(newunit=u, file=trim(dir) // '/tensors/operators/' // refname, status='old', &
+             action='read', iostat=ios)
+        if (ios /= 0) then
+            print '(a)', ' FAIL: cannot open reference ' // trim(dir) // '/tensors/operators/' // refname
+            stop 4
+        end if
+        do
+            read(u, '(a)', iostat=ios) line
+            if (ios /= 0) exit
+            if (len_trim(line) == 0 .or. line(1:1) == '#') cycle
+            p1 = index(line, ' | ')
+            p2 = p1 + 2 + index(line(p1+3:), ' | ')
+            p3 = p2 + 2 + index(line(p2+3:), ' | ')
+            if (p1 == 0 .or. p2 == p1 + 2 .or. p3 == p2 + 2 .or. nref == MAXREC) then
+                print '(a)', ' FAIL: malformed reference line: ' // trim(line)
+                stop 4
+            end if
+            read(line(p2+3:p3-1), *, iostat=ios) n
+            if (ios /= 0 .or. n < 1 .or. n > MAXV) then
+                print '(a)', ' FAIL: malformed value count: ' // trim(line)
+                stop 4
+            end if
+            nref = nref + 1
+            ref_key(nref) = line(1:p2-1)
+            ref_n(nref) = n
+            read(line(p3+3:), '(*(z16, :, 1x))', iostat=ios) ref_bits(1:n, nref)
+            if (ios /= 0) then
+                print '(a)', ' FAIL: malformed hex values: ' // trim(line)
+                stop 4
+            end if
+        end do
+        close(u)
+        if (nref == 0) then
+            print '(a)', ' FAIL: empty reference ' // refname
+            stop 4
+        end if
+    end subroutine driver_init
+
+    subroutine record_values(sig, icase, x)
+        !! Writes (regeneration) or checks bit for bit (test) the values of one result.
+        character(len=*), intent(in) :: sig
+            !! Signature, as in `tools/fypp/ref/ops_signatures_dp.txt`.
+        integer, intent(in) :: icase
+            !! Case number.
+        real(dp), intent(in) :: x(:)
+            !! Stored values of the result, in storage order.
+        character(len=128) :: key
+        integer(int64) :: bits(size(x))
+        integer :: i, j
+        real(dp) :: expected(size(x)), scale, rel, maxrel
+
+        write(key, '(a, " | case ", i0)') sig, icase
+        bits = transfer(x, bits)
+        if (writing) then
+            write(wunit, '(a, " | ", i0, " |", *(1x, z16.16))') trim(key), size(x), bits
+            return
+        end if
+
+        n_checked = n_checked + 1
+        j = 0
+        do i = 1, nref
+            if (ref_key(i) == key) then
+                j = i
+                exit
+            end if
+        end do
+        if (j == 0) then
+            print '(a)', ' FAIL: no reference for ' // trim(key)
+            if (code == 0) code = 2
+            n_bad = n_bad + 1
+            return
+        end if
+        ref_used(j) = .true.
+        if (ref_n(j) /= size(x)) then
+            print '(a, i0, a, i0)', ' FAIL: ' // trim(key) // ': ', size(x), ' values, reference has ', ref_n(j)
+            if (code == 0) code = 1
+            n_bad = n_bad + 1
+            return
+        end if
+        if (all(bits == ref_bits(1:size(x), j))) return
+
+        expected = transfer(ref_bits(1:size(x), j), expected)
+        scale = max(maxval(abs(expected)), tiny(1.0_dp))
+        maxrel = 0.0_dp
+        print '(a)', ' FAIL: ' // trim(key) // ' differs from the golden value (bit-for-bit check)'
+        print '(a)', '   comp   got                        expected                   |diff|/max|expected|'
+        do i = 1, size(x)
+            if (bits(i) == ref_bits(i, j)) cycle
+            rel = abs(x(i) - expected(i))/scale
+            maxrel = max(maxrel, rel)
+            print '(3x, i4, 2x, es25.17, 2x, es25.17, 2x, es9.2)', i, x(i), expected(i), rel
+        end do
+        if (maxrel <= ACCEPTABLE_REL) then
+            print '(a, es9.2, a)', '   max relative error ', maxrel, &
+                ' <= 1e-14: acceptable only with explicit approval (testing.md)'
+        else
+            print '(a, es9.2, a)', '   max relative error ', maxrel, ' > 1e-14: behaviour change'
+        end if
+        flush(output_unit)
+        if (code == 0) code = 1
+        n_bad = n_bad + 1
+    end subroutine record_values
+
+    subroutine driver_finish()
+        !! Checks that every reference record was produced and stops with the first failure code.
+        integer :: i
+        if (writing) then
+            close(wunit)
+            return
+        end if
+        do i = 1, nref
+            if (.not. ref_used(i)) then
+                print '(a)', ' FAIL: reference record not produced by the test: ' // trim(ref_key(i))
+                if (code == 0) code = 3
+                n_bad = n_bad + 1
+            end if
+        end do
+        print '(a, i0, a, i0, a, i0, a)', ' golden operators: ', n_checked, ' results checked, ', &
+            nref, ' reference records, ', n_bad, ' failure(s)'
+        select case (code)
+        case (1)
+            stop 1
+        case (2)
+            stop 2
+        case (3)
+            stop 3
+        end select
+    end subroutine driver_finish
+
+    function case_rng(seed, icase) result(rng)
+        !! Generator of one (signature, case): independent of the order in which signatures run.
+        integer, intent(in) :: seed
+            !! Seed of the signature.
+        integer, intent(in) :: icase
+            !! Case number.
+        type(park_miller) :: rng
+            !! Generator.
+        rng%state = 1 + mod(int(seed, int64) + 104729_int64*icase, 2147483646_int64)
+    end function case_rng
+
+    function draw(n, rng, icase) result(v)
+        !! `n` tensor components of the magnitude of case `icase`.
+        integer, intent(in) :: n
+            !! Number of components.
+        type(park_miller), intent(inout) :: rng
+            !! Generator.
+        integer, intent(in) :: icase
+            !! Case number.
+        real(dp) :: v(n)
+            !! Components.
+        integer :: i
+        do i = 1, n
+            v(i) = MAGNITUDE(icase)*rnd(rng)
+        end do
+    end function draw
+
+    function scalar(rng, icase) result(c)
+        !! Non-trivial identity scalar of case `icase` (|c| in (0.5, 2.5) times the magnitude).
+        type(park_miller), intent(inout) :: rng
+            !! Generator.
+        integer, intent(in) :: icase
+            !! Case number.
+        real(dp) :: c
+            !! Scalar.
+        c = SCALAR_SIGN(icase)*MAGNITUDE(icase)*(1.5_dp + rnd(rng))
+    end function scalar
+
+end module ops_golden_driver_${GOLDEN_NAME}$
+
+program test_ops_golden_${GOLDEN_NAME}$
+    !! Golden test of the generics ${', '.join(GOLDEN_GENERICS)}$ (${len(SIGNATURES)}$ signatures).
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use muscle_test_helpers, only : park_miller
+    use ops_golden_driver_${GOLDEN_NAME}$
+    implicit none
+    integer :: icase
+
+    character(len=*), parameter :: REFNAME = 'ops_${GOLDEN_NAME}$_dp.txt'
+        !! Reference file.
+
+    call driver_init(REFNAME)
+    do icase = 1, NCASES
+#:for n, s in enumerate(SIGNATURES)
+        call sig_${n + 1}$(icase)
+#:endfor
+    end do
+    call driver_finish()
+
+contains
+
+#:for t in EMIT_TYPES
+    subroutine emit_${t}$(sig, icase, x)
+        !! Records a `${t}$` result (the dummy type is exact: no conversion is possible).
+        character(len=*), intent(in) :: sig
+            !! Signature.
+        integer, intent(in) :: icase
+            !! Case number.
+        type(${t}$), intent(in) :: x
+            !! Result.
+        call record_values(sig, icase, reshape(x%vals, [size(x%vals)]))
+    end subroutine emit_${t}$
+
+#:endfor
+#:if 'real(dp)' in RESULT_TYPES
+    subroutine emit_real_dp(sig, icase, x)
+        !! Records a `real(dp)` result.
+        character(len=*), intent(in) :: sig
+            !! Signature.
+        integer, intent(in) :: icase
+            !! Case number.
+        real(dp), intent(in) :: x
+            !! Result.
+        call record_values(sig, icase, [x])
+    end subroutine emit_real_dp
+
+#:endif
+#:for n, s in enumerate(SIGNATURES)
+#:set g = sig_generic(s)
+#:set args = sig_args(s)
+#:set res = sig_result(s)
+#:set names = ['a', 'b'][:len(args)]
+    subroutine sig_${n + 1}$(icase)
+        !! ${s}$
+        integer, intent(in) :: icase
+            !! Case number.
+        character(len=*), parameter :: SIG = &
+            '${s}$'
+        type(park_miller) :: rng
+#:for v, t in zip(names, args)
+        type(${t}$) :: ${v}$
+#:endfor
+
+        rng = case_rng(${seed_of(s)}$, icase)
+#:for v, t in zip(names, args)
+#:if is_tensor(t)
+        ${v}$%vals = reshape(draw(size(${v}$%vals), rng, icase), shape(${v}$%vals))
+#:elif is_scaled_iden(t)
+        ${v}$%val = scalar(rng, icase)
+#:endif
+#:endfor
+#:if res is None
+        a = b
+        call emit_${args[0]}$(SIG, icase, a)
+#:else
+#:set expr = (op_token(g) + ' a') if len(args) == 1 else ('a ' + op_token(g) + ' b')
+#:set rt = type_of(res)
+        call emit_${'real_dp' if rt == 'real(dp)' else rt}$(SIG, icase, ${expr}$)
+#:endif
+    end subroutine sig_${n + 1}$
+
+#:endfor
+end program test_ops_golden_${GOLDEN_NAME}$

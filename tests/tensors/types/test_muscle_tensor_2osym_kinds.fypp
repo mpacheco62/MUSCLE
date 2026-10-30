@@ -637,8 +637,8 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
         !! and the generic operators accept them mixed.
         use muscle_tensors, only: ten_3D2Osym, ten_2D2Osym, ten_3D2Osym_dp, ten_2D2Osym_dp, &
                                   operator(+), operator(.approx.)
-        use muscle_tensor_3d2osym, only: compat_3D => ten_3D2Osym
-        use muscle_tensor_2d2osym, only: compat_2D => ten_2D2Osym
+        use muscle_tensors, only: compat_3D => ten_3D2Osym
+        use muscle_tensors, only: compat_2D => ten_2D2Osym
         use muscle_kinds, only: dp
         use muscle_test_utils, only: check_true, check_approx
         logical, intent(out) :: passed
@@ -660,10 +660,10 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
         c2 = p2
         call check_approx(passed, 'ten_3D2Osym = ten_3D2Osym_dp', h3%vals, p3%vals, tol=0.0_dp)
         call check_approx(passed, 'ten_3D2Osym_dp = ten_3D2Osym', q3%vals, p3%vals, tol=0.0_dp)
-        call check_approx(passed, 'muscle_tensor_3d2osym alias', c3%vals, p3%vals, tol=0.0_dp)
+        call check_approx(passed, 'historical 3D name (muscle_tensors) = dp', c3%vals, p3%vals, tol=0.0_dp)
         call check_approx(passed, 'ten_2D2Osym = ten_2D2Osym_dp', h2%vals, p2%vals, tol=0.0_dp)
         call check_approx(passed, 'ten_2D2Osym_dp = ten_2D2Osym', q2%vals, p2%vals, tol=0.0_dp)
-        call check_approx(passed, 'muscle_tensor_2d2osym alias', c2%vals, p2%vals, tol=0.0_dp)
+        call check_approx(passed, 'historical 2D name (muscle_tensors) = dp', c2%vals, p2%vals, tol=0.0_dp)
         call check_true(passed, 'same_type_as(ten_3D2Osym, ten_3D2Osym_dp)', same_type_as(h3, p3))
         call check_true(passed, 'same_type_as(compat 3D, ten_3D2Osym_dp)', same_type_as(c3, p3))
         call check_true(passed, 'same_type_as(ten_2D2Osym, ten_2D2Osym_dp)', same_type_as(h2, p2))

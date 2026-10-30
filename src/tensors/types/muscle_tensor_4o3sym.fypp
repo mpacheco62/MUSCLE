@@ -12,8 +12,7 @@
 #!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp;
 #! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
-#! - the historical names (ten_3D4O3sym, ten_2D4O3sym = dp) come from the compatibility modules
-#!   muscle_tensor_3d4o3sym / muscle_tensor_2d4o3sym and from muscle_tensors (D-003).
+#! - the historical names (ten_3D4O3sym, ten_2D4O3sym = dp) come from muscle_tensors (D-003).
 
 module muscle_tensor_4o3sym
     !! Module muscle_tensor_4o3sym

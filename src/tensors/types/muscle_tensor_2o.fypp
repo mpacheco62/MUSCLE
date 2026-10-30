@@ -12,8 +12,7 @@
 #! - the operations common to every family (+, -, *, /, =, .approx., .inv., is_approx and the
 #!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp (D-012);
 #! - formatted output lives in muscle_tensor_io (host only);
-#! - the historical names (ten_3D2O, ten_2D2O = dp) come from the compatibility modules
-#!   muscle_tensor_3d2o / muscle_tensor_2d2o and from muscle_tensors (D-003).
+#! - the historical names (ten_3D2O, ten_2D2O = dp) come from muscle_tensors (D-003).
 
 module muscle_tensor_2o
     !! Module muscle_tensor_2o

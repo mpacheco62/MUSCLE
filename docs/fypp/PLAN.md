@@ -190,8 +190,8 @@ anotar la fecha/commit.
       ahora (2026-10-30); se agrega si un modelo la necesita (lista `ALGEBRA`, una línea + test).
 - [x] UDTIO fuera de los módulos de tipo: `muscle_tensor_io` (todas las familias e identidades).
 
-### Fase 4 — Operadores entre tipos
-- [ ] Operadores mixtos tensor–identidad (hoy sólo dp con nombres históricos): al generarlos, las
+### Fase 4 — Operadores entre tipos (cerrada 2026-10-30)
+- [x] Operadores mixtos tensor–identidad (hoy sólo dp con nombres históricos): al generarlos, las
       identidades sin escalar (`iden_2O`, `iden_4O3T`, `iden_4O4T`) se combinan con tensores de
       ambos kinds, y cada `iden_*S_<k>` sólo con tensores de su mismo kind (D-014).
 - [x] `muscle_tensor_functions` (D-011): re-exporta las funciones libres de todas las familias
@@ -200,11 +200,73 @@ anotar la fecha/commit.
       cerrar la Fase 3 (2026-10-30).
 - La Fase 4 se trabaja en la rama nueva `fypp/f4-operators` desde `fypp/f3-types` (decisión del
       usuario, 2026-10-30).
-- [ ] Tabla de pares por operador (`ddot`, `tdot`, `tdotsym`, `contraction_single`, `transform`,
-      `assignment`, `addition_subtraction`) en `muscle_meta.py`.
-- [ ] Generación de cada módulo de operadores desde su tabla × DIMS × KINDS.
-- [ ] Verificar que el conjunto de interfaces `dp` generado ⊇ el actual (script que compara
-      la lista de `module procedure`).
+- Plan de trabajo (2026-10-30; organización y kinds en D-015): 0) inventario de firmas dp actuales
+      (script en `tools/`); 1) `test-builder`: golden dp de los 222 procedimientos contra el original
+      (`+`/`-` y `=` hoy sin tests), commit aparte; 2) tabla de pares en `muscle_meta.py` + test;
+      3) migración en tandas — A (paralelo): `addition_subtraction`+`assignment` |
+      `contraction_single`+`dyadic`+`transform`; B: `contraction_double` — dp bit a bit, `check.sh`,
+      revisión, commit; 4) tests `*_kinds` por módulo y embebido 2D/3D de cada operador; 5) borrar los
+      12 módulos de compatibilidad (la fachada mantiene los alias; tests sólo cambian el `use`);
+      6) humo GPU: prototipo con `.ddot.` en nvptx/amdgcn/ifx; 7) cierre de docs.
+- Para el paso 3: los helpers privados 2D (`add_i3_2d4o2sym`, `add_i3_2d4o3sym`, `add_i4_2d4o2sym`,
+      `add_i4_2d4o3sym`, `add_iden_2d2o` en `addition_subtraction`; `unpack_2d4o3sym` en
+      `contraction_double`) no están en la tabla. En la tanda A los de `addition_subtraction` se
+      eliminaron: su lógica sale de `iden_combination` (mismos bits). `transform_3D2O_3D4O3sym` ya no
+      expande a 6x6 + kernel 4O2sym + `convert_3sym`: calcula el triángulo superior directo (mismos
+      bits, ~20% más rápido) y el módulo deja de depender de `assignment`. Los cuerpos se
+      eligen con `OpEntry.tag_a/tag_b/tag_res` + `op_iden`; los espejos no conmutativos (`-`,
+      `2O*2Osym`, `4O2sym:2Osym`, `2Osym⊗I`) no reutilizan el cuerpo de la fila directa.
+- [x] Tabla de pares por operador (`ddot`, `tdot`, `tdotsym`, `contraction_single`, `transform`,
+      `assignment`, `addition_subtraction`) en `muscle_meta.py` (`OP_TABLE`, `op_entries`): expansión
+      dp = las 222 firmas del inventario; sp 218 (D-015.4); test en `tests/tools/test_muscle_meta.py`;
+      revisión aplicada. (2026-10-30)
+- [x] Generación de cada módulo de operadores desde su tabla × DIMS × KINDS.
+  - [x] Tanda A (2026-10-30): `addition_subtraction`, `assignment`, `contraction_single`, `dyadic`,
+        `transform` → `.fypp` con `include/muscle_tensor_ops_common.fypp` (`OP_USES`,
+        `OP_INTERFACES`, `OP_FUNCTION`, `OP_SUBROUTINE`) y helpers en `muscle_meta.py`; dp bit a
+        bit = original (golden), salvo D-015.6; `check.sh` comprueba firmas y literales generados;
+        revisión aplicada; 77/77.
+  - [x] Tanda B (2026-10-30): `contraction_double` (`.ddot.`) → `.fypp` (1025 → 150 líneas);
+        dp bit a bit = original a -O0/-O2/-O3 (golden + 42 procs × escalas 1e-320..1e308);
+        unificado en 2D/3D con una sola regla (D-015.8, aprobado: sólo `4O3sym:4O3sym` cambia ≤ 1 ulp de la escala, ≤ 4e-15 relativo por
+        componente);
+        test `tensors-operators-ops_ddot_full` contra la contracción de tensores completos (84
+        entradas, 16·ε(k)); 78/78. Revisión independiente pendiente (junto con el paso 5).
+- [x] Verificar que el conjunto de interfaces `dp` generado ⊇ el actual: `ops_signatures.py --check`
+      en `check.sh` (2026-10-30).
+- [x] Paso 4a (2026-10-30): tests `tensors-operators-ops_<módulo>_full` (include común
+      `tests/tensors/operators/ops_full_common.fypp`): cada entrada de la tabla (440 en total, 3D/2D,
+      sp/dp) contra la operación sobre los tensores completos en dp; tolerancia 16·ε(k)·Σ|términos|
+      (32 en `.transform.` de 4º orden), `=` exacto con el lado izquierdo pre-cargado; una mutación
+      por operador detectada; 83/83.
+- [x] Paso 4b (decisión del usuario 2026-10-30): cubierto por 4a. Cada entrada 2D se compara con la
+      operación sobre los tensores completos 3x3/3x3x3x3 (operandos 2D embebidos, 13/23 nulos
+      comprobados en el resultado), equivalente al test de embebido de `dims-2d-3d.md`.
+- [x] Paso 5 (2026-10-30): borrados los 16 módulos de compatibilidad (`muscle_tensor_{3d,2d}*.f90`,
+      `muscle_tensor_iden_*.f90`). La fachada `muscle_tensors` importa directamente de los módulos de
+      familia los tipos con kind, los alias dp históricos (D-003) y los genéricos; los 12 tests que
+      los usaban pasan a `use muscle_tensors` (sólo cambia el `use`); 83/83.
+- [x] Revisión de la tanda B, tests 4a y paso 5 (2026-10-30), aplicada: un test aún usaba módulos
+      borrados (`iden_kinds`, nombre templado) y pasaba por `.mod` obsoletos del build incremental →
+      corregido, y `check.sh` borra ahora los `.mod` de módulos que ya no existen (build desde cero:
+      83/83); cifra del cambio de bits de D-015.8 corregida. Pendiente menor: medir con `benchmarks/`
+      `3D4O3sym:4O3sym` (el original compartía 30 temporales; el generado no factoriza `2*b`). Los
+      fallos de tests OpenMP con `MUSCLE_UDTIO=ON` son el bug de gfortran ya conocido (`check.sh` sólo
+      corre ahí los tests de tensores).
+- [x] Paso 6 (2026-10-30): prototipo GPU (scratchpad `gpu-intel/`) con los operadores de la
+      librería vía la fachada (`.ddot.`, `.tdotsym.`, `.tdot.`, `*`, `.transform.`, `+`/`-`, `=`):
+      gfortran nvptx y amdgcn compilan y enlazan en sp y dp (los `muscle_tensor_ops_*` salen como
+      funciones de dispositivo); Intel UHD 770 en sp: error ≤ 2.7 ε (3D) / 1.9 ε (2D) frente a CPU,
+      100k puntos: kernel 0.14 s vs 0.25 s CPU 1 hilo / 0.055 s 32 hilos. Intel dp con emulación:
+      el driver descarta los kernels grandes (igual con el prototipo anterior; no es regresión).
+      Bug de ifx encontrado y resuelto: el `-` unario se perdía al importar `muscle_tensors`
+      (fusión de `operator(-)` de familias + `ops_addition_subtraction`) → módulo
+      `muscle_tensor_minus` que fusiona sólo `operator(-)`; verificado con ifx y gfortran.
+- [x] Paso 7 (2026-10-30): doc FORD de los específicos de operadores en una línea (−5–10%: FORD
+      genera siempre la tabla de argumentos); portada (`my_project.md`) y `pages/tensors.md`
+      actualizadas a la API con kinds (ejemplos compilados).
+- Pendientes que pasan a fases siguientes: medir `3D4O3sym:4O3sym` con `benchmarks/`; ejecución en
+  GPU con FP64 nativo y registros por kernel (Fase 8); opción CMake `MUSCLE_GPU` (Fase 8).
 
 ### Fase 5 — Math sin closures
 - [ ] `muscle_math_derivatives`: reemplazar `procedure(...) :: func` por macros FYPP que
@@ -266,9 +328,19 @@ Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yi
 - [ ] Auditoría automática (`tools/audit_kernels.sh`): grep de patrones prohibidos en la ruta de kernel.
 
 ### Fase 9 — Documentación y cierre
-- [ ] FORD sobre las fuentes generadas (o `preprocessor: fypp` en `my_project.md`). **Urgente
-      desde la Fase 1–2**: `my_project.md` usa `src_dir: ./src` y no ve los `.fypp`, así que
-      los módulos migrados desaparecen de la doc (añadir `build/fypp/src` o un paso de generación).
+- [x] FORD sobre las plantillas (2026-10-30, adelantado a la Fase 4 a pedido del usuario):
+      `my_project.md` añade `fypp` a `fpp_extensions` y `preprocessor: fypp -I include -M tools/fypp
+      -m muscle_meta`. FORD 7.0.13 preprocesa los `.fypp` con todas las dimensiones y kinds: la doc
+      pasa de 66 a 81 módulos (los 15 migrados faltaban). Ejecutar **desde la raíz del repo**
+      (`ford my_project.md`): los `-I`/`-M` son relativos al directorio actual. Ya no hace falta
+      `pcpp` (preprocesador por defecto de FORD, que no estaba en `environment.yml`); sin Graphviz
+      no hay grafos (como antes).
+      Mejoras (2026-10-30): `macro: ENABLE_UDTIO` (documenta la salida formateada), `include:
+      ./include`, target CMake `doc` (`cmake --build <dir> --target doc` → `<dir>/doc`, corre desde
+      la raíz), paso opcional en `check.sh` (si FORD está instalado, debe correr sin errores) y
+      docstrings antiguos que FORD leía como metadatos corregidos. Entorno conda `ford`
+      (`environment.yml`, sin `gfortran` para no tapar el compilador del sistema): FORD 7.0.13, fypp
+      3.3 y Graphviz → grafos de dependencias, 0 warnings, ~40 s.
 - [ ] Actualizar `README.md`, `pages/tensors.md`, `pages/contributing.md` (cómo añadir un modelo al registro).
 - [ ] Reescribir los usuarios externos de la API OO contra la nueva API.
 

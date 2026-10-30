@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 
 module muscle_yield_cpb06ex2
-    !! CPB06ex2: two transformations of the stress deviator (Plunkett et al., 2008, Eq. 8).
+    !! CPB06ex2 criterion, with two transformations of the stress deviator (Plunkett et al., 2008, Eq. 8).
     !! Library (c44, c55, c66) on (xy, yz, xz) = paper (C66, C44, C55): xy from Eq. (13),
     !! yz and xz from the out-of-plane values of Tables 9 and 11.
     use, intrinsic :: iso_fortran_env

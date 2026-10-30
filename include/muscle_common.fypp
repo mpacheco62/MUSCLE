@@ -37,6 +37,9 @@
 
 #! One expression term per line: ${join_terms(['a', 'b'])}$ -> a &\n + b (keeps lines <= 132)
 #:set join_terms = muscle_meta.join_terms
+#! Assignment at column `col` (indentation of the line), one term per line if too long:
+#! ${assign_terms('W11', ['a', 'b'], 8)}$ -> W11 = a + b
+#:set assign_terms = muscle_meta.assign_terms
 
 #! Comma-separated specific procedure names of a generic, one per dimension and kind of a family.
 #! Placeholders: {0} = dimension + family, {1} = kind (the kind goes last, once):

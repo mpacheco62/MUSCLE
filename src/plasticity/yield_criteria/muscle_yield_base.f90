@@ -197,7 +197,7 @@ module muscle_yield_base
         end subroutine stressEq_and_derivatives
 
         pure function joint_evaluation() result(res)
-            !! False: the criterion has no cheaper joint evaluation, so the return mapping calls
+            !! Returns false, because the criterion has no cheaper joint evaluation, so the return mapping calls
             !! stress_eq, dstressEq_dstress and ddstressEq_ddstress one by one. Called by closest_point_iter.
             implicit none
             logical :: res  !! Whether to call stressEq_and_derivatives.

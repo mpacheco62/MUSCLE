@@ -1,8 +1,6 @@
 program test_ddot_4O3_4O3
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
-    use muscle_tensor_3d4o3sym
-    use muscle_tensor_3d4o2sym
     implicit none
     
     type(ten_3D4O3sym) :: A, B

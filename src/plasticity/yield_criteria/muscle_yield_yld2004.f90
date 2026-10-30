@@ -150,7 +150,7 @@ contains
     end subroutine stressEq_and_derivatives_yld2004
 
     pure function joint_evaluation_yld2004() result(res)
-        !! True: stressEq_and_derivatives_yld2004 shares the decompositions of Sp and Spp, so the
+        !! Returns true, because stressEq_and_derivatives_yld2004 shares the decompositions of Sp and Spp, so the
         !! return mapping calls it instead of the three bindings. Called by closest_point_iter.
         implicit none
         logical :: res

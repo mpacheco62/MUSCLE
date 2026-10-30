@@ -1,0 +1,105 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Pieces shared by the operator templates (src/tensors/operators/muscle_tensor_ops_<m>.fypp,
+#! one module per operation, D-015). The pairs of operands of each generic come from the table
+#! OP_TABLE of tools/fypp/muscle_meta.py, never from lists written in the templates:
+#! op_entries(generic, dim, kind) gives the specific procedures (OpEntry: name, concrete types and
+#! the table tags tag_a/tag_b/tag_res that select the body). Include after muscle_common.fypp:
+#!
+#!   #:include "muscle_common.fypp"
+#!   #:include "muscle_tensor_ops_common.fypp"
+#!
+#! Rules: .claude/rules/fypp-templates.md, .claude/rules/dims-2d-3d.md
+#:mute
+
+#! Table queries (see the docstrings in muscle_meta.py)
+#:set OP_MODULES = muscle_meta.OP_MODULES
+#:set op_entries = muscle_meta.op_entries
+#:set op_interface = muscle_meta.op_interface
+#:set op_iden = muscle_meta.op_iden
+#:set op_layout = muscle_meta.op_layout
+#:set op_uses = muscle_meta.op_uses
+#:set op_congruence = muscle_meta.op_congruence
+#:set op_voigt_transform = muscle_meta.op_voigt_transform
+#:set iden_combination = muscle_meta.iden_combination
+
+#! `use` statements of the kinds and of every type taken or returned by the operators of
+#! `module` (key of OP_MODULES): family modules and muscle_tensor_iden.
+#:def OP_USES(module)
+    use muscle_kinds, only: ${', '.join(REAL_KINDS)}$
+#:for mod, types in op_uses(module, REAL_KINDS)
+    use ${mod}$, only: ${', '.join(types)}$
+#:endfor
+#:enddef
+
+#! Public generic interfaces of the operators of `module`, every dimension and kind.
+#:def OP_INTERFACES(module)
+#:for g in OP_MODULES[module]
+    public :: ${op_interface(g)}$
+    interface ${op_interface(g)}$
+#:for d in DIMS
+#:for k in REAL_KINDS
+#:for e in op_entries(g, d, k)
+        module procedure ${e.name}$
+#:endfor
+#:endfor
+#:endfor
+    end interface
+
+#:endfor
+#:enddef
+
+#! Generated documentation and names of the procedures (see the docstrings in muscle_meta.py)
+#:set op_args = muscle_meta.op_args
+#:set op_symbols = muscle_meta.op_symbols
+#:set op_doc = muscle_meta.op_doc
+#:set op_iden_term = muscle_meta.op_iden_term
+#:set op_mirror = muscle_meta.op_mirror
+#:set op_dot_terms = muscle_meta.op_dot_terms
+#:set op_voigt_congruence = muscle_meta.op_voigt_congruence
+#:set op_sym_sum = muscle_meta.op_sym_sum
+#:set op_weight = muscle_meta.op_weight
+#:set op_weighted = muscle_meta.op_weighted
+#:set op_ddot_voigt_terms = muscle_meta.op_ddot_voigt_terms
+#:set op_ddot_matrix_terms = muscle_meta.op_ddot_matrix_terms
+
+#! Kernel function of the operator entry `e` (OpEntry); `body` is the content of the #:call block
+#! (fypp passes it after the positional arguments of the #:call header, so the optional ones go
+#! by keyword). `doc`: one-line FORD summary (a formula) without the final period; the dimension
+#! and kind are appended (op_doc). The operands and the result are not documented one by one: the
+#! module and the generic interface carry the details. `args`: dummy arguments (default op_args(e)).
+#:def OP_FUNCTION(e, doc, body, args=None)
+    pure function ${e.name}$(${', '.join(args or op_args(e))}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+$:_OP_DUMMIES(e, args, ['in', 'in'])
+        ${e.res if e.res.startswith('real(') else 'type({})'.format(e.res)}$ :: res
+$:body
+    end function ${e.name}$
+
+#:enddef
+
+#! Defined assignment `a = b` of the entry `e` (generic `=`): a subroutine whose left-hand side is
+#! intent(out). Arguments as in OP_FUNCTION.
+#:def OP_SUBROUTINE(e, doc, body, args=None)
+#:assert e.generic == '='
+    pure subroutine ${e.name}$(${', '.join(args or op_args(e))}$)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+$:_OP_DUMMIES(e, args, ['out', 'in'])
+$:body
+    end subroutine ${e.name}$
+
+#:enddef
+
+#! Dummy argument declarations (`intents`: one per operand) of OP_FUNCTION and OP_SUBROUTINE.
+#:def _OP_DUMMIES(e, args, intents)
+#:for typ, arg, intent in zip([e.a, e.b], args or op_args(e), intents)
+        type(${typ}$), intent(${intent}$) :: ${arg}$
+#:endfor
+#:enddef
+
+#:endmute

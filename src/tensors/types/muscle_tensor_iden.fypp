@@ -12,8 +12,7 @@
 #!   scalar to fix the kind and return dp, as before (D-014);
 #! - every operation is a free `type` procedure marked @:DEVICE(); `%init` is a `class` wrapper
 #!   (`*_tbp`) kept for the historical API; the formatted output is in muscle_tensor_io;
-#! - the historical names (iden_2OS = dp, ...) come from the compatibility modules
-#!   muscle_tensor_iden_<name> and from muscle_tensors (D-003).
+#! - the historical names (iden_2OS = dp, ...) come from muscle_tensors (D-003).
 #:set ALGEBRA = ['2O']
 #:set FORMULA = {'2O': r'\delta_{ij}', '4O3T': r'\delta_{ij}\delta_{kl}', &
     & '4O4T': r'\frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})'}

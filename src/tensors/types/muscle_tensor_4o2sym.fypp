@@ -13,8 +13,7 @@
 #!   tolerance of is_approx is TOL_APPROX_4O2SYM_<k> (D-010);
 #! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
-#! - the historical names (ten_3D4O2sym, ten_2D4O2sym = dp) come from the compatibility modules
-#!   muscle_tensor_3d4o2sym / muscle_tensor_2d4o2sym and from muscle_tensors (D-003).
+#! - the historical names (ten_3D4O2sym, ten_2D4O2sym = dp) come from muscle_tensors (D-003).
 
 module muscle_tensor_4o2sym
     !! Module muscle_tensor_4o2sym

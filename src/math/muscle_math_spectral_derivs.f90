@@ -207,7 +207,7 @@ contains
         use muscle_math_operations, only : eigenvals
         type(ten_3D2Osym), intent(in) :: T   !! Symmetric tensor
         real(real64), intent(out) :: lam(3)  !! Eigenvalues, in descending order
-        real(real64), intent(out) :: V(3,3)  !! Eigenvectors: column a belongs to lam(a)
+        real(real64), intent(out) :: V(3,3)  !! Eigenvectors, column a belongs to lam(a)
 
         real(real64) :: r1(3), r2(3), r3(3), c1(3), c2(3), c3(3), ca(3), u(3), w(3), tu(3), tw(3)
         real(real64) :: n1, n2, n3, na, p, q, r, theta, tg, cs, sn

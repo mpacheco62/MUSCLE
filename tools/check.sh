@@ -9,7 +9,8 @@
 # 1. Lint: mechanical rules from .claude/rules/ on the migrated sources (*.fypp) and tab
 #    checks on every Fortran source.
 # 2. Configure BUILD_DIR (default: build-check) as Debug with every real kind, build
-#    `build_all_tests` and run ctest. Skipped with --lint-only.
+#    `build_all_tests`, check the operator signatures (tools/fypp/ops_signatures.py) and run
+#    ctest; build the FORD documentation if FORD is installed. Skipped with --lint-only.
 #
 # Opt-outs:
 # - `! lint: allow(<rule>)` at the end of a line skips that rule on that line.
@@ -144,6 +145,28 @@ fi
 echo "== lint: OK"
 (( lint_only )) && exit 0
 
+# Module files of deleted or renamed modules stay in an incremental build directory and would let
+# a stale `use` compile: remove every library .mod whose module no source defines any more.
+prune_stale_modules() {
+    local b="$1" dir="$1/modules/muscle" mod name f
+    [[ -d "$dir" ]] || return 0
+    local sources=()
+    mapfile -t sources < <(listed 'src/*.f90' 'src/*.F90')
+    for f in $(listed 'src/*.fypp'); do
+        [[ -f "$b/fypp/${f%.fypp}.f90" ]] && sources+=("$b/fypp/${f%.fypp}.f90")
+    done
+    for mod in "$dir"/*.mod; do
+        [[ -e "$mod" ]] || continue
+        name=$(basename "$mod" .mod)
+        if ! grep -qiE "^[[:space:]]*module[[:space:]]+${name}[[:space:]]*(!.*)?$" "${sources[@]}"; then
+            echo "   removing stale module file $mod"
+            rm -f "$mod" "$mod.stamp"
+        fi
+    done
+}
+prune_stale_modules "$build_dir"
+prune_stale_modules "${build_dir}-udtio"
+
 echo "== build: ${build_dir} (Debug, MUSCLE_REAL_KINDS=sp;dp)"
 cmake -S . -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DMUSCLE_REAL_KINDS=sp;dp" \
     > /dev/null || exit 1
@@ -160,6 +183,30 @@ if [[ -n "$long" ]]; then
     exit 1
 fi
 
+# Literals written by the Python helpers (tools/fypp/muscle_meta.py) only appear in the
+# generated code: apply the literal-kind rule to it too
+mapfile -t generated < <(for f in "${fypp_files[@]}"; do
+    [[ "$f" == src/* && -f "$build_dir/fypp/${f%.fypp}.f90" ]] && echo "$build_dir/fypp/${f%.fypp}.f90"
+done)
+rule literal "real literal without kind in generated code" \
+    '(?i)(?<![\w.])(\d+\.\d*|\.\d+)(e[+-]?\d+)?(?![\w.])|(?<![\w.])\d+e[+-]?\d+(?![\w.])' \
+    "${generated[@]}"
+(( failures > 0 )) && exit 1
+
+# The generic operators keep every historical double precision signature (D-015). One source
+# per operator module (the template output if it exists): stale outputs of renamed templates
+# left in the build directory must not hide a missing signature.
+ops=()
+for m in $(PYTHONDONTWRITEBYTECODE=1 python3 -c 'import sys; sys.path.insert(0, "tools/fypp")
+import muscle_meta; print(*muscle_meta.OP_MODULES)'); do
+    src="src/tensors/operators/muscle_tensor_ops_$m"
+    if [[ -f "$src.fypp" ]]; then ops+=("$build_dir/fypp/$src.f90"); else ops+=("$src.f90"); fi
+done
+python3 tools/fypp/ops_signatures.py --check tools/fypp/ref/ops_signatures_dp.txt "${ops[@]}" || {
+    echo "LINT [ops-signatures] operator signatures missing (tools/fypp/ref/ops_signatures_dp.txt)"
+    exit 1
+}
+
 # Formatted output (UDTIO) is disabled for gfortran < 16.3: compile that path anyway
 # (library and tests; only the tensor tests run there: the OpenMP tests hit the gfortran bug)
 echo "== build: ${build_dir}-udtio (MUSCLE_UDTIO=ON, tensor tests)"
@@ -169,5 +216,16 @@ cmake --build "${build_dir}-udtio" --target build_all_tests -j "$(nproc)" > /dev
 ctest --test-dir "${build_dir}-udtio" -R 'tensors-types-.*_kinds' --output-on-failure -j "$(nproc)" \
     > "${build_dir}-udtio/ctest-udtio.log" || {
     echo "== UDTIO tensor tests failed (see ${build_dir}-udtio/ctest-udtio.log)"; exit 1; }
+
+# Documentation: FORD preprocesses the templates with fypp (my_project.md). Optional: skipped if
+# FORD is not installed; it must run without errors (warnings are listed in the log).
+if command -v ford > /dev/null; then
+    echo "== doc: FORD (${build_dir}/doc)"
+    PYTHONDONTWRITEBYTECODE=1 ford --quiet --output_dir "${build_dir}/doc" my_project.md \
+        > "${build_dir}/ford.log" 2>&1 || {
+        echo "== FORD failed (see ${build_dir}/ford.log)"; tail -20 "${build_dir}/ford.log"; exit 1; }
+else
+    echo "== doc: FORD not installed, skipped"
+fi
 
 ctest --test-dir "$build_dir" --output-on-failure -j "$(nproc)"

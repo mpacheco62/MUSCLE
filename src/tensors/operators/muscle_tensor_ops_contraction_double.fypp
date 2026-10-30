@@ -1,0 +1,135 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_tensor_ops_common.fypp"
+#! Double contraction `.ddot.` (D-015): the pairs come from OP_TABLE['.ddot.'] (muscle_meta); the
+#! bodies are written once over the layouts, in Voigt storage with the shear weights (Comp.mult):
+#! - with I: the trace; with I^S: the symmetric part (A_ij + A_ji)/2; 2O : 2Osym: sum of
+#!   A_ij B_ij with the shear pairs (A_ij + A_ji) B_ij;
+#! - 4th order : 2Osym: C_I = A_IJ w_J b_J (J ascending), the same body for the mirror (A is
+#!   symmetric in its Voigt indices); 4O3sym : 4O3sym -> 4O2sym: C_IJ = A_IK w_K B_KJ.
+#! One rule in every kernel and dimension (D-015.8): sums over the contracted Voigt index in
+#! ascending order, the shear weight on the factor of the right operand, x*(2*y) (op_weighted).
+#:set MODULE = 'contraction_double'
+
+module muscle_tensor_ops_${MODULE}$
+    !! This module defines the overloaded double contraction operator `.ddot.` (tensor inner
+    !! product) for mixed-type interactions of the tensor and identity types, in 3D and 2D, single
+    !! and double precision (both operands of the same kind).
+    !!
+    !! Mathematically, the double contraction of two tensors \(\mathbf{A}\) and \(\mathbf{B}\)
+    !! is represented as:
+    !! \[ \alpha = \mathbf{A} : \mathbf{B} = A_{ij} B_{ij} \]
+    !! or for a fourth-order tensor \(\mathbb{C}\) and a second-order tensor \(\mathbf{A}\):
+    !! \[ \mathbf{res} = \mathbb{C} : \mathbf{A} \quad \implies \quad res_{ij} = C_{ijkl} A_{kl} \]
+    !!
+    !! In Voigt storage (tensorial shear components) the shear terms count twice:
+    !! \( C_I = A_{IJ} w_J b_J \) with \( w_J = 2 \) for the shear components.
+    !!
+    !! With an identity: \(\mathbf{I} : \mathbf{A} = \operatorname{tr}\mathbf{A}\) (a scalar) and
+    !! \(\mathbb{I}^S : \mathbf{A} = \frac{1}{2}(\mathbf{A} + \mathbf{A}^T)\) (a symmetric tensor), in
+    !! either order and times \(c\) for the scaled identities. Two fully symmetric fourth-order
+    !! tensors give a tensor with minor symmetries only (`ten_<d>4O2sym`).
+$:OP_USES(MODULE)
+    implicit none
+    private
+
+$:OP_INTERFACES(MODULE)
+contains
+
+#:for d in DIMS
+#:for k in REAL_KINDS
+#:for e in op_entries('.ddot.', d, k)
+#:set iden = op_iden(e.tag_a) or op_iden(e.tag_b)
+#:set A, B, _ = op_symbols(e)
+#:if iden and iden[0] == '2O'
+#! ------------------------------------------------------------------------------------------
+#! I : A = A : I = tr(A); cI : A = c tr(A)
+#! ------------------------------------------------------------------------------------------
+#:set la = op_layout(e.tag_b if op_iden(e.tag_a) else e.tag_a)
+#:set trace = ' + '.join(la.ref('a%vals', i, i) for i in (1, 2, 3))
+#:call OP_FUNCTION(e, 'Double contraction \\({} : {} = {}\\operatorname{{tr}}\\mathbf{{A}}\\)'.format(A, B, 'c\\,' if iden[1] else ''))
+#:if iden[1]
+        res = I2%val * (${trace}$)
+#:else
+        res = ${trace}$
+#:endif
+#:endcall OP_FUNCTION
+#:elif iden
+#! ------------------------------------------------------------------------------------------
+#! I^S : A = A : I^S = sym(A), (A_ij + A_ji)/2; scaled: c sym(A)
+#! ------------------------------------------------------------------------------------------
+#:set la = op_layout(e.tag_b if op_iden(e.tag_a) else e.tag_a)
+#:set scale = 'I4%val * ' if iden[1] else ''
+#:call OP_FUNCTION(e, 'Double contraction &
+    & \\({} : {} = {}\\frac{{1}}{{2}}(\\mathbf{{A}} + \\mathbf{{A}}^T)\\)'.format(A, B, 'c\\,' if iden[1] else ''))
+#:if la.family == '2Osym'
+        res%vals = ${scale}$a%vals
+#:else
+#:for c in op_layout(e.tag_res).comps
+#:if c.mult == 1
+        res%vals(${c.pos[0]}$) = ${scale}$${op_sym_sum(la, 'a%vals', *c.idx)}$ ! ${c.name}$
+#:else
+        res%vals(${c.pos[0]}$) = 0.5_${k}$ * ${scale}$${op_sym_sum(la, 'a%vals', *c.idx)}$ ! ${c.name}$
+#:endif
+#:endfor
+#:endif
+#:endcall OP_FUNCTION
+#:elif e.tag_res == 'real'
+#! ------------------------------------------------------------------------------------------
+#! 2O : 2Osym (and mirror) = sum of A_ij B_ij over the stored components of the symmetric one,
+#! the general one entering as (A_ij + A_ji)
+#! ------------------------------------------------------------------------------------------
+#:set gen, sym = ('a', 'b') if e.tag_a.endswith('2O') else ('b', 'a')
+#:set lg, ls = op_layout(e.tag_a if gen == 'a' else e.tag_b), op_layout(e.tag_b if gen == 'a' else e.tag_a)
+#:call OP_FUNCTION(e, 'Double contraction \\(\\mathbf{A} : \\mathbf{B} = A_{ij} B_{ij}\\)')
+        ${assign_terms('res', [op_sym_sum(lg, gen + '%vals', *c.idx) + '*' + ls.ref(sym + '%vals', *c.idx) for c in ls.comps], 8)}$
+#:endcall OP_FUNCTION
+#:elif e.tag_res.endswith('2Osym') and e.tag_a.endswith('4O2sym')
+#! ------------------------------------------------------------------------------------------
+#! 4O2sym : 2Osym, C_I = A_IJ w_J b_J, one column of A per term (array syntax, as the original)
+#! ------------------------------------------------------------------------------------------
+#:set lb = op_layout(e.tag_b)
+#:call OP_FUNCTION(e, 'Double contraction \\(\\mathbb{A} : \\mathbf{B}\\), \\( C_{ij} = A_{ijkl} B_{kl} \\)')
+        ${assign_terms('res%vals(:)', [op_weighted('a%vals(:, {})'.format(c.pos[0]), 'b%vals({})'.format(c.pos[0]), c.mult, k) for c in lb.comps], 8)}$
+#:endcall OP_FUNCTION
+#:elif e.tag_res.endswith('2Osym') and e.tag_b.endswith('4O2sym')
+#! ------------------------------------------------------------------------------------------
+#! 2Osym : 4O2sym, C_J = (w_I a_I) A_IJ: weighted vector times the Voigt matrix (matmul, as the
+#! original)
+#! ------------------------------------------------------------------------------------------
+#:set la = op_layout(e.tag_a)
+#:call OP_FUNCTION(e, 'Double contraction \\(\\mathbf{A} : \\mathbb{B}\\), \\( C_{kl} = A_{ij} B_{ijkl} \\)')
+        real(${k}$) :: a_weighted(${len(la.comps)}$)
+            !! Voigt vector of a with the shear weights
+#:for c in la.comps
+        a_weighted(${c.pos[0]}$) = ${op_weight('a%vals({})'.format(c.pos[0]), c.mult, k)}$
+#:endfor
+        res%vals = matmul(a_weighted, b%vals)
+#:endcall OP_FUNCTION
+#:elif e.tag_res.endswith('2Osym')
+#! ------------------------------------------------------------------------------------------
+#! 4O3sym : 2Osym (and mirror, same body: A_IJ = A_JI), C_I = A_IJ w_J b_J
+#! ------------------------------------------------------------------------------------------
+#:set t4, t2 = ('b', 'a') if e.swapped else ('a', 'b')
+#:call OP_FUNCTION(e, 'Double contraction \\({} : {}\\), \\({}\\) fully symmetric'.format(A, B, B if e.swapped else A))
+#:for c in op_layout(e.tag_res).comps
+        ${assign_terms('res%vals({})'.format(c.pos[0]), op_ddot_voigt_terms(op_layout(e.tag_b if e.swapped else e.tag_a), t4 + '%vals', t2 + '%vals', c.pos[0], k), 8)}$
+#:endfor
+#:endcall OP_FUNCTION
+#:else
+#! ------------------------------------------------------------------------------------------
+#! 4O3sym : 4O3sym -> 4O2sym, C_IJ = A_IK w_K B_KJ
+#! ------------------------------------------------------------------------------------------
+#:set lr = op_layout(e.tag_res)
+#:call OP_FUNCTION(e, 'Double contraction \\(\\mathbb{A} : \\mathbb{B}\\), \\( C_{ijkl} = A_{ijmn} B_{mnkl} \\)')
+#:set la = op_layout(e.tag_a)
+#:for c in lr.comps
+        ${assign_terms('res%vals({})'.format(', '.join(map(str, c.pos))), op_ddot_matrix_terms(la, 'a%vals', la, 'b%vals', *c.pos, k), 8)}$
+#:endfor
+#:endcall OP_FUNCTION
+#:endif
+#:endfor
+#:endfor
+#:endfor
+end module muscle_tensor_ops_${MODULE}$

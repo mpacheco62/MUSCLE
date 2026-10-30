@@ -11,8 +11,7 @@
 #! - the operations common to every family (+, -, *, /, =, .approx., .inv., is_approx and the
 #!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp (D-012);
 #! - formatted output lives in muscle_tensor_io (host only);
-#! - the historical names (ten_3D2Osym, ten_2D2Osym = dp) come from the compatibility modules
-#!   muscle_tensor_3d2osym / muscle_tensor_2d2osym and from muscle_tensors (D-003).
+#! - the historical names (ten_3D2Osym, ten_2D2Osym = dp) come from muscle_tensors (D-003).
 
 module muscle_tensor_2osym
     !! Module muscle_tensor_2osym
@@ -39,10 +38,11 @@ module muscle_tensor_2osym
     !!
     !! ```fortran
     !! use muscle_tensors                      ! ten_3D2Osym is ten_3D2Osym_dp
-    !! type(ten_3D2Osym) :: stress
+    !! type(ten_3D2Osym) :: stress, s
     !! type(ten_3D2Osym_sp) :: stress_sp
     !! call stress%init(100.0_dp, 50.0_dp, 20.0_dp, 10.0_dp, 5.0_dp, -2.0_dp)
-    !! print *, stress%xy(), stress .ddot. stress, (.dev. stress)%zz()
+    !! s = .dev. stress
+    !! print *, stress%xy(), stress .ddot. stress, s%zz()
     !! ```
     !!
     !! For more information see [[muscle_tensors]]

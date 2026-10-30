@@ -1,5 +1,5 @@
 program test_muscle_tensor_3d4o3sym
-    use muscle_tensor_3d4o3sym
+    use muscle_tensors
     implicit none
     logical :: passed
 
@@ -21,7 +21,7 @@ end program test_muscle_tensor_3d4o3sym
 ! Test: Approximation and Initialization
 ! ==========================================
 subroutine test_3D4O3sym_approx(passed)
-    use muscle_tensor_3d4o3sym
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     type(ten_3D4O3sym) :: t1, t2
@@ -49,7 +49,7 @@ end subroutine
 ! Test: Arithmetic (+, -, *, /)
 ! ==========================================
 subroutine test_3D4O3sym_arithmetic(passed)
-    use muscle_tensor_3d4o3sym
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     type(ten_3D4O3sym) :: t1, t2, res, exp
@@ -88,7 +88,7 @@ end subroutine
 ! ==========================================
 subroutine test_3D4O3sym_inv(passed)
     use, intrinsic :: iso_fortran_env
-    use muscle_tensor_3d4o3sym
+    use muscle_tensors
     implicit none
     logical, intent(out) :: passed
     type(ten_3D4O3sym) :: C_iso, S_compliance

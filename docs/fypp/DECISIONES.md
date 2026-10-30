@@ -204,6 +204,7 @@ cambios de comportamiento listados abajo)
 5. **Compatibilidad:** `muscle_tensor_3d2osym` / `muscle_tensor_2d2osym` (`.f90`) re-exportan
    `ten_3D2Osym => ten_3D2Osym_dp` y los operadores; se borran en la Fase 4, cuando los
    operadores usen el módulo de familia. `muscle_tensors` (`.fypp`) exporta además `_sp/_dp`.
+   (Hecho en la Fase 4, commit dcf55c1: la fachada da los alias dp directamente.)
 6. **Salida formateada (UDTIO)** en `muscle_tensor_io` (host-only), generada del layout; opción
    CMake `MUSCLE_UDTIO=AUTO|ON|OFF` y `tools/check.sh` compila el camino `ON`.
 **Cambios de comportamiento (verificados bit a bit, 200k entradas/operación, -O0/-O2/-O3):**
@@ -286,3 +287,46 @@ la Fase 1, D-010). Medición de confirmación (matrices aleatorias U·diag·Vᵀ
    `1.0e-10_dp` (antes el literal real32 `1e-10` ≈ 1.00000001335e-10: sólo cambia el veredicto en el
    borde, como D-011) y `1.0e-5_sp`. El mensaje de error de la salida de `iden_2O`/`iden_2OS`, que
    decía `print_ten_3D2Osym` (errata), nombra ahora su propia rutina.
+
+## D-015 — Organización y kinds de los operadores entre tipos (Fase 4)
+**Estado:** Aceptada (2026-10-30, decisión del usuario al planificar la Fase 4)
+**Contexto:** 6 módulos `.f90` (`muscle_tensor_ops_*`) con 222 procedimientos dp (119 en 3D, 103
+en 2D: todos tienen su par en la otra dimensión salvo las 16 sumas/restas de dos identidades de 4º
+orden, que devuelven siempre `ten_3D4O3sym`); casi todos combinan tensores con identidades.
+**Decisión:**
+1. Se conservan **6 módulos, uno por operación**, convertidos a `.fypp` y generados desde
+   una tabla de pares por operador en `muscle_meta.py` × `DIMS` × `KINDS`. Alternativas descartadas:
+   un único módulo (diff enorme, sin tandas paralelas) y operadores dentro del módulo de la familia
+   del primer operando (ciclos de dependencias entre familias).
+2. **Sin mezcla de kinds:** cada operador existe en sp y en dp con ambos operandos del mismo kind;
+   `sp ⊗ dp` no compila (el usuario convierte explícitamente). Las identidades sin escalar se
+   combinan con ambos kinds y las escaladas sólo con su kind (D-014).
+3. El conjunto de interfaces dp generado debe contener al actual (script de inventario en `tools/`,
+   comprobado por `check.sh`).
+4. (Paso 2, decisión del usuario 2026-10-30) Se amplía D-014.3 a los módulos de operadores: **toda
+   operación entre identidades sin escalar devuelve dp**, también con resultado tensorial
+   (`iden_4O3T ± iden_4O4T` y espejos → `ten_3D4O3sym_dp`, 4 procedimientos sólo en dp; una versión
+   sp tendría los mismos argumentos y haría ambiguo el genérico). En sp: `1.0_sp*iden_4O3T() + iden_4O4T()`.
+   En la tabla: `OP_KINDLESS_KIND` de `muscle_meta.py`.
+5. Las 16 sumas/restas de dos identidades de 4º orden existen sólo en 3D (como en el original).
+6. (Paso 3, decisión del usuario 2026-10-30) Cambio de comportamiento aprobado: la diagonal de
+   `a .tdotsym. b` en 3D se escribe `a_I*b_I` como en 2D, en vez de `0.5*(a_I*b_I + b_I*a_I)`.
+   Mismos bits salvo cuando `a_I*b_I` > huge/2, donde la forma antigua daba `Inf`.
+   Las plantillas son reescrituras completas (p.ej. 1886 → ~80 líneas): git no las reconoce como
+   renombre y `git log --follow` se corta en el `.f90` original (su historia sigue en git).
+7. Diferencia 2D/3D heredada que **se conserva** (cambiarla movería ~1 ulp en datos normales):
+   en `.transform.` de `2Osym` la componente 33 en 2D es `(F33*F33)*S33`, como el original, y no
+   `(F33*S33)*F33` como daría la regla general (`op_congruence`, regla de producto único).
+8. (Tanda B, decisión del usuario 2026-10-30) **Cambio de comportamiento aprobado:** `.ddot.` se
+   escribe con una sola regla en todos los kernels y dimensiones: suma sobre el índice Voigt
+   contraído en orden ascendente, con el peso de corte sobre el factor del operando derecho,
+   `x*(2*y)` (`op_weighted`). Antes: `4O3sym:2Osym` ponderaba `A*(2b)` en 3D y `2*(A*b)` en 2D;
+   `4O2sym:2Osym` usaba `(2a)*b`; `4O3sym:4O3sym` era en 3D una suma en el orden de sympy y en 2D un
+   `matmul` 4x4. Sólo `4O3sym:4O3sym` cambia bits con datos normales (≤ 1 ulp de la escala Σ|términos|; por
+   componente hasta 32 ulp / 4e-15 relativo donde hay cancelación, dentro del 1e-14 de `testing.md`;
+   golden actualizado sólo en esos 6 registros); las demás formas dan los mismos bits salvo
+   subnormales o desborde de `2*x`. La validación pasa a ser contra la contracción de los tensores
+   completos (3x3 / 3x3x3x3), con tolerancia por kind.
+9. FMA: con `-mfma`/`-march=native` el compilador puede fusionar productos y sumas y cambiar el
+   redondeo frente al golden. El proyecto no usa esos flags; la equivalencia bit a bit con el golden
+   se garantiza sin FMA.

@@ -1021,8 +1021,8 @@ $:test_free_generics('4O', d, k, 'test_4o_kinds_lib', 'muscle_tensor_4o', scalar
         !! `is_approx(other=)`, `convert_2sym` into the historical `ten_<d>4O2sym`) work on them.
         use muscle_tensors, only: ten_3D4O, ten_2D4O, ten_3D4O_dp, ten_2D4O_dp, ten_3D4O2sym, ten_2D4O2sym, &
                                   operator(+), operator(.approx.), operator(.inv.), inverse
-        use muscle_tensor_3d4o, only: compat_3D => ten_3D4O
-        use muscle_tensor_2d4o, only: compat_2D => ten_2D4O
+        use muscle_tensors, only: compat_3D => ten_3D4O
+        use muscle_tensors, only: compat_2D => ten_2D4O
         use muscle_kinds, only: dp
         use muscle_test_utils, only: check_true, check_approx
         logical, intent(out) :: passed
@@ -1048,10 +1048,10 @@ $:test_free_generics('4O', d, k, 'test_4o_kinds_lib', 'muscle_tensor_4o', scalar
         c2 = p2
         call check_approx(passed, 'ten_3D4O = ten_3D4O_dp', h3%vals, p3%vals, tol=0.0_dp)
         call check_approx(passed, 'ten_3D4O_dp = ten_3D4O', q3%vals, p3%vals, tol=0.0_dp)
-        call check_approx(passed, 'muscle_tensor_3d4o alias', c3%vals, p3%vals, tol=0.0_dp)
+        call check_approx(passed, 'historical 3D name (muscle_tensors) = dp', c3%vals, p3%vals, tol=0.0_dp)
         call check_approx(passed, 'ten_2D4O = ten_2D4O_dp', h2%vals, p2%vals, tol=0.0_dp)
         call check_approx(passed, 'ten_2D4O_dp = ten_2D4O', q2%vals, p2%vals, tol=0.0_dp)
-        call check_approx(passed, 'muscle_tensor_2d4o alias', c2%vals, p2%vals, tol=0.0_dp)
+        call check_approx(passed, 'historical 2D name (muscle_tensors) = dp', c2%vals, p2%vals, tol=0.0_dp)
         call check_true(passed, 'same_type_as(ten_3D4O, ten_3D4O_dp)', same_type_as(h3, p3))
         call check_true(passed, 'same_type_as(compat 3D, ten_3D4O_dp)', same_type_as(c3, p3))
         call check_true(passed, 'same_type_as(ten_2D4O, ten_2D4O_dp)', same_type_as(h2, p2))

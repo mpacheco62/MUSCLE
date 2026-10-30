@@ -80,8 +80,7 @@ contains
         class(JC_viscoplastic), intent(in) :: self
         !! self The JC_viscoplastic object (containing C and epdmax)
         real(real64), intent(in) :: ep, epd
-        !! ep: Equivalent plastic strain.
-        !! epd: Equivalent plastic strain rate.
+        !! Equivalent plastic strain (`ep`) and its rate (`epd`).
         real(real64) :: epd_tmp
         real(real64) :: res
         !! Output flow stress $\sigma_{flow}$.
@@ -115,8 +114,7 @@ contains
         class(JC_viscoplastic), intent(in) :: self
         !! self The JC_viscoplastic object (containing C and epdmax)
         real(real64), intent(in) :: ep, epd, dt
-        !! ep: Equivalent plastic strain.
-        !! epd: Equivalent plastic strain rate.
+        !! Equivalent plastic strain (`ep`) and its rate (`epd`).
         real(real64) :: res
         !! Output flow stress $\sigma_{flow}$.
         real(real64) :: sigma0, dsigma0
