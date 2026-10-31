@@ -39,7 +39,9 @@ endif()
 # Shared assertions (muscle_test_utils: check_approx, check_true, check_scaled) and helpers
 # (muscle_test_helpers: random generator, reference matrix operations, record) of the tests
 muscle_fypp_preprocess(MUSCLE_TEST_UTILS_SRC common/muscle_test_utils.fypp common/muscle_test_helpers.fypp)
-add_library(muscle_test_utils STATIC ${MUSCLE_TEST_UTILS_SRC})
+# muscle_test_golden: bit-for-bit golden checks against tests/reference/ (set the test property
+# ENVIRONMENT MUSCLE_TEST_REFERENCE_DIR=${BASE_TESTS_DIR}/reference)
+add_library(muscle_test_utils STATIC ${MUSCLE_TEST_UTILS_SRC} common/muscle_test_golden.f90)
 target_link_libraries(muscle_test_utils PUBLIC muscle PRIVATE compile_options)
 set_target_properties(muscle_test_utils PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/tests)
 target_include_directories(muscle_test_utils PUBLIC ${CMAKE_BINARY_DIR}/modules/tests)

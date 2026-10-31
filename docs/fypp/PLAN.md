@@ -269,12 +269,64 @@ anotar la fecha/commit.
   GPU con FP64 nativo y registros por kernel (Fase 8); opción CMake `MUSCLE_GPU` (Fase 8).
 
 ### Fase 5 — Math sin closures
-- [ ] `muscle_math_derivatives`: reemplazar `procedure(...) :: func` por macros FYPP que
-      generan la diferencia finita llamando directamente a la función concreta
-      (`@:FD_GRADIENT(stress_eq_vonmises_dp, ...)`). Eliminar los procedimientos internos.
-- [ ] `muscle_math_spectral_derivs`, `muscle_math_operations` genéricos en kind.
-- [ ] Solver lineal pequeño propio (LU desenrollado ≤ 9x9) para uso en kernel; LAPACK queda
-      sólo como opción CPU.
+- Rama `fypp/f5-math` desde `fypp/f4-operators` (2026-10-31). Decisiones: D-016. Plan de trabajo:
+      0) `test-builder`: golden dp de `muscle_math_{derivatives,operations,spectral_derivs}` y de
+      `muscle_math_linsolvers` contra el original, commit aparte; 1) `spectral_derivs` +
+      `operations` (eigenvals) + `dsquare` → `.fypp` sp/dp, `pure` + `@:DEVICE()` donde aplique;
+      2) diferencias finitas: macros FYPP sin closures (sp/dp, 2D/3D) + API `procedure(...)` vieja
+      en sp/dp host-only (D-016); 3) solver LU pequeño (A x = b, ≤ 9x9) sp/dp para kernels sobre la
+      base de `muscle_math_lu_inverse`; `linsolvers` (Gauss, Gauss-Seidel, MKL) host-only;
+      4) tests sp y de kernels; 5) revisión, docs y cierre.
+- [x] Paso 0 (2026-10-31): golden dp de `derivatives`, `operations`, `spectral_derivs`, `linsolvers`
+      (`tests/reference/math/`, driver `tests/common/muscle_test_golden.f90`); 87/87.
+- [x] Paso 1 (2026-10-31): `spectral_derivs`, `operations` (`eigenvals`) y `dsquare` → `.fypp` sp/dp,
+      `pure` + `@:DEVICE()` (compilan para nvptx); rutinas con `procedure(...)` en módulos `*_host`
+      (D-016.8); umbrales sp por la regla tol_dp^0.442 (`REPEATED_TOL` 1e-4, `EPS_TOL` 1e-5,
+      `EPS_TOL_SECOND` 2e-3), espectrales relativos a max λ² en sp y dp (D-016.6), `eigenvals` sp
+      1e-9 (D-016.5), pasos FD por kind en `muscle_kinds` (D-016.7); revisión aplicada; golden sin
+      cambios; 87/87. Pendiente (Fase 8): regla de `check.sh` que impida a un kernel llamar a un
+      módulo `*_host`.
+- [x] Paso 2 (2026-10-31): macros de diferencias finitas sin closures `FD_DERIV`, `FD_GRAD`,
+      `FD_JAC`, `FD_HESS` (`include/muscle_fd.fypp`; sp/dp, 2D/3D, aptas para kernel, compilan para
+      nvptx); API `procedure(...)` en sp/dp host-only construida con ellas
+      (`muscle_math_derivatives_host.fypp`); pasos por kind en `muscle_kinds`; bug del argumento
+      nulo corregido (D-016.4, regla del usuario: sólo cambia x = 0; 18 golden actualizados);
+      `derivative_escalar_tensor3x3sym` con paso relativo a |x|; test `math-math_fd_macros`;
+      helpers `norm_terms`/`family_module` en `muscle_meta`; revisión aplicada; 88/88.
+- [x] Paso 3 (2026-10-31): solver LU pequeño `muscle_math_lu_solve` (`LU<n>SOLVE`, n = 2..9, sp/dp,
+      `pure` + `@:DEVICE()`, `KAPPA` opcional; frente `lu_solve` para host/tests) sobre la LU compartida
+      con `M<n>INV` (mismos bits verificados); `muscle_math_linsolvers` host-only sp/dp (`sgesv`/
+      `dgesv`); `USE_MKL` sólo como define de fypp; test `math-math_lu_solve` (sp/dp, NaN, casi
+      singular, solvers host en sp); D-016.10; revisión aplicada; 89/89.
+- [x] Paso 4 (2026-10-31): tests `math-math_spectral_kinds` (6 rutinas espectrales sp/dp, escalas
+      1e-3…2.1e5, autovalores distintos/casi repetidos/dobles/triples rotados, referencia dp
+      independiente; falla con los umbrales absolutos antiguos de D-016.6), `math-math_fd_operations_kinds`
+      y `math-math_kernels_target` (kernel con eigenvals, descomposición, dEigenvalues, `FD_GRAD` y
+      `LU6SOLVE` dentro de `!$omp target`, bit a bit con CPU; host-fallback con `-foffload=disable`).
+      Bug sp encontrado y corregido: `spectral_decomposition` perdía la normalización con cortes
+      ~1e-11 (|c|² subnormal) → escalado exacto por potencia de 2 (dp mismos bits, golden sin
+      cambios); 92/92. Para la Fase 8: `eigenvals` divide por cero (1/0 = Inf, resultado correcto)
+      con la raíz mayor exactamente repetida; con trampa de división por cero aborta.
+- [x] `muscle_math_derivatives`: macros FYPP que generan la diferencia finita llamando
+      directamente a la función concreta (`@:FD_GRAD(dfds, stress_eq_vonmises_dp(y, {x}), sigma, dp,
+      3D)`, `include/muscle_fd.fypp`) — paso 2. Eliminar los procedimientos internos de los modelos
+      y la API `procedure(...)` pasa a la Fase 6 (D-016.1).
+- [x] `muscle_math_spectral_derivs`, `muscle_math_operations` genéricos en kind — paso 1.
+- [x] Solver lineal pequeño propio (LU desenrollado ≤ 9x9) para uso en kernel; LAPACK queda
+      sólo como opción CPU — paso 3.
+- [x] Paso 5 (2026-10-31): revisión final de la fase aplicada (docs coherentes con el código,
+      `kspecifics` en todas las plantillas math, doc FORD de argumentos de linsolvers, D-016.11);
+      build sólo dp 92/92; paso en x = 0 de las primeras derivadas revisado a √ε (D-016.4).
+      **Fase 5 cerrada (2026-10-31).** Pendientes que pasan a otras fases:
+      - Fase 6: tangente numérico de los return mappings (`closest_point`, `_time`, `_perzyna`): pasar
+        un paso explícito ligado al material o usar el tangente consistente analítico (D-016.4, sp).
+      - Fase 6: borrar la API `procedure(...)` (`*_host`) al pasar los modelos a las macros (con
+        tolerancia, D-016.9); golden mínimo del primer incremento (deformación, `ep`, `epd` nulos) de
+        los return mappings y de `muscle_vp_base`/`muscle_vp_overstress_base` antes de migrarlos.
+      - Fase 8: regla de `check.sh` que impida a un cuerpo con `@:DEVICE()` llamar a nombres
+        exportados por un módulo `*_host` (ojo: `muscle_math_operations` y
+        `muscle_math_derivatives` re-exportan sus `*_host`, así que una regla por `use` daría falsos
+        positivos); división por cero de `eigenvals` con raíz mayor repetida; ejecución real en GPU.
 
 ### Fase 6 — Modelos genéricos en kind y dimensión
 Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yield → elasticity

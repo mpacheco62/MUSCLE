@@ -1,0 +1,125 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_math_lu_inverse.fypp"
+#! Sizes with a fixed-size solver: every n up to the 9x9 of the 3D fourth-order tensors (covers
+#! the 3x3..9x9 tensor matrices and the Newton systems of the return mappings, e.g. 5x5 / 7x7).
+#! From 2: a 1x1 system is a division (in lu_solve), and N = 1 makes the LU loops zero-trip.
+#:set LU_SIZES = list(range(2, 10))
+
+module muscle_math_lu_solve
+    !! Small dense linear systems \( A x = b \) for point (kernel) code, without LAPACK.
+    !!
+    !! LU with partial pivoting (LAPACK `DGETRF` + `DGETRS`, unblocked, in plain Fortran), sharing
+    !! the factorization of the LU inverses (`muscle_math_lu_inverse.fypp`); the inverse is not
+    !! formed. One routine per size with a compile-time size, so the loops can be unrolled:
+    !!
+    !! - `LU<n>SOLVE(A, b, x, OK_FLAG [, KAPPA])`, n = 2..9, explicit-shape `A(n,n)`, `b(n)`,
+    !!   `x(n)`, generic over the real kind (`LU6SOLVE_sp`, `LU6SOLVE_dp`, ...). Kernels call
+    !!   these, with n fixed by the template (layout metadata of the tensor or of the Newton system).
+    !! - `lu_solve(A, b, x, OK_FLAG [, KAPPA])`: assumed-shape front end that selects the routine
+    !!   of size `size(A,1)` with a `select case` (n = 1 is a division). A convenience for host
+    !!   code and tests: on a device every thread would reserve the registers of the largest
+    !!   (9x9) branch (D-006), so kernels should not use it.
+    !!
+    !! Contract: a singular `A` (exactly zero pivot, or NaN) gives `OK_FLAG = .false.`, `x = 0`
+    !! (no NaN/Inf) and `KAPPA = huge`. A nearly singular `A` is solved (`OK_FLAG = .true.`); ask
+    !! for `KAPPA` (\( \kappa_\infty \), costs as much as the inversion) to judge the accuracy.
+    !! `lu_solve` reports a size outside 1..`LU_SOLVE_MAX_N` or inconsistent shapes in the same
+    !! way as a singular matrix; a caller that needs to tell them apart checks
+    !! `size(A,1) <= LU_SOLVE_MAX_N` (and the shapes) first.
+    use muscle_kinds, only: sp, dp
+    implicit none
+    private
+
+    integer, parameter, public :: LU_SOLVE_MAX_N = ${LU_SIZES[-1]}$
+        !! Largest system size solved by `lu_solve`.
+
+    public :: lu_solve
+#:for n in LU_SIZES
+    public :: LU${n}$SOLVE
+#:endfor
+#:for k in REAL_KINDS
+    public :: lu_solve_${k}$
+    public :: ${', '.join('LU{0}SOLVE_{1}'.format(n, k) for n in LU_SIZES)}$
+#:endfor
+
+    interface lu_solve
+        module procedure ${kspecifics('{0}_{1}', 'lu_solve')}$
+    end interface lu_solve
+
+#:for n in LU_SIZES
+    interface LU${n}$SOLVE
+        module procedure ${kspecifics('{0}_{1}', 'LU{}SOLVE'.format(n))}$
+    end interface LU${n}$SOLVE
+
+#:endfor
+contains
+
+#:for k in REAL_KINDS
+#:for n in LU_SIZES
+    pure subroutine LU${n}$SOLVE_${k}$(A, b, x, OK_FLAG, KAPPA)
+        !! Solves the ${n}$x${n}$ `real(${k}$)` system \( A x = b \) by LU with partial pivoting.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: N = ${n}$
+        real(${k}$), intent(in) :: A(N,N)
+            !! System matrix.
+        real(${k}$), intent(in) :: b(N)
+            !! Right-hand side.
+        real(${k}$), intent(out) :: x(N)
+            !! Solution; zero when `A` is singular.
+        logical, intent(out) :: OK_FLAG
+            !! `.true.` if solved, `.false.` if `A` is singular (exactly zero pivot).
+        real(${k}$), intent(out), optional :: KAPPA
+            !! Condition number \( \kappa_\infty(A) = \|A\|_\infty \|A^{-1}\|_\infty \);
+            !! `huge(1.0_${k}$)` when `A` is singular.
+        $:lu_solve_body(k)
+    end subroutine LU${n}$SOLVE_${k}$
+
+#:endfor
+    pure subroutine lu_solve_${k}$(A, b, x, OK_FLAG, KAPPA)
+        !! Solves the `real(${k}$)` system \( A x = b \) with the `LU<n>SOLVE` routine of
+        !! n = `size(A,1)` (host and tests; kernels call `LU<n>SOLVE` with a fixed n). A size
+        !! outside 1..`LU_SOLVE_MAX_N` or inconsistent shapes give `OK_FLAG = .false.`, `x = 0` and
+        !! `KAPPA = huge(1.0_${k}$)`, as a singular matrix.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: A(:,:)
+            !! System matrix, n x n.
+        real(${k}$), intent(in) :: b(:)
+            !! Right-hand side, size n.
+        real(${k}$), intent(out) :: x(:)
+            !! Solution, size n; zero when `A` is singular.
+        logical, intent(out) :: OK_FLAG
+            !! `.true.` if solved.
+        real(${k}$), intent(out), optional :: KAPPA
+            !! Condition number \( \kappa_\infty(A) \); `huge(1.0_${k}$)` when not solved.
+        integer :: n
+
+        n = size(A, 1)
+        if (size(A, 2) /= n .or. size(b) /= n .or. size(x) /= n) n = 0
+        select case (n)
+#:for n in LU_SIZES
+        case (${n}$)
+            call LU${n}$SOLVE_${k}$(A, b, x, OK_FLAG, KAPPA)
+#:endfor
+        case (1)
+            if (abs(A(1,1)) > 0.0_${k}$) then      ! also .false. for NaN
+                x(1) = b(1) / A(1,1)
+                OK_FLAG = .true.
+                if (present(KAPPA)) KAPPA = 1.0_${k}$
+            else
+                x = 0.0_${k}$
+                OK_FLAG = .false.
+                if (present(KAPPA)) KAPPA = huge(1.0_${k}$)
+            end if
+        case default
+            x = 0.0_${k}$
+            OK_FLAG = .false.
+            if (present(KAPPA)) KAPPA = huge(1.0_${k}$)
+        end select
+    end subroutine lu_solve_${k}$
+
+#:endfor
+end module muscle_math_lu_solve

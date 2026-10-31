@@ -1,0 +1,192 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Central finite differences without closures (D-016.1), usable in kernels: each macro expands to
+#! a `block ... end block` construct that calls the given function DIRECTLY (no `procedure(...)`
+#! argument, no type-bound call, nothing allocatable), so it can be used inside a `pure`
+#! procedure marked `@:DEVICE()`. Include with `#:include "muscle_fd.fypp"` (after
+#! "muscle_common.fypp"). The host-only API `derivative`/`derivative2O`
+#! (muscle_math_derivatives_host) is built on the same macros.
+#!
+#! Common arguments:
+#!   res:    variable that receives the derivative (`real(k)` or the tensor type of the result).
+#!           It must not be the same object as `x` (x is read after res is partly written).
+#!   fcall:  call of the function with `{x}` in place of the differentiated argument, e.g.
+#!           `stress_eq_vonmises_dp(y, {x})`. It is called on a perturbed copy of `x`.
+#!   x:      variable (or designator) where the derivative is taken; it is not modified.
+#!   k:      real kind ('sp', 'dp'); d: dimension of the tensors ('3D', '2D').
+#!   step:   optional step expression (e.g. the `eps` of the host API). By default (D-016.4)
+#!           h = max(|x| rel, min), the historical rule, and at |x| = 0 (where the historical
+#!           minimum made f(+-h) round to f(0)) h = FD_STEP_ZERO_<k> = sqrt(eps) for the first
+#!           derivatives (FD_DERIV, FD_GRAD, FD_JAC: rounding error ~ sqrt(eps) and a step far below
+#!           any yield strain) and h = rel ~ eps**(1/4) for FD_HESS (rounding ~ eps/h**2), with
+#!           |x| = abs(x) for a scalar and the
+#!           family `norm` (computed inline, same terms and order, muscle_meta.norm_terms) for a
+#!           tensor; rel = `<rel>_<k>` and min = `FD_STEP_MIN_<k>` (`FD_STEP_MIN_JAC_<k>` in
+#!           FD_JAC) of muscle_kinds.
+#!   indent: column of the expanded `block` (default 8; the body is indented 4 more).
+#! Restrictions: inside the block the names starting with `fd_`, the kind and the tensor type of x
+#! (`use`d by the block) are reserved, so `fcall` and `x` must not use other entities with those
+#! names; the tensor macros `use` the family module of x, so they cannot be used inside that module.
+#! Shear components of a `2Osym` are perturbed by h/2 (tensorial Voigt).
+#!
+#! Example (in a `pure` function of kind dp):
+#!   @:FD_GRAD(dfds, stress_eq_vonmises_dp(y, {x}), sigma, dp, 3D)
+#:mute
+
+#! Indents the expanded lines (not the #line markers) by `n` columns
+#:set fd_indent = lambda text, n: '\n'.join(l if not l or l.startswith('#') else ' ' * int(n) + l for l in text.rstrip('\n').split('\n'))
+#! `use` of the kind (and of the step constants if the default step is used)
+#:set fd_use_kind = lambda k, step, rel, mn, zero=None: 'use muscle_kinds, only : ' + k + ('' if step is not None else ''.join(', {}_{}'.format(c, k) for c in [rel, mn] + ([zero] if zero else [])))
+#! Extra local of the default step: |x|
+#:set fd_decl_n = lambda step: '' if step is not None else ', fd_n'
+#! Step statements: explicit `step`, or |x| = nterms (list of terms) and the rule of D-016.4
+#:def FD_STEP(k, step, rel, mn, nterms, zero=None)
+#:if step is not None
+fd_h = ${step}$
+#:else
+fd_n = ${join_terms(nterms, indent=7)}$
+fd_h = merge(max(fd_n*${rel}$_${k}$, ${mn}$_${k}$), ${zero or rel}$_${k}$, fd_n > 0.0_${k}$)
+#:endif
+#:enddef
+#! Step at |x| = 0 of the first-derivative macros (FD_HESS uses rel, see above)
+#:set ZERO = 'FD_STEP_ZERO'
+#! Perturbation of component `c` of a 2nd-order layout: h, or h/2 for a shear component of 2Osym
+#:set fd_pert = lambda fam, c, k: 'fd_h' if fam == '2O' or c.idx[0] == c.idx[1] else 'fd_h/2.0_{}'.format(k)
+
+#! (a) Derivative of a scalar function of a scalar: res = (f(x + h) - f(x - h))/(2 h).
+#! Default step relative to FD_STEP_CEN_<k>.
+#:def FD_DERIV(res, fcall, x, k, step=None, rel='FD_STEP_CEN', indent=8)
+$:fd_indent(_FD_DERIV(res, fcall, x, k, step, rel), indent)
+#:enddef
+#:def _FD_DERIV(res, fcall, x, k, step, rel)
+#:assert '{x}' in fcall
+#:set f = fcall.replace('{x}', 'fd_xv')
+block
+    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN', ZERO)}$
+    real(${k}$) :: fd_h, fd_xv, fd_fp, fd_fm${fd_decl_n(step)}$
+    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', ['abs({})'.format(x)], ZERO), 4)
+    fd_xv = ${x}$ + fd_h
+    fd_fp = ${f}$
+    fd_xv = ${x}$ - fd_h
+    fd_fm = ${f}$
+    ${res}$ = (fd_fp - fd_fm)/(2.0_${k}$*fd_h)
+end block
+#:enddef
+
+#! (b) Gradient of a scalar function of a `2Osym` (or `2O`, fam='2O') tensor, same type as x:
+#! res_p = (f(x + s_p e_p) - f(x - s_p e_p))/(2 h), s_p = h (h/2 for the shear components of
+#! 2Osym). Default step relative to FD_STEP_CEN_2OSYM_<k> (2Osym) or FD_STEP_CEN_<k> (2O).
+#:def FD_GRAD(res, fcall, x, k, d='3D', fam='2Osym', step=None, rel=None, indent=8)
+$:fd_indent(_FD_GRAD(res, fcall, x, k, d, fam, step, rel), indent)
+#:enddef
+#:def _FD_GRAD(res, fcall, x, k, d, fam, step, rel)
+#:assert '{x}' in fcall
+#:set f = fcall.replace('{x}', 'fd_xv')
+#:set rel = rel if rel is not None else ('FD_STEP_CEN_2OSYM' if fam == '2Osym' else 'FD_STEP_CEN')
+#:set lay = layout(fam, d)
+block
+    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN', ZERO)}$
+    use ${family_module(fam)}$, only : ${tname(d + fam, k)}$
+    type(${tname(d + fam, k)}$) :: fd_xv
+    real(${k}$) :: fd_h, fd_fp, fd_fm${fd_decl_n(step)}$
+    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', norm_terms(lay, x + '%vals'), ZERO), 4)
+    fd_xv = ${x}$
+#:for c in lay.comps
+#:set p = c.pos[0]
+    fd_xv%vals(${p}$) = ${x}$%vals(${p}$) + ${fd_pert(fam, c, k)}$
+    fd_fp = ${f}$
+    fd_xv%vals(${p}$) = ${x}$%vals(${p}$) - ${fd_pert(fam, c, k)}$
+    fd_fm = ${f}$
+    ${res}$%vals(${p}$) = (fd_fp - fd_fm)/(2.0_${k}$*fd_h)
+    fd_xv%vals(${p}$) = ${x}$%vals(${p}$)
+#:endfor
+end block
+#:enddef
+
+#! (c) Jacobian of a `2Osym`-valued function of a `2Osym` tensor, as a `4O2sym` of the same
+#! dimension: column p = (f(x + s_p e_p) - f(x - s_p e_p))/(2 h). Default step relative to
+#! FD_STEP_CEN_JAC_<k>, minimum FD_STEP_MIN_JAC_<k>.
+#:def FD_JAC(res, fcall, x, k, d='3D', step=None, rel='FD_STEP_CEN_JAC', indent=8)
+$:fd_indent(_FD_JAC(res, fcall, x, k, d, step, rel), indent)
+#:enddef
+#:def _FD_JAC(res, fcall, x, k, d, step, rel)
+#:assert '{x}' in fcall
+#:set f = fcall.replace('{x}', 'fd_xv')
+#:set T = tname(d + '2Osym', k)
+#:set lay = layout('2Osym', d)
+block
+    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN_JAC', ZERO)}$
+    use ${family_module('2Osym')}$, only : ${T}$
+    type(${T}$) :: fd_xv, fd_fp, fd_fm
+    real(${k}$) :: fd_h${fd_decl_n(step)}$
+    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN_JAC', norm_terms(lay, x + '%vals'), ZERO), 4)
+    fd_xv = ${x}$
+#:for c in lay.comps
+#:set p = c.pos[0]
+    fd_xv%vals(${p}$) = ${x}$%vals(${p}$) + ${fd_pert('2Osym', c, k)}$
+    fd_fp = ${f}$
+    fd_xv%vals(${p}$) = ${x}$%vals(${p}$) - ${fd_pert('2Osym', c, k)}$
+    fd_fm = ${f}$
+    ${res}$%vals(:, ${p}$) = (fd_fp%vals - fd_fm%vals)/(2.0_${k}$*fd_h)
+    fd_xv%vals(${p}$) = ${x}$%vals(${p}$)
+#:endfor
+end block
+#:enddef
+
+#! (d) Second derivative of a scalar function of a `2Osym` tensor, as a `4O3sym` of the same
+#! dimension, with the stencils of the historical derivative2O (dp bits kept):
+#! - diagonal (p, p): (f(x + 2s e_p) - 2 f(x) + f(x - 2s e_p))/(4 h^2), s = h (h/2 for shear);
+#! - (I, J), I /= J: (f_++ - f_+- - f_-+ + f_--)/(4 h^2), f_ab = f(x + a s_I e_I + b s_J e_J);
+#!   (I, J) = (shear, normal) for a mixed pair, otherwise the stored (row, column) order.
+#! Default step relative to FD_STEP_CEN2_<k>.
+#:def FD_HESS(res, fcall, x, k, d='3D', step=None, rel='FD_STEP_CEN2', indent=8)
+$:fd_indent(_FD_HESS(res, fcall, x, k, d, step, rel), indent)
+#:enddef
+#:def _FD_HESS(res, fcall, x, k, d, step, rel)
+#:assert '{x}' in fcall
+#:set f = fcall.replace('{x}', 'fd_xv')
+#:set lay = layout('2Osym', d)
+#:set base = lay.comps
+#:set shear = [c.idx[0] != c.idx[1] for c in base]
+block
+    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN')}$
+    use ${family_module('2Osym')}$, only : ${tname(d + '2Osym', k)}$
+    type(${tname(d + '2Osym', k)}$) :: fd_xv
+    real(${k}$) :: fd_h, fd_f0, fd_fpp, fd_fpm, fd_fmp, fd_fmm${fd_decl_n(step)}$
+    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', norm_terms(lay, x + '%vals')), 4)
+    fd_xv = ${x}$
+    fd_f0 = ${f}$
+#:for c in layout('4O3sym', d).comps
+#:set r, s = c.voigt
+#:if r == s
+#:set st = 'fd_h' if shear[r - 1] else '2.0_{}*fd_h'.format(k)
+    fd_xv%vals(${r}$) = ${x}$%vals(${r}$) + ${st}$
+    fd_fpp = ${f}$
+    fd_xv%vals(${r}$) = ${x}$%vals(${r}$) - ${st}$
+    fd_fmm = ${f}$
+    ${res}$%vals(${c.pos[0]}$) = (fd_fpp - 2.0_${k}$*fd_f0 + fd_fmm)/(4.0_${k}$*fd_h*fd_h)
+    fd_xv%vals(${r}$) = ${x}$%vals(${r}$)
+#:else
+#:set i, j = (s, r) if shear[s - 1] and not shear[r - 1] else (r, s)
+#:set si = fd_pert('2Osym', base[i - 1], k)
+#:set sj = fd_pert('2Osym', base[j - 1], k)
+    fd_xv%vals(${i}$) = ${x}$%vals(${i}$) + ${si}$
+    fd_xv%vals(${j}$) = ${x}$%vals(${j}$) + ${sj}$
+    fd_fpp = ${f}$
+    fd_xv%vals(${j}$) = ${x}$%vals(${j}$) - ${sj}$
+    fd_fpm = ${f}$
+    fd_xv%vals(${i}$) = ${x}$%vals(${i}$) - ${si}$
+    fd_xv%vals(${j}$) = ${x}$%vals(${j}$) + ${sj}$
+    fd_fmp = ${f}$
+    fd_xv%vals(${j}$) = ${x}$%vals(${j}$) - ${sj}$
+    fd_fmm = ${f}$
+    ${res}$%vals(${c.pos[0]}$) = (fd_fpp - fd_fpm - fd_fmp + fd_fmm)/(4.0_${k}$*fd_h*fd_h)
+    fd_xv%vals(${i}$) = ${x}$%vals(${i}$)
+    fd_xv%vals(${j}$) = ${x}$%vals(${j}$)
+#:endif
+#:endfor
+end block
+#:enddef
+
+#:endmute

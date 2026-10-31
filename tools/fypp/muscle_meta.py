@@ -85,6 +85,26 @@ def assign_terms(lhs, terms, col, op='+'):
     return '{} = {}'.format(lhs, join_terms(terms, op=op, indent=start, lead=start))
 
 
+def family_module(family):
+    """Fortran module of a tensor family (``FAMILIES``) or of the identities (``'iden'``):
+    ``family_module('2Osym')`` -> ``'muscle_tensor_2osym'``."""
+    if family not in FAMILIES and family != 'iden':
+        raise ValueError(f"unknown tensor family '{family}', expected one of {FAMILIES} or 'iden'")
+    return 'muscle_tensor_' + family.lower()
+
+
+def norm_terms(lay, var):
+    """Terms of the family ``norm`` (modified L1 norm) of a 2nd-order tensor whose ``vals`` is
+    ``var``, in storage order, a shear component of ``2Osym`` weighted by its multiplicity 2:
+    ``norm_terms(layout('2Osym', '2D'), 'a%vals')`` -> ``['abs(a%vals(1))', ..., '2*abs(a%vals(4))']``.
+    Shared by the ``norm`` functions of the families and the finite-difference macros, so that
+    both give the same bits."""
+    if lay.base is not None:
+        raise ValueError(f"norm_terms: '{lay.dim}{lay.family}' is not a 2nd-order layout")
+    return [('{}*'.format(c.mult) if c.mult > 1 else '') + 'abs({}({}))'.format(var, c.pos[0])
+            for c in lay.comps]
+
+
 def tname(base, kind):
     """Name of the concrete tensor type: ``tname('3D2Osym', 'dp')`` -> ``'ten_3D2Osym_dp'``."""
     if kind not in KINDS:
@@ -553,9 +573,9 @@ def op_uses(module, kinds):
                             continue
                         iden = op_iden(tag)
                         if iden is None:
-                            key = ('muscle_tensor_' + tag[2:].lower(), kind)
+                            key = (family_module(tag[2:]), kind)
                         else:
-                            key = ('muscle_tensor_iden', kind if iden[1] else None)
+                            key = (family_module('iden'), kind if iden[1] else None)
                         names = groups.setdefault(key, [])
                         if typ not in names:
                             names.append(typ)

@@ -223,6 +223,22 @@ class TestHelpers(unittest.TestCase):
         self.assertEqual(mm.join_terms(['a', 'b', 'c'], indent=4), 'a &\n    + b &\n    + c')
         self.assertEqual(mm.join_terms(['x']), 'x')
 
+    def test_family_module(self):
+        self.assertEqual(mm.family_module('2Osym'), 'muscle_tensor_2osym')
+        self.assertEqual(mm.family_module('4O3sym'), 'muscle_tensor_4o3sym')
+        self.assertEqual(mm.family_module('iden'), 'muscle_tensor_iden')
+        with self.assertRaises(ValueError):
+            mm.family_module('3D2Osym')
+
+    def test_norm_terms(self):
+        self.assertEqual(mm.norm_terms(mm.layout('2Osym', '2D'), 'a%vals'),
+                         ['abs(a%vals(1))', 'abs(a%vals(2))', 'abs(a%vals(3))', '2*abs(a%vals(4))'])
+        terms = mm.norm_terms(mm.layout('2Osym', '3D'), 'v')
+        self.assertEqual(terms[3:], ['2*abs(v(4))', '2*abs(v(5))', '2*abs(v(6))'])
+        self.assertEqual(mm.norm_terms(mm.layout('2O', '2D'), 'v'), ['abs(v({}))'.format(i) for i in range(1, 6)])
+        with self.assertRaises(ValueError):
+            mm.norm_terms(mm.layout('4O', '3D'), 'v')
+
 
 def all_entries(kinds=mm.KINDS):
     return [e for g in mm.OP_GENERICS for d in mm.DIMS for k in kinds for e in mm.op_entries(g, d, k)]

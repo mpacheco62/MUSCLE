@@ -1,0 +1,102 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Threshold of eigenvals per kind (on s = sqrt(J2/3) and on |1 - d|), D-016.5. dp: 1e-10
+#! (historically a default real literal, ~1.0000000134e-10; now the exact dp value). sp: 1e-9, a
+#! guard against 0/0, not a precision commitment (measured error <= 2e-7, ~3e-5 with 4e-5).
+#:set EIG_EPS = {'sp': '1.0e-9', 'dp': '1.0e-10'}
+
+module muscle_math_operations
+    !! Eigenvalues of symmetric second-order tensors (`eigenvals`, kernel routines for each real kind:
+    !! `eigenvals_3D2Osym_sp`, `eigenvals_3D2Osym_dp`) and, re-exported from the host-only
+    !! `muscle_math_operations_host`, the finite-difference derivatives `derivative`,
+    !! `derivative_escalar_tensor3x3`, `derivative_escalar_tensor3x3sym` and
+    !! `derivative_escalar_tensor3x3sym2` (sp/dp, they take the function as a `procedure(...)`
+    !! argument, D-016).
+    use muscle_kinds, only : sp, dp
+    use muscle_tensors
+    use muscle_tensor_2osym, only : square
+    use muscle_math_operations_host
+    implicit none
+    private
+
+    public :: eigenvals
+    public :: derivative, derivative_escalar_tensor3x3, derivative_escalar_tensor3x3sym, &
+              derivative_escalar_tensor3x3sym2
+#:for k in REAL_KINDS
+    public :: eigenvals_3D2Osym_${k}$
+    public :: derivative_escalar_tensor3x3_${k}$, derivative_escalar_tensor3x3sym_${k}$, &
+              derivative_escalar_tensor3x3sym2_${k}$
+#:endfor
+
+    interface eigenvals
+        module procedure ${kspecifics('{0}_3D2Osym_{1}', 'eigenvals')}$
+    end interface eigenvals
+
+  contains
+#:for k in REAL_KINDS
+#:set T2 = tname('3D2Osym', k)
+
+      pure function eigenvals_3D2Osym_${k}$(mat) result(res)
+        !! Eigenvalues of a symmetric `${T2}$`, in descending order (closed form, based on
+        !! https://doi.org/10.1002/nme.7153).
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: mat
+            !! Symmetric tensor.
+        real(${k}$) :: res(3)
+            !! Eigenvalues, \( \lambda_1 \ge \lambda_2 \ge \lambda_3 \).
+
+        real(${k}$), parameter :: EPS = ${EIG_EPS[k]}$_${k}$
+        real(${k}$) :: I1, J2, s, d, alpha
+        real(${k}$) :: J2_sqrt
+        real(${k}$) :: cd, lam_a, lam_b, lam_c, sd
+        integer :: sj
+        type(${T2}$) :: Sm, T, d1, d2
+        type(iden_2O) :: Iden
+
+
+
+        I1 = sum(mat%vals(1:3))
+        J2 = ((mat%vals(1)-mat%vals(2))**2.0_${k}$ + (mat%vals(2)-mat%vals(3))**2.0_${k}$ &
+             + (mat%vals(3)-mat%vals(1))**2.0_${k}$)/6.0_${k}$ &
+             + (mat%vals(4)**2 + mat%vals(5)**2 + mat%vals(6)**2)
+        s = (J2/3.0_${k}$)**0.5_${k}$
+
+        if (abs(s).le.EPS) then
+          res = I1/3.0_${k}$
+          return
+        end if
+        
+        Sm = mat - (I1/3.0_${k}$)*Iden
+        T = square(Sm) - (2.0_${k}$/3.0_${k}$)*J2*Iden
+        d1 = T-s*Sm
+        d2 = T+s*Sm
+        d = ((d1 .ddot. d1) / (d2 .ddot. d2))**0.5_${k}$
+
+        J2_sqrt = J2**0.5_${k}$
+        if (abs(1.0_${k}$-d) .le. EPS) then
+          res(1) = J2_sqrt
+          res(2) = 0.0_${k}$
+          res(3) = -res(1)
+          res = res + I1/3.0_${k}$
+          return
+        end if
+
+        sj = int(sign(1.0_${k}$,(1.0_${k}$-d)))
+        alpha = 2.0_${k}$/3.0_${k}$ * atan(d**sj)
+        cd = sj*s*cos(alpha)
+        lam_a = 2.0_${k}$*cd
+
+        sd = J2_sqrt*sin(alpha)
+        lam_b = -cd + sd
+        lam_c = -cd - sd
+
+        res(1) = max(lam_a, max(lam_b, lam_c))
+        res(3) = min(lam_a, min(lam_b, lam_c))
+        res(2) = lam_a + lam_b + lam_c - res(1) - res(3)
+        res = res + I1/3.0_${k}$
+
+      end function eigenvals_3D2Osym_${k}$
+#:endfor
+end module muscle_math_operations

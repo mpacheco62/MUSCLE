@@ -1,0 +1,62 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! d(A^2)/dA by component of ten_3D4O3sym (Itskov, 2007, Eq. 6.119 with k = 2), in terms of the
+#! stored components of a ten_3D2Osym `a` (xx, yy, zz, xy, yz, xz); written in storage order.
+#:set A = {c.name: 'a%vals({})'.format(c.pos[0]) for c in layout('2Osym', '3D').comps}
+#:set DSQUARE = {'xxxx': '2.0_{k}*{xx}', 'yyyy': '2.0_{k}*{yy}', 'zzzz': '2.0_{k}*{zz}', &
+    & 'xyxy': '0.5_{k}*({xx}+{yy})', 'yzyz': '0.5_{k}*({yy}+{zz})', 'xzxz': '0.5_{k}*({xx}+{zz})', &
+    & 'xyyz': '0.5_{k}*{xz}', 'yzxz': '0.5_{k}*{xy}', 'xyxz': '0.5_{k}*{yz}', &
+    & 'xxxy': '{xy}', 'yyxy': '{xy}', 'xxxz': '{xz}', 'zzxz': '{xz}', 'yyyz': '{yz}', 'zzyz': '{yz}'}
+#:assert set(DSQUARE) <= {c.name for c in layout('4O3sym', '3D').comps}
+
+module muscle_math_derivatives
+    !! Derivatives of tensor functions.
+    !!
+    !! - `dsquare`: analytical derivative of the square of a symmetric tensor, for each real kind
+    !!   (`dsquare_sp`, `dsquare_dp`); kernel routine.
+    !! - `derivative`, `derivative2O`: central finite differences of a function passed as a
+    !!   `procedure(...)` argument (single and double precision, host-only), re-exported from
+    !!   `muscle_math_derivatives_host` (D-016). Kernels use the macros of
+    !!   `include/muscle_fd.fypp` instead, which call the function directly.
+    use muscle_kinds, only : sp, dp
+    use muscle_tensor_2osym, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$
+    use muscle_tensor_4o3sym, only : ${', '.join(tname('3D4O3sym', k) for k in REAL_KINDS)}$
+    use muscle_math_derivatives_host, only : derivative, derivative2O
+    implicit none
+    private
+
+    public :: derivative, derivative2O
+    public :: dsquare
+#:for k in REAL_KINDS
+    public :: dsquare_${k}$
+#:endfor
+
+    interface dsquare
+        module procedure ${kspecifics('{0}_{1}', 'dsquare')}$
+    end interface dsquare
+
+contains
+#:for k in REAL_KINDS
+
+    pure function dsquare_${k}$(a) result(res)
+        !! Analytical derivative of the square of a symmetric tensor with respect to the tensor
+        !! (Itskov, 2007, Eq. 6.119 with k = 2), in `real(${k}$)`:
+        !! \[ \frac{\partial (A^2)_{ij}}{\partial A_{kl}} = \frac{1}{2} \left( \delta_{ik} A_{lj}
+        !!    + \delta_{jl} A_{ik} + \delta_{il} A_{kj} + \delta_{jk} A_{il} \right) \]
+        !! It is linear in A, so `dsquare(c*A)` equals `c * dsquare(A)`.
+        !! Called by `d2Eigenvalues_dTensor2` (`muscle_math_spectral_derivs`).
+        implicit none
+        @:DEVICE()
+        type(${tname('3D2Osym', k)}$), intent(in) :: a
+            !! Symmetric tensor \( A \).
+        type(${tname('3D4O3sym', k)}$) :: res
+            !! \( \partial (A^2)/\partial A \).
+
+#:for c in layout('4O3sym', '3D').comps
+        res%vals(${c.pos[0]}$) = ${DSQUARE.get(c.name, '0.0_{k}').format(k=k, **A)}$
+#:endfor
+    end function dsquare_${k}$
+#:endfor
+
+end module muscle_math_derivatives

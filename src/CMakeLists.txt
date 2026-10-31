@@ -27,7 +27,6 @@ target_link_libraries(muscle PUBLIC ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
 
 if(BLAS_LIBRARIES MATCHES "mkl" OR LAPACK_LIBRARIES MATCHES "mkl")
     message(STATUS "MUSCLE: Intel MKL detectado. Activando directiva USE_MKL.")
-    target_compile_definitions(muscle PRIVATE USE_MKL)
     list(APPEND MUSCLE_FYPP_DEFINES USE_MKL)
 endif()
 # The tests (sibling directory) preprocess their templates with the same switches

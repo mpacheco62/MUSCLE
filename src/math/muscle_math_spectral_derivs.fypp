@@ -1,0 +1,444 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Thresholds per kind. dp keeps the historical values. sp keeps the same fraction of the
+#! significant digits: tol_sp ~ tol_dp**(ln eps_sp/ln eps_dp) = tol_dp**0.442 (eps = epsilon(1.0_k)),
+#! rounded to one significant digit (1e-11 -> 1.4e-5, 1e-6 -> 2.2e-3, 1e-9 -> 1.0e-4).
+#! EPS_TOL and EPS_TOL_SECOND are relative to max(lam_1**2, lam_2**2, lam_3**2, EPS_ABS) (D-016.6; historically
+#! absolute, in stress**2 units). REPEATED_TOL is relative to max(|lam_1|, |lam_3|); in dp 1e-9 keeps
+#! the error of the quotient theta_ab below 1e-7.
+#:set EPS_TOL = {'sp': '1.0e-5', 'dp': '1.0e-11'}
+#:set EPS_TOL_SECOND = {'sp': '2.0e-3', 'dp': '1.0e-6'}
+#:set REPEATED_TOL = {'sp': '1.0e-4', 'dp': '1.0e-9'}
+
+module muscle_math_spectral_derivs
+    !! # Module mod_muscle_math_spectral_derivs
+    !!
+    !! This module provides exact, analytical, eigenvector-free first and second derivatives
+    !! of eigenvalues with respect to their parent symmetric second-order tensor.
+    !!
+    !! ## Mathematical Formulation
+    !!
+    !! The eigenvalues \(\Sigma_a\) (\(a=1,2,3\)) are roots of the characteristic polynomial:
+    !!
+    !! \[ P(\Sigma_a) = \Sigma_a^3 - I_1 \Sigma_a^2 + I_2 \Sigma_a - I_3 = 0 \]
+    !!
+    !! By applying implicit differentiation and the Cayley-Hamilton theorem, the derivatives
+    !! are calculated without computing eigenvectors or performing matrix inversions, ensuring
+    !! absolute numerical stability even for singular tensors (e.g., when \(\det(\Sigma) = 0\)).
+    !!
+    !! See the technical documentation for further algebraic details.
+    !!
+    !! Every routine exists for each real kind (`dEigenvalues_dTensor_sp`, `..._dp`, ...) under
+    !! the historical generic name. The thresholds of the double precision routines are the
+    !! historical ones; the single precision ones keep the same fraction of the significant
+    !! digits, \( tol_{sp} \approx tol_{dp}^{\ln\epsilon_{sp}/\ln\epsilon_{dp}} = tol_{dp}^{0.442} \).
+    !! All thresholds are relative to the scale of the eigenvalues (D-016.6), so the results do not
+    !! depend on the units of the tensor.
+    use muscle_kinds, only : sp, dp
+#:for k in REAL_KINDS
+    use muscle_kinds, only : EPS_ABS_${k}$
+#:endfor
+    use muscle_tensors
+    use muscle_tensor_2osym, only : square
+    use muscle_math_operations, only : eigenvals
+    use muscle_math_derivatives, only : dsquare
+    implicit none
+    private
+
+    public :: dEigenvalues_dTensor
+    public :: d2Eigenvalues_dTensor2
+    public :: spectral_decomposition
+    public :: spectral_gradient
+    public :: spectral_hessian
+#:for k in REAL_KINDS
+    public :: dEigenvalues_dTensor_${k}$, d2Eigenvalues_dTensor2_${k}$, spectral_decomposition_${k}$
+    public :: spectral_gradient_${k}$, spectral_hessian_${k}$
+#:endfor
+
+#:for name in ['dEigenvalues_dTensor', 'd2Eigenvalues_dTensor2', 'spectral_decomposition', &
+    & 'spectral_gradient', 'spectral_hessian']
+    interface ${name}$
+        module procedure ${kspecifics('{0}_{1}', name)}$
+    end interface ${name}$
+
+#:endfor
+#:for k in REAL_KINDS
+    real(${k}$), parameter :: EPS_TOL_${k}$ = ${EPS_TOL[k]}$_${k}$
+        !! `real(${k}$)`: smallest \(|3\Sigma_a^2 - 2I_1\Sigma_a + I_2| / \max(\Sigma_1^2, \Sigma_2^2, \Sigma_3^2)\)
+        !! taken as a distinct eigenvalue by `dEigenvalues_dTensor` (below it the root is treated as
+        !! repeated). Relative threshold.
+    real(${k}$), parameter :: EPS_TOL_SECOND_${k}$ = ${EPS_TOL_SECOND[k]}$_${k}$
+        !! `real(${k}$)`: the same relative threshold for `d2Eigenvalues_dTensor2`. Safe tolerance
+        !! threshold to prevent division by zero at repeated roots (singularities).
+    real(${k}$), parameter :: REPEATED_TOL_${k}$ = ${REPEATED_TOL[k]}$_${k}$
+        !! `real(${k}$)`: relative eigenvalue gap below which theta_ab of spectral_hessian takes its
+        !! limit value. The limit assumes phi is twice differentiable between the two eigenvalues: the
+        !! tolerance keeps that band narrow where it is not (CPB06, a = 2, k /= 0: h'' jumps at lam = 0).
+#:endfor
+
+contains
+#:for k in REAL_KINDS
+#:set T2 = tname('3D2Osym', k)
+#:set T4 = tname('3D4O3sym', k)
+
+    pure function dEigenvalues_dTensor_${k}$(Sigma, eigenvalues) result(res)
+        !!# First Derivative of Eigenvalues (`real(${k}$)`)
+        !!
+        !! Computes the first analytical derivative of all three eigenvalues of a symmetric
+        !! second-order tensor \(\Sigma_{ij}\) with respect to itself:
+        !!
+        !! \[ H_{mn}^{(a)} = \frac{\partial \Sigma_a}{\partial \Sigma_{mn}} \]
+        !!
+        !! ## Mathematical Formulation
+        !! The computation is based on the implicit differentiation of the characteristic
+        !! polynomial and the Cayley-Hamilton theorem. This approach yields a closed-form
+        !! expression free of eigenvectors:
+        !!
+        !! \[ H_{mn}^{(a)} = \frac{\Sigma^2_{mn} - (I_1 - \Sigma_a)\Sigma_{mn} + (\Sigma_a^2 - I_1\Sigma_a + I_2)\delta_{mn}}{3\Sigma_a^2 - 2I_1\Sigma_a + I_2} \]
+        !!
+        !! ## Singularity Handling (Repeated Roots)
+        !! When eigenvalues coincide (e.g., uniaxial tension or hydrostatic states), the denominator
+        !! approaches zero, leading to an indeterminate form \(0/0\). This routine robustly handles
+        !! such states by exploiting the identity property \(\sum_{a=1}^3 \frac{\partial \Sigma_a}{\partial \pmb{\Sigma}} = \mathbf{I}\).
+        !!
+        !! - **Two identical eigenvalues:** The remaining subspace is isotropically divided among the repeated roots.
+        !! - **Three identical eigenvalues:** The identity tensor is isotropically divided by 3.
+        !!
+        !! @note This function is pure and returns an array of three symmetric second-order tensors.
+        @:DEVICE()
+        type(${T2}$), intent(in)  :: Sigma          !! Symmetric second-order tensor \(\Sigma_{ij}\)
+        real(${k}$), intent(in)       :: eigenvalues(3) !! Eigenvalues \(\Sigma_1 \ge \Sigma_2 \ge \Sigma_3\) (as from `eigenvals`)
+        type(${T2}$)              :: res(3)         !! Resulting derivatives \(H_{ij}^{(a)}\) for \(a=1,2,3\)
+
+        real(${k}$)      :: I1, I2, D_scal(3), lam, tol
+        type(${T2}$) :: F_tensor
+        type(iden_2O)     :: I2O
+        integer           :: a, num_sing
+        integer           :: good_idx, sing_idx(3)
+
+        ! 1. Compute Invariants
+        ! First invariant: trace(\Sigma)
+        I1 = Sigma%vals(1) + Sigma%vals(2) + Sigma%vals(3)
+        ! Second invariant: 0.5*(I1^2 - tr(\Sigma^2))
+        I2 = 0.5_${k}$ * (I1**2 - (Sigma .ddot. Sigma))
+        ! Threshold relative to the eigenvalue scale (eigenvalues ordered as by eigenvals);
+        ! EPS_ABS avoids a zero threshold for the zero tensor
+        tol = EPS_TOL_${k}$*max(eigenvalues(1)**2, eigenvalues(2)**2, eigenvalues(3)**2, EPS_ABS_${k}$)
+        ! Second-order identity tensor (\delta_ij)
+
+        num_sing = 0
+        good_idx = 1 ! Default initialization
+
+        ! 2. First Pass: Compute denominators and identify singular roots
+        do a = 1, 3
+            lam = eigenvalues(a)
+            ! Characteristic polynomial derivative (scalar denominator)
+            D_scal(a) = (3.0_${k}$*lam - 2.0_${k}$*I1)*lam + I2
+
+            ! Check for distinct eigenvalues (well-conditioned denominator)
+            if (abs(D_scal(a)) > tol) then
+                ! Numerator tensor using Cayley-Hamilton expression
+                F_tensor = square(Sigma) - (I1 - lam)*Sigma + (lam*(lam - I1))*I2O + I2*I2O
+                res(a) = F_tensor / D_scal(a)
+                good_idx = a
+            else
+                ! Mark as repeated/singular root for post-processing
+                num_sing = num_sing + 1
+                sing_idx(num_sing) = a
+            end if
+        end do
+
+        ! 3. Second Pass: Repair singular roots using orthogonal projections
+        if (num_sing == 2) then
+            ! Two repeated eigenvalues (e.g., pure uniaxial tension/compression)
+            ! The degenerate subspace is isotropically averaged from the remaining identity space.
+            F_tensor = 0.5_${k}$ * (I2O - res(good_idx))
+            res(sing_idx(1)) = F_tensor
+            res(sing_idx(2)) = F_tensor
+
+        else if (num_sing == 3) then
+            ! Three repeated eigenvalues (e.g., pure hydrostatic stress)
+            ! All principal directions are isotropic.
+            F_tensor = (1.0_${k}$ / 3.0_${k}$) * I2O
+            res(1) = F_tensor
+            res(2) = F_tensor
+            res(3) = F_tensor
+        end if
+
+    end function dEigenvalues_dTensor_${k}$
+
+
+
+    pure function d2Eigenvalues_dTensor2_${k}$(Sigma, eigenvalues, H_tensors) result(res)
+        !!# Second Derivative (Hessian) of Eigenvalues (`real(${k}$)`)
+        !!
+        !! Computes the second analytical derivative of all three eigenvalues of a symmetric
+        !! second-order tensor \(\Sigma_{ij}\) with respect to itself:
+        !!
+        !! \[ \mathcal{H}_{mnop}^{(a)} = \frac{\partial^2 \Sigma_a}{\partial \Sigma_{mn} \partial \Sigma_{op}} \]
+        !!
+        !! This function is pure and returns an array of three fully symmetric fourth-order tensors.
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in)   :: Sigma          !! Symmetric second-order tensor \(\Sigma_{ij}\)
+        real(${k}$), intent(in)        :: eigenvalues(3) !! Eigenvalues \(\Sigma_1 \ge \Sigma_2 \ge \Sigma_3\) (as from `eigenvals`)
+        type(${T2}$), intent(in)   :: H_tensors(3)   !! Pre-computed first derivatives \(H_{ij}^{(a)}\)
+        type(${T4}$)              :: res(3)         !! Resulting Hessians for \(a=1,2,3\)
+
+        type(${T4}$) :: M_tensor
+        type(${T4}$) :: N_tensor
+        type(${T2}$) :: H
+        type(iden_2O) :: I2O
+        type(iden_4O4T) :: I4O4T
+        type(iden_4O3T) :: I4O3T
+        real(${k}$) :: I1, I2, D_scal, lam, tol
+        integer :: a, num_sing, good_idx, sing_idx(3)
+
+        ! First invariant: trace(\Sigma)
+        I1 = Sigma%vals(1) + Sigma%vals(2) + Sigma%vals(3)
+        ! Second invariant
+        I2 = 0.5_${k}$ * (I1**2 - (Sigma .ddot. Sigma))
+
+        ! Fourth-order tensor M_ijkl (analytical derivative of \Sigma^2)
+        M_tensor = dsquare(Sigma)
+        ! Threshold relative to the eigenvalue scale, as in dEigenvalues_dTensor
+        tol = EPS_TOL_SECOND_${k}$*max(eigenvalues(1)**2, eigenvalues(2)**2, eigenvalues(3)**2, EPS_ABS_${k}$)
+
+        num_sing = 0
+        good_idx = 1
+
+        do a = 1, 3
+            lam = eigenvalues(a)
+            D_scal = (3.0_${k}$*lam - 2.0_${k}$*I1)*lam + I2
+
+            if (abs(D_scal) > tol) then
+                H = H_tensors(a)
+                ! 2. Symmetrized fourth-order N_tensor (numerator) using Cayley-Hamilton-based expression
+                N_tensor = M_tensor &
+                           - (I1 - lam)*I4O4T &
+                           + (I1 - lam)*I4O3T &
+                           - 2.0_${k}$ * (Sigma .tdotsym. I2O) &
+                           + 2.0_${k}$ * (Sigma .tdotsym. H) &
+                           + 2.0_${k}$ * (2.0_${k}$*lam - I1) * (I2O .tdotsym. H) &
+                           - 2.0_${k}$ * (3.0_${k}$*lam - I1) * (.tdotsym. H)
+
+                res(a) = N_tensor / D_scal
+                good_idx = a
+            else
+                num_sing = num_sing + 1
+                sing_idx(num_sing) = a
+            end if
+        end do
+
+        ! Repair singular roots using orthogonal projections
+        if (num_sing == 2) then
+            ! Two repeated eigenvalues: Isotropic averaging of the degenerate subspace
+            res(sing_idx(1)) = (-0.5_${k}$) * res(good_idx)
+            res(sing_idx(2)) = (-0.5_${k}$) * res(good_idx)
+        else if (num_sing == 3) then
+            ! Three repeated eigenvalues: Isotropic distribution of the identity subspace
+            res(1) = 0.0_${k}$
+            res(2) = 0.0_${k}$
+            res(3) = 0.0_${k}$
+        end if
+
+    end function d2Eigenvalues_dTensor2_${k}$
+
+    pure subroutine spectral_decomposition_${k}$(T, lam, V)
+        !! Eigenvalues and orthonormal eigenvectors of T (`real(${k}$)`). The eigenvector of the eigenvalue
+        !! farthest from the middle one is the normalized cross product of two rows of
+        !! T - lam I (Kopp, 2008, Eq. 39); the other two come from one closed-form plane
+        !! rotation (no iteration) that diagonalizes the 2x2 block of T in the plane normal to
+        !! it, which stays accurate when they (nearly) coincide. That eigenvalue is at least
+        !! half the eigenvalue range away from the other two, so the cross product needs no fallback.
+        !! Called by the CPB06 and Yld2004-18p derivatives.
+        @:DEVICE()
+        type(${T2}$), intent(in) :: T   !! Symmetric tensor
+        real(${k}$), intent(out) :: lam(3)  !! Eigenvalues, in descending order
+        real(${k}$), intent(out) :: V(3,3)  !! Eigenvectors, column a belongs to lam(a)
+
+        real(${k}$) :: r1(3), r2(3), r3(3), c1(3), c2(3), c3(3), ca(3), u(3), w(3), tu(3), tw(3)
+        real(${k}$) :: n1, n2, n3, na, p, q, r, theta, tg, cs, sn
+        integer :: a, b, e
+
+        lam = eigenvals(T)
+
+        ! a: most separated eigenvalue; b, b+1: the remaining pair
+        if (lam(1) - lam(2) >= lam(2) - lam(3)) then
+            a = 1
+            b = 2
+        else
+            a = 3
+            b = 1
+        end if
+
+        ! Rows of T - lam(a) I and their pairwise cross products; the largest one is v_a
+        r1 = [T%vals(1) - lam(a), T%vals(4), T%vals(6)]
+        r2 = [T%vals(4), T%vals(2) - lam(a), T%vals(5)]
+        r3 = [T%vals(6), T%vals(5), T%vals(3) - lam(a)]
+        ! Scale the rows by a power of 2 so that their largest entry is O(1): otherwise |c|**2 of a
+        ! nearly isotropic T (rows ~1e-11) underflows into subnormals in sp and ca/sqrt(na) is not
+        ! a unit vector. The scaling is exact, so without under/overflow the result is bit-identical.
+        e = exponent(max(maxval(abs(r1)), maxval(abs(r2)), maxval(abs(r3))))
+        r1 = scale(r1, -e)
+        r2 = scale(r2, -e)
+        r3 = scale(r3, -e)
+        c1 = cross_${k}$(r1, r2)
+        c2 = cross_${k}$(r2, r3)
+        c3 = cross_${k}$(r3, r1)
+        n1 = c1(1)**2 + c1(2)**2 + c1(3)**2
+        n2 = c2(1)**2 + c2(2)**2 + c2(3)**2
+        n3 = c3(1)**2 + c3(2)**2 + c3(3)**2
+        if (n1 >= n2 .and. n1 >= n3) then
+            ca = c1
+            na = n1
+        else if (n2 >= n3) then
+            ca = c2
+            na = n2
+        else
+            ca = c3
+            na = n3
+        end if
+        if (na <= 0.0_${k}$) then
+            ! T is a multiple of the identity: any orthonormal basis is an eigenbasis
+            V = 0.0_${k}$
+            V(1,1) = 1.0_${k}$
+            V(2,2) = 1.0_${k}$
+            V(3,3) = 1.0_${k}$
+            return
+        end if
+        V(:,a) = ca/sqrt(na)
+
+        ! Orthonormal basis (u, w) of the plane normal to V(:,a)
+        if (abs(V(1,a)) > abs(V(2,a))) then
+            u = [-V(3,a), 0.0_${k}$, V(1,a)]/sqrt(V(1,a)**2 + V(3,a)**2)
+        else
+            u = [0.0_${k}$, V(3,a), -V(2,a)]/sqrt(V(2,a)**2 + V(3,a)**2)
+        end if
+        w = cross_${k}$(V(:,a), u)
+
+        ! Plane rotation (cs, sn) that diagonalizes [[p, q], [q, r]], the restriction of T to (u, w)
+        tu = [T%vals(1)*u(1) + T%vals(4)*u(2) + T%vals(6)*u(3), &
+              T%vals(4)*u(1) + T%vals(2)*u(2) + T%vals(5)*u(3), &
+              T%vals(6)*u(1) + T%vals(5)*u(2) + T%vals(3)*u(3)]
+        tw = [T%vals(1)*w(1) + T%vals(4)*w(2) + T%vals(6)*w(3), &
+              T%vals(4)*w(1) + T%vals(2)*w(2) + T%vals(5)*w(3), &
+              T%vals(6)*w(1) + T%vals(5)*w(2) + T%vals(3)*w(3)]
+        p = dot_product(u, tu)
+        q = dot_product(u, tw)
+        r = dot_product(w, tw)
+        tg = 0.0_${k}$
+        if (abs(q) > 0.0_${k}$) then
+            theta = (r - p)/(2.0_${k}$*q)
+            tg = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
+        end if
+        cs = 1.0_${k}$/sqrt(tg*tg + 1.0_${k}$)
+        sn = tg*cs
+        ! Rotated eigenvalues: p - tg*q for cs*u - sn*w, and r + tg*q for sn*u + cs*w
+        if (p - tg*q >= r + tg*q) then
+            V(:,b) = cs*u - sn*w
+            V(:,b+1) = sn*u + cs*w
+        else
+            V(:,b) = sn*u + cs*w
+            V(:,b+1) = cs*u - sn*w
+        end if
+    end subroutine spectral_decomposition_${k}$
+
+    pure function spectral_gradient_${k}$(V, dphi) result(res)
+        !! Gradient of a symmetric function of the eigenvalues, phi(T) = phi(lam_1, lam_2, lam_3):
+        !! dphi/dT = sum_a phi_a v_a (x) v_a, with phi_a = dphi/dlam_a supplied by the caller
+        !! (de Souza Neto et al., 2008, Eq. A.7), in `real(${k}$)`. Called by the CPB06 and
+        !! Yld2004-18p gradients.
+        @:DEVICE()
+        real(${k}$), intent(in) :: V(3,3)   !! Eigenvectors from spectral_decomposition
+        real(${k}$), intent(in) :: dphi(3)  !! phi_a = dphi/dlam_a
+        type(${T2}$) :: res
+
+        res%vals(1) = dphi(1)*V(1,1)*V(1,1) + dphi(2)*V(1,2)*V(1,2) + dphi(3)*V(1,3)*V(1,3)
+        res%vals(2) = dphi(1)*V(2,1)*V(2,1) + dphi(2)*V(2,2)*V(2,2) + dphi(3)*V(2,3)*V(2,3)
+        res%vals(3) = dphi(1)*V(3,1)*V(3,1) + dphi(2)*V(3,2)*V(3,2) + dphi(3)*V(3,3)*V(3,3)
+        res%vals(4) = dphi(1)*V(1,1)*V(2,1) + dphi(2)*V(1,2)*V(2,2) + dphi(3)*V(1,3)*V(2,3)
+        res%vals(5) = dphi(1)*V(2,1)*V(3,1) + dphi(2)*V(2,2)*V(3,2) + dphi(3)*V(2,3)*V(3,3)
+        res%vals(6) = dphi(1)*V(1,1)*V(3,1) + dphi(2)*V(1,2)*V(3,2) + dphi(3)*V(1,3)*V(3,3)
+    end function spectral_gradient_${k}$
+
+    pure function spectral_hessian_${k}$(lam, V, dphi, d2phi) result(res)
+        !! Hessian of phi(T) = phi(lam_1, lam_2, lam_3) (de Souza Neto et al., 2008, Box A.6;
+        !! Miehe, 1998, Eq. 10), in `real(${k}$)`:
+        !! d2phi/dT2 = sum_ab phi_ab E_a (x) E_b + sum_(a<b) 2 theta_ab N_ab (x) N_ab,
+        !! with E_a = v_a (x) v_a, N_ab = sym(v_a (x) v_b) and
+        !! theta_ab = (phi_a - phi_b)/(lam_a - lam_b). For (nearly) repeated eigenvalues
+        !! theta_ab takes its limit 1/2 (phi_aa + phi_bb) - phi_ab.
+        !! Called by the CPB06 and Yld2004-18p Hessians.
+        @:DEVICE()
+        real(${k}$), intent(in) :: lam(3)      !! Eigenvalues from spectral_decomposition
+        real(${k}$), intent(in) :: V(3,3)      !! Eigenvectors from spectral_decomposition
+        real(${k}$), intent(in) :: dphi(3)     !! phi_a = dphi/dlam_a
+        real(${k}$), intent(in) :: d2phi(3,3)  !! phi_ab = d2phi/dlam_a dlam_b
+        type(${T4}$) :: res
+
+        type(${T2}$) :: E1, E2, E3, N
+        real(${k}$) :: tol, theta
+
+        E1 = sym_outer_${k}$(V(:,1), V(:,1))
+        E2 = sym_outer_${k}$(V(:,2), V(:,2))
+        E3 = sym_outer_${k}$(V(:,3), V(:,3))
+        tol = REPEATED_TOL_${k}$*max(abs(lam(1)), abs(lam(3)))
+
+        ! Terms of a = 1, then of the pairs (1,2) and (1,3), of a = 2, of the pair (2,3), of a = 3
+        res = d2phi(1,1)*(.tdotsym. E1)
+        if (abs(lam(1) - lam(2)) > tol) then
+            theta = (dphi(1) - dphi(2))/(lam(1) - lam(2))
+        else
+            theta = 0.5_${k}$*(d2phi(1,1) + d2phi(2,2)) - d2phi(1,2)
+        end if
+        N = sym_outer_${k}$(V(:,1), V(:,2))
+        res = res + (2.0_${k}$*d2phi(1,2))*(E1 .tdotsym. E2) + (2.0_${k}$*theta)*(.tdotsym. N)
+
+        if (abs(lam(1) - lam(3)) > tol) then
+            theta = (dphi(1) - dphi(3))/(lam(1) - lam(3))
+        else
+            theta = 0.5_${k}$*(d2phi(1,1) + d2phi(3,3)) - d2phi(1,3)
+        end if
+        N = sym_outer_${k}$(V(:,1), V(:,3))
+        res = res + (2.0_${k}$*d2phi(1,3))*(E1 .tdotsym. E3) + (2.0_${k}$*theta)*(.tdotsym. N)
+
+        res = res + d2phi(2,2)*(.tdotsym. E2)
+        if (abs(lam(2) - lam(3)) > tol) then
+            theta = (dphi(2) - dphi(3))/(lam(2) - lam(3))
+        else
+            theta = 0.5_${k}$*(d2phi(2,2) + d2phi(3,3)) - d2phi(2,3)
+        end if
+        N = sym_outer_${k}$(V(:,2), V(:,3))
+        res = res + (2.0_${k}$*d2phi(2,3))*(E2 .tdotsym. E3) + (2.0_${k}$*theta)*(.tdotsym. N)
+
+        res = res + d2phi(3,3)*(.tdotsym. E3)
+    end function spectral_hessian_${k}$
+
+    pure function sym_outer_${k}$(x, y) result(res)
+        ! Symmetric part of the outer product of two vectors, sym(x (x) y); x = y gives x (x) x.
+        ! Used by spectral_hessian
+        @:DEVICE()
+        real(${k}$), intent(in) :: x(3), y(3)
+        type(${T2}$) :: res
+
+        res%vals(1) = 0.5_${k}$*(x(1)*y(1) + x(1)*y(1))
+        res%vals(2) = 0.5_${k}$*(x(2)*y(2) + x(2)*y(2))
+        res%vals(3) = 0.5_${k}$*(x(3)*y(3) + x(3)*y(3))
+        res%vals(4) = 0.5_${k}$*(x(1)*y(2) + y(1)*x(2))
+        res%vals(5) = 0.5_${k}$*(x(2)*y(3) + y(2)*x(3))
+        res%vals(6) = 0.5_${k}$*(x(1)*y(3) + y(1)*x(3))
+    end function sym_outer_${k}$
+
+    pure function cross_${k}$(x, y) result(res)
+        ! Cross product x * y; used by spectral_decomposition
+        @:DEVICE()
+        real(${k}$), intent(in) :: x(3), y(3)
+        real(${k}$) :: res(3)
+
+        res = [x(2)*y(3) - x(3)*y(2), x(3)*y(1) - x(1)*y(3), x(1)*y(2) - x(2)*y(1)]
+    end function cross_${k}$
+#:endfor
+
+end module muscle_math_spectral_derivs

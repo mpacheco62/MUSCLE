@@ -144,7 +144,7 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
             !! Tensor whose norm is computed.
         real(${k}$) :: res
             !! Modified L1 norm.
-        res = ${join_terms([('{}*'.format(c.mult) if c.mult > 1 else '') + 'abs(a%vals({}))'.format(c.pos[0]) for c in lay.comps])}$
+        res = ${join_terms(norm_terms(lay, 'a%vals'))}$
     end function norm_${P}$
 
     pure function ddot_${S}$_${P}$(a, b) result(res)

@@ -23,6 +23,10 @@
 
 #! Concrete tensor type name: ${tname('3D2Osym', k)}$ -> ten_3D2Osym_dp
 #:set tname = muscle_meta.tname
+#! Fortran module of a tensor family: ${family_module('2Osym')}$ -> muscle_tensor_2osym
+#:set family_module = muscle_meta.family_module
+#! Terms of the family `norm` of a 2nd-order tensor: norm_terms(layout('2Osym', '3D'), 'a%vals')
+#:set norm_terms = muscle_meta.norm_terms
 
 #! Identity tensors (dimension independent): IDENTITIES = ['2O', '4O3T', '4O4T'] (unscaled names,
 #! the scaled ones append 'S'); type names: ${iname('2O')}$ -> iden_2O, ${iname('2OS', k)}$ ->

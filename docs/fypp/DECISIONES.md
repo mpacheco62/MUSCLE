@@ -330,3 +330,88 @@ orden, que devuelven siempre `ten_3D4O3sym`); casi todos combinan tensores con i
 9. FMA: con `-mfma`/`-march=native` el compilador puede fusionar productos y sumas y cambiar el
    redondeo frente al golden. El proyecto no usa esos flags; la equivalencia bit a bit con el golden
    se garantiza sin FMA.
+
+## D-016 — Math sin closures: alcance de la Fase 5
+**Estado:** Aceptada (2026-10-31, decisiones del usuario al planificar la Fase 5)
+**Contexto:** las diferencias finitas de `muscle_math_derivatives` reciben la función como
+`procedure(...)`; las llaman 8 sitios de modelos y solvers con funciones internas que capturan
+`self` (trampolines, no aptas para GPU), que sólo desaparecen al migrar los modelos (Fase 6). El
+paso relativo dp es 1e-7 (escalar, 2O), 1e-6 (escalar de 2Osym) y 1e-4 (segunda derivada y
+2Osym→2Osym), mínimo 1e-40 (1e-35 en 2Osym→2Osym).
+**Decisión:**
+1. **Convivencia hasta la Fase 6:** la Fase 5 añade macros FYPP de diferencias finitas que llaman
+   directamente a la función concreta (sp/dp, `pure`, `@:DEVICE()`); la API con `procedure(...)`
+   se conserva (sp/dp), marcada host-only, y se borra en la Fase 6 cuando los modelos usen las
+   macros.
+2. **Pasos por kind:** dp conserva exactamente los valores actuales (mismos bits); sp usa pasos
+   derivados de ε_sp: ~ε^(1/3) (≈5e-3) en la primera derivada central, ~ε^(1/4) (≈2e-2) en la
+   segunda, mínimo absoluto 1e-30. Constantes por kind en `muscle_kinds` (como D-010).
+3. **Se conservan** las `derivative_escalar_tensor3x3*` de `muscle_math_operations` (migradas a
+   sp/dp como API host-only) y la copia sin registrar `tests/test_muscle_math_operations.f90`.
+4. (Decisión del usuario 2026-10-31, tras el paso 0) **Bug corregido en el paso 2:** con argumento
+   nulo el paso mínimo absoluto 1e-40 (1e-35 en 2Osym→2Osym) hace que f(±paso) se redondee a f(0)
+   y la derivada numérica sale 0 sin serlo (p.ej. `derivative2O` en el tensor cero). Regla elegida
+   por el usuario (paso 2, 2026-10-31): `h = rel` si el argumento es exactamente 0, si no el paso
+   histórico `h = max(|x|·rel, h_min)` (|x| = `abs` o la norma del tensor; `h_min` el mínimo
+   histórico por kind: 1e-40 dp, 1e-35 en el jacobiano, 1e-30 sp), de modo que sólo cambia x = 0.
+   **Revisión (cierre de la Fase 5, decisión del usuario 2026-10-31):** en x = 0 el paso de las
+   primeras derivadas (`FD_DERIV`, `FD_GRAD`, `FD_JAC`) es `FD_STEP_ZERO_<k> = sqrt(ε_k)` (≈1.5e-8 dp,
+   ≈3.5e-4 sp) en vez del paso relativo. Motivo: el paso en cero debe ser grande para que el
+   redondeo no lo borre (error ~ε|f(0)|/h) y chico para no salir de la zona suave (en los return
+   mappings, `derivative(wrapper, strain)` con `strain = 0` en el primer incremento: con el paso
+   relativo 1e-4 la perturbación podía cruzar la fluencia y dar un tangente elastoplástico en cero;
+   el histórico 1e-35 funcionaba sólo por coincidencia, porque σ(0) = 0 y es lineal). √ε da ~1e-8 de
+   precisión y una perturbación de deformación despreciable. La segunda derivada (`FD_HESS`)
+   conserva el paso relativo ~ε^(1/4) en x = 0 (con √ε el redondeo ε/h² sería de orden 1). En sp
+   √ε ≈ 3.5e-4 puede acercarse a una deformación de fluencia: en la Fase 6 los return mappings deben
+   pasar un paso explícito ligado al material (p.ej. una fracción de la deformación de fluencia) o
+   usar el tangente consistente analítico, dejando la diferencia finita como respaldo. Se descartó `h = max(|x|·rel, rel)` porque
+   cambiaba todo |x| < 1, incluidos los tangentes de los modelos (deformaciones ~1e-3, hasta 6e-3
+   relativo), y un suelo `rel·√ε` porque en x = 0 deja un paso demasiado chico (error ~10%).
+   **Cambio de comportamiento aprobado**, sólo para argumentos nulos; los registros golden
+   afectados se actualizan documentados. Efecto en los modelos: las derivadas numéricas por defecto
+   de `muscle_vp_base` (`ep`, `epd`) y `muscle_vp_overstress_base` (`ep`), evaluadas típicamente
+   con `ep = 0`/`epd = 0` en el primer incremento plástico, pasan de 0 a la derivada real: cambia la
+   respuesta de los modelos viscoplásticos en ese primer paso (ningún test de modelo lo fijaba).
+   Limitación: un x no nulo pero diminuto conserva el paso histórico (y su imprecisión).
+   Se extiende a `derivative_escalar_tensor3x3sym` (`muscle_math_operations_host`), cuyo paso es
+   relativo a |f(x)|: pasa a ser relativo a |x| con el mínimo por kind (decisión del usuario,
+   2026-10-31).
+5. (Paso 1, decisión del usuario 2026-10-31) `eigenvals`: el umbral histórico `EPS=1e-10` era un
+   literal real32 (1.0000000134e-10); pasa a `1.0e-10_dp` (**cambio aprobado**, sólo la franja
+   (1e-10, 1.0000000134e-10]). En sp el umbral es 1e-9: es una guarda contra 0/0, no un compromiso
+   de precisión (medido: error ≤ 2e-7 frente a ~3e-5 con 4e-5).
+6. (Paso 1, decisión del usuario 2026-10-31) Derivadas espectrales: los umbrales `EPS_TOL` y
+   `EPS_TOL_SECOND` (antes absolutos, en unidades de tensión²) pasan a ser **relativos a
+   max(λ1², λ2², λ3²) en sp y dp** (no depende del orden de los autovalores), con los mismos valores por kind. **Cambio de comportamiento
+   aprobado en dp** (igual para tensiones de orden 1; distinto para escalas lejanas de 1, donde el
+   umbral absoluto era incorrecto: en sp daba |H| hasta 32 con autovalores repetidos y escala
+   1000). `REPEATED_TOL` ya era relativo (1e-9 dp / 1e-4 sp). Ningún golden cambió (casos de
+   orden 1).
+7. Pasos de diferencias finitas por kind en `muscle_kinds` (D-016.2), compartidos por la API
+   host-only y las macros del paso 2; los umbrales propios de un algoritmo (eigenvals, espectral)
+   quedan locales en su plantilla. Paso adelantado sp ≈ √ε_sp (3e-4), con el mismo criterio que
+   el 1e-8 ≈ √ε_dp histórico.
+8. Patrón host-only: las rutinas que reciben `procedure(...)` viven en módulos `*_host`
+   (`muscle_math_operations_host`, `muscle_math_derivatives_host`), re-exportados por el módulo de
+   kernel, como `muscle_tensor_io`. Se borran en la Fase 6 (D-016.1).
+9. Bits macro ↔ API host: en dp las macros de diferencias finitas dan los mismos bits que la API
+   host sólo con las mismas opciones de compilación; si el compilador integra (inline) y vectoriza
+   la función derivada, cambian los últimos bits (medido 4e-11 relativo con gfortran -O3). En la
+   Fase 6, al pasar los modelos de `derivative(wrapper, …)` a las macros, la equivalencia se
+   comprueba con tolerancia (no bit a bit).
+10. (Paso 3, 2026-10-31; recomendación del revisor) Solver lineal
+    pequeño `muscle_math_lu_solve`: `LU<n>SOLVE` (n = 2..9; el 1x1 es una división dentro de `lu_solve`; sp/dp, `pure` + `@:DEVICE()`) con la LU de
+    `muscle_math_lu_inverse` compartida con `M<n>INV` (mismos bits verificados). En kernels se llama
+    a `LU<n>SOLVE` con n fijo por la plantilla; el frente `lu_solve` (`select case` por tamaño) es
+    una comodidad para host y tests (en dispositivo la rama 9x9 fijaría los registros, D-006).
+    `KAPPA` opcional es κ∞ exacto (misma definición que en `M<n>INV`, sólo se paga si se pide); un
+    estimador O(n²) sólo si el perfil de la Fase 7 lo pide. Contrato: pivote nulo o NaN → `OK_FLAG =
+    .false.`, `x = 0`, `KAPPA = huge`; un tamaño inválido se reporta igual que una matriz singular
+    (quien llama puede comprobar `size(A,1) <= LU_SOLVE_MAX_N`). `muscle_math_linsolvers` (Gauss,
+    Gauss-Seidel, `mklsolve` con `sgesv`/`dgesv`) queda host-only en sp/dp.
+11. (Paso 4, 2026-10-31) `spectral_decomposition` escala las filas de T − λI por una potencia de 2
+    antes de los productos vectoriales (corrige en sp la pérdida de normalización con cortes
+    ~1e-11). El escalado es exacto: dp da los mismos bits salvo cuando esas filas rozan el
+    underflow/overflow (≲ 1e-154 o ≳ 1e154), donde el resultado pasa a ser correcto (cambio de
+    comportamiento dp sólo en ese borde).

@@ -1,0 +1,180 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+! lint: host-only
+#! Finite differences that take the function as a `procedure(...)` argument: host-only API kept in
+#! sp/dp until Phase 6 (D-016.1, D-016.8). The bodies are the kernel macros of muscle_fd.fypp, so
+#! both give the same bits for the same function. Re-exported by muscle_math_derivatives.
+
+module muscle_math_derivatives_host
+    !! Central finite-difference derivatives of a function passed as a `procedure(...)` argument,
+    !! for each real kind (`derivative_scalar_scalar_sp`, `..._dp`, ...). Host-only: procedure
+    !! arguments are not allowed in kernels, where the macros `FD_DERIV`, `FD_GRAD`, `FD_JAC` and
+    !! `FD_HESS` of `include/muscle_fd.fypp` call the function directly (D-016). Removed in
+    !! Phase 6. Use them through `muscle_math_derivatives`.
+    !!
+    !! Default step \( h = \max(|x|\,rel, min) \) (the historical rule), and \( h = rel \) if
+    !! \( |x| = 0 \) (D-016.4: the minimum 1e-40 gave a zero derivative at a zero argument);
+    !! \( |x| \) is the absolute value of a scalar or the `norm` of a tensor, `rel` a constant of
+    !! `muscle_kinds` per routine and kind and `min` = `FD_STEP_MIN_<k>` (`FD_STEP_MIN_JAC_<k>` for
+    !! the jacobian). The optional `eps` gives the step explicitly.
+    use muscle_kinds, only : sp, dp
+    use muscle_tensor_2o, only : ${', '.join(tname('3D2O', k) for k in REAL_KINDS)}$
+    use muscle_tensor_2osym, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$
+    use muscle_tensor_4o2sym, only : ${', '.join(tname('3D4O2sym', k) for k in REAL_KINDS)}$
+    use muscle_tensor_4o3sym, only : ${', '.join(tname('3D4O3sym', k) for k in REAL_KINDS)}$
+    implicit none
+    private
+
+    public :: derivative, derivative2O
+
+    interface derivative
+        module procedure ${kspecifics('{0}_{1}', 'derivative_scalar_scalar')}$
+        module procedure ${kspecifics('{0}_{1}', 'derivative_scalar_3D2O')}$
+        module procedure ${kspecifics('{0}_{1}', 'derivative_scalar_3D2Osym')}$
+        module procedure ${kspecifics('{0}_{1}', 'derivative_3D2Osym_3D2Osym')}$
+    end interface derivative
+
+    interface derivative2O
+        module procedure ${kspecifics('{0}_{1}', 'derivative2O_scalar_3D2Osym')}$
+    end interface derivative2O
+
+    abstract interface
+#:for k in REAL_KINDS
+        pure function f_scalar_scalar_${k}$(x)
+            import :: ${k}$
+            implicit none
+            real(${k}$), intent(in) :: x
+            real(${k}$) :: f_scalar_scalar_${k}$
+        end function f_scalar_scalar_${k}$
+
+        pure function f_scalar_3D2O_${k}$(x)
+            import :: ${k}$, ${tname('3D2O', k)}$
+            implicit none
+            type(${tname('3D2O', k)}$), intent(in) :: x
+            real(${k}$) :: f_scalar_3D2O_${k}$
+        end function f_scalar_3D2O_${k}$
+
+        pure function f_scalar_3D2Osym_${k}$(x)
+            import :: ${k}$, ${tname('3D2Osym', k)}$
+            implicit none
+            type(${tname('3D2Osym', k)}$), intent(in) :: x
+            real(${k}$) :: f_scalar_3D2Osym_${k}$
+        end function f_scalar_3D2Osym_${k}$
+
+        pure function f_3D2Osym_3D2Osym_${k}$(x)
+            import :: ${tname('3D2Osym', k)}$
+            implicit none
+            type(${tname('3D2Osym', k)}$), intent(in) :: x
+            type(${tname('3D2Osym', k)}$) :: f_3D2Osym_3D2Osym_${k}$
+        end function f_3D2Osym_3D2Osym_${k}$
+#:endfor
+    end interface
+
+contains
+#:for k in REAL_KINDS
+
+    pure function derivative_scalar_scalar_${k}$(func, x, eps) result(res)
+        !! Central difference \( df/dx \) of a `real(${k}$)` function (`FD_DERIV`), default
+        !! relative step `FD_STEP_CEN_${k}$`.
+        implicit none
+        procedure(f_scalar_scalar_${k}$) :: func
+            !! Function.
+        real(${k}$), intent(in) :: x
+            !! Argument.
+        real(${k}$), intent(in), optional :: eps
+            !! Explicit step.
+        real(${k}$) :: res
+            !! Derivative.
+
+        if (present(eps)) then
+            @:FD_DERIV(res, func({x}), x, ${k}$, step=eps, indent=12)
+        else
+            @:FD_DERIV(res, func({x}), x, ${k}$, indent=12)
+        end if
+    end function derivative_scalar_scalar_${k}$
+
+    pure function derivative_scalar_3D2O_${k}$(func, mat, eps) result(res)
+        !! Central difference \( \partial f/\partial A_{ij} \) of a scalar function of a
+        !! `${tname('3D2O', k)}$` (`FD_GRAD`), default relative step `FD_STEP_CEN_${k}$`.
+        implicit none
+        procedure(f_scalar_3D2O_${k}$) :: func
+            !! Function.
+        type(${tname('3D2O', k)}$), intent(in) :: mat
+            !! Argument.
+        real(${k}$), intent(in), optional :: eps
+            !! Explicit step.
+        type(${tname('3D2O', k)}$) :: res
+            !! Gradient.
+
+        if (present(eps)) then
+            @:FD_GRAD(res, func({x}), mat, ${k}$, 3D, fam=2O, step=eps, indent=12)
+        else
+            @:FD_GRAD(res, func({x}), mat, ${k}$, 3D, fam=2O, indent=12)
+        end if
+    end function derivative_scalar_3D2O_${k}$
+
+    pure function derivative_scalar_3D2Osym_${k}$(func, mat, eps) result(res)
+        !! Central difference of a scalar function of a `${tname('3D2Osym', k)}$` (`FD_GRAD`),
+        !! shear components perturbed by half the step; default relative step
+        !! `FD_STEP_CEN_2OSYM_${k}$`.
+        implicit none
+        procedure(f_scalar_3D2Osym_${k}$) :: func
+            !! Function.
+        type(${tname('3D2Osym', k)}$), intent(in) :: mat
+            !! Argument.
+        real(${k}$), intent(in), optional :: eps
+            !! Explicit step.
+        type(${tname('3D2Osym', k)}$) :: res
+            !! Gradient.
+
+        if (present(eps)) then
+            @:FD_GRAD(res, func({x}), mat, ${k}$, 3D, step=eps, indent=12)
+        else
+            @:FD_GRAD(res, func({x}), mat, ${k}$, 3D, indent=12)
+        end if
+    end function derivative_scalar_3D2Osym_${k}$
+
+    pure function derivative2O_scalar_3D2Osym_${k}$(func, mat, eps) result(res)
+        !! Second derivative of a scalar function of a `${tname('3D2Osym', k)}$` as a
+        !! `${tname('3D4O3sym', k)}$` (`FD_HESS`), default relative step `FD_STEP_CEN2_${k}$`.
+        implicit none
+        procedure(f_scalar_3D2Osym_${k}$) :: func
+            !! Function.
+        type(${tname('3D2Osym', k)}$), intent(in) :: mat
+            !! Argument.
+        real(${k}$), intent(in), optional :: eps
+            !! Explicit step.
+        type(${tname('3D4O3sym', k)}$) :: res
+            !! Second derivative.
+
+        if (present(eps)) then
+            @:FD_HESS(res, func({x}), mat, ${k}$, 3D, step=eps, indent=12)
+        else
+            @:FD_HESS(res, func({x}), mat, ${k}$, 3D, indent=12)
+        end if
+    end function derivative2O_scalar_3D2Osym_${k}$
+
+    pure function derivative_3D2Osym_3D2Osym_${k}$(func, mat, eps) result(res)
+        !! Jacobian of a `${tname('3D2Osym', k)}$`-valued function of a `${tname('3D2Osym', k)}$`
+        !! as a `${tname('3D4O2sym', k)}$` (`FD_JAC`), default relative step `FD_STEP_CEN_JAC_${k}$`.
+        implicit none
+        procedure(f_3D2Osym_3D2Osym_${k}$) :: func
+            !! Function.
+        type(${tname('3D2Osym', k)}$), intent(in) :: mat
+            !! Argument.
+        real(${k}$), intent(in), optional :: eps
+            !! Explicit step.
+        type(${tname('3D4O2sym', k)}$) :: res
+            !! Jacobian.
+
+        if (present(eps)) then
+            @:FD_JAC(res, func({x}), mat, ${k}$, 3D, step=eps, indent=12)
+        else
+            @:FD_JAC(res, func({x}), mat, ${k}$, 3D, indent=12)
+        end if
+    end function derivative_3D2Osym_3D2Osym_${k}$
+#:endfor
+
+end module muscle_math_derivatives_host
