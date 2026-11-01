@@ -1,0 +1,108 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
+#:set PARAMS = [('B', 'real', '', r'Hardening modulus \( B \).', None), &
+    &          ('n', 'real', '', r'Hardening exponent \( n \).', None), &
+    &          ('B1', 'real', '', r'Rate coefficient \( B_1 \).', None), &
+    &          ('B2', 'real', '', r'Rate offset \( B_2 \).', None), &
+    &          ('m', 'real', '', r'Rate exponent \( m \) (0: no rate term).', None), &
+    &          ('sig_u', 'real', '', r'Athermal stress \( \sigma_u \).', None)]
+
+module muscle_vp_va
+    !! VA viscoplastic law (self-contained: it does not compose a hardening law):
+    !! \[ \sigma(\epsilon_p, \dot\epsilon_p) = B \bar\epsilon_p^{\,n} \left[ 1 + B_1 \dot{\bar\epsilon}_p^{1/m}
+    !!    - B_2 \right] + \sigma_u, \quad \bar\epsilon_p = \max(\epsilon_p, 10^{-10}), \quad
+    !!    \dot{\bar\epsilon}_p = \max(\dot\epsilon_p, 10^{-12}) \]
+    !! (without the \( B_1 \) term if \( m = 0 \)). Partial derivatives:
+    !! \[ \frac{\partial\sigma}{\partial\epsilon_p} = B n \bar\epsilon_p^{\,n-1} \left[ 1 + B_1
+    !!    \dot{\bar\epsilon}_p^{1/m} - B_2 \right], \quad
+    !!    \frac{\partial\sigma}{\partial\dot\epsilon_p} = B \bar\epsilon_p^{\,n} \frac{B_1}{m}
+    !!    \dot{\bar\epsilon}_p^{1/m - 1} \]
+    !! and `dstress_dep` = `dflow_dep + dflow_depd/dt` (same results as the original code, also for
+    !! \( \Delta t = 0 \): \( \pm\infty \) or NaN).
+    !!
+    !! Known issue (D-017.7, kept): the derivatives are evaluated at the floored values, so below the
+    !! floors (\( \epsilon_p < 10^{-10} \), \( \dot\epsilon_p < 10^{-12} \)), where `flow_stress` is
+    !! constant, they are not 0.
+    !!
+    !! Kernel API: parameter types `vp_va_<k>` and `pure` functions `vp_flow_stress_va_<k>(prm, ep,
+    !! epd)`, `vp_dflow_dep_va_<k>`, `vp_dflow_depd_va_<k>(prm, ep, epd)` and
+    !! `vp_dstress_dep_va_<k>(prm, ep, epd, dt)` for each real kind, also through the generics `vp_*`
+    !! of `muscle_vp_laws`. `VA_viscoplastic` is the historical OO type (host only, removed in
+    !! Phase 7).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_vp_base, only : Base_viscoplastic_law
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('vp', 'va')
+    public :: VA_viscoplastic
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('vp', 'va', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('vp', 'va', 'VA_viscoplastic', 'Base_viscoplastic_law', PARAMS)
+
+contains
+#:for k in REAL_KINDS
+    pure function vp_va_rate_${k}$(prm, epd) result(f)
+        !! Rate factor \( 1 + B_1 \dot{\bar\epsilon}_p^{1/m} - B_2 \) of the VA model in `real(${k}$)`
+        !! (\( 1 - B_2 \) if \( m = 0 \)), at the floored rate.
+        implicit none
+        @:DEVICE()
+        type(vp_va_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate.
+        real(${k}$) :: f
+            !! Rate factor.
+
+        if (prm%m /= 0.0_${k}$) then
+            f = 1.0_${k}$ + prm%B1*(max(epd, 1.0e-12_${k}$)**(1.0_${k}$/prm%m)) - prm%B2
+        else
+            f = 1.0_${k}$ - prm%B2
+        end if
+    end function vp_va_rate_${k}$
+
+    pure function vp_va_drate_${k}$(prm, epd) result(df)
+        !! Derivative \( (B_1/m) \dot{\bar\epsilon}_p^{1/m - 1} \) of the rate factor of the VA model in
+        !! `real(${k}$)` (0 if \( m = 0 \)), at the floored rate.
+        implicit none
+        @:DEVICE()
+        type(vp_va_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate.
+        real(${k}$) :: df
+            !! Derivative of the rate factor.
+
+        if (prm%m /= 0.0_${k}$) then
+            df = (prm%B1/prm%m)*(max(epd, 1.0e-12_${k}$)**(1.0_${k}$/prm%m - 1.0_${k}$))
+        else
+            df = 0.0_${k}$
+        end if
+    end function vp_va_drate_${k}$
+
+    $:MODEL_FUNCTION('vp', 'va', 'flow_stress', k)
+        res = prm%B*(max(ep, 1.0e-10_${k}$)**prm%n)*vp_va_rate_${k}$(prm, epd) + prm%sig_u
+    end function vp_flow_stress_va_${k}$
+
+    $:MODEL_FUNCTION('vp', 'va', 'dflow_dep', k)
+        res = prm%B*prm%n*(max(ep, 1.0e-10_${k}$)**(prm%n - 1.0_${k}$))*vp_va_rate_${k}$(prm, epd)
+    end function vp_dflow_dep_va_${k}$
+
+    $:MODEL_FUNCTION('vp', 'va', 'dflow_depd', k)
+        res = prm%B*(max(ep, 1.0e-10_${k}$)**prm%n)*vp_va_drate_${k}$(prm, epd)
+    end function vp_dflow_depd_va_${k}$
+
+    $:MODEL_FUNCTION('vp', 'va', 'dstress_dep', k, doc='dflow_dep + dflow_depd/dt, computed once (original operation order).')
+        real(${k}$) :: ep_eff
+
+        ep_eff = max(ep, 1.0e-10_${k}$)
+        res = prm%B*prm%n*(ep_eff**(prm%n - 1.0_${k}$))*vp_va_rate_${k}$(prm, epd) &
+              + (prm%B*(ep_eff**prm%n)*vp_va_drate_${k}$(prm, epd))/dt
+    end function vp_dstress_dep_va_${k}$
+#:endfor
+    $:OO_ADAPTER_PROCS('vp', 'va', 'VA_viscoplastic', PARAMS)
+
+end module muscle_vp_va

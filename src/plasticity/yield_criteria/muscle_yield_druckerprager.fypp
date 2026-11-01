@@ -1,0 +1,298 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the yield family (D-017.6): include/muscle_models_common.fypp
+#! f_factor and I1_factor are derived from beta, K and the hardening mode by the initializer
+#! (`yield_druckerprager_init`, OO `init`): private in the kernel type (D-017.10b). The historical OO
+#! type keeps all its components private (`oo_private`). Defaults as the historical type (an object
+#! without `init` has K = 0).
+#:set PARAMS = [('f_factor', 'real', '', r'Calibration factor \( f \) of the deviatoric term (hardening mode).', '0.0', True), &
+    &          ('I1_factor', 'real', '', r'Coefficient \( \tan\beta \, f \) of the pressure \( p \).', '0.0', True), &
+    &          ('K', 'real', '', r'Ratio \( K \) of the yield stresses in triaxial tension and compression (\( 0.778 \le K \le 1 \)).', '0.0'), &
+    &          ('hardening_mode', 'integer', '', r'Hardening calibration mode (`DP_HARDENING_TENSION`, `DP_HARDENING_COMPRESSION` or `DP_HARDENING_SHEAR`).', 'DP_HARDENING_TENSION')]
+#:set OO_EXTRA = [('init', 'init_tbp', 'Sets beta (degrees), K and the hardening mode and computes the calibration factors.')]
+#! Thresholds of the zero stress (absolute, on |sigma|) and of the hydrostatic axis (relative, q/|sigma|)
+#! (D-017.11b). dp: the historical values. sp: relative 1e-5 (~100 eps_sp: a hydrostatic stress
+#! that is not exact in binary, q/|sigma| ~ 8e-8, is detected, and the zone where the gradient loses
+#! its deviatoric part stays small, relevant in strongly confined states); the absolute one is any value below the smallest nonzero |sigma| of sp (~4e-23, sqrt of the smallest
+#! subnormal), i.e. |sigma| == 0
+#:set TOL_ABS = {'sp': '1.0e-30', 'dp': '1.0e-40'}
+#:set TOL_REL = {'sp': '1.0e-5', 'dp': '1.0e-9'}
+
+module muscle_yield_druckerprager
+    !! Extended linear Drucker-Prager yield criterion matching the Abaqus formulation (Dassault
+    !! Systemes, 2017, Abaqus Theory Guide, "Models for granular or polymer behavior").
+    !!
+    !! The yield function is \( F = t + \tan(\beta) \, f \, p - Y = 0 \) (equivalent stress
+    !! \( \sigma_{eq} = f\,t + \tan(\beta) \, f \, p \), with \( f \) the calibration factor of the
+    !! hardening mode), where:
+    !!
+    !! - \( p = \frac{1}{3} \mathrm{tr}(\boldsymbol{\sigma}) \) is the hydrostatic stress;
+    !! - \( q = \sqrt{\frac{3}{2} \mathbf{S}:\mathbf{S}} \) is the Mises equivalent stress;
+    !! - \( t = \frac{1}{2} q \left[ 1 + \frac{1}{K} - \left(1 - \frac{1}{K}\right) \left(\frac{r}{q}\right)^3 \right] \),
+    !!   \( r^3 = \frac{9}{2} \mathbf{S}^2 : \mathbf{S} \);
+    !! - \( K \) is the ratio of yield stress in triaxial tension to triaxial compression
+    !!   (\( 0.778 \le K \le 1 \)).
+    !!
+    !! Analytical gradient \( \mathbf{N} = f (\alpha_1 \mathbf{S} + \alpha_2 \mathbf{S}^2) + \alpha_3 \mathbf{I} \)
+    !! and Hessian (derivative of N; the hydrostatic part is linear and drops out)
+    !! \[ \mathbb{H} = \alpha_1 \mathbb{P} + \alpha_2 \frac{\partial \mathbf{S}^2}{\partial \mathbf{S}}
+    !!    + \beta_1 \mathbf{S} \otimes \mathbf{S} + \beta_2 \, \mathrm{sym}(\mathbf{S} \otimes \mathbf{S}^2) \]
+    !! with \( \mathbb{P} \) the deviatoric projector (f inside the coefficients). The Hessian is
+    !! evaluated with \( \mathbf{n} = \mathbf{S}/q \) (every coefficient \( O(1/q) \), no power
+    !! \( q^3 \), \( q^4 \): D-017.11d), so it is correct over the whole range in sp and dp (before,
+    !! in sp, \( q^4 \) overflowed for \( q \gtrsim 4.3 \cdot 10^{9} \)).
+    !!
+    !! Guards (unchanged from the original code in dp; D-017.9 does not apply): at a zero stress
+    !! (\( |\boldsymbol\sigma| < 10^{-40} \) in dp, \( 10^{-30} \), i.e. exactly zero, in sp) and on
+    !! the hydrostatic axis (\( q/|\boldsymbol\sigma| < 10^{-9} \) in dp, \( 10^{-5} \) in sp,
+    !! D-017.11b, so that a hydrostatic stress that is not exact in binary is detected in both kinds)
+    !! the equivalent stress is \( \tan(\beta) f p \) (0 at a zero
+    !! stress), the gradient \( (\tan(\beta) f/3) \mathbf{I} \) and the Hessian 0. Known limits, kept
+    !! with the same results as the original code (D-017.9): the apex is not differentiable, so there
+    !! the analytical gradient (a subgradient) and a numerical derivative differ; an object without
+    !! `init` (or the kernel type left at its defaults) has \( K = 0 \): the equivalent stress off the
+    !! hydrostatic axis and the numerical derivatives of the OO base give NaN or Inf. The equivalent
+    !! stress and the gradient keep the original form with \( r^3/q^3 \): in sp they need
+    !! \( 2 \cdot 10^{-13} \lesssim q \lesssim 7 \cdot 10^{12} \) (no under- or overflow of
+    !! \( q^3 \) and \( \mathbf{S}^2 : \mathbf{S} \)).
+    !!
+    !! Kernel API: parameter types `yield_druckerprager_<k>` (built only with
+    !! `yield_druckerprager_init`, which computes the private components f_factor and I1_factor), and
+    !! `pure` functions `yield_stress_eq_druckerprager_3D_<k>(prm, sigma)`,
+    !! `yield_dstress_eq_druckerprager_3D_<k>(prm, sigma)`, `yield_ddstress_eq_druckerprager_3D_<k>(prm, sigma)`
+    !! and the joint evaluation `yield_stress_eq_and_derivatives_druckerprager_3D_<k>(prm, sigma, f, df[, ddf])`
+    !! (the three in turn) for each real kind, also through the generics `yield_*` of
+    !! `muscle_yield_criteria`. `DruckerPrager` is the historical OO type (host only, removed in
+    !! Phase 7; private components), with the calibration modes `DP_HARDENING_*`.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
+        & iden_2O, iden_4O4T, iden_4O3T, operator(.dev.), operator(.ddot.), operator(.tdotsym.), operator(*), &
+        & operator(+), operator(-), operator(/), assignment(=)
+    use muscle_tensor_functions, only : square
+    use muscle_math_derivatives, only : dsquare
+    use muscle_yield_base, only : Base_yield_critera
+    implicit none
+    private
+
+    integer, parameter, public :: DP_HARDENING_TENSION     = 1
+        !! Calibration with the yield stress in uniaxial tension.
+    integer, parameter, public :: DP_HARDENING_COMPRESSION = 2
+        !! Calibration with the yield stress in uniaxial compression.
+    integer, parameter, public :: DP_HARDENING_SHEAR       = 3
+        !! Calibration with the yield stress in shear.
+
+    $:MODEL_PUBLIC('yield', 'druckerprager')
+    public :: yield_druckerprager_init, ${', '.join('yield_druckerprager_init_' + k for k in REAL_KINDS)}$
+    public :: DruckerPrager
+#:for k in REAL_KINDS
+
+    real(${k}$), parameter :: DP_TOL_ABS_${k}$ = ${TOL_ABS[k]}$_${k}$
+        !! Zero stress: |sigma| below this (`real(${k}$)`).
+    real(${k}$), parameter :: DP_TOL_REL_${k}$ = ${TOL_REL[k]}$_${k}$
+        !! Hydrostatic axis: q/|sigma| below this (`real(${k}$)`).
+#:endfor
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('yield', 'druckerprager', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('yield', 'druckerprager', 'DruckerPrager', 'Base_yield_critera', PARAMS, extra_bindings=OO_EXTRA, &
+        & oo_private=True)
+
+    interface yield_druckerprager_init
+        !! Parameters of the Drucker-Prager model from beta (degrees), K and the hardening mode.
+        module procedure ${', '.join('yield_druckerprager_init_' + k for k in REAL_KINDS)}$
+    end interface yield_druckerprager_init
+
+contains
+#:for k in REAL_KINDS
+
+    pure subroutine yield_druckerprager_init_${k}$(prm, beta_deg, K, hardening_mode)
+        !! Parameters of the Drucker-Prager model in `real(${k}$)` matching the Abaqus material
+        !! options: the calibration factor f of the hardening mode and the pressure coefficient
+        !! tan(beta) f. An unknown mode keeps the previous f (as the original `init`; 0 for a
+        !! default-initialized `prm`), so `prm` is `intent(inout)`.
+        implicit none
+        @:DEVICE()
+        type(yield_druckerprager_${k}$), intent(inout) :: prm
+            !! Parameters (defined on entry: default initialization or a previous `init`).
+        real(${k}$), intent(in) :: beta_deg
+            !! Friction angle beta in degrees.
+        real(${k}$), intent(in) :: K
+            !! Yield stress ratio K (0.778 <= K <= 1).
+        integer, intent(in) :: hardening_mode
+            !! Hardening calibration mode (`DP_HARDENING_*`).
+        real(${k}$), parameter :: PI = acos(-1.0_${k}$)
+        real(${k}$) :: tanbeta
+
+        tanbeta = tan(beta_deg * PI / 180.0_${k}$)
+        select case (hardening_mode)
+        case(DP_HARDENING_TENSION)
+            prm%f_factor = (1.0_${k}$ / K + tanbeta / 3.0_${k}$) ** (-1)
+        case(DP_HARDENING_COMPRESSION)
+            prm%f_factor = (1.0_${k}$ - tanbeta / 3.0_${k}$) ** (-1)
+        case(DP_HARDENING_SHEAR)
+            prm%f_factor = 1.0_${k}$
+        end select
+
+        prm%I1_factor = tanbeta * prm%f_factor
+        prm%K = K
+        prm%hardening_mode = hardening_mode
+    end subroutine yield_druckerprager_init_${k}$
+#:for d in model_dims('yield')
+#:assert d == '3D', 'yield criteria: only 3D until a 2D vs 3D test exists (dims-2d-3d.md)'
+#:set T2 = tname(d + '2Osym', k)
+
+    $:MODEL_FUNCTION('yield', 'druckerprager', 'stress_eq', k, d)
+        real(${k}$) :: q, r3, t, p, stress_norm
+        type(${T2}$) :: s
+
+        stress_norm = sqrt(sigma .ddot. sigma)
+
+        s = .dev. sigma
+        q = sqrt(1.5_${k}$ * (s .ddot. s))
+        p = (1.0_${k}$ / 3.0_${k}$) * (sigma%vals(1) + sigma%vals(2) + sigma%vals(3))
+
+        ! Zero stress check
+        if (stress_norm < DP_TOL_ABS_${k}$) then
+            res = 0.0_${k}$
+            return
+        end if
+
+        ! Hydrostatic singularity check (q -> 0)
+        if ((q / stress_norm) < DP_TOL_REL_${k}$) then
+            res = prm%I1_factor * p
+            return
+        end if
+
+        ! Third invariant term r^3 = (9/2) * tr(S^3)
+        r3 = (9.0_${k}$ / 2.0_${k}$) * ((s * s) .ddot. s)
+
+        ! Abaqus equivalent deviatoric stress t
+        t = 0.5_${k}$ * q * (1.0_${k}$ + 1.0_${k}$ / prm%K - (1.0_${k}$ - 1.0_${k}$ / prm%K) * (r3 / (q**3)))
+        t = t * prm%f_factor
+
+        res = t + prm%I1_factor * p
+    end function yield_stress_eq_druckerprager_${d}$_${k}$
+
+    $:MODEL_FUNCTION('yield', 'druckerprager', 'dstress_eq', k, d)
+        ! Flow direction N = f * (alpha1 * S + alpha2 * S^2) + alpha3 * I
+        type(${T2}$) :: s, s2
+        real(${k}$) :: q, r3, c1, c2, f, d
+        real(${k}$) :: alpha1, alpha2, alpha3, stress_norm
+
+        f = prm%f_factor
+        d = prm%I1_factor
+
+        stress_norm = sqrt(sigma .ddot. sigma)
+
+        ! Handle Zero Stress State
+        if (stress_norm < DP_TOL_ABS_${k}$) then
+            res = (d / 3.0_${k}$) * iden_2O()
+            return
+        end if
+
+        s = .dev. sigma
+        q = sqrt(1.5_${k}$ * (s .ddot. s))
+
+        ! Handle Hydrostatic State (q -> 0)
+        if ((q / stress_norm) < DP_TOL_REL_${k}$) then
+            res = (d / 3.0_${k}$) * iden_2O()
+            return
+        end if
+
+        ! Invariant constants
+        c1 = 0.5_${k}$ * (1.0_${k}$ + 1.0_${k}$ / prm%K)
+        c2 = 0.5_${k}$ * (1.0_${k}$ - 1.0_${k}$ / prm%K)
+
+        s2 = square(s)
+        r3 = 4.5_${k}$ * (s2 .ddot. s)
+
+        ! Scalar coefficients for gradient
+        alpha1 = (1.5_${k}$ / q) * (c1 + 2.0_${k}$ * c2 * (r3 / (q**3)))
+        alpha2 = -13.5_${k}$ * c2 / (q**2)
+        alpha3 = (d / 3.0_${k}$) + 3.0_${k}$ * f * c2
+
+        res = f * (alpha1 * s + alpha2 * s2) + alpha3 * iden_2O()
+    end function yield_dstress_eq_druckerprager_${d}$_${k}$
+
+    $:MODEL_FUNCTION('yield', 'druckerprager', 'ddstress_eq', k, d)
+        ! Derivative of N = f * (alpha1 * S + alpha2 * S^2) + alpha3 * I, from Dassault Systemes
+        ! (2017), Abaqus Theory Guide, Eq. (3) (extended linear model, including K); 0 on the
+        ! hydrostatic axis (constant gradient there), under the same conditions as the gradient
+        ! In the stable form (D-017.11d), with n = S/q and rho = r^3/q^3 = (9/2) n^2 : n, so that
+        ! every coefficient is O(1/q) and no power of q under- or overflows
+        type(${T2}$) :: n, n2, u
+        ! Mises stress, r^3/q^3, invariant coefficients, calibration factor, |sigma|
+        real(${k}$) :: q, rho, c1, c2, f, stress_norm
+        ! Coefficients of P, d(S^2)/dS (on n), n(x)n and sym(n(x)n^2)
+        real(${k}$) :: alpha1, alpha2, beta1, beta2
+        type(${T2}$) :: s
+
+        f = prm%f_factor
+
+        stress_norm = sqrt(sigma .ddot. sigma)
+
+        ! Handle Zero Stress State
+        if (stress_norm < DP_TOL_ABS_${k}$) then
+            res%vals = 0.0_${k}$
+            return
+        end if
+
+        s = .dev. sigma
+        q = sqrt(1.5_${k}$ * (s .ddot. s))
+
+        ! Handle Hydrostatic State (q -> 0)
+        if ((q / stress_norm) < DP_TOL_REL_${k}$) then
+            res%vals = 0.0_${k}$
+            return
+        end if
+
+        ! Invariant constants
+        c1 = 0.5_${k}$ * (1.0_${k}$ + 1.0_${k}$ / prm%K)
+        c2 = 0.5_${k}$ * (1.0_${k}$ - 1.0_${k}$ / prm%K)
+
+        n = s / q
+        n2 = square(n)
+        rho = 4.5_${k}$ * (n2 .ddot. n)
+
+        ! alpha1, alpha2 as in the gradient; beta1, beta2 from d(alpha1)/dS and d(alpha2)/dS
+        ! (the S (x) I terms cancel), written on n: alpha2 S = (alpha2 q) n, beta1 S(x)S =
+        ! (beta1 q^2) n(x)n, beta2 sym(S(x)S^2) = (beta2 q^3) sym(n(x)n^2). All scaled by f.
+        alpha1 = f * (1.5_${k}$ / q) * (c1 + 2.0_${k}$ * c2 * rho)
+        alpha2 = -13.5_${k}$ * f * c2 / q
+        beta1  = -f * (2.25_${k}$ / q) * (c1 + 8.0_${k}$ * c2 * rho)
+        beta2  = 81.0_${k}$ * f * c2 / q
+
+        ! (alpha2 q) * d(n^2)/dn: dsquare is linear, so it is built from u = (alpha2 q) * n
+        u = alpha2 * n
+
+        res = alpha1 * iden_4O4T() + dsquare(u) + beta1 * (.tdotsym. n) &
+              + beta2 * (n .tdotsym. n2) - (alpha1 / 3.0_${k}$) * iden_4O3T()
+    end function yield_ddstress_eq_druckerprager_${d}$_${k}$
+
+    $:MODEL_JOINT_DEFAULT('yield', 'druckerprager', k, d)
+#:endfor
+#:endfor
+    $:OO_ADAPTER_PROCS('yield', 'druckerprager', 'DruckerPrager', PARAMS)
+
+    pure subroutine init_tbp(self, beta_deg, K, hardening_mode)
+        !! `%init(...)`: sets the Drucker-Prager parameters matching the Abaqus material options
+        !! (type-bound, historical API; host only). Calls `yield_druckerprager_init_dp`.
+        implicit none
+        class(DruckerPrager), intent(inout) :: self
+            !! Model.
+        real(dp), intent(in) :: beta_deg
+            !! Friction angle beta in degrees.
+        real(dp), intent(in) :: K
+            !! Yield stress ratio K (0.778 <= K <= 1).
+        integer, intent(in) :: hardening_mode
+            !! Hardening calibration mode (`DP_HARDENING_*`).
+        type(yield_druckerprager_dp) :: prm
+
+        ! From the current components, so that an unknown mode keeps the previous f_factor
+$:OO_COPY_PARAMS('prm', 'self', PARAMS)
+        call yield_druckerprager_init_dp(prm, beta_deg, K, hardening_mode)
+$:OO_COPY_PARAMS('self', 'prm', PARAMS)
+    end subroutine init_tbp
+
+end module muscle_yield_druckerprager

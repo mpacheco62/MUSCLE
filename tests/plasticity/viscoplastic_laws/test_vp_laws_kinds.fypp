@@ -1,0 +1,1074 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#!
+#! Kernel API of the viscoplastic (`vp_*`) and overstress (`os_*`) laws (D-017) in every kind, the
+#! nine registered laws (vp: Johnson-Cook, full Johnson-Cook, MRK, NNL, Rusinek-Klepaczko, VA; os:
+#! Chaboche, Perzyna):
+#! - the free functions through the family generics against the analytical formulas (references in
+#!   dp from the kind-k parameters); the composed laws (JC, JCfull, Perzyna, Chaboche) receive the
+#!   hardening values already evaluated (D-017.6b), and their partial derivatives are checked
+#!   against finite differences of the composed flow stress; the partial derivatives of MRK and NNL
+#!   against finite differences of the flow stress (dp) or against the dp functions (sp);
+#! - documented bugs and limits (D-017.7): RK dflow_dep = 0, flow stress 0 (RK, JCfull) or sigma_u
+#!   (MRK) at epd <= 0, JCfull at epd < tiny; dstress_dep with dt = 0 as the original code (MRK 0
+#!   at epd <= 1e-12; VA and NNL +Inf or NaN, values of the original code);
+#! - the historical OO types against the dp free functions (bit for bit);
+#! - the default derivatives of the contract (MODEL_FD, MODEL_DEFAULT) on test-only laws, against
+#!   the analytical derivatives and against the inherited numeric defaults of the OO bases
+#!   (Base_viscoplastic_law, Base_overstress_law), which the golden test fixes;
+#! - `pure`, `@:DEVICE()` point procedures that compose hard_* with vp_* and os_*.
+#! Tolerances (relative, measured x ~10 unless stated): FD_TOL of the finite differences (max
+#! measured sp 5e-4, dp 6e-8); TOL_K of the formulas against the dp references (max measured sp
+#! 5e-7, dp 5e-16); TOLD of the MRK/NNL partial derivatives (dp vs finite differences: 5e-9,
+#! measured 3e-10; sp vs dp: 1e-5, measured 7e-7 from ep = 1e-2); chain rules 5e-8 (measured 2.4e-9).
+#:set FD_TOL = {'sp': '5.0e-3', 'dp': '1.0e-6'}
+#:set TOL_K = {'sp': '5.0e-6', 'dp': '1.0e-12'}
+
+#! Parameter sets of the remaining laws (name, value without kind), set component by component
+#! (SET_PARAMS): interior of the smooth domain of each law (no clamp active at the test points).
+#:set MRK_P = [('B01', '100.0'), ('B02', '100.0'), ('epdmax', '100.0'), ('nu1', '0.05'), ('nu2', '0.1'), &
+    & ('n0', '4.0'), ('D2', '0.05'), ('epdmin', '1.0e-5'), ('chi1', '0.1'), ('chi2', '0.5'), ('sig_u', '250.0')]
+#:set NNL_P = [('sig_a', '350.0'), ('sig_0', '600.0'), ('KG0', '0.04'), ('n1', '0.08'), ('epd0', '1.0e8'), &
+    & ('at', '10.0'), ('n0', '0.5'), ('q', '1.5'), ('p', '0.5')]
+#:set VA_P = [('B', '374.5'), ('n', '0.264'), ('B1', '0.3'), ('B2', '0.5'), ('m', '0.5'), ('sig_u', '195.0')]
+#:set JCF_P = [('C', '0.05'), ('epdmax', '0.1'), ('m', '1.5'), ('Troom', '293.15'), ('Tmelt', '1700.0'), &
+    & ('T_current', '600.0')]
+#:set CHA_P = [('k', '50.0'), ('n', '2.5')]
+#! Assigns a parameter set to `var` (kind k); with `src`, the same components converted from `src`
+#:def SET_PARAMS(var, P, k, src=None)
+#:for n, v in P
+#:if src is None
+        ${var}$%${n}$ = ${v}$_${k}$
+#:else
+        ${var}$%${n}$ = real(${src}$%${n}$, ${k}$)
+#:endif
+#:endfor
+#:enddef
+#! Checks |got - ref| <= tol (|ref| + scale) (derivatives: scale = sigma/x, the rounding scale of a
+#! finite difference and of the sp evaluation near a cancellation)
+#:def CHECK_SCALED(label, got, ref, scale, tol)
+        call check_true(passed, ${label}$, abs((${got}$) - (${ref}$)) <= (${tol}$)*(abs(${ref}$) + (${scale}$)))
+#:enddef
+
+#! Test-only laws: fdvp, sigma = Y0 (1 + A ep)(1 + C atan(epd/R)), gives only flow_stress (partial
+#! derivatives by MODEL_FD, dstress_dep by MODEL_DEFAULT), with an OO adapter; fdos,
+#! g = (sigma_eq/(S0 (1 + B ep)))**2/eta, gives only flow_rate.
+#:set FDVP = [('Y0', 'real', '', 'Yield stress.', None), ('A', 'real', '', 'Hardening.', None), &
+    & ('C', 'real', '', 'Rate sensitivity.', None), ('R', 'real', '', 'Reference rate.', None)]
+#:set FDOS = [('S0', 'real', '', 'Yield stress.', None), ('B', 'real', '', 'Hardening.', None), &
+    & ('eta', 'real', '', 'Viscosity.', None)]
+
+module muscle_vp_fdvp
+    !! Test law: smooth self-contained flow stress, only `flow_stress` given.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_vp_base, only : Base_viscoplastic_law
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('vp', 'fdvp')
+    public :: FDVP_test
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('vp', 'fdvp', k, FDVP)
+#:endfor
+    $:OO_ADAPTER_TYPE('vp', 'fdvp', 'FDVP_test', 'Base_viscoplastic_law', FDVP)
+
+contains
+#:for k in REAL_KINDS
+
+    $:MODEL_FUNCTION('vp', 'fdvp', 'flow_stress', k)
+        res = prm%Y0*(1.0_${k}$ + prm%A*ep)*(1.0_${k}$ + prm%C*atan(epd/prm%R))
+    end function vp_flow_stress_fdvp_${k}$
+
+    $:MODEL_FD('vp', 'fdvp', 'dflow_dep', k)
+
+    $:MODEL_FD('vp', 'fdvp', 'dflow_depd', k)
+
+    $:MODEL_DEFAULT('vp', 'fdvp', 'dstress_dep', k)
+#:endfor
+    $:OO_ADAPTER_PROCS('vp', 'fdvp', 'FDVP_test', FDVP)
+
+end module muscle_vp_fdvp
+
+module muscle_vp_fdos
+    !! Test law: smooth self-contained overstress law, only `flow_rate` given.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('os', 'fdos')
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('os', 'fdos', k, FDOS)
+#:endfor
+
+contains
+#:for k in REAL_KINDS
+
+    $:MODEL_FUNCTION('os', 'fdos', 'flow_rate', k)
+        res = (sigma_eq/(prm%S0*(1.0_${k}$ + prm%B*ep)))**2/prm%eta
+    end function os_flow_rate_fdos_${k}$
+
+    $:MODEL_FD('os', 'fdos', 'dflow_dsigma', k)
+
+    $:MODEL_FD('os', 'fdos', 'dflow_dep', k)
+#:endfor
+
+end module muscle_vp_fdos
+
+module test_vp_laws_point
+    !! Point procedures (kernels) that compose a hardening law with the viscoplastic and overstress
+    !! laws (decoupled composition, D-017.6b), for every kind.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_hard_laws, only : hard_stress, hard_dstress_dep, ${kspecifics('hard_{0}_{1}', 'swift')}$
+    use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, &
+        ${kspecifics('vp_{0}_{1}', 'jc')}$, ${kspecifics('vp_{0}_{1}', 'rk')}$, ${kspecifics('vp_{0}_{1}', 'mrk')}$
+    use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, &
+        ${kspecifics('os_{0}_{1}', 'perzyna')}$, ${kspecifics('os_{0}_{1}', 'chaboche')}$
+    implicit none
+    private
+
+#:for k in REAL_KINDS
+    public :: point_${k}$, point2_${k}$
+#:endfor
+
+contains
+#:for k in REAL_KINDS
+
+    pure subroutine point_${k}$(h, v, r, o, ep, epd, dt, seq, out)
+        !! Everything a return mapping point would call, in `real(${k}$)`: the hardening values of `h`
+        !! composed with the Johnson-Cook law `v` and the Perzyna law `o`, and the self-contained
+        !! Rusinek-Klepaczko law `r`.
+        @:DEVICE()
+        type(hard_swift_${k}$), intent(in) :: h
+        type(vp_jc_${k}$), intent(in) :: v
+        type(vp_rk_${k}$), intent(in) :: r
+        type(os_perzyna_${k}$), intent(in) :: o
+        real(${k}$), intent(in) :: ep, epd, dt, seq
+        real(${k}$), intent(out) :: out(11)
+        real(${k}$) :: sy, dsy
+
+        sy = hard_stress(h, ep)
+        dsy = hard_dstress_dep(h, ep)
+        out(1) = vp_flow_stress(v, ep, epd, sy)
+        out(2) = vp_dflow_dep(v, ep, epd, sy, dsy)
+        out(3) = vp_dflow_depd(v, ep, epd, sy)
+        out(4) = vp_dstress_dep(v, ep, epd, dt, sy, dsy)
+        out(5) = vp_flow_stress(r, ep, epd)
+        out(6) = vp_dflow_dep(r, ep, epd)
+        out(7) = vp_dflow_depd(r, ep, epd)
+        out(8) = vp_dstress_dep(r, ep, epd, dt)
+        out(9) = os_flow_rate(o, seq, ep, sy)
+        out(10) = os_dflow_dsigma(o, seq, ep, sy)
+        out(11) = os_dflow_dep(o, seq, ep, sy, dsy)
+    end subroutine point_${k}$
+
+    pure subroutine point2_${k}$(h, v, c, ep, epd, dt, seq, out)
+        !! Same with the modified Rusinek-Klepaczko law `v` and the Chaboche law `c`, in `real(${k}$)`.
+        @:DEVICE()
+        type(hard_swift_${k}$), intent(in) :: h
+        type(vp_mrk_${k}$), intent(in) :: v
+        type(os_chaboche_${k}$), intent(in) :: c
+        real(${k}$), intent(in) :: ep, epd, dt, seq
+        real(${k}$), intent(out) :: out(7)
+        real(${k}$) :: sy, dsy
+
+        sy = hard_stress(h, ep)
+        dsy = hard_dstress_dep(h, ep)
+        out(1) = vp_flow_stress(v, ep, epd)
+        out(2) = vp_dflow_dep(v, ep, epd)
+        out(3) = vp_dflow_depd(v, ep, epd)
+        out(4) = vp_dstress_dep(v, ep, epd, dt)
+        out(5) = os_flow_rate(c, seq, ep, sy)
+        out(6) = os_dflow_dsigma(c, seq, ep, sy)
+        out(7) = os_dflow_dep(c, seq, ep, sy, dsy)
+    end subroutine point2_${k}$
+#:endfor
+
+end module test_vp_laws_point
+
+module test_vp_laws_numeric
+    !! OO laws that only give the deferred function (dp free function of a test law), so that the
+    !! derivatives are the inherited numeric defaults of the bases (the ones the golden test fixes).
+    use muscle_kinds, only : dp
+    use muscle_vp_base, only : Base_viscoplastic_law
+    use muscle_vp_overstress_base, only : Base_overstress_law
+    use muscle_vp_fdvp, only : vp_fdvp_dp, vp_flow_stress_fdvp_dp
+    use muscle_vp_fdos, only : os_fdos_dp, os_flow_rate_fdos_dp
+    implicit none
+    private
+    public :: Numeric_vp, Numeric_os
+
+    type, extends(Base_viscoplastic_law) :: Numeric_vp
+        type(vp_fdvp_dp) :: prm
+    contains
+        procedure :: flow_stress => numeric_vp_flow
+    end type Numeric_vp
+
+    type, extends(Base_overstress_law) :: Numeric_os
+        type(os_fdos_dp) :: prm
+    contains
+        procedure :: flow_rate => numeric_os_flow
+    end type Numeric_os
+
+contains
+
+    pure function numeric_vp_flow(self, ep, epd) result(res)
+        class(Numeric_vp), intent(in) :: self
+        real(dp), intent(in) :: ep, epd
+        real(dp) :: res
+        res = vp_flow_stress_fdvp_dp(self%prm, ep, epd)
+    end function numeric_vp_flow
+
+    pure function numeric_os_flow(self, sigma_eq, ep) result(res)
+        class(Numeric_os), intent(in) :: self
+        real(dp), intent(in) :: sigma_eq, ep
+        real(dp) :: res
+        res = os_flow_rate_fdos_dp(self%prm, sigma_eq, ep)
+    end function numeric_os_flow
+
+end module test_vp_laws_numeric
+
+program test_vp_laws_kinds
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_test_utils, only : check_approx, check_true
+    use muscle_test_helpers, only : record
+    implicit none
+
+    real(dp), parameter :: EP_PTS(5) = [0.0_dp, 1.0e-4_dp, 1.0e-2_dp, 0.2_dp, 1.0_dp]
+        !! Equivalent plastic strains.
+    real(dp), parameter :: EPD_PTS(8) = [-1.0e-3_dp, 0.0_dp, 5.0e-8_dp, 1.0e-4_dp, 1.0e-2_dp, 0.1_dp, &
+                                         1.0_dp, 100.0_dp]
+        !! Equivalent plastic strain rates (below the 1e-7 floor of Johnson-Cook, around and above
+        !! its reference rate).
+    real(dp), parameter :: RK_EPD(5) = [1.0e-5_dp, 1.0e-4_dp, 1.0e-3_dp, 3.0e-3_dp, 5.0e-3_dp]
+        !! Rates inside the domain of Rusinek-Klepaczko (epdmin = 1e-6 < epd < 0.99 epdmax).
+    real(dp), parameter :: SIG_F(5) = [0.5_dp, 1.0_dp, 1.2_dp, 2.0_dp, 5.0_dp]
+        !! Equivalent stress over the static yield stress.
+    real(dp), parameter :: DTS(2) = [1.0e-3_dp, 1.0_dp]
+        !! Time steps.
+    real(dp), parameter :: EP_FD(4) = [0.0_dp, 1.0e-2_dp, 0.2_dp, 1.0_dp]
+    real(dp), parameter :: EPD_FD(6) = [-1.0e-2_dp, 0.0_dp, 1.0e-2_dp, 0.1_dp, 1.0_dp, 100.0_dp]
+        !! Points of the finite differences against the analytical derivatives. The family keeps
+        !! the historical step (no scale, D-016.4), relative to |x| for x /= 0: at a small but
+        !! non-zero argument (ep = 1e-4, epd = 5e-8) the rounding error grows as eps |f|/h (up to
+        !! ~1e-5 relative in dp and ~2e-2 in sp, measured), as in the numeric defaults of the bases.
+    integer :: code
+
+    code = 0
+#:for i, k in enumerate(REAL_KINDS)
+    call record(test_jc_${k}$(), ${10*i + 1}$, 'Johnson-Cook free functions ${k}$', code)
+    call record(test_rk_${k}$(), ${10*i + 2}$, 'Rusinek-Klepaczko free functions ${k}$', code)
+    call record(test_perzyna_${k}$(), ${10*i + 3}$, 'Perzyna free functions ${k}$', code)
+    call record(test_fd_${k}$(), ${10*i + 4}$, 'default derivatives of the contract ${k}$', code)
+    call record(test_point_${k}$(), ${10*i + 5}$, 'pure point procedure ${k}$', code)
+    call record(test_jcfull_${k}$(), ${10*i + 6}$, 'full Johnson-Cook free functions ${k}$', code)
+    call record(test_va_${k}$(), ${10*i + 7}$, 'VA free functions ${k}$', code)
+    call record(test_mrk_nnl_${k}$(), ${10*i + 8}$, 'MRK and NNL free functions ${k}$', code)
+    call record(test_chaboche_${k}$(), ${10*i + 9}$, 'Chaboche free functions ${k}$', code)
+#:endfor
+    call record(test_jcfull_chain(), 91, 'full Johnson-Cook analytical partial derivatives vs FD', code)
+    call record(test_oo_adapters2(), 92, 'JCfull, MRK, NNL, VA, Chaboche adapters = dp free functions', code)
+    call record(test_jc_chain(), 95, 'Johnson-Cook decoupled composition: chain rule', code)
+    call record(test_oo_adapters(), 96, 'JC, RK, Perzyna adapters = dp free functions', code)
+    call record(test_fd_vs_base(), 97, 'MODEL_FD/MODEL_DEFAULT = numeric defaults of the OO bases', code)
+    if (code /= 0) stop code
+    print '(a)', ' Passed!'
+
+contains
+#:for k in REAL_KINDS
+
+    function test_jc_${k}$() result(passed)
+        !! Johnson-Cook composed with Swift hardening (values evaluated by `hard_*`) against
+        !! \( \sigma_y (1 + C \ln x) \) and its partial derivatives, in `real(${k}$)`.
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_swift_${k}$
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, vp_jc_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(hard_swift_${k}$) :: h
+        type(vp_jc_${k}$) :: v
+        real(dp) :: syd, dsyd, cd, x, dx, fr
+        real(${k}$) :: ep, epd, sy, dsy
+        integer :: i, j, it
+
+        passed = .true.
+        h = hard_swift_${k}$(k=100.0_${k}$, n=0.1_${k}$, e0=1.0e-4_${k}$)
+        v = vp_jc_${k}$(C=0.05_${k}$, epdmax=0.1_${k}$)
+        call check_approx(passed, '${k}$ JC default epmin', v%epmin, 1.0e-7_${k}$, 0.0_${k}$)
+        cd = real(v%C, dp)
+        do j = 1, size(EPD_PTS)
+            epd = real(EPD_PTS(j), ${k}$)
+            x = real(epd, dp)/real(v%epdmax, dp)
+            dx = 1.0_dp
+            if (epd <= v%epmin) then
+                x = real(v%epmin, dp)/real(v%epdmax, dp)
+                dx = 0.0_dp
+            end if
+            fr = 1.0_dp + cd*log(x)
+            do i = 1, size(EP_PTS)
+                ep = real(EP_PTS(i), ${k}$)
+                sy = hard_stress(h, ep)
+                dsy = hard_dstress_dep(h, ep)
+                syd = real(sy, dp)
+                dsyd = real(dsy, dp)
+                call check_approx(passed, '${k}$ JC flow_stress', vp_flow_stress(v, ep, epd, sy), real(syd*fr, ${k}$), TOL)
+                call check_approx(passed, '${k}$ JC dflow_dep', vp_dflow_dep(v, ep, epd, sy, dsy), real(dsyd*fr, ${k}$), TOL)
+                call check_approx(passed, '${k}$ JC dflow_depd', vp_dflow_depd(v, ep, epd, sy), &
+                                  real(syd*cd*dx/(x*real(v%epdmax, dp)), ${k}$), TOL)
+                do it = 1, size(DTS)
+                    call check_approx(passed, '${k}$ JC dstress_dep', vp_dstress_dep(v, ep, epd, real(DTS(it), ${k}$), sy, dsy), &
+                                      real(dsyd*fr + syd*cd*dx/(x*real(v%epdmax, dp))/DTS(it), ${k}$), TOL)
+                end do
+            end do
+        end do
+    end function test_jc_${k}$
+
+    function test_rk_${k}$() result(passed)
+        !! Rusinek-Klepaczko (self-contained) against its flow stress and its rate derivative inside
+        !! the domain; documented bugs (D-017.7): dflow_dep = 0, flow_stress = 0 for epd <= 0.
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, vp_rk_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(vp_rk_${k}$) :: r(2)
+        real(dp) :: e, ld, lm, nf, nv, bv, sf, kb, dn, db, ds, s
+        real(dp) :: b0, ep0, n0, d2, d1, nu, emin, emax, sig0, m
+        real(${k}$) :: ep, epd
+        integer :: p, i, j, it
+
+        passed = .true.
+        ! Parameters of test_muscle_vp_models, and a set with a large rate-dependent stress
+        r(1) = vp_rk_${k}$(B0=18.5805384_${k}$, epdmax=0.01_${k}$, nu=0.02014578_${k}$, ep0=2.36959316_${k}$, &
+                         n0=3.0506653_${k}$, D2=1.5302e-8_${k}$, D1=0.41425354_${k}$, epdmin=1.0e-6_${k}$, &
+                         sig0=1.1693e-5_${k}$, m=0.94914871_${k}$)
+        r(2) = vp_rk_${k}$(B0=600.0_${k}$, epdmax=0.01_${k}$, nu=0.02_${k}$, ep0=0.01_${k}$, n0=0.3_${k}$, &
+                         D2=0.05_${k}$, D1=0.2_${k}$, epdmin=1.0e-6_${k}$, sig0=200.0_${k}$, m=1.5_${k}$)
+        do p = 1, size(r)
+            call check_approx(passed, '${k}$ RK default epmin', r(p)%epmin, 1.0e-6_${k}$, 0.0_${k}$)
+            b0 = real(r(p)%B0, dp); ep0 = real(r(p)%ep0, dp); n0 = real(r(p)%n0, dp)
+            d2 = real(r(p)%D2, dp); d1 = real(r(p)%D1, dp); nu = real(r(p)%nu, dp)
+            emin = real(r(p)%epdmin, dp); emax = real(r(p)%epdmax, dp)
+            sig0 = real(r(p)%sig0, dp); m = real(r(p)%m, dp)
+            do j = 1, size(RK_EPD)
+                epd = real(RK_EPD(j), ${k}$)
+                e = real(epd, dp)
+                ld = log10(e/emin)
+                lm = log10(emax/e)
+                nf = max(0.0_dp, 1.0_dp - d2*ld)
+                nv = n0*nf
+                bv = b0*exp(-nu*log(lm))
+                sf = 1.0_dp - d1*lm
+                do i = 1, size(EP_PTS)
+                    ep = real(EP_PTS(i), ${k}$)
+                    kb = ep0 + real(ep, dp)
+                    s = bv*exp(nv*log(kb))
+                    if (sf > 0.0_dp) s = s + sig0*exp(m*log(sf))
+                    call check_approx(passed, '${k}$ RK flow_stress', vp_flow_stress(r(p), ep, epd), real(s, ${k}$), TOL)
+                    ! d/depd of B, n and sigma*, with d log10(1/epd)/depd = -1/(epd ln 10)
+                    db = b0*nu*exp((-nu - 1.0_dp)*log(lm))/(e*log(10.0_dp))
+                    dn = -n0*d2/(e*log(10.0_dp))
+                    ds = 0.0_dp
+                    if (sf > 1.0e-10_dp) ds = sig0*m*exp((m - 1.0_dp)*log(sf))*d1/(e*log(10.0_dp))
+                    call check_approx(passed, '${k}$ RK dflow_depd', vp_dflow_depd(r(p), ep, epd), &
+                                      real(db*exp(nv*log(kb)) + bv*exp(nv*log(kb))*log(kb)*dn + ds, ${k}$), TOL)
+                    call check_approx(passed, '${k}$ RK dflow_dep (D-017.7)', vp_dflow_dep(r(p), ep, epd), 0.0_${k}$, 0.0_${k}$)
+                    call check_approx(passed, '${k}$ RK dstress_dep(dt = 1) = dflow_depd', &
+                                      vp_dstress_dep(r(p), ep, epd, 1.0_${k}$), vp_dflow_depd(r(p), ep, epd), 0.0_${k}$)
+                    do it = 1, size(DTS)
+                        call check_approx(passed, '${k}$ RK dstress_dep = dflow_depd/dt', &
+                                          vp_dstress_dep(r(p), ep, epd, real(DTS(it), ${k}$)), &
+                                          vp_dflow_depd(r(p), ep, epd)/real(DTS(it), ${k}$), &
+                                          ${'1.0e-6_sp' if k == 'sp' else '1.0e-14_dp'}$)
+                    end do
+                end do
+            end do
+            call check_approx(passed, '${k}$ RK flow_stress at epd <= 0 (D-017.7)', &
+                              [vp_flow_stress(r(p), 0.1_${k}$, 0.0_${k}$), vp_flow_stress(r(p), 0.1_${k}$, -1.0_${k}$)], &
+                              [0.0_${k}$, 0.0_${k}$], 0.0_${k}$)
+        end do
+    end function test_rk_${k}$
+
+    function test_perzyna_${k}$() result(passed)
+        !! Perzyna composed with bilinear hardening (values evaluated by `hard_*`) against
+        !! \( \langle \psi \rangle^N/\eta \) and its derivatives, in `real(${k}$)`.
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_bilinear_${k}$
+        use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_perzyna_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(hard_bilinear_${k}$) :: h
+        type(os_perzyna_${k}$) :: o, o1
+        real(dp) :: syd, dsyd, sd, psi, nd, etad, gp
+        real(${k}$) :: ep, seq, sy, dsy
+        integer :: i, j
+
+        passed = .true.
+        h = hard_bilinear_${k}$(y0=50.0_${k}$, K=100.0_${k}$)
+        o = os_perzyna_${k}$(eta=1.5_${k}$, n=2.5_${k}$)
+        o1 = os_perzyna_${k}$()
+        call check_approx(passed, '${k}$ Perzyna defaults', [o1%eta, o1%n], [1.0_${k}$, 1.0_${k}$], 0.0_${k}$)
+        nd = real(o%n, dp)
+        etad = real(o%eta, dp)
+        do i = 1, size(EP_PTS)
+            ep = real(EP_PTS(i), ${k}$)
+            sy = hard_stress(h, ep)
+            dsy = hard_dstress_dep(h, ep)
+            syd = real(sy, dp)
+            dsyd = real(dsy, dp)
+            do j = 1, size(SIG_F)
+                seq = real(SIG_F(j), ${k}$)*sy
+                sd = real(seq, dp)
+                psi = max(sd/syd - 1.0_dp, 0.0_dp)
+                gp = 0.0_dp
+                if (psi > 0.0_dp) gp = nd*exp((nd - 1.0_dp)*log(psi))/etad
+                call check_approx(passed, '${k}$ Perzyna flow_rate', os_flow_rate(o, seq, ep, sy), &
+                                  real(merge(exp(nd*log(max(psi, tiny(psi)))), 0.0_dp, psi > 0.0_dp)/etad, ${k}$), TOL)
+                call check_approx(passed, '${k}$ Perzyna dflow_dsigma', os_dflow_dsigma(o, seq, ep, sy), &
+                                  real(gp/syd, ${k}$), TOL)
+                call check_approx(passed, '${k}$ Perzyna dflow_dep', os_dflow_dep(o, seq, ep, sy, dsy), &
+                                  real(-gp*sd*dsyd/(syd*syd), ${k}$), TOL)
+            end do
+        end do
+    end function test_perzyna_${k}$
+
+    function test_fd_${k}$() result(passed)
+        !! Default derivatives generated by the contract (MODEL_FD of each partial derivative,
+        !! MODEL_DEFAULT of dstress_dep) on the test laws, against the analytical derivatives.
+        use muscle_vp_laws, only : vp_flow_stress
+        use muscle_vp_fdvp, only : vp_fdvp_${k}$, vp_dflow_dep_fdvp_${k}$, vp_dflow_depd_fdvp_${k}$, &
+            vp_dstress_dep_fdvp_${k}$
+        use muscle_vp_fdos, only : os_fdos_${k}$, os_dflow_dsigma_fdos_${k}$, os_dflow_dep_fdos_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${FD_TOL[k]}$_${k}$
+        type(vp_fdvp_${k}$) :: v
+        type(os_fdos_${k}$) :: o
+        real(${k}$) :: ep, epd, seq, dep, depd, sc, dt
+        integer :: i, j, it
+
+        passed = .true.
+        v = vp_fdvp_${k}$(Y0=250.0_${k}$, A=2.0_${k}$, C=0.1_${k}$, R=0.01_${k}$)
+        o = os_fdos_${k}$(S0=100.0_${k}$, B=3.0_${k}$, eta=2.0_${k}$)
+        do i = 1, size(EP_FD)
+            ep = real(EP_FD(i), ${k}$)
+            do j = 1, size(EPD_FD)
+                epd = real(EPD_FD(j), ${k}$)
+                dep = v%Y0*v%A*(1.0_${k}$ + v%C*atan(epd/v%R))
+                depd = v%Y0*(1.0_${k}$ + v%A*ep)*v%C/(v%R*(1.0_${k}$ + (epd/v%R)**2))
+                call check_approx(passed, '${k}$ FD dflow_dep', vp_dflow_dep_fdvp_${k}$(v, ep, epd), dep, TOL)
+                ! absolute scale of the rate term: its value at epd = 0
+                sc = v%Y0*(1.0_${k}$ + v%A*ep)*v%C/v%R
+                call check_true(passed, '${k}$ FD dflow_depd', &
+                                abs(vp_dflow_depd_fdvp_${k}$(v, ep, epd) - depd) <= TOL*sc)
+                do it = 1, size(DTS)
+                    dt = real(DTS(it), ${k}$)
+                    call check_true(passed, '${k}$ default dstress_dep', &
+                                    abs(vp_dstress_dep_fdvp_${k}$(v, ep, epd, dt) - (dep + depd/dt)) <= TOL*(abs(dep) + sc/dt))
+                end do
+            end do
+            do j = 1, size(SIG_F)
+                seq = real(SIG_F(j), ${k}$)*o%S0
+                sc = o%S0*(1.0_${k}$ + o%B*ep)
+                call check_approx(passed, '${k}$ FD dflow_dsigma', os_dflow_dsigma_fdos_${k}$(o, seq, ep), &
+                                  2.0_${k}$*seq/(sc*sc*o%eta), TOL)
+                call check_approx(passed, '${k}$ FD dflow_dep', os_dflow_dep_fdos_${k}$(o, seq, ep), &
+                                  -2.0_${k}$*seq*seq*o%S0*o%B/(sc*sc*sc*o%eta), TOL)
+            end do
+        end do
+    end function test_fd_${k}$
+
+    function test_point_${k}$() result(passed)
+        !! The pure point procedure gives the same bits as the direct calls.
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_swift_${k}$
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, vp_jc_${k}$, vp_rk_${k}$
+        use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_perzyna_${k}$
+        use muscle_vp_laws, only : vp_mrk_${k}$
+        use muscle_vp_overstress_laws, only : os_chaboche_${k}$
+        use test_vp_laws_point, only : point_${k}$, point2_${k}$
+        logical :: passed
+        type(vp_mrk_${k}$) :: a
+        type(os_chaboche_${k}$) :: c
+        real(${k}$) :: out2(7)
+        type(hard_swift_${k}$) :: h
+        type(vp_jc_${k}$) :: v
+        type(vp_rk_${k}$) :: r
+        type(os_perzyna_${k}$) :: o
+        real(${k}$) :: ep, epd, dt, seq, sy, dsy, out(11)
+        integer :: i, j
+
+        passed = .true.
+        h = hard_swift_${k}$(k=100.0_${k}$, n=0.1_${k}$, e0=1.0e-4_${k}$)
+        v = vp_jc_${k}$(C=0.05_${k}$, epdmax=0.1_${k}$)
+        r = vp_rk_${k}$(B0=600.0_${k}$, epdmax=0.01_${k}$, nu=0.02_${k}$, ep0=0.01_${k}$, n0=0.3_${k}$, &
+                      D2=0.05_${k}$, D1=0.2_${k}$, epdmin=1.0e-6_${k}$, sig0=200.0_${k}$, m=1.5_${k}$)
+        o = os_perzyna_${k}$(eta=1.5_${k}$, n=2.5_${k}$)
+        $:SET_PARAMS('a', MRK_P, k)
+        $:SET_PARAMS('c', CHA_P, k)
+        dt = 1.0e-3_${k}$
+        do i = 1, size(EP_PTS)
+            ep = real(EP_PTS(i), ${k}$)
+            sy = hard_stress(h, ep)
+            dsy = hard_dstress_dep(h, ep)
+            seq = 1.2_${k}$*sy
+            do j = 1, size(RK_EPD)
+                epd = real(RK_EPD(j), ${k}$)
+                call point_${k}$(h, v, r, o, ep, epd, dt, seq, out)
+                call check_approx(passed, '${k}$ point = direct calls', out, &
+                    [vp_flow_stress(v, ep, epd, sy), vp_dflow_dep(v, ep, epd, sy, dsy), vp_dflow_depd(v, ep, epd, sy), &
+                     vp_dstress_dep(v, ep, epd, dt, sy, dsy), vp_flow_stress(r, ep, epd), vp_dflow_dep(r, ep, epd), &
+                     vp_dflow_depd(r, ep, epd), vp_dstress_dep(r, ep, epd, dt), os_flow_rate(o, seq, ep, sy), &
+                     os_dflow_dsigma(o, seq, ep, sy), os_dflow_dep(o, seq, ep, sy, dsy)], 0.0_${k}$)
+                call point2_${k}$(h, a, c, ep, epd, dt, seq, out2)
+                call check_approx(passed, '${k}$ point2 = direct calls', out2, &
+                    [vp_flow_stress(a, ep, epd), vp_dflow_dep(a, ep, epd), vp_dflow_depd(a, ep, epd), &
+                     vp_dstress_dep(a, ep, epd, dt), os_flow_rate(c, seq, ep, sy), os_dflow_dsigma(c, seq, ep, sy), &
+                     os_dflow_dep(c, seq, ep, sy, dsy)], 0.0_${k}$)
+            end do
+        end do
+    end function test_point_${k}$
+
+    function test_jcfull_${k}$() result(passed)
+        !! Full Johnson-Cook composed with Swift hardening against
+        !! \( \sigma_y (1 + C \ln(\dot\epsilon_p/\dot\epsilon_{p0})) (1 - T^{*m}) \) and its partial
+        !! derivatives (0 for epd <= 0, D-017.7), in `real(${k}$)`.
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_swift_${k}$
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, vp_jcfull_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(hard_swift_${k}$) :: h
+        type(vp_jcfull_${k}$) :: v, v0
+        real(dp) :: syd, dsyd, e, fr, ft, ts
+        real(${k}$) :: ep, epd, sy, dsy, dt
+        integer :: i, j, it
+
+        passed = .true.
+        h = hard_swift_${k}$(k=100.0_${k}$, n=0.1_${k}$, e0=1.0e-4_${k}$)
+        v0 = vp_jcfull_${k}$()
+        call check_approx(passed, '${k}$ JCfull defaults', [v0%C, v0%epdmax, v0%m, v0%Troom, v0%Tmelt, v0%T_current], &
+                          [0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 293.15_${k}$, 1.0e3_${k}$, 0.0_${k}$], 0.0_${k}$)
+        $:SET_PARAMS('v', JCF_P, k)
+        ! Below the rate floor `tiny` (subnormal rates) sigma is constant: dflow_depd = 0
+        sy = hard_stress(h, 0.2_${k}$)
+        call check_approx(passed, '${k}$ JCfull dflow_depd at 0 < epd < tiny', &
+                          vp_dflow_depd(v, 0.2_${k}$, tiny(1.0_${k}$)/4.0_${k}$, sy), 0.0_${k}$, 0.0_${k}$)
+        call check_approx(passed, '${k}$ JCfull flow_stress at 0 < epd < tiny = at tiny', &
+                          vp_flow_stress(v, 0.2_${k}$, tiny(1.0_${k}$)/4.0_${k}$, sy), &
+                          vp_flow_stress(v, 0.2_${k}$, tiny(1.0_${k}$), sy), 0.0_${k}$)
+        ts = (real(v%T_current, dp) - real(v%Troom, dp))/(real(v%Tmelt, dp) - real(v%Troom, dp))
+        ft = 1.0_dp - exp(real(v%m, dp)*log(ts))
+        do j = 1, size(EPD_PTS)
+            epd = real(EPD_PTS(j), ${k}$)
+            e = real(epd, dp)
+            do i = 1, size(EP_PTS)
+                ep = real(EP_PTS(i), ${k}$)
+                sy = hard_stress(h, ep)
+                dsy = hard_dstress_dep(h, ep)
+                if (epd <= 0.0_${k}$) then
+                    call check_approx(passed, '${k}$ JCfull at epd <= 0 (D-017.7)', [vp_flow_stress(v, ep, epd, sy), &
+                        vp_dflow_dep(v, ep, epd, sy, dsy), vp_dflow_depd(v, ep, epd, sy)], [0.0_${k}$, 0.0_${k}$, 0.0_${k}$], 0.0_${k}$)
+                    cycle
+                end if
+                syd = real(sy, dp)
+                dsyd = real(dsy, dp)
+                fr = 1.0_dp + real(v%C, dp)*log(e/real(v%epdmax, dp))
+                call check_approx(passed, '${k}$ JCfull flow_stress', vp_flow_stress(v, ep, epd, sy), real(syd*fr*ft, ${k}$), TOL)
+                call check_approx(passed, '${k}$ JCfull dflow_dep', vp_dflow_dep(v, ep, epd, sy, dsy), &
+                                  real(dsyd*fr*ft, ${k}$), TOL)
+                call check_approx(passed, '${k}$ JCfull dflow_depd', vp_dflow_depd(v, ep, epd, sy), &
+                                  real(syd*real(v%C, dp)/e*ft, ${k}$), TOL)
+                do it = 1, size(DTS)
+                    dt = real(DTS(it), ${k}$)
+                    call check_approx(passed, '${k}$ JCfull dstress_dep', vp_dstress_dep(v, ep, epd, dt, sy, dsy), &
+                                      real(dsyd*fr*ft + syd*real(v%C, dp)/e*ft/real(dt, dp), ${k}$), TOL)
+                end do
+            end do
+        end do
+    end function test_jcfull_${k}$
+
+    function test_va_${k}$() result(passed)
+        !! VA against \( B \epsilon_p^n (1 + B_1 \dot\epsilon_p^{1/m} - B_2) + \sigma_u \) and its partial
+        !! derivatives, inside the floors, in `real(${k}$)`.
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, vp_va_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        real(dp), parameter :: RATES(3) = [1.0e-3_dp, 0.1_dp, 1.0_dp]
+        type(vp_va_${k}$) :: v
+        real(dp) :: b, n, b1, b2, m, su, e, x, f, dep, depd
+        real(${k}$) :: ep, epd, dt
+        integer :: i, j, it
+
+        passed = .true.
+        $:SET_PARAMS('v', VA_P, k)
+        b = real(v%B, dp); n = real(v%n, dp); b1 = real(v%B1, dp); b2 = real(v%B2, dp)
+        m = real(v%m, dp); su = real(v%sig_u, dp)
+        do j = 1, size(RATES)
+            epd = real(RATES(j), ${k}$)
+            e = real(epd, dp)
+            f = 1.0_dp + b1*exp(log(e)/m) - b2
+            do i = 2, size(EP_PTS)
+                ep = real(EP_PTS(i), ${k}$)
+                x = real(ep, dp)
+                dep = b*n*exp((n - 1.0_dp)*log(x))*f
+                depd = b*exp(n*log(x))*b1/m*exp((1.0_dp/m - 1.0_dp)*log(e))
+                call check_approx(passed, '${k}$ VA flow_stress', vp_flow_stress(v, ep, epd), real(b*exp(n*log(x))*f + su, ${k}$), TOL)
+                call check_approx(passed, '${k}$ VA dflow_dep', vp_dflow_dep(v, ep, epd), real(dep, ${k}$), TOL)
+                call check_approx(passed, '${k}$ VA dflow_depd', vp_dflow_depd(v, ep, epd), real(depd, ${k}$), TOL)
+                do it = 1, size(DTS)
+                    dt = real(DTS(it), ${k}$)
+                    call check_approx(passed, '${k}$ VA dstress_dep', vp_dstress_dep(v, ep, epd, dt), &
+                                      real(dep + depd/real(dt, dp), ${k}$), TOL)
+                end do
+            end do
+        end do
+    end function test_va_${k}$
+
+    function test_mrk_nnl_${k}$() result(passed)
+        !! MRK and NNL inside their smooth domains, in `real(${k}$)`: flow stress against the formulas
+        !! of the module documentation;
+#:if k == 'dp'
+        !! partial derivatives against central differences of the flow stress;
+#:else
+        !! partial derivatives against the dp functions (same parameters, converted);
+#:endif
+        !! dstress_dep = dflow_dep + dflow_depd/dt.
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, &
+            vp_mrk_${k}$, vp_nnl_${k}$${'' if k == 'dp' else ', vp_mrk_dp, vp_nnl_dp'}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        real(dp), parameter :: MRK_RATES(3) = [1.0e-3_dp, 0.1_dp, 10.0_dp]
+        real(dp), parameter :: NNL_RATES(3) = [1.0e-2_dp, 1.0_dp, 1.0e3_dp]
+        type(vp_mrk_${k}$) :: a
+        type(vp_nnl_${k}$) :: b
+#:if k == 'dp'
+        real(dp), parameter :: TOLD = 5.0e-9_dp
+            !! Measured maximum 3e-10.
+        real(dp) :: hx
+#:else
+        real(${k}$), parameter :: TOLD = 1.0e-5_${k}$
+            !! Measured maximum 7e-7.
+        type(vp_mrk_dp) :: ad
+        type(vp_nnl_dp) :: bd
+#:endif
+        real(dp) :: e, x, el, n, b1, b2, f, s, hh, xx, bb
+        real(${k}$) :: ep, epd, dt, sg
+        integer :: i, j, it
+
+        passed = .true.
+        $:SET_PARAMS('a', MRK_P, k)
+        $:SET_PARAMS('b', NNL_P, k)
+#:if k != 'dp'
+        $:SET_PARAMS('ad', MRK_P, 'dp', 'a')
+        $:SET_PARAMS('bd', NNL_P, 'dp', 'b')
+#:endif
+        do j = 1, size(MRK_RATES)
+            do i = 2, size(EP_PTS)
+                ! MRK
+                epd = real(MRK_RATES(j), ${k}$)
+                ep = real(EP_PTS(i), ${k}$)
+                e = real(epd, dp)
+                x = real(ep, dp)
+                el = log10(real(a%epdmax, dp)/e)
+                n = real(a%n0, dp)*(1.0_dp - real(a%D2, dp)*log10(e/real(a%epdmin, dp)))
+                b1 = real(a%B01, dp)*exp(-real(a%nu1, dp)*log(el))
+                b2 = real(a%B02, dp)*exp(-real(a%nu2, dp)*log(el))
+                f = 1.0_dp - real(a%chi1, dp)*el
+                s = exp(log(f)/real(a%chi2, dp))*(b1*x + b2*(1.0_dp - exp(-x*n))) + real(a%sig_u, dp)
+                call check_approx(passed, '${k}$ MRK flow_stress', vp_flow_stress(a, ep, epd), real(s, ${k}$), TOL)
+                sg = vp_flow_stress(a, ep, epd)
+#:if k == 'dp'
+                hx = 1.0e-6_dp*ep
+                $:CHECK_SCALED("'dp MRK dflow_dep vs FD'", 'vp_dflow_dep(a, ep, epd)', &
+                    & '(vp_flow_stress(a, ep + hx, epd) - vp_flow_stress(a, ep - hx, epd))/(2.0_dp*hx)', 'sg/ep', 'TOLD')
+                hx = 1.0e-6_dp*epd
+                $:CHECK_SCALED("'dp MRK dflow_depd vs FD'", 'vp_dflow_depd(a, ep, epd)', &
+                    & '(vp_flow_stress(a, ep, epd + hx) - vp_flow_stress(a, ep, epd - hx))/(2.0_dp*hx)', 'sg/epd', 'TOLD')
+#:else
+                ! In sp, 1 - exp(-n ep) loses ~eps/(n ep) relative at small ep (4e-5 in dflow_depd at
+                ! ep = 1e-4): checked from ep = 1e-2
+                if (ep >= 1.0e-2_sp) then
+                    $:CHECK_SCALED("'sp MRK dflow_dep vs dp'", 'vp_dflow_dep(a, ep, epd)', &
+                        & 'real(vp_dflow_dep(ad, real(ep, dp), real(epd, dp)), sp)', '0.0_sp', 'TOLD')
+                    $:CHECK_SCALED("'sp MRK dflow_depd vs dp'", 'vp_dflow_depd(a, ep, epd)', &
+                        & 'real(vp_dflow_depd(ad, real(ep, dp), real(epd, dp)), sp)', '0.0_sp', 'TOLD')
+                end if
+#:endif
+                do it = 1, size(DTS)
+                    dt = real(DTS(it), ${k}$)
+                    call check_approx(passed, '${k}$ MRK dstress_dep', vp_dstress_dep(a, ep, epd, dt), &
+                                      vp_dflow_dep(a, ep, epd) + vp_dflow_depd(a, ep, epd)/dt, 0.0_${k}$)
+                end do
+                ! NNL
+                epd = real(NNL_RATES(j), ${k}$)
+                e = real(epd, dp)
+                hh = 1.0_dp + real(b%at, dp)*exp(real(b%n0, dp)*log(x))
+                xx = -real(b%KG0, dp)*(log(e/real(b%epd0, dp)) + log(hh))
+                bb = 1.0_dp - exp(log(xx)/real(b%q, dp))
+                s = real(b%sig_a, dp)*exp(real(b%n1, dp)*log(x)) + real(b%sig_0, dp)*exp(log(bb)/real(b%p, dp))*hh
+                call check_true(passed, '${k}$ NNL interior point', xx > 1.0e-3_dp .and. xx < 0.99_dp)
+                call check_approx(passed, '${k}$ NNL flow_stress', vp_flow_stress(b, ep, epd), real(s, ${k}$), TOL)
+                sg = vp_flow_stress(b, ep, epd)
+#:if k == 'dp'
+                hx = 1.0e-6_dp*ep
+                $:CHECK_SCALED("'dp NNL dflow_dep vs FD'", 'vp_dflow_dep(b, ep, epd)', &
+                    & '(vp_flow_stress(b, ep + hx, epd) - vp_flow_stress(b, ep - hx, epd))/(2.0_dp*hx)', 'sg/ep', 'TOLD')
+                hx = 1.0e-6_dp*epd
+                $:CHECK_SCALED("'dp NNL dflow_depd vs FD'", 'vp_dflow_depd(b, ep, epd)', &
+                    & '(vp_flow_stress(b, ep, epd + hx) - vp_flow_stress(b, ep, epd - hx))/(2.0_dp*hx)', 'sg/epd', 'TOLD')
+#:else
+                $:CHECK_SCALED("'sp NNL dflow_dep vs dp'", 'vp_dflow_dep(b, ep, epd)', &
+                    & 'real(vp_dflow_dep(bd, real(ep, dp), real(epd, dp)), sp)', '0.0_sp', 'TOLD')
+                $:CHECK_SCALED("'sp NNL dflow_depd vs dp'", 'vp_dflow_depd(b, ep, epd)', &
+                    & 'real(vp_dflow_depd(bd, real(ep, dp), real(epd, dp)), sp)', '0.0_sp', 'TOLD')
+#:endif
+                do it = 1, size(DTS)
+                    dt = real(DTS(it), ${k}$)
+                    call check_approx(passed, '${k}$ NNL dstress_dep', vp_dstress_dep(b, ep, epd, dt), &
+                                      vp_dflow_dep(b, ep, epd) + vp_dflow_depd(b, ep, epd)/dt, 0.0_${k}$)
+                end do
+            end do
+        end do
+    end function test_mrk_nnl_${k}$
+
+    function test_chaboche_${k}$() result(passed)
+        !! Chaboche composed with bilinear hardening against \( \langle z \rangle^n \),
+        !! \( z = (\sigma_{eq} - \sigma_y)/K \), and its derivatives, in `real(${k}$)`.
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_bilinear_${k}$
+        use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(hard_bilinear_${k}$) :: h
+        type(os_chaboche_${k}$) :: c, c0
+        real(dp) :: syd, dsyd, z, nd, kd, gz
+        real(${k}$) :: ep, seq, sy, dsy
+        integer :: i, j
+
+        passed = .true.
+        h = hard_bilinear_${k}$(y0=50.0_${k}$, K=100.0_${k}$)
+        c0 = os_chaboche_${k}$()
+        call check_approx(passed, '${k}$ Chaboche defaults', [c0%k, c0%n], [1.0_${k}$, 1.0_${k}$], 0.0_${k}$)
+        $:SET_PARAMS('c', CHA_P, k)
+        nd = real(c%n, dp)
+        kd = real(c%k, dp)
+        do i = 1, size(EP_PTS)
+            ep = real(EP_PTS(i), ${k}$)
+            sy = hard_stress(h, ep)
+            dsy = hard_dstress_dep(h, ep)
+            syd = real(sy, dp)
+            dsyd = real(dsy, dp)
+            do j = 1, size(SIG_F)
+                seq = real(SIG_F(j), ${k}$)*sy
+                z = (real(seq, dp) - syd)/kd
+                gz = 0.0_dp
+                if (z > 0.0_dp) gz = nd*exp((nd - 1.0_dp)*log(z))
+                call check_approx(passed, '${k}$ Chaboche flow_rate', os_flow_rate(c, seq, ep, sy), &
+                                  real(merge(exp(nd*log(max(z, tiny(z)))), 0.0_dp, z > 0.0_dp), ${k}$), TOL)
+                call check_approx(passed, '${k}$ Chaboche dflow_dsigma', os_dflow_dsigma(c, seq, ep, sy), real(gz/kd, ${k}$), TOL)
+                call check_approx(passed, '${k}$ Chaboche dflow_dep', os_dflow_dep(c, seq, ep, sy, dsy), &
+                                  real(-gz*dsyd/kd, ${k}$), TOL)
+            end do
+        end do
+    end function test_chaboche_${k}$
+#:endfor
+
+    function test_jc_chain() result(passed)
+        !! Decoupled composition (D-017.6b): dflow_dep with the hardening values evaluated outside is
+        !! the derivative of the composed flow stress sigma(ep, epd, sigma_y(ep)) (central difference).
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_swift_dp
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_jc_dp
+        logical :: passed
+        type(hard_swift_dp) :: h
+        type(vp_jc_dp) :: v
+        real(dp) :: ep, epd, step, fd
+        integer :: i, j
+
+        passed = .true.
+        h = hard_swift_dp(k=100.0_dp, n=0.1_dp, e0=1.0e-4_dp)
+        v = vp_jc_dp(C=0.05_dp, epdmax=0.1_dp)
+        do i = 2, size(EP_PTS)
+            ep = EP_PTS(i)
+            step = 1.0e-6_dp*ep
+            do j = 1, size(EPD_PTS)
+                epd = EPD_PTS(j)
+                fd = (vp_flow_stress(v, ep + step, epd, hard_stress(h, ep + step)) &
+                      - vp_flow_stress(v, ep - step, epd, hard_stress(h, ep - step)))/(2.0_dp*step)
+                call check_approx(passed, 'JC chain rule', vp_dflow_dep(v, ep, epd, hard_stress(h, ep), &
+                                  hard_dstress_dep(h, ep)), fd, 1.0e-6_dp)
+            end do
+        end do
+    end function test_jc_chain
+
+    function test_oo_adapters() result(passed)
+        !! The historical types (same keywords, composed law in `hard_law`) give, through the
+        !! polymorphic bases, the bits of the dp free functions with the hardening values evaluated
+        !! outside.
+        use muscle_hard_swift, only : Swift_hardening
+        use muscle_hard_bilinear, only : Bilinear_hardening
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_swift_dp, hard_bilinear_dp
+        use muscle_vp_base, only : Base_viscoplastic_law
+        use muscle_vp_overstress_base, only : Base_overstress_law
+        use muscle_vp_jc, only : JC_viscoplastic
+        use muscle_vp_rk, only : RK_viscoplastic
+        use muscle_vp_perzyna, only : Perzyna_overstress
+        use muscle_vp_laws, only : vp_flow_stress, vp_dstress_dep, vp_jc_dp, vp_rk_dp
+        use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_perzyna_dp
+        logical :: passed
+        class(Base_viscoplastic_law), allocatable :: jc, rk
+        class(Base_overstress_law), allocatable :: pz
+        type(JC_viscoplastic) :: jc0
+        type(Perzyna_overstress) :: pz0
+        type(hard_swift_dp) :: hs
+        type(hard_bilinear_dp) :: hb
+        type(vp_jc_dp) :: v
+        type(vp_rk_dp) :: r
+        type(os_perzyna_dp) :: o
+        real(dp) :: ep, epd, sy, dsy, seq
+        integer :: i, j, it
+
+        passed = .true.
+        jc0 = JC_viscoplastic(C=0.05_dp, epdmax=0.1_dp)
+        jc0%hard_law = Swift_hardening(k=100.0_dp, n=0.1_dp, e0=1.0e-4_dp)
+        jc = jc0
+        hs = hard_swift_dp(k=100.0_dp, n=0.1_dp, e0=1.0e-4_dp)
+        v = vp_jc_dp(C=0.05_dp, epdmax=0.1_dp)
+        rk = RK_viscoplastic(B0=600.0_dp, epdmax=0.01_dp, nu=0.02_dp, ep0=0.01_dp, n0=0.3_dp, &
+                             D2=0.05_dp, D1=0.2_dp, epdmin=1.0e-6_dp, sig0=200.0_dp, m=1.5_dp)
+        r = vp_rk_dp(B0=600.0_dp, epdmax=0.01_dp, nu=0.02_dp, ep0=0.01_dp, n0=0.3_dp, &
+                     D2=0.05_dp, D1=0.2_dp, epdmin=1.0e-6_dp, sig0=200.0_dp, m=1.5_dp)
+        pz0 = Perzyna_overstress(eta=1.5_dp, n=2.5_dp)
+        pz0%hard_law = Bilinear_hardening(y0=50.0_dp, K=100.0_dp)
+        pz = pz0
+        hb = hard_bilinear_dp(y0=50.0_dp, K=100.0_dp)
+        o = os_perzyna_dp(eta=1.5_dp, n=2.5_dp)
+        do i = 1, size(EP_PTS)
+            ep = EP_PTS(i)
+            sy = hard_stress(hs, ep)
+            dsy = hard_dstress_dep(hs, ep)
+            do j = 1, size(EPD_PTS)
+                epd = EPD_PTS(j)
+                call check_approx(passed, 'OO JC flow_stress', jc%flow_stress(ep, epd), vp_flow_stress(v, ep, epd, sy), 0.0_dp)
+                ! RK: Inf/NaN from epd = epdmax (D-017.7)
+                if (epd < r%epdmax) &
+                    call check_approx(passed, 'OO RK flow_stress', rk%flow_stress(ep, epd), vp_flow_stress(r, ep, epd), 0.0_dp)
+                do it = 1, size(DTS)
+                    call check_approx(passed, 'OO JC dstress_dep', jc%dstress_dep(ep, epd, DTS(it)), &
+                                      vp_dstress_dep(v, ep, epd, DTS(it), sy, dsy), 0.0_dp)
+                    if (epd > 0.0_dp .and. epd < 0.99_dp*r%epdmax) &
+                        call check_approx(passed, 'OO RK dstress_dep', rk%dstress_dep(ep, epd, DTS(it)), &
+                                          vp_dstress_dep(r, ep, epd, DTS(it)), 0.0_dp)
+                end do
+            end do
+            sy = hard_stress(hb, ep)
+            dsy = hard_dstress_dep(hb, ep)
+            do j = 1, size(SIG_F)
+                seq = SIG_F(j)*sy
+                call check_approx(passed, 'OO Perzyna', [pz%flow_rate(seq, ep), pz%dflow_dsigma(seq, ep), pz%dflow_dep(seq, ep)], &
+                                  [os_flow_rate(o, seq, ep, sy), os_dflow_dsigma(o, seq, ep, sy), &
+                                   os_dflow_dep(o, seq, ep, sy, dsy)], 0.0_dp)
+            end do
+        end do
+    end function test_oo_adapters
+
+    function test_fd_vs_base() result(passed)
+        !! The default derivatives of the contract (finite-difference macros) reproduce the
+        !! inherited numeric defaults of Base_viscoplastic_law/Base_overstress_law (D-016.9: same
+        !! bits with the same compiler options; compared with a 1e-12 tolerance), also with null
+        !! arguments (ep = 0, epd = 0); and the generated OO adapter calls them.
+        use muscle_vp_fdvp, only : FDVP_test, vp_fdvp_dp, vp_dstress_dep_fdvp_dp
+        use muscle_vp_fdos, only : os_fdos_dp, os_dflow_dsigma_fdos_dp, os_dflow_dep_fdos_dp
+        use test_vp_laws_numeric, only : Numeric_vp, Numeric_os
+        logical :: passed
+        type(Numeric_vp) :: nv
+        type(Numeric_os) :: no
+        type(FDVP_test) :: oo
+        real(dp) :: ep, epd, seq
+        integer :: i, j, it
+
+        passed = .true.
+        nv%prm = vp_fdvp_dp(Y0=250.0_dp, A=2.0_dp, C=0.1_dp, R=0.01_dp)
+        oo = FDVP_test(Y0=250.0_dp, A=2.0_dp, C=0.1_dp, R=0.01_dp)
+        no%prm = os_fdos_dp(S0=100.0_dp, B=3.0_dp, eta=2.0_dp)
+        do i = 1, size(EP_PTS)
+            ep = EP_PTS(i)
+            do j = 1, size(EPD_PTS)
+                epd = EPD_PTS(j)
+                do it = 1, size(DTS)
+                    call check_approx(passed, 'vp default = base numeric', vp_dstress_dep_fdvp_dp(nv%prm, ep, epd, DTS(it)), &
+                                      nv%dstress_dep(ep, epd, DTS(it)), 1.0e-12_dp)
+                    call check_approx(passed, 'vp OO adapter = free function', oo%dstress_dep(ep, epd, DTS(it)), &
+                                      vp_dstress_dep_fdvp_dp(nv%prm, ep, epd, DTS(it)), 0.0_dp)
+                end do
+            end do
+            do j = 1, size(SIG_F)
+                seq = SIG_F(j)*100.0_dp
+                call check_approx(passed, 'os default = base numeric', &
+                                  [os_dflow_dsigma_fdos_dp(no%prm, seq, ep), os_dflow_dep_fdos_dp(no%prm, seq, ep)], &
+                                  [no%dflow_dsigma(seq, ep), no%dflow_dep(seq, ep)], 1.0e-12_dp)
+            end do
+        end do
+    end function test_fd_vs_base
+
+    function test_jcfull_chain() result(passed)
+        !! Full Johnson-Cook: the analytical partial derivatives of the kernel API (new, D-017.8) are the
+        !! derivatives of the composed flow stress sigma(ep, epd, sigma_y(ep)) (central differences;
+        !! measured 2.4e-9 relative).
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_swift_dp
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_jcfull_dp
+        logical :: passed
+        type(hard_swift_dp) :: h
+        type(vp_jcfull_dp) :: v
+        real(dp) :: ep, epd, step, fd
+        integer :: i, j
+
+        passed = .true.
+        h = hard_swift_dp(k=100.0_dp, n=0.1_dp, e0=1.0e-4_dp)
+        $:SET_PARAMS('v', JCF_P, 'dp')
+        do i = 2, size(EP_PTS)
+            ep = EP_PTS(i)
+            do j = 3, size(EPD_PTS)
+                epd = EPD_PTS(j)
+                step = 1.0e-6_dp*ep
+                fd = (vp_flow_stress(v, ep + step, epd, hard_stress(h, ep + step)) &
+                      - vp_flow_stress(v, ep - step, epd, hard_stress(h, ep - step)))/(2.0_dp*step)
+                call check_approx(passed, 'JCfull chain rule (ep)', vp_dflow_dep(v, ep, epd, hard_stress(h, ep), &
+                                  hard_dstress_dep(h, ep)), fd, 5.0e-8_dp)
+                step = 1.0e-6_dp*epd
+                fd = (vp_flow_stress(v, ep, epd + step, hard_stress(h, ep)) &
+                      - vp_flow_stress(v, ep, epd - step, hard_stress(h, ep)))/(2.0_dp*step)
+                call check_approx(passed, 'JCfull dflow_depd vs FD', vp_dflow_depd(v, ep, epd, hard_stress(h, ep)), fd, 5.0e-8_dp)
+            end do
+        end do
+    end function test_jcfull_chain
+
+    function test_oo_adapters2() result(passed)
+        !! The historical types of the full Johnson-Cook, MRK, NNL, VA and Chaboche laws (through the
+        !! polymorphic bases) give the bits of the dp free functions; the full Johnson-Cook type keeps
+        !! the inherited numeric dstress_dep of the base (D-017.8), close to the analytical one (measured
+        !! 1.7e-8 relative).
+        use muscle_hard_swift, only : Swift_hardening
+        use muscle_hard_bilinear, only : Bilinear_hardening
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_swift_dp, hard_bilinear_dp
+        use muscle_vp_base, only : Base_viscoplastic_law
+        use muscle_vp_overstress_base, only : Base_overstress_law
+        use muscle_vp_jcfull, only : JohnsonCook_full_visco_hardening
+        use muscle_vp_mrk, only : MRK_viscoplastic
+        use muscle_vp_nnl, only : NNL_viscoplastic
+        use muscle_vp_va, only : VA_viscoplastic
+        use muscle_vp_chaboche, only : Chaboche_overstress
+        use muscle_vp_laws, only : vp_flow_stress, vp_dstress_dep, vp_jcfull_dp, vp_mrk_dp, vp_nnl_dp, vp_va_dp
+        use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp
+        use, intrinsic :: iso_fortran_env, only : int64
+        logical :: passed
+        integer(int64), parameter :: PINF_BITS = int(z'7FF0000000000000', int64)
+            !! Bits of +Inf in IEEE double precision.
+        class(Base_viscoplastic_law), allocatable :: oj, om, on, ov
+        class(Base_overstress_law), allocatable :: oc
+        type(JohnsonCook_full_visco_hardening) :: jcf
+        type(MRK_viscoplastic) :: mrk
+        type(NNL_viscoplastic) :: nnl
+        type(VA_viscoplastic) :: va
+        type(Chaboche_overstress) :: cha
+        type(hard_swift_dp) :: hs
+        type(hard_bilinear_dp) :: hb
+        type(vp_jcfull_dp) :: pj
+        type(vp_mrk_dp) :: pm
+        type(vp_nnl_dp) :: pn
+        type(vp_va_dp) :: pv, pv2, pv0
+        type(os_chaboche_dp) :: pc
+        real(dp) :: ep, epd, sy, dsy, seq, dt
+        integer :: i, j, it
+
+        passed = .true.
+        $:SET_PARAMS('jcf', JCF_P, 'dp')
+        jcf%hard_law = Swift_hardening(k=100.0_dp, n=0.1_dp, e0=1.0e-4_dp)
+        oj = jcf
+        $:SET_PARAMS('pj', JCF_P, 'dp')
+        hs = hard_swift_dp(k=100.0_dp, n=0.1_dp, e0=1.0e-4_dp)
+        $:SET_PARAMS('mrk', MRK_P, 'dp')
+        om = mrk
+        $:SET_PARAMS('pm', MRK_P, 'dp')
+        $:SET_PARAMS('nnl', NNL_P, 'dp')
+        on = nnl
+        $:SET_PARAMS('pn', NNL_P, 'dp')
+        va = VA_viscoplastic(B=374.525856_dp, B1=0.00331794_dp, B2=0.50280316_dp, n=0.2641262_dp, &
+                             m=0.03766668_dp, sig_u=195.233128_dp)
+        ov = va
+        pv = vp_va_dp(B=374.525856_dp, B1=0.00331794_dp, B2=0.50280316_dp, n=0.2641262_dp, &
+                      m=0.03766668_dp, sig_u=195.233128_dp)
+        $:SET_PARAMS('pv2', VA_P, 'dp')
+        pv0 = pv2
+        pv0%m = 0.0_dp
+        $:SET_PARAMS('cha', CHA_P, 'dp')
+        cha%hard_law = Bilinear_hardening(y0=50.0_dp, K=100.0_dp)
+        oc = cha
+        $:SET_PARAMS('pc', CHA_P, 'dp')
+        hb = hard_bilinear_dp(y0=50.0_dp, K=100.0_dp)
+        do i = 1, size(EP_PTS)
+            ep = EP_PTS(i)
+            sy = hard_stress(hs, ep)
+            dsy = hard_dstress_dep(hs, ep)
+            do j = 1, size(EPD_PTS)
+                epd = EPD_PTS(j)
+                call check_approx(passed, 'OO JCfull flow_stress', oj%flow_stress(ep, epd), vp_flow_stress(pj, ep, epd, sy), 0.0_dp)
+                call check_approx(passed, 'OO NNL flow_stress', on%flow_stress(ep, epd), vp_flow_stress(pn, ep, epd), 0.0_dp)
+                call check_approx(passed, 'OO VA flow_stress', ov%flow_stress(ep, epd), vp_flow_stress(pv, ep, epd), 0.0_dp)
+                ! MRK: Inf/NaN from epd = epdmax (D-017.7)
+                if (epd < pm%epdmax) &
+                    call check_approx(passed, 'OO MRK flow_stress', om%flow_stress(ep, epd), vp_flow_stress(pm, ep, epd), 0.0_dp)
+                do it = 1, size(DTS)
+                    dt = DTS(it)
+                    call check_approx(passed, 'OO NNL dstress_dep', on%dstress_dep(ep, epd, dt), vp_dstress_dep(pn, ep, epd, dt), &
+                                      0.0_dp)
+                    call check_approx(passed, 'OO VA dstress_dep', ov%dstress_dep(ep, epd, dt), vp_dstress_dep(pv, ep, epd, dt), &
+                                      0.0_dp)
+                    if (epd < pm%epdmax) &
+                        call check_approx(passed, 'OO MRK dstress_dep', om%dstress_dep(ep, epd, dt), &
+                                          vp_dstress_dep(pm, ep, epd, dt), 0.0_dp)
+                    ! MRK at epd <= 1e-12: 0 without dividing by dt, also for dt = 0 (original code)
+                    if (epd <= 1.0e-12_dp) then
+                        call check_true(passed, 'MRK dstress_dep(dt = 0) = +0 at epd <= 1e-12', &
+                            vp_dstress_dep(pm, ep, epd, 0.0_dp) == 0.0_dp .and. .not. sign(1.0_dp, &
+                            vp_dstress_dep(pm, ep, epd, 0.0_dp)) < 0.0_dp)
+                        call check_true(passed, 'OO MRK dstress_dep(dt = 0) = +0 at epd <= 1e-12', &
+                            transfer(om%dstress_dep(ep, epd, 0.0_dp), 1_int64) == transfer(0.0_dp, 1_int64))
+                    end if
+                    ! JCfull: inherited finite difference of the base vs the analytical kernel derivative
+                    if (ep > 0.0_dp .and. epd > 0.0_dp) &
+                        call check_approx(passed, 'OO JCfull numeric dstress_dep ~ analytical', oj%dstress_dep(ep, epd, dt), &
+                                          vp_dstress_dep(pj, ep, epd, dt, sy, dsy), 2.0e-7_dp)
+                end do
+            end do
+            ! dt = 0 in VA and NNL: the original code divides by dt; values of the original code
+            ! (checked against it): +Inf where dflow_depd > 0, NaN where it is 0 (VA with m = 0, NNL
+            ! with X = 0 at a large rate); same through the OO adapters
+            if (ep > 0.0_dp) then
+                call check_true(passed, 'VA dstress_dep(dt = 0) = +Inf', &
+                    transfer(vp_dstress_dep(pv2, ep, 0.1_dp, 0.0_dp), 1_int64) == PINF_BITS)
+                call check_true(passed, 'VA (m = 0) dstress_dep(dt = 0) = NaN', is_nan(vp_dstress_dep(pv0, ep, 0.1_dp, 0.0_dp)))
+                call check_true(passed, 'NNL dstress_dep(dt = 0) = +Inf', &
+                    transfer(vp_dstress_dep(pn, ep, 1.0_dp, 0.0_dp), 1_int64) == PINF_BITS)
+                call check_true(passed, 'NNL (X = 0) dstress_dep(dt = 0) = NaN', is_nan(vp_dstress_dep(pn, ep, 1.0e12_dp, 0.0_dp)))
+                call check_true(passed, 'OO VA, NNL dstress_dep(dt = 0)', &
+                    transfer(ov%dstress_dep(ep, 0.1_dp, 0.0_dp), 1_int64) == &
+                    transfer(vp_dstress_dep(pv, ep, 0.1_dp, 0.0_dp), 1_int64) .and. &
+                    transfer(on%dstress_dep(ep, 1.0_dp, 0.0_dp), 1_int64) == &
+                    transfer(vp_dstress_dep(pn, ep, 1.0_dp, 0.0_dp), 1_int64))
+            end if
+            ! Boundary of the MRK branch (epd = 1e-12), dt = 0
+            call check_true(passed, 'MRK dstress_dep(epd = 1e-12, dt = 0) bits = original +0', &
+                transfer(vp_dstress_dep(pm, ep, 1.0e-12_dp, 0.0_dp), 1_int64) == transfer(0.0_dp, 1_int64) .and. &
+                transfer(om%dstress_dep(ep, 1.0e-12_dp, 0.0_dp), 1_int64) == transfer(0.0_dp, 1_int64))
+            sy = hard_stress(hb, ep)
+            dsy = hard_dstress_dep(hb, ep)
+            do j = 1, size(SIG_F)
+                seq = SIG_F(j)*sy
+                call check_approx(passed, 'OO Chaboche', [oc%flow_rate(seq, ep), oc%dflow_dsigma(seq, ep), oc%dflow_dep(seq, ep)], &
+                                  [os_flow_rate(pc, seq, ep, sy), os_dflow_dsigma(pc, seq, ep, sy), &
+                                   os_dflow_dep(pc, seq, ep, sy, dsy)], 0.0_dp)
+            end do
+        end do
+    end function test_oo_adapters2
+
+    elemental function is_nan(x) result(res)
+        !! x is a NaN (without ieee_arithmetic).
+        real(dp), intent(in) :: x
+        logical :: res
+        res = x /= x
+    end function is_nan
+
+end program test_vp_laws_kinds

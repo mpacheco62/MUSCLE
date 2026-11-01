@@ -1,0 +1,29 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+
+module muscle_vp_laws
+    !! Viscoplastic flow stress laws for kernels (D-007, D-017): the parameter types of every
+    !! registered law (`vp_<name>_<k>`, `VISCOPLASTIC_MODELS` of tools/fypp/muscle_meta.py) and the
+    !! family generics (prefix `vp_`, D-017.5b), with the same names for every law and kind:
+    !!
+    !! - `vp_flow_stress(prm, ep, epd[, sy])`: flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \);
+    !! - `vp_dflow_dep(prm, ep, epd[, sy, dsy_dep])`: \( \partial\sigma/\partial\epsilon_p \);
+    !! - `vp_dflow_depd(prm, ep, epd[, sy])`: \( \partial\sigma/\partial\dot\epsilon_p \);
+    !! - `vp_dstress_dep(prm, ep, epd, dt[, sy, dsy_dep])`: derivative with respect to the plastic
+    !!   strain increment at \( \dot\epsilon_p = \Delta\epsilon_p/\Delta t \),
+    !!   \( \partial\sigma/\partial\epsilon_p + \partial\sigma/\partial\dot\epsilon_p/\Delta t \)
+    !!   (the historical `dstress_dep` of the return mapping).
+    !!
+    !! `prm` is the parameter type of a law, `ep` the equivalent plastic strain and `epd` its rate,
+    !! of the same kind. The laws that compose a hardening law (`VISCOPLASTIC_COMPOSED`, e.g.
+    !! Johnson-Cook) also take its values already evaluated (D-017.6b): `sy` = `hard_stress(h, ep)`
+    !! and `dsy_dep` = `hard_dstress_dep(h, ep)`; the self-contained ones (Rusinek-Klepaczko) do not.
+    !! Example: `s = vp_flow_stress(jc, ep, epd, hard_stress(h, ep))`.
+    $:FAMILY_USES('vp')
+    implicit none
+    private
+
+    $:FAMILY_EXPORTS('vp')
+
+end module muscle_vp_laws

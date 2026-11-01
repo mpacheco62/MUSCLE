@@ -30,25 +30,21 @@ module muscle_visco_base
     !!
     !! Models whose step map is not affine (Schapery, stress-dependent viscosity) need a local
     !! Newton and do not fit this base.
-    use, intrinsic :: iso_fortran_env, only : real64
+    !!
+    !! Historical OO API (host only, removed in Phase 7, D-017.1): the models are written as
+    !! `pure` kernel procedures with an explicit state (`visco_step_coefficients`, `visco_freeze`,
+    !! `visco_update` of muscle_visco_laws, D-017.13) and their OO types extending this base are
+    !! thin adapters. `Visco_coefficients` is the kernel type `visco_coefs_dp`.
+    use muscle_kinds, only : dp
     use muscle_tensors
-    use muscle_visco_state, only : Viscoelastic_history, MAX_VISCO_BRANCHES
+    use muscle_visco_types, only : Visco_coefficients => visco_coefs_dp
+    use muscle_visco_state, only : Viscoelastic_history
     use muscle_visco_frozen, only : Elasticity_frozen
     implicit none
     private
 
     public :: Base_viscoelasticity
     public :: Visco_coefficients
-
-    type :: Visco_coefficients
-        !! Step-dependent coefficients (fixed size, no allocation). The meaning of `decay` and
-        !! `weight` is model specific (see each model).
-        real(real64) :: dt = 0D0                                 !! Time step
-        real(real64) :: k_alg = 0D0                              !! Algorithmic bulk modulus
-        real(real64) :: g_alg = 0D0                              !! Algorithmic shear modulus
-        real(real64) :: decay(MAX_VISCO_BRANCHES) = 0D0          !! Per branch decay factor
-        real(real64) :: weight(MAX_VISCO_BRANCHES) = 0D0         !! Per branch strain weight
-    end type Visco_coefficients
 
     type, abstract :: Base_viscoelasticity
     contains
@@ -64,10 +60,10 @@ module muscle_visco_base
     abstract interface
         pure function coefficients_interface(self, dt) result(coefs)
             !! Step-dependent coefficients of the model.
-            use, intrinsic :: iso_fortran_env, only : real64
+            use muscle_kinds, only : dp
             import Base_viscoelasticity, Visco_coefficients
             class(Base_viscoelasticity), intent(in) :: self
-            real(real64), intent(in)                :: dt
+            real(dp), intent(in)                    :: dt
             type(Visco_coefficients)                :: coefs
         end function coefficients_interface
 
@@ -111,7 +107,7 @@ contains
     pure function freeze_dt(self, dt, history) result(elas)
         !! Convenience: `freeze` computing the coefficients (use `freeze` in hot loops).
         class(Base_viscoelasticity), intent(in) :: self
-        real(real64), intent(in)                :: dt
+        real(dp), intent(in)                    :: dt
         type(Viscoelastic_history), intent(in)  :: history
         type(Elasticity_frozen)                 :: elas
         elas = self%freeze(self%coefficients(dt), history)
@@ -120,7 +116,7 @@ contains
     pure subroutine update_dt(self, dt, strain_e, history)
         !! Convenience: `update` computing the coefficients (use `update` in hot loops).
         class(Base_viscoelasticity), intent(in)   :: self
-        real(real64), intent(in)                  :: dt
+        real(dp), intent(in)                      :: dt
         type(ten_3D2Osym), intent(in)             :: strain_e
         type(Viscoelastic_history), intent(inout) :: history
         call self%update(self%coefficients(dt), strain_e, history)

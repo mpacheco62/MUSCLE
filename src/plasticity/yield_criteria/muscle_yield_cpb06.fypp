@@ -1,0 +1,238 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the yield family (D-017.6): include/muscle_models_common.fypp
+#! B and L are derived from C1, k and a by the initializer (`yield_cpb06_init`, OO `init`): private
+#! in the kernel type (D-017.10b), which is then built only with the initializer
+#:set PARAMS = [('C1', 'real', '(3,3)', r'Normal block \( C_{ij} \), i, j = 1..3, of the linear transformation \( \mathbf{C} \).', None), &
+    &          ('C2', 'real', '(3)', r'Shear factors \( (C_{44}, C_{55}, C_{66}) \) of \( \mathbf{C} \) (xy, yz, xz).', None), &
+    &          ('k', 'real', '', r'Strength differential parameter \( k \in [-1, 1] \).', None), &
+    &          ('a', 'real', '', r'Exponent \( a \ge 1 \).', None), &
+    &          ('B', 'real', '', r'Normalization factor \( B \) (Cazacu et al., 2006, Eq. 12), from C1, k and a.', None, True), &
+    &          ('L', 'real', '(3,3)', r'Normal block of \( \mathbf{L} = \mathbf{C} \mathbb{P}_{dev} \) (Eq. 8), from C1.', None, True)]
+#:set OO_EXTRA = [('init', 'init_tbp', 'Sets C1, C2, k and a and computes B and L.')]
+
+module muscle_yield_cpb06
+    !! CPB06 orthotropic yield criterion with tension-compression asymmetry (Cazacu, Plunkett and
+    !! Barlat, 2006, Eqs. 8, 9 and 12):
+    !! \[ \sigma_{eq} = B \left( \sum_i (|\Sigma_i| - k \Sigma_i)^a \right)^{1/a}, \quad
+    !!    \boldsymbol\Sigma = \mathbf{C} : \operatorname{dev}\boldsymbol\sigma = \mathbf{L} : \boldsymbol\sigma \]
+    !! with \( \Sigma_i \) the principal values of \( \boldsymbol\Sigma \) (`eigenvals`). The analytical
+    !! derivatives go through the spectral decomposition of \( \boldsymbol\Sigma \)
+    !! (`spectral_decomposition`, `spectral_gradient`, `spectral_hessian`) and the chain rule
+    !! through \( \mathbf{L} \).
+    !!
+    !! Scaling (D-017.10c): \( \Phi \) is evaluated on the principal values divided by the power of
+    !! two \( 2^e \) of their largest magnitude (exact in floating point), using the homogeneity of
+    !! \( \sigma_{eq} \) (degree 1), of its gradient (degree 0) and of its Hessian (degree -1), so that
+    !! \( |\Sigma_i|^a \) neither underflows nor overflows (before, in sp, \( \Phi \) was subnormal or
+    !! zero for \( |\sigma| \lesssim 3 \cdot 10^{-6} \) with a = 8, or overflowed for large stresses).
+    !!
+    !! At a null equivalent stress (\( \Phi = \sum_i (|\Sigma_i| - k \Sigma_i)^a = 0 \): zero or
+    !! hydrostatic stress) both derivatives are 0 (D-017.9; the original code gave NaN). Known limits,
+    !! kept with the same results as the original code (D-017.9): `eigenvals` uses an absolute
+    !! threshold (1e-10 in dp) that discards small shears on a hydrostatic stress (e.g. a shear of
+    !! 1e-10 on a unit pressure gives \( \sigma_{eq} = 0 \)); with \( k = \pm 1 \) and a null
+    !! principal value the Hessian takes the value chosen in `yield_cpb_curvature_<k>` of
+    !! `muscle_anisotropic_yield` (for \( 1 \le a < 2 \) the second derivative is not bounded there,
+    !! and for \( a = 1 \) the first).
+    !!
+    !! Kernel API: parameter types `yield_cpb06_<k>` (built only with `yield_cpb06_init`, which
+    !! computes the private components B and L), and `pure` functions `yield_stress_eq_cpb06_3D_<k>(prm, sigma)`,
+    !! `yield_dstress_eq_cpb06_3D_<k>(prm, sigma)`, `yield_ddstress_eq_cpb06_3D_<k>(prm, sigma)` and
+    !! the joint evaluation `yield_stress_eq_and_derivatives_cpb06_3D_<k>(prm, sigma, f, df[, ddf])` (the
+    !! three in turn) for each real kind, also through the generics `yield_*` of
+    !! `muscle_yield_criteria`. `CPB06` is the historical OO type (host only, removed in Phase 7).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
+        & operator(.dev.)
+    use muscle_math_operations, only : eigenvals
+    use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian
+    use muscle_anisotropic_yield, only : yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, &
+        & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian
+    use muscle_yield_base, only : Base_yield_critera
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('yield', 'cpb06')
+    public :: yield_cpb06_init, ${', '.join('yield_cpb06_init_' + k for k in REAL_KINDS)}$
+    public :: CPB06
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('yield', 'cpb06', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('yield', 'cpb06', 'CPB06', 'Base_yield_critera', PARAMS, extra_bindings=OO_EXTRA)
+
+    interface yield_cpb06_init
+        !! Parameters of the CPB06 model from the components of C, k and a (computes B and L).
+        module procedure ${', '.join('yield_cpb06_init_' + k for k in REAL_KINDS)}$
+    end interface yield_cpb06_init
+
+contains
+#:for k in REAL_KINDS
+
+    pure subroutine yield_cpb06_init_${k}$(prm, c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k, a)
+        !! Parameters of the CPB06 model in `real(${k}$)` from the components of the linear
+        !! transformation C, k and a; computes the normalization factor B (Cazacu et al., 2006,
+        !! Eq. 12) and the normal block L of C P_dev, so that they are not computed in every call.
+        implicit none
+        @:DEVICE()
+        type(yield_cpb06_${k}$), intent(out) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: c11, c12, c13, c21, c22, c23, c31, c32, c33
+            !! Normal block of C.
+        real(${k}$), intent(in) :: c44, c55, c66
+            !! Shear factors of C (xy, yz, xz).
+        real(${k}$), intent(in) :: k
+            !! Strength differential parameter.
+        real(${k}$), intent(in) :: a
+            !! Exponent.
+        real(${k}$) :: gamma(3)
+            ! Principal values of C1 : dev(sigma) for a unit uniaxial tension along x (only for B)
+
+        prm%C1 = reshape([c11, c21, c31, &
+                          c12, c22, c32, &
+                          c13, c23, c33], [3, 3])
+        prm%C2 = [c44, c55, c66]
+        prm%k = k
+        prm%a = a
+
+        gamma(1) = (2.0_${k}$*prm%C1(1,1) - prm%C1(1,2) - prm%C1(1,3))/3.0_${k}$
+        gamma(2) = (2.0_${k}$*prm%C1(2,1) - prm%C1(2,2) - prm%C1(2,3))/3.0_${k}$
+        gamma(3) = (2.0_${k}$*prm%C1(3,1) - prm%C1(3,2) - prm%C1(3,3))/3.0_${k}$
+
+        prm%B = sum((abs(gamma) - k*gamma)**a)**(-1.0_${k}$/a)
+        prm%L = yield_lin_dev_block(prm%C1)
+    end subroutine yield_cpb06_init_${k}$
+
+    pure subroutine yield_cpb06_scaled_${k}$(lam, x, e)
+        !! Principal values divided by the power of two of the largest magnitude, x = lam/2**e
+        !! (exact), in `real(${k}$)`; e = 0 if they are all zero (D-017.10c).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: lam(3)
+            !! Principal values.
+        real(${k}$), intent(out) :: x(3)
+            !! Scaled principal values, max |x_i| in [1/2, 1).
+        integer, intent(out) :: e
+            !! Exponent of the scale.
+
+        $:YIELD_SCALE_EXPONENT('e', 'maxval(abs(lam))', k)
+        x = scale(lam, -e)
+    end subroutine yield_cpb06_scaled_${k}$
+
+    pure subroutine yield_cpb06_principal_${k}$(prm, lam, phi, df_dlam, d2f_dlam2)
+        !! Derivatives in `real(${k}$)` of f = B Phi**(1/a) (Cazacu et al., 2006, Eqs. 9 and 12) with
+        !! respect to the principal values lam_i of Sigma, with Phi = sum_i psi_i**a,
+        !! psi_i = |lam_i| - k lam_i: df/dlam_i = (f/Phi) g_i, with g_i = psi_i**(a-1) (sgn(lam_i) - k),
+        !! and d2f/dlam_i dlam_j = (a-1) (f/Phi) (delta_ij psi_i**(a-2) (sgn(lam_i) - k)**2 - g_i g_j/Phi).
+        !! With Phi = 0 (null equivalent stress) the derivatives are returned as 0 (D-017.9). Evaluated on
+        !! the scaled values x = lam/2**e (yield_cpb06_scaled): df/dlam (degree 0) is the same and
+        !! d2f/dlam2 (degree -1) is scaled back by 2**(-e); `phi` is Phi(x).
+        implicit none
+        @:DEVICE()
+        type(yield_cpb06_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: lam(3)
+            !! Principal values lam_i of Sigma.
+        real(${k}$), intent(out) :: phi
+            !! Phi.
+        real(${k}$), intent(out) :: df_dlam(3)
+            !! df/dlam_i.
+        real(${k}$), intent(out), optional :: d2f_dlam2(3,3)
+            !! d2f/dlam_i dlam_j.
+        real(${k}$) :: x(3), s(3), psi(3), p(3), f_phi, q
+        integer :: e
+
+        call yield_cpb06_scaled_${k}$(lam, x, e)
+        ! s_i = sgn(x_i) - k, psi_i = |x_i| - k x_i and p_i = psi_i**(a-1)
+        call yield_cpb_terms(x, prm%k, prm%a, psi, p, s)
+        phi = psi(1)*p(1) + psi(2)*p(2) + psi(3)*p(3)
+        if (phi == 0.0_${k}$) then
+            df_dlam = 0.0_${k}$
+            if (present(d2f_dlam2)) d2f_dlam2 = 0.0_${k}$
+            return
+        end if
+        f_phi = prm%B*phi**(1.0_${k}$/prm%a)/phi  ! f/Phi (of the scaled values)
+        df_dlam(1) = f_phi*p(1)*s(1)
+        df_dlam(2) = f_phi*p(2)*s(2)
+        df_dlam(3) = f_phi*p(3)*s(3)
+        if (.not. present(d2f_dlam2)) return
+
+        q = (prm%a - 1.0_${k}$)/phi  ! (a-1)/Phi
+        d2f_dlam2 = yield_cpb_hessian(x, prm%k, prm%a, psi, p, s, df_dlam, f_phi, q)
+        d2f_dlam2 = scale(d2f_dlam2, -e)  ! back to lam: degree -1
+    end subroutine yield_cpb06_principal_${k}$
+#:for d in model_dims('yield')
+#:assert d == '3D', 'yield criteria: only 3D until a 2D vs 3D test exists (dims-2d-3d.md)'
+#:set T2 = tname(d + '2Osym', k)
+#:set T4 = tname(d + '4O3sym', k)
+
+    $:MODEL_FUNCTION('yield', 'cpb06', 'stress_eq', k, d)
+        type(${T2}$) :: dev, sig
+        real(${k}$) :: sigma_eig(3), x(3)
+        integer :: e
+
+        ! Sigma = C : dev(sigma): C1 on the normal components, C2 on the shears (xy, yz, xz)
+        dev = .dev. sigma
+        sig%vals(1) = dev%vals(1)*prm%C1(1,1) + dev%vals(2)*prm%C1(1,2) + dev%vals(3)*prm%C1(1,3)
+        sig%vals(2) = dev%vals(1)*prm%C1(2,1) + dev%vals(2)*prm%C1(2,2) + dev%vals(3)*prm%C1(2,3)
+        sig%vals(3) = dev%vals(1)*prm%C1(3,1) + dev%vals(2)*prm%C1(3,2) + dev%vals(3)*prm%C1(3,3)
+        sig%vals(4) = dev%vals(4)*prm%C2(1)
+        sig%vals(5) = dev%vals(5)*prm%C2(2)
+        sig%vals(6) = dev%vals(6)*prm%C2(3)
+        sigma_eig = eigenvals(sig)
+
+        ! Homogeneity of degree 1 on the principal values scaled by 2**(-e) (D-017.10c)
+        call yield_cpb06_scaled_${k}$(sigma_eig, x, e)
+        res = sum((abs(x) - prm%k*x)**prm%a)**(1.0_${k}$/prm%a)
+        res = scale(res, e)*prm%B
+    end function yield_stress_eq_cpb06_${d}$_${k}$
+
+    $:MODEL_FUNCTION('yield', 'cpb06', 'dstress_eq', k, d)
+        ! df/dsigma = L^T : sum_i (df/dlam_i) E_i, with lam_i and E_i the principal values and
+        ! eigenprojections of Sigma = L : sigma = C : dev(sigma)
+        real(${k}$) :: lam(3), V(3,3), df_dlam(3), phi
+
+        call spectral_decomposition(yield_lin_apply(prm%L, prm%C2, sigma), lam, V)
+        call yield_cpb06_principal_${k}$(prm, lam, phi, df_dlam)
+        $:YIELD_ZERO_AT_NULL('phi', k)
+        res = yield_lin_pull_back(prm%L, prm%C2, spectral_gradient(V, df_dlam))
+    end function yield_dstress_eq_cpb06_${d}$_${k}$
+
+    $:MODEL_FUNCTION('yield', 'cpb06', 'ddstress_eq', k, d)
+        ! d2f/dsigma2 = L^T : d2f/dSigma2 : L, with d2f/dSigma2 assembled from the principal values
+        ! of Sigma = L : sigma = C : dev(sigma)
+        real(${k}$) :: lam(3), V(3,3), df_dlam(3), d2f_dlam2(3,3), phi
+
+        call spectral_decomposition(yield_lin_apply(prm%L, prm%C2, sigma), lam, V)
+        call yield_cpb06_principal_${k}$(prm, lam, phi, df_dlam, d2f_dlam2)
+        $:YIELD_ZERO_AT_NULL('phi', k)
+        res = yield_lin_pull_back_hessian(prm%L, prm%C2, spectral_hessian(lam, V, df_dlam, d2f_dlam2))
+    end function yield_ddstress_eq_cpb06_${d}$_${k}$
+
+    $:MODEL_JOINT_DEFAULT('yield', 'cpb06', k, d)
+#:endfor
+#:endfor
+    $:OO_ADAPTER_PROCS('yield', 'cpb06', 'CPB06', PARAMS)
+
+    subroutine init_tbp(self, c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k, a)
+        !! `%init(...)`: sets the parameters of the CPB06 model and computes B and L (type-bound,
+        !! historical API; host only). Calls `yield_cpb06_init_dp`.
+        implicit none
+        class(CPB06), intent(inout) :: self
+            !! Model.
+        real(dp), intent(in) :: c11, c12, c13, c21, c22, c23, c31, c32, c33
+            !! Normal block of C.
+        real(dp), intent(in) :: c44, c55, c66
+            !! Shear factors of C (xy, yz, xz).
+        real(dp), intent(in) :: k
+            !! Strength differential parameter.
+        real(dp), intent(in) :: a
+            !! Exponent.
+        type(yield_cpb06_dp) :: prm
+
+        call yield_cpb06_init_dp(prm, c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k, a)
+$:OO_COPY_PARAMS('self', 'prm', PARAMS)
+    end subroutine init_tbp
+
+end module muscle_yield_cpb06

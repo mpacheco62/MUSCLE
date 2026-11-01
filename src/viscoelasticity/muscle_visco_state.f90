@@ -4,35 +4,34 @@
 module muscle_visco_state
     !! Module muscle_visco_state
     !! =========================
-    !! Persistent, transaction-aware state of a viscoelastic material point.
+    !! Persistent, transaction-aware state of a viscoelastic material point (historical OO API,
+    !! host only; removed in Phase 7 with the OO adapters, D-017.1).
     !!
-    !! The state has a fixed size (`MAX_VISCO_BRANCHES` history tensors), so copying a history
-    !! (commit, rollback, private copies in OpenMP regions) never allocates memory. The meaning
-    !! of the history tensors depends on the model: for the generalized Maxwell model they are
-    !! the deviatoric stresses of each Maxwell branch.
+    !! The states are the kernel type `visco_state_dp` of muscle_visco_types (historical name
+    !! `Viscoelastic_state`, same components and defaults): fixed size (`MAX_VISCO_BRANCHES` history
+    !! tensors), so copying a history (commit, rollback, private copies in OpenMP regions) never
+    !! allocates memory. The meaning of the history tensors depends on the model: for the
+    !! generalized Maxwell model they are the deviatoric stresses of each Maxwell branch. Kernels
+    !! keep the two states as separate arguments (`visco_update(prm, coefs, state_n, strain_e,
+    !! state_np1)`) instead of this container.
     !!
     !! FEA history array layout (`pack_to_fea` / `unpack_from_fea`):
     !!
     !! - hsv(1:6)              : Elastic strain at the end of the step (xx, yy, zz, xy, yz, xz)
     !! - hsv(6*k+1 : 6*k+6)    : History tensor of branch k (k = 1..n_branches)
+    !!
+    !! `unpack_from_fea` needs `n_branches` set before (`init`, D-017.13c).
 
-    use, intrinsic :: iso_fortran_env, only : real64
-    use muscle_tensors
+    use muscle_kinds, only : dp
+    use muscle_tensors, only : ten_3D2Osym
+    use muscle_status, only : STATUS_OK
+    use muscle_visco_types, only : MAX_VISCO_BRANCHES, Viscoelastic_state => visco_state_dp, visco_state_init
     implicit none
     private
 
-    integer, parameter, public :: MAX_VISCO_BRANCHES = 10
-        !! Maximum number of branches (history tensors) of a viscoelastic state
-
+    public :: MAX_VISCO_BRANCHES
     public :: Viscoelastic_state
     public :: Viscoelastic_history
-
-    type :: Viscoelastic_state
-        !! Viscoelastic state of a material point at a specific instant
-        integer           :: n_branches = 0                                                !! Number of active branches
-        type(ten_3D2Osym) :: strain_e = ten_3D2Osym((/0d0, 0d0, 0d0, 0d0, 0d0, 0d0/))  !! Elastic strain
-        real(real64)      :: h(6, MAX_VISCO_BRANCHES) = 0D0                                !! History tensors (Voigt)
-    end type Viscoelastic_state
 
     type :: Viscoelastic_history
         !! Transactional history container holding converged state (t_n) and trial state (t_n+1).
@@ -53,16 +52,13 @@ contains
         class(Viscoelastic_history), intent(inout) :: self
         integer, intent(in)                        :: n_branches
         type(ten_3D2Osym), intent(in), optional    :: strain_e
+        integer :: status
 
-        if (n_branches < 0 .or. n_branches > MAX_VISCO_BRANCHES) then
+        call visco_state_init(self%state_n, n_branches, status, strain_e)
+        if (status /= STATUS_OK) then
             error stop "ERROR FATAL [Viscoelastic_history%init]: " // &
-                       "n_branches debe estar entre 0 y MAX_VISCO_BRANCHES."
+                       "n_branches must be between 0 and MAX_VISCO_BRANCHES."
         end if
-
-        self%state_n%n_branches = n_branches
-        self%state_n%h = 0D0
-        self%state_n%strain_e%vals = 0D0
-        if (present(strain_e)) self%state_n%strain_e = strain_e
         self%state_np1 = self%state_n
     end subroutine history_init
 
@@ -81,7 +77,7 @@ contains
     pure subroutine history_unpack(self, hsv)
         !! Unpacks state_n from a flat 1D FEA history array. `n_branches` must be set (`init`).
         class(Viscoelastic_history), intent(inout) :: self
-        real(real64), intent(in)                   :: hsv(:)
+        real(dp), intent(in)                       :: hsv(:)
         integer :: n
 
         n = self%state_n%n_branches
@@ -100,7 +96,7 @@ contains
     pure subroutine history_pack(self, hsv)
         !! Packs trial state_np1 into a flat 1D FEA history array.
         class(Viscoelastic_history), intent(in) :: self
-        real(real64), intent(inout)             :: hsv(:)
+        real(dp), intent(inout)                 :: hsv(:)
         integer :: n
 
         n = self%state_np1%n_branches

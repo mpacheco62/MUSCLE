@@ -3,8 +3,10 @@
 #:include "muscle_common.fypp"
 #:include "muscle_fd.fypp"
 #!
-#! Test of the finite-difference macros of include/muscle_fd.fypp (D-016.1): FD_DERIV, FD_GRAD,
-#! FD_JAC and FD_HESS instantiated for every kind and dimension inside `pure`, `@:DEVICE()`
+#! Test of the finite-difference macros of include/muscle_fd.fypp (D-016.1): FD_DERIV, FD_DERIV2,
+#! FD_GRAD, FD_JAC and FD_HESS (default step, explicit `step`, `scale` of the argument, D-017.5a;
+#! one-sided stencils with `lower`)
+#! instantiated for every kind and dimension inside `pure`, `@:DEVICE()`
 #! procedures, against the analytical derivatives of smooth test functions, and (dp, 3D) bit for
 #! bit against the host-only API `derivative`/`derivative2O`, which is built on the same macros.
 #! The bit-for-bit equality macro <-> host holds only with the same compile options: with -O3,
@@ -21,6 +23,9 @@
 #!   and 4e-5 (second); tolerance 1e-3.
 #:set TOL1 = {'dp': '1.0e-7', 'sp': '1.0e-3'}
 #:set TOL2 = {'dp': '1.0e-7', 'sp': '1.0e-3'}
+#! One-sided FD_DERIV2 (`lower`): the stencil (2, -5, 4, -1)/h**2 has a rounding error up to
+#! ~12 eps |f|/h**2 (dp 2e-7, sp 3e-3 at x ~ 1 with h = rel).
+#:set TOL2F = {'dp': '1.0e-6', 'sp': '1.0e-2'}
 #! Weights of the test functions per stored 2Osym component (the 2D layout uses the first four)
 #:set A = ['0.6', '0.9', '1.1', '0.7', '1.3', '0.8']
 #:set W = ['0.9', '-0.7', '0.5', '1.3', '-1.1', '0.8']
@@ -40,11 +45,12 @@ module test_fd_macros_funcs
     implicit none
     private
 #:for k in REAL_KINDS
-    public :: f1_${k}$, d1_${k}$, d1_h_${k}$
+    public :: f1_${k}$, d1_${k}$, d1_h_${k}$, d1_s_${k}$, d2_${k}$, d2_h_${k}$, d2_s_${k}$, d1_l_${k}$, d2_l_${k}$
 #:for d in DIMS
     public :: f2o_${d}$_${k}$, grad2o_${d}$_${k}$, grad2o_h_${d}$_${k}$
     public :: fs_${d}$_${k}$, gs_${d}$_${k}$, grad_${d}$_${k}$, jac_${d}$_${k}$, hess_${d}$_${k}$
     public :: grad_h_${d}$_${k}$, jac_h_${d}$_${k}$, hess_h_${d}$_${k}$
+    public :: grad_s_${d}$_${k}$, jac_s_${d}$_${k}$, hess_s_${d}$_${k}$
 #:endfor
 #:endfor
 
@@ -82,6 +88,72 @@ contains
             !! Derivative.
         @:FD_DERIV(res, f1_${k}$({x}), x, ${k}$, step=h)
     end function d1_h_${k}$
+
+    pure function d1_s_${k}$(x, sc) result(res)
+        !! `FD_DERIV` of `f1_${k}$` with a scale of the argument (h = rel max(|x|, sc), D-017.5a).
+        @:DEVICE()
+        real(${k}$), intent(in) :: x
+            !! Argument.
+        real(${k}$), intent(in) :: sc
+            !! Scale.
+        real(${k}$) :: res
+            !! Derivative.
+        @:FD_DERIV(res, f1_${k}$({x}), x, ${k}$, scale=sc)
+    end function d1_s_${k}$
+
+    pure function d2_${k}$(x) result(res)
+        !! `FD_DERIV2` of `f1_${k}$` with the default step.
+        @:DEVICE()
+        real(${k}$), intent(in) :: x
+            !! Argument.
+        real(${k}$) :: res
+            !! Second derivative.
+        @:FD_DERIV2(res, f1_${k}$({x}), x, ${k}$)
+    end function d2_${k}$
+
+    pure function d2_h_${k}$(x, h) result(res)
+        !! `FD_DERIV2` of `f1_${k}$` with an explicit step.
+        @:DEVICE()
+        real(${k}$), intent(in) :: x
+            !! Argument.
+        real(${k}$), intent(in) :: h
+            !! Step.
+        real(${k}$) :: res
+            !! Second derivative.
+        @:FD_DERIV2(res, f1_${k}$({x}), x, ${k}$, step=h)
+    end function d2_h_${k}$
+
+    pure function d2_s_${k}$(x, sc) result(res)
+        !! `FD_DERIV2` of `f1_${k}$` with a scale of the argument (h = rel max(|x|, sc)).
+        @:DEVICE()
+        real(${k}$), intent(in) :: x
+            !! Argument.
+        real(${k}$), intent(in) :: sc
+            !! Scale.
+        real(${k}$) :: res
+            !! Second derivative.
+        @:FD_DERIV2(res, f1_${k}$({x}), x, ${k}$, scale=sc)
+    end function d2_s_${k}$
+
+    pure function d1_l_${k}$(x) result(res)
+        !! `FD_DERIV` of `f1_${k}$` with scale 1 and `lower = x`: always the one-sided stencil.
+        @:DEVICE()
+        real(${k}$), intent(in) :: x
+            !! Argument.
+        real(${k}$) :: res
+            !! Derivative.
+        @:FD_DERIV(res, f1_${k}$({x}), x, ${k}$, scale=1.0_${k}$, lower=x)
+    end function d1_l_${k}$
+
+    pure function d2_l_${k}$(x) result(res)
+        !! `FD_DERIV2` of `f1_${k}$` with scale 1 and `lower = x`: always the one-sided stencil.
+        @:DEVICE()
+        real(${k}$), intent(in) :: x
+            !! Argument.
+        real(${k}$) :: res
+            !! Second derivative.
+        @:FD_DERIV2(res, f1_${k}$({x}), x, ${k}$, scale=1.0_${k}$, lower=x)
+    end function d2_l_${k}$
 
 #:for d in DIMS
 #:set lay = layout('2Osym', d)
@@ -155,56 +227,64 @@ contains
         end do
     end function gs_${d}$_${k}$
 
-#:for sfx, sarg, sdecl in [('', '', None), ('_h', ', h', 'h')]
+#! Default step, explicit step `h`, scale `sc` of the argument (D-017.5a)
+#:set SDOC = {None: '', 'h': ' with an explicit step', 'sc': ' with a scale of the argument'}
+#:for sfx, sarg, sdecl in [('', '', None), ('_h', ', h', 'h'), ('_s', ', sc', 'sc')]
     pure function grad${sfx}$_${d}$_${k}$(s${sarg}$) result(res)
-        !! `FD_GRAD` of `fs_${d}$_${k}$`${' with an explicit step' if sdecl else ''}$.
+        !! `FD_GRAD` of `fs_${d}$_${k}$`${SDOC[sdecl]}$.
         @:DEVICE()
         type(${T}$), intent(in) :: s
             !! Argument.
 #:if sdecl
-        real(${k}$), intent(in) :: h
-            !! Step.
+        real(${k}$), intent(in) :: ${sdecl}$
+            !! ${'Step.' if sdecl == 'h' else 'Scale.'}$
 #:endif
         type(${T}$) :: res
             !! Gradient.
-#:if sdecl
+#:if sdecl == 'h'
         @:FD_GRAD(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$, step=h)
+#:elif sdecl == 'sc'
+        @:FD_GRAD(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$, scale=sc)
 #:else
         @:FD_GRAD(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$)
 #:endif
     end function grad${sfx}$_${d}$_${k}$
 
     pure function jac${sfx}$_${d}$_${k}$(s${sarg}$) result(res)
-        !! `FD_JAC` of `gs_${d}$_${k}$`${' with an explicit step' if sdecl else ''}$.
+        !! `FD_JAC` of `gs_${d}$_${k}$`${SDOC[sdecl]}$.
         @:DEVICE()
         type(${T}$), intent(in) :: s
             !! Argument.
 #:if sdecl
-        real(${k}$), intent(in) :: h
-            !! Step.
+        real(${k}$), intent(in) :: ${sdecl}$
+            !! ${'Step.' if sdecl == 'h' else 'Scale.'}$
 #:endif
         type(${tname(d + '4O2sym', k)}$) :: res
             !! Jacobian.
-#:if sdecl
+#:if sdecl == 'h'
         @:FD_JAC(res, gs_${d}$_${k}$({x}), s, ${k}$, ${d}$, step=h)
+#:elif sdecl == 'sc'
+        @:FD_JAC(res, gs_${d}$_${k}$({x}), s, ${k}$, ${d}$, scale=sc)
 #:else
         @:FD_JAC(res, gs_${d}$_${k}$({x}), s, ${k}$, ${d}$)
 #:endif
     end function jac${sfx}$_${d}$_${k}$
 
     pure function hess${sfx}$_${d}$_${k}$(s${sarg}$) result(res)
-        !! `FD_HESS` of `fs_${d}$_${k}$`${' with an explicit step' if sdecl else ''}$.
+        !! `FD_HESS` of `fs_${d}$_${k}$`${SDOC[sdecl]}$.
         @:DEVICE()
         type(${T}$), intent(in) :: s
             !! Argument.
 #:if sdecl
-        real(${k}$), intent(in) :: h
-            !! Step.
+        real(${k}$), intent(in) :: ${sdecl}$
+            !! ${'Step.' if sdecl == 'h' else 'Scale.'}$
 #:endif
         type(${tname(d + '4O3sym', k)}$) :: res
             !! Second derivative.
-#:if sdecl
+#:if sdecl == 'h'
         @:FD_HESS(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$, step=h)
+#:elif sdecl == 'sc'
+        @:FD_HESS(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$, scale=sc)
 #:else
         @:FD_HESS(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$)
 #:endif
@@ -221,6 +301,10 @@ program test_math_fd_macros
     !! zero argument, D-016.4) and, in double precision 3D, the macros bit for bit against the host
     !! API, also at a tiny non-zero argument where the historical minimum step applies.
     use muscle_kinds, only : sp, dp
+#:for k in REAL_KINDS
+    use muscle_kinds, only : FD_STEP_CEN_${k}$, FD_STEP_CEN2_${k}$, FD_STEP_MIN_${k}$, FD_STEP_CEN_2OSYM_${k}$, &
+        FD_STEP_CEN_JAC_${k}$
+#:endfor
     use muscle_tensor_2o, only : ${', '.join(tname(d + '2O', k) for d in DIMS for k in REAL_KINDS)}$
     use muscle_tensor_2osym, only : ${', '.join(tname(d + '2Osym', k) for d in DIMS for k in REAL_KINDS)}$
     use muscle_tensor_4o2sym, only : ${', '.join(tname(d + '4O2sym', k) for d in DIMS for k in REAL_KINDS)}$
@@ -234,8 +318,11 @@ program test_math_fd_macros
 
     passed = .true.
 #:for k in REAL_KINDS
-    call check_scalar_${k}$(0.6_${k}$, 'x = 0.6')
-    call check_scalar_${k}$(0.0_${k}$, 'x = 0')
+    call check_scalar_${k}$(0.6_${k}$, 'x = 0.6', .true.)
+    call check_scalar_${k}$(0.0_${k}$, 'x = 0', .true.)
+    ! Small non-zero argument of a function with f(0) /= 0: the default step (relative to |x|)
+    ! collapses there (rounding error ~ eps |f|/h); the scale keeps it (D-017.5a)
+    call check_scalar_${k}$(1.0e-6_${k}$, 'x = 1e-6', .false.)
 #:for d in DIMS
     call check_${d}$_${k}$([0.7_${k}$, -0.4_${k}$, 0.9_${k}$, 0.3_${k}$, -0.6_${k}$, 0.5_${k}$], '${d}$ ${k}$ generic')
     call check_${d}$_${k}$(spread(0.0_${k}$, 1, 6), '${d}$ ${k}$ zero')
@@ -251,16 +338,37 @@ program test_math_fd_macros
 contains
 #:for k in REAL_KINDS
 
-    subroutine check_scalar_${k}$(x, label)
-        !! `FD_DERIV` against f1' = 0.5 exp(0.5 x) + 3 x^2 in `real(${k}$)`.
+    subroutine check_scalar_${k}$(x, label, default_step)
+        !! `FD_DERIV` against f1' = 0.5 exp(0.5 x) + 3 x^2 and `FD_DERIV2` against
+        !! f1'' = 0.25 exp(0.5 x) + 6 x in `real(${k}$)`, and their step rules.
         real(${k}$), intent(in) :: x
             !! Argument.
         character(len=*), intent(in) :: label
             !! Case label.
+        logical, intent(in) :: default_step
+            !! Check the default step against the analytical derivatives too.
         real(${k}$) :: ex
         ex = 0.5_${k}$*exp(0.5_${k}$*x) + 3.0_${k}$*x**2
-        call check_approx(passed, 'FD_DERIV ${k}$ ' // label, d1_${k}$(x), ex, ${TOL1[k]}$_${k}$)
-        call check_approx(passed, 'derivative ${k}$ ' // label, derivative(f1_${k}$, x), ex, ${TOL1[k]}$_${k}$)
+        if (default_step) then
+            call check_approx(passed, 'FD_DERIV ${k}$ ' // label, d1_${k}$(x), ex, ${TOL1[k]}$_${k}$)
+            call check_approx(passed, 'derivative ${k}$ ' // label, derivative(f1_${k}$, x), ex, ${TOL1[k]}$_${k}$)
+        end if
+        call check_approx(passed, 'FD_DERIV(scale = 1) ${k}$ ' // label, d1_s_${k}$(x, 1.0_${k}$), ex, ${TOL1[k]}$_${k}$)
+        call check_approx(passed, 'FD_DERIV(lower = x) ${k}$ ' // label, d1_l_${k}$(x), ex, ${TOL1[k]}$_${k}$)
+        ex = 0.25_${k}$*exp(0.5_${k}$*x) + 6.0_${k}$*x
+        if (default_step) then
+            call check_approx(passed, 'FD_DERIV2 ${k}$ ' // label, d2_${k}$(x), ex, ${TOL2[k]}$_${k}$)
+        end if
+        call check_approx(passed, 'FD_DERIV2(scale = 1) ${k}$ ' // label, d2_s_${k}$(x, 1.0_${k}$), ex, ${TOL2[k]}$_${k}$)
+        call check_approx(passed, 'FD_DERIV2(lower = x) ${k}$ ' // label, d2_l_${k}$(x), ex, ${TOL2F[k]}$_${k}$)
+        ! Step rules, bit for bit: scale -> h = rel max(|x|, scale); default FD_DERIV2 -> D-016.4
+        call check_approx(passed, 'FD_DERIV(scale) = FD_DERIV(rel max(|x|, scale)) ${k}$ ' // label, &
+                          d1_s_${k}$(x, 0.5_${k}$), d1_h_${k}$(x, FD_STEP_CEN_${k}$*max(abs(x), 0.5_${k}$)), 0.0_${k}$)
+        call check_approx(passed, 'FD_DERIV2(scale) = FD_DERIV2(rel max(|x|, scale)) ${k}$ ' // label, &
+                          d2_s_${k}$(x, 0.5_${k}$), d2_h_${k}$(x, FD_STEP_CEN2_${k}$*max(abs(x), 0.5_${k}$)), 0.0_${k}$)
+        call check_approx(passed, 'FD_DERIV2 default step ${k}$ ' // label, d2_${k}$(x), &
+                          d2_h_${k}$(x, merge(max(abs(x)*FD_STEP_CEN2_${k}$, FD_STEP_MIN_${k}$), FD_STEP_CEN2_${k}$, &
+                          abs(x) > 0.0_${k}$)), 0.0_${k}$)
     end subroutine check_scalar_${k}$
 #:for d in DIMS
 #:set lay = layout('2Osym', d)
@@ -277,9 +385,9 @@ contains
             !! Components (the first ${n}$ are used).
         character(len=*), intent(in) :: label
             !! Case label.
-        type(${T}$) :: s, g
-        type(${tname(d + '4O2sym', k)}$) :: jc
-        type(${tname(d + '4O3sym', k)}$) :: hs
+        type(${T}$) :: s, g, g2
+        type(${tname(d + '4O2sym', k)}$) :: jc, jc2
+        type(${tname(d + '4O3sym', k)}$) :: hs, hs2
         type(${tname(d + '2O', k)}$) :: t, tg
         real(${k}$) :: e, eg(${n}$), ej(${n}$, ${n}$), eh(${len(layout('4O3sym', d).comps)}$), l
         real(${k}$) :: e2, eg2(${n2}$), vt(9)
@@ -347,6 +455,25 @@ contains
         hs = derivative2O(fs_${d}$_${k}$, s)
         call check_approx(passed, 'derivative2O ' // label, hs%vals, eh, ${TOL2[k]}$_${k}$)
 #:endif
+
+        ! Scale of the argument (D-017.5a): accurate with scale 1, and h = rel max(|s|, scale) bit for bit
+        g = grad_s_${d}$_${k}$(s, 1.0_${k}$)
+        call check_approx(passed, 'FD_GRAD(scale = 1) ' // label, g%vals, eg, ${TOL1[k]}$_${k}$)
+        jc = jac_s_${d}$_${k}$(s, 1.0_${k}$)
+        call check_approx(passed, 'FD_JAC(scale = 1) ' // label, reshape(jc%vals, [${n*n}$]), reshape(ej, [${n*n}$]), &
+                          ${TOL1[k]}$_${k}$)
+        hs = hess_s_${d}$_${k}$(s, 1.0_${k}$)
+        call check_approx(passed, 'FD_HESS(scale = 1) ' // label, hs%vals, eh, ${TOL2[k]}$_${k}$)
+        g = grad_s_${d}$_${k}$(s, 0.5_${k}$)
+        g2 = grad_h_${d}$_${k}$(s, FD_STEP_CEN_2OSYM_${k}$*max(s%norm(), 0.5_${k}$))
+        call check_approx(passed, 'FD_GRAD(scale) = FD_GRAD(rel max(|s|, scale)) ' // label, g%vals, g2%vals, 0.0_${k}$)
+        jc = jac_s_${d}$_${k}$(s, 0.5_${k}$)
+        jc2 = jac_h_${d}$_${k}$(s, FD_STEP_CEN_JAC_${k}$*max(s%norm(), 0.5_${k}$))
+        call check_approx(passed, 'FD_JAC(scale) = FD_JAC(rel max(|s|, scale)) ' // label, &
+                          reshape(jc%vals, [${n*n}$]), reshape(jc2%vals, [${n*n}$]), 0.0_${k}$)
+        hs = hess_s_${d}$_${k}$(s, 0.5_${k}$)
+        hs2 = hess_h_${d}$_${k}$(s, FD_STEP_CEN2_${k}$*max(s%norm(), 0.5_${k}$))
+        call check_approx(passed, 'FD_HESS(scale) = FD_HESS(rel max(|s|, scale)) ' // label, hs%vals, hs2%vals, 0.0_${k}$)
     end subroutine check_${d}$_${k}$
 #:endfor
 #:endfor

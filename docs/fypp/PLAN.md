@@ -318,9 +318,9 @@ anotar la fecha/commit.
       `kspecifics` en todas las plantillas math, doc FORD de argumentos de linsolvers, D-016.11);
       build sólo dp 92/92; paso en x = 0 de las primeras derivadas revisado a √ε (D-016.4).
       **Fase 5 cerrada (2026-10-31).** Pendientes que pasan a otras fases:
-      - Fase 6: tangente numérico de los return mappings (`closest_point`, `_time`, `_perzyna`): pasar
+      - Fase 7 (antes Fase 6): tangente numérico de los return mappings (`closest_point`, `_time`, `_perzyna`): pasar
         un paso explícito ligado al material o usar el tangente consistente analítico (D-016.4, sp).
-      - Fase 6: borrar la API `procedure(...)` (`*_host`) al pasar los modelos a las macros (con
+      - Fase 7 (antes Fase 6): borrar la API `procedure(...)` (`*_host`) al pasar los modelos a las macros (con
         tolerancia, D-016.9); golden mínimo del primer incremento (deformación, `ep`, `epd` nulos) de
         los return mappings y de `muscle_vp_base`/`muscle_vp_overstress_base` antes de migrarlos.
       - Fase 8: regla de `check.sh` que impida a un cuerpo con `@:DEVICE()` llamar a nombres
@@ -329,18 +329,76 @@ anotar la fecha/commit.
         positivos); división por cero de `eigenvals` con raíz mayor repetida; ejecución real en GPU.
 
 ### Fase 6 — Modelos genéricos en kind y dimensión
+- Rama `fypp/f6-models` desde `fypp/f5-math` (2026-10-31). Decisiones: D-017. Plan de trabajo por
+      familia, en el orden hardening → viscoplastic → yield → elasticity → viscoelasticity →
+      kinematics: 0) `test-builder`: golden dp de la familia contra el OO original (commit aparte);
+      1) macro de contrato de la familia (el piloto, hardening bilinear, la diseña) + modelos de la
+      familia en sp/dp con funciones libres `pure` + `@:DEVICE()`; 2) adaptadores OO host-only que
+      llaman a las funciones nuevas (solvers/tests/UMAT sin cambios); 3) tests sp; 4) revisión y
+      commit. Golden del primer incremento (deformación, `ep`, `epd` nulos) de return mappings y
+      leyes viscoplásticas antes de migrarlas (pendiente de la Fase 5).
+- [x] Familia hardening (2026-10-31): golden dp (`plasticity-hardening_laws-hard_golden`); patrón
+      invertido de contrato (D-017.6: macros chicas en `include/muscle_models_common.fypp`, metadatos
+      de familia en `muscle_meta`); bilinear, Ludwik, Swift y Voce modificada en sp/dp con funciones
+      libres `pure` + `@:DEVICE()` y genéricos `hard_stress`/`hard_dstress_dep`/`hard_ddstress_ddep`
+      (`muscle_hard_laws`); adaptadores OO generados (D-017.5c); Ludwik offset 1e-10 en ambos kinds
+      (D-017.4); FD con `scale`/`lower`; dp bit a bit; revisiones aplicadas; 94/94.
+- [x] Familia viscoplástica (2026-10-31): golden dp (`plasticity-viscoplastic_laws-vp_golden`, 356
+      registros, incluido ep/epd = 0); familias `vp` (JC, JCfull, MRK, NNL, RK, VA) y `os` (Perzyna,
+      Chaboche) en sp/dp con composición desacoplada (D-017.6b) y API de parciales + total con dt
+      (D-017.8); bugs del original documentados, no corregidos (D-017.7); adaptadores OO; dp bit a
+      bit; revisión aplicada; 96/96.
+- [x] Familia yield, piloto (2026-11-01): golden dp (2012 registros, 37 estados); familia `yield`
+      (D-017.10) con von Mises, Hill48 y CPB06 en sp/dp, evaluación conjunta con `ddf` opcional,
+      parámetros derivados privados, `MODEL_FD` sobre 2Osym; correcciones aprobadas D-017.9 (f = 0)
+      y D-017.10c/d; revisión aplicada; 99/99.
+- [x] Familia yield completa (2026-11-01): Drucker-Prager, CPB06ex2 y Yld2004 (evaluación conjunta
+      propia con `ddf` opcional; código común en `muscle_anisotropic_yield`); parámetros derivados
+      privados con `yield_<m>_init` en los cuatro anisótropos/DP; decisiones D-017.11 (redondeo del
+      reescalado aceptado, umbral sp DP 1e-5, hessiana estable de DP); revisiones aplicadas; 102/102.
+- [x] Familia elasticity, piloto (2026-11-01): golden dp (1311 registros, 3D y 2D); familia `elas`
+      con `Elasticity_linear` en una plantilla 2D/3D sp/dp (D-017.12d); un solo camino analítico para
+      los desviadores (D-017.12a/c, cambios aprobados) y ν = 0.5 documentado (D-017.12b); revisión
+      aplicada. Caché del tangente sólo en el adaptador OO (D-017.12e).
+- [x] Familia viscoelasticity, piloto (2026-11-01): golden dp (historias de varios pasos, 2188
+      registros); familia `visco` con estado explícito (D-017.13d), Maxwell y Kelvin sp/dp,
+      `elas_frozen`, status común; D-017.13a/b aplicados (golden verificado con un oráculo
+      independiente); revisión aplicada; 107/107.
+- [x] Familia kinematics (2026-11-01): golden dp (2071 registros, 20 F + secuencias); familia `kin`
+      con estado `kin_state` y status (D-017.14), las 6 cinemáticas en sp/dp (small strain, TL, UL,
+      logarítmicas material y espacial, corrotacional con `kin_corot_update`); adaptadores OO con
+      los mismos bits; revisión aplicada. Ya no queda ninguna cinemática en `.f90` (sólo bases y
+      adaptadores host y la fachada).
+- Para la Fase 7 (de la revisión de kinematics): `kin_update` de TL/UL calcula la polar completa en
+  cada punto aunque no use R (necesario hoy para el status y los mismos bits): valorar una variante
+  sin R tras perfilar; no hay equivalente de `update_incremental` en el kernel (el solver construye
+  F_{n+1}); falta el término geométrico/Jaumann de los tangentes (USERMAT de ANSYS, D-017.14b).
+- Para la Fase 7 (de la revisión de visco): el estado de tamaño fijo copia 6 + 6·MAX_VISCO_BRANCHES
+  reales por punto (`state_np1 = state_n`); con MAX = 10 y dos estados por hilo son ~130 reales
+  (riesgo de derrame de registros): considerar un máximo de ramas por material declarado. Unificar
+  `STATUS_OK = 0` con los códigos de resultado de los solvers históricos (`STATUS_ELASTIC_CASE = 0`).
 Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yield → elasticity
 → viscoelasticity → kinematics.
-- [ ] Cada modelo concreto pasa a `type` concreto + procedimientos de módulo `pure`
-      (`stress_eq_hill48_dp(params, stress)`), genérico en `k` y, cuando aplique, en `d`.
-- [ ] `Base_elasticity`: `stress_3D`/`stress_2D` (+ `_transient`) desde una plantilla.
-- [ ] Unificar firmas por familia (contrato D-007): mismos nombres y argumentos en todos los
-      modelos de una familia. Condición previa de la Fase 7 (D-008).
-- [ ] Retirar los tipos abstractos (`Base_*`): sin fachada OO (D-007/D-008).
-- [ ] Maxwell: ramas en array fijo (`MAXWELL_MAX_BRANCHES`), sin allocatables.
+- [x] Cada modelo concreto pasa a `type` concreto + procedimientos de módulo `pure`, genérico en `k`
+      y, cuando aplique, en `d` (patrón invertido, D-017.6).
+- [x] `Elasticity_linear`: `stress_3D`/`stress_2D` desde una plantilla (D-017.12d).
+- [x] Unificar firmas por familia (contrato D-007): genéricos `<fam>_<func>` iguales en todos los
+      modelos de una familia (D-017.5b).
+- [x] Estado plástico `plastic_state_<k>` (`muscle_plastic_state`, módulo de soporte sin familia):
+      tamaño fijo, pack/unpack `pure` + `@:DEVICE()`, sin status (no valida);
+      `Plastic_material_history` queda como adaptador host (2026-11-01).
+- [x] Revisión final de la fase (2026-11-01): build sólo dp 111/111; sin modelos en `.f90` salvo
+      bases/adaptadores host, fachadas y solvers. **Fase 6 cerrada (2026-11-01).** Pasan a la Fase 7:
+      retirar los `Base_*` y los adaptadores OO (D-017.1); tangente numérico y golden del primer
+      incremento de los return mappings; borrar la API `procedure(...)` (aún la usan
+      `muscle_vp_overstress_base` y los `closest_point*`); composición múltiple en `ModelFamily`
+      (yield con endurecimiento isótropo + cinemático) y valores compuestos tensoriales; decidir si se
+      unifican el status de los `*_init` (yield/elas no lo devuelven; visco sí) y el pack/unpack de
+      kernel (plastic_state sí; visco no). Fase 8: comprobar con el compilador de offload que los
+      módulos de kernel compilan aunque hagan `use` de las bases OO (D-017.5c) antes de retirarlas.
+- [x] Maxwell: ramas en array fijo (ya era `MAX_VISCO_BRANCHES = 10`, sin allocatables; D-017.13c).
 
 ### Fase 7 — Materiales declarados y API por lotes (D-008)
-- [ ] Macro de contrato `#:call yield_model(...)` (y análogas por familia) — ver D-007.
 - [ ] Cuerpos de solver (`closest_point`, `perzyna`, `time`) escritos una vez contra nombres
       genéricos (`yield_f`, `sigy`, ...) e instanciados por material vía `use` con renombre.
 - [ ] Generador de materiales: registro `MATERIALS` (`-DMUSCLE_MATERIALS=...`), un módulo por

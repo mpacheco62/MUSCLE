@@ -1,0 +1,22 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+
+module muscle_hard_laws
+    !! Isotropic hardening laws for kernels (D-007, D-017): the parameter types of every registered
+    !! law (`hard_<name>_<k>`, `HARDENING_MODELS` of tools/fypp/muscle_meta.py) and the family
+    !! generics (prefix `hard_`, D-017.5b), with the same names and arguments for every law and kind:
+    !!
+    !! - `hard_stress(prm, ep)`: flow stress \( \sigma_y(\epsilon_p) \);
+    !! - `hard_dstress_dep(prm, ep)`: hardening modulus \( d\sigma_y/d\epsilon_p \);
+    !! - `hard_ddstress_ddep(prm, ep)`: \( d^2\sigma_y/d\epsilon_p^2 \).
+    !!
+    !! `prm` is the parameter type of a law and `ep` the equivalent plastic strain, of the same kind.
+    !! Example: `sy = hard_stress(hard_bilinear_dp(y0=250.0_dp, K=1000.0_dp), 0.01_dp)`.
+    $:FAMILY_USES('hard')
+    implicit none
+    private
+
+    $:FAMILY_EXPORTS('hard')
+
+end module muscle_hard_laws

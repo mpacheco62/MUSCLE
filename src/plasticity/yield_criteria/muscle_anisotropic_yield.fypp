@@ -1,0 +1,312 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+
+module muscle_anisotropic_yield
+    !! Code shared by the anisotropic yield criteria built on linear transformations of the stress,
+    !! \( \boldsymbol\Sigma = \mathbf{L} : \boldsymbol\sigma \) (CPB06, CPB06ex2, Yld2004), where
+    !! \( \mathbf{L} \) acts on the normal components through its 3x3 normal block and on each
+    !! tensorial shear (xy, yz, xz) through a factor. Kernel routines (`pure`, `@:DEVICE()`) for each
+    !! real kind (and dimension of the yield family, only 3D so far):
+    !!
+    !! - `yield_lin_dev_block(C)`: normal block of \( \mathbf{L} = \mathbf{C} \mathbb{P}_{dev} \);
+    !! - `yield_lin_apply(L, c, stress)`: \( \mathbf{L} : \boldsymbol\sigma \) for a block with zero
+    !!   row sums (the pressure cancels before the products);
+    !! - `yield_lin_pull_back(L, c, x)`: \( \mathbf{L}^T : \mathbf{x} \) (chain rule of a gradient);
+    !! - `yield_lin_pull_back_hessian(L, c, H)`: \( \mathbf{L}^T : \mathbb{H} : \mathbf{L} \);
+    !! - `yield_cpb_terms`, `yield_cpb_hessian`: the principal-value terms of the CPB06 family,
+    !!   \( \sum_i (|\lambda_i| - k \lambda_i)^a \) (Cazacu et al., 2006, Eq. 9; Plunkett et al.,
+    !!   2008, Eq. 8), and their second derivatives (with the private `yield_cpb_curvature_<k>`, the
+    !!   value chosen at a null principal value).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
+    implicit none
+    private
+
+    public :: yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, yield_lin_pull_back_hessian
+    public :: yield_cpb_terms, yield_cpb_hessian
+
+    interface yield_lin_dev_block
+        !! Normal block of L = C P_dev from the normal block of C.
+        module procedure ${', '.join('yield_lin_dev_block_' + k for k in REAL_KINDS)}$
+    end interface yield_lin_dev_block
+
+    interface yield_lin_apply
+        !! L : stress (normal block with zero row sums, shear factors).
+        module procedure ${', '.join('yield_lin_apply_{}_{}'.format(d, k) for d in model_dims('yield') for k in REAL_KINDS)}$
+    end interface yield_lin_apply
+
+    interface yield_lin_pull_back
+        !! L^T : x.
+        module procedure ${', '.join('yield_lin_pull_back_{}_{}'.format(d, k) for d in model_dims('yield') for k in REAL_KINDS)}$
+    end interface yield_lin_pull_back
+
+    interface yield_lin_pull_back_hessian
+        !! L^T : H : L.
+        module procedure ${', '.join('yield_lin_pull_back_hessian_{}_{}'.format(d, k) for d in model_dims('yield') for k in REAL_KINDS)}$
+    end interface yield_lin_pull_back_hessian
+
+    interface yield_cpb_terms
+        !! psi_i = |lam_i| - k lam_i, p_i = psi_i**(a-1) and s_i = sgn(lam_i) - k.
+        module procedure ${', '.join('yield_cpb_terms_' + k for k in REAL_KINDS)}$
+    end interface yield_cpb_terms
+
+    interface yield_cpb_hessian
+        !! Second derivatives of f = B Phi**(1/a) with respect to the principal values.
+        module procedure ${', '.join('yield_cpb_hessian_' + k for k in REAL_KINDS)}$
+    end interface yield_cpb_hessian
+
+
+contains
+#:for k in REAL_KINDS
+
+    pure subroutine yield_cpb_terms_${k}$(lam, k, a, psi, p, s)
+        !! Terms of Phi = sum_i psi_i**a in `real(${k}$)` (Cazacu et al., 2006, Eq. 9; Plunkett et
+        !! al., 2008, Eq. 8): s_i = sgn(lam_i) - k, psi_i = |lam_i| - k lam_i = lam_i s_i and
+        !! p_i = psi_i**(a-1), each real power evaluated once.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: lam(3)
+            !! Principal values.
+        real(${k}$), intent(in) :: k
+            !! Strength differential parameter.
+        real(${k}$), intent(in) :: a
+            !! Exponent.
+        real(${k}$), intent(out) :: psi(3)
+            !! psi_i.
+        real(${k}$), intent(out) :: p(3)
+            !! psi_i**(a-1).
+        real(${k}$), intent(out) :: s(3)
+            !! sgn(lam_i) - k.
+
+        s(1) = sign(1.0_${k}$, lam(1)) - k
+        s(2) = sign(1.0_${k}$, lam(2)) - k
+        s(3) = sign(1.0_${k}$, lam(3)) - k
+        psi(1) = lam(1)*s(1)
+        psi(2) = lam(2)*s(2)
+        psi(3) = lam(3)*s(3)
+        p(1) = psi(1)**(a - 1.0_${k}$)
+        p(2) = psi(2)**(a - 1.0_${k}$)
+        p(3) = psi(3)**(a - 1.0_${k}$)
+    end subroutine yield_cpb_terms_${k}$
+
+    pure function yield_cpb_hessian_${k}$(lam, k, a, psi, p, s, df, f_phi, q) result(res)
+        !! Block of d2f/dlam_i dlam_j in `real(${k}$)` of f = B Psi**(1/a) for the principal values
+        !! lam of one transformation (Cazacu et al., 2006, Eq. 9; Plunkett et al., 2008, Eq. 8):
+        !! (a-1) (f/Psi) (delta_ij psi_i**(a-2) (sgn(lam_i) - k)**2) - ((a-1)/Psi) df_i p_j s_j, with
+        !! Psi the total sum (f_phi = f/Psi, q = (a-1)/Psi) and df = df/dlam.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: lam(3)
+            !! Principal values.
+        real(${k}$), intent(in) :: k
+            !! Strength differential parameter.
+        real(${k}$), intent(in) :: a
+            !! Exponent.
+        real(${k}$), intent(in) :: psi(3), p(3), s(3)
+            !! Terms of `yield_cpb_terms`.
+        real(${k}$), intent(in) :: df(3)
+            !! df/dlam_i.
+        real(${k}$), intent(in) :: f_phi
+            !! f/Psi.
+        real(${k}$), intent(in) :: q
+            !! (a-1)/Psi.
+        real(${k}$) :: res(3,3)
+            !! d2f/dlam_i dlam_j.
+
+        res(1,1) = (a - 1.0_${k}$)*f_phi*yield_cpb_curvature_${k}$(lam(1), k, a, psi(1), p(1), s(1)) &
+                   - q*df(1)*p(1)*s(1)
+        res(2,2) = (a - 1.0_${k}$)*f_phi*yield_cpb_curvature_${k}$(lam(2), k, a, psi(2), p(2), s(2)) &
+                   - q*df(2)*p(2)*s(2)
+        res(3,3) = (a - 1.0_${k}$)*f_phi*yield_cpb_curvature_${k}$(lam(3), k, a, psi(3), p(3), s(3)) &
+                   - q*df(3)*p(3)*s(3)
+        res(1,2) = -q*df(1)*p(2)*s(2)
+        res(1,3) = -q*df(1)*p(3)*s(3)
+        res(2,3) = -q*df(2)*p(3)*s(3)
+        res(2,1) = res(1,2)
+        res(3,1) = res(1,3)
+        res(3,2) = res(2,3)
+    end function yield_cpb_hessian_${k}$
+
+    pure function yield_cpb_curvature_${k}$(lam, k, a, psi, p, s) result(c)
+        !! c = psi**(a-2) (sgn(lam) - k)**2 for one principal value in `real(${k}$)`, with
+        !! p = psi**(a-1) and s = sgn(lam) - k (Cazacu et al., 2006, Eq. 9), reusing p instead of
+        !! another real power.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: lam, k, a, psi, p, s
+            !! Principal value, strength differential parameter, exponent, psi, p and s.
+        real(${k}$) :: c
+            !! Curvature term.
+
+        if (psi > 0.0_${k}$) then
+            c = p*s**2/psi
+        else if (abs(lam) > 0.0_${k}$) then
+            c = 0.0_${k}$  ! |k| = 1: h = 0 on this side of lam = 0
+        else
+            ! lam = 0: for a = 2, mean of the one-sided values (1 - k)**2 and (1 + k)**2;
+            ! 0 for a > 2. For 1 <= a < 2 the second derivative of h is not bounded at 0 (and
+            ! for a = 1 the first): the values returned there are finite, not derivatives.
+            c = merge(1.0_${k}$ + k**2, 0.0_${k}$, a <= 2.0_${k}$)
+        end if
+    end function yield_cpb_curvature_${k}$
+
+    pure function yield_lin_dev_block_${k}$(C) result(L)
+        !! Normal block of L = C P_dev in `real(${k}$)`, so that L : sigma = C : dev(sigma) (Cazacu et
+        !! al., 2006, Eq. 8; Plunkett et al., 2008, Eq. 9), with C a normal block (general, not only
+        !! symmetric) and P_dev the deviatoric projection: L_ij = C_ij - (1/3) sum_k C_ik. Each row of
+        !! L sums to zero (L annihilates a hydrostatic stress).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: C(3,3)
+            !! Normal block of C.
+        real(${k}$) :: L(3,3)
+            !! Normal block of L.
+        real(${k}$) :: m1, m2, m3
+
+        ! m_i = (1/3) sum_k C_ik. The third column is taken from the row sum, so that each row
+        ! sums to zero also in floating point
+        m1 = (C(1,1) + C(1,2) + C(1,3))/3.0_${k}$
+        m2 = (C(2,1) + C(2,2) + C(2,3))/3.0_${k}$
+        m3 = (C(3,1) + C(3,2) + C(3,3))/3.0_${k}$
+        L(1,1) = C(1,1) - m1
+        L(1,2) = C(1,2) - m1
+        L(1,3) = -L(1,1) - L(1,2)
+        L(2,1) = C(2,1) - m2
+        L(2,2) = C(2,2) - m2
+        L(2,3) = -L(2,1) - L(2,2)
+        L(3,1) = C(3,1) - m3
+        L(3,2) = C(3,2) - m3
+        L(3,3) = -L(3,1) - L(3,2)
+    end function yield_lin_dev_block_${k}$
+
+    pure function yield_lin_normal_pull_back_${k}$(L, x, y, z) result(res)
+        !! L^T (x, y, z) on the normal components in `real(${k}$)`, from the chain rule through
+        !! Sigma = L : stress.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: L(3,3)
+            !! Normal block of L.
+        real(${k}$), intent(in) :: x, y, z
+            !! Normal components (xx, yy, zz).
+        real(${k}$) :: res(3)
+            !! L^T (x, y, z).
+
+        res(1) = L(1,1)*x + L(2,1)*y + L(3,1)*z
+        res(2) = L(1,2)*x + L(2,2)*y + L(3,2)*z
+        res(3) = L(1,3)*x + L(2,3)*y + L(3,3)*z
+    end function yield_lin_normal_pull_back_${k}$
+#:for d in model_dims('yield')
+#:assert d == '3D', 'yield criteria: only 3D until a 2D vs 3D test exists (dims-2d-3d.md)'
+#:set T2 = tname(d + '2Osym', k)
+#:set T4 = tname(d + '4O3sym', k)
+
+    pure function yield_lin_apply_${d}$_${k}$(L, c, stress) result(res)
+        !! Sigma = L : stress in `real(${k}$)` (${d}$) for a normal block L whose rows sum to zero
+        !! (`yield_lin_dev_block`): L acts on the normal components and c on the tensorial shears
+        !! (xy, yz, xz).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: L(3,3)
+            !! Normal block of L (zero row sums).
+        real(${k}$), intent(in) :: c(3)
+            !! Shear factors (xy, yz, xz).
+        type(${T2}$), intent(in) :: stress
+            !! Stress.
+        type(${T2}$) :: res
+            !! Sigma.
+        real(${k}$) :: dxx, dyy
+
+        ! The rows of L sum to zero, so L acts on the differences of the normal stresses: the
+        ! pressure cancels before the products and not by rounding after them
+        dxx = stress%vals(1) - stress%vals(3)
+        dyy = stress%vals(2) - stress%vals(3)
+        res%vals(1) = L(1,1)*dxx + L(1,2)*dyy
+        res%vals(2) = L(2,1)*dxx + L(2,2)*dyy
+        res%vals(3) = L(3,1)*dxx + L(3,2)*dyy
+        res%vals(4) = c(1)*stress%vals(4)
+        res%vals(5) = c(2)*stress%vals(5)
+        res%vals(6) = c(3)*stress%vals(6)
+    end function yield_lin_apply_${d}$_${k}$
+
+    pure function yield_lin_pull_back_${d}$_${k}$(L, c, x) result(res)
+        !! L^T : x in `real(${k}$)` (${d}$), the adjoint of the linear transformation: by the chain
+        !! rule through Sigma = L : stress it takes a derivative with respect to Sigma to one with
+        !! respect to the stress (tensorial shears: no extra factor).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: L(3,3)
+            !! Normal block of L.
+        real(${k}$), intent(in) :: c(3)
+            !! Shear factors (xy, yz, xz).
+        type(${T2}$), intent(in) :: x
+            !! Derivative with respect to Sigma.
+        type(${T2}$) :: res
+            !! Derivative with respect to the stress.
+        real(${k}$) :: n(3)
+
+        n = yield_lin_normal_pull_back_${k}$(L, x%vals(1), x%vals(2), x%vals(3))
+        res%vals(1) = n(1)
+        res%vals(2) = n(2)
+        res%vals(3) = n(3)
+        res%vals(4) = c(1)*x%vals(4)
+        res%vals(5) = c(2)*x%vals(5)
+        res%vals(6) = c(3)*x%vals(6)
+    end function yield_lin_pull_back_${d}$_${k}$
+
+    pure function yield_lin_pull_back_hessian_${d}$_${k}$(L, c, H) result(res)
+        !! L^T : H : L in `real(${k}$)` (${d}$), the second derivative by the chain rule through
+        !! Sigma = L : stress, for a fourth-order H with major and minor symmetries, by blocks of its
+        !! 6x6 components: L^T Hnn L on the normal block, L^T Hns c on the normal-shear block and
+        !! c Hss c on the shear block.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: L(3,3)
+            !! Normal block of L.
+        real(${k}$), intent(in) :: c(3)
+            !! Shear factors (xy, yz, xz).
+        type(${T4}$), intent(in) :: H
+            !! Second derivative with respect to Sigma.
+        type(${T4}$) :: res
+            !! Second derivative with respect to the stress.
+        real(${k}$), dimension(3) :: cxx, cyy, czz, rxx, ryy, rzz, nxy, nyz, nxz
+
+        ! Normal block: L^T on the columns of Hnn, then on the rows of the result
+        cxx = yield_lin_normal_pull_back_${k}$(L, H%vals(1), H%vals(7), H%vals(12))
+        cyy = yield_lin_normal_pull_back_${k}$(L, H%vals(7), H%vals(2), H%vals(8))
+        czz = yield_lin_normal_pull_back_${k}$(L, H%vals(12), H%vals(8), H%vals(3))
+        rxx = yield_lin_normal_pull_back_${k}$(L, cxx(1), cyy(1), czz(1))
+        ryy = yield_lin_normal_pull_back_${k}$(L, cxx(2), cyy(2), czz(2))
+        rzz = yield_lin_normal_pull_back_${k}$(L, cxx(3), cyy(3), czz(3))
+        ! Normal-shear block: L^T on each shear column of Hns, times its shear factor
+        nxy = c(1)*yield_lin_normal_pull_back_${k}$(L, H%vals(16), H%vals(13), H%vals(9))
+        nyz = c(2)*yield_lin_normal_pull_back_${k}$(L, H%vals(19), H%vals(17), H%vals(14))
+        nxz = c(3)*yield_lin_normal_pull_back_${k}$(L, H%vals(21), H%vals(20), H%vals(18))
+        ! Storage order of the result (layout of ${T4}$): diagonal xxxx..xzxz, then the
+        ! superdiagonals of the 6x6 Voigt matrix
+        res%vals(1) = rxx(1)                  ! xxxx
+        res%vals(2) = ryy(2)                  ! yyyy
+        res%vals(3) = rzz(3)                  ! zzzz
+        res%vals(4) = c(1)**2*H%vals(4)       ! xyxy
+        res%vals(5) = c(2)**2*H%vals(5)       ! yzyz
+        res%vals(6) = c(3)**2*H%vals(6)       ! xzxz
+        res%vals(7) = rxx(2)                  ! xxyy
+        res%vals(8) = ryy(3)                  ! yyzz
+        res%vals(9) = nxy(3)                  ! zzxy
+        res%vals(10) = c(1)*c(2)*H%vals(10)   ! xyyz
+        res%vals(11) = c(2)*c(3)*H%vals(11)   ! yzxz
+        res%vals(12) = rxx(3)                 ! xxzz
+        res%vals(13) = nxy(2)                 ! yyxy
+        res%vals(14) = nyz(3)                 ! zzyz
+        res%vals(15) = c(1)*c(3)*H%vals(15)   ! xyxz
+        res%vals(16) = nxy(1)                 ! xxxy
+        res%vals(17) = nyz(2)                 ! yyyz
+        res%vals(18) = nxz(3)                 ! zzxz
+        res%vals(19) = nyz(1)                 ! xxyz
+        res%vals(20) = nxz(2)                 ! yyxz
+        res%vals(21) = nxz(1)                 ! xxxz
+    end function yield_lin_pull_back_hessian_${d}$_${k}$
+#:endfor
+#:endfor
+
+end module muscle_anisotropic_yield

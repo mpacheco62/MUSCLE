@@ -1,0 +1,323 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the elastic family (D-017.6): include/muscle_models_common.fypp
+#! Every parameter is derived from E and nu by the initializer (`elas_linear_init`, OO
+#! `set_parameters`): private in the kernel type (D-017.10b) and, as in the historical type, in the
+#! OO type (`oo_private`). The cached tangents and their flags are OO-only components (D-017.12e):
+#! the kernel assembles the tangent on the fly (same bits). Storage order of the historical type.
+#:set PARAMS = [('lambda', 'real', '', r"Lamé first parameter \( \lambda = E\nu/[(1+\nu)(1-2\nu)] \).", '0.0', True), &
+    &          ('mu', 'real', '', r'Shear modulus \( \mu = E/[2(1+\nu)] \).', '0.0', True), &
+    &          ('e1', 'real', '', r"Diagonal constant \( e_1 = \lambda + 2\mu \) of Hooke law.", '0.0', True)]
+#:set OO_CACHE = [('tan_3D', '3D4O3sym', '', r'Cached 3D tangent \( \mathbf{C} \) (when `tan_init_3D`).', None), &
+    &            ('tan_2D', '2D4O3sym', '', r'Cached 2D tangent \( \mathbf{C} \) (when `tan_init_2D`).', None), &
+    &            ('tan_init_3D', 'logical', '', r'Whether `tan_3D` is cached (`set_parameters`).', '.false.'), &
+    &            ('tan_init_2D', 'logical', '', r'Whether `tan_2D` is cached (`set_parameters`).', '.false.')]
+#! Generated OO bindings: all but the tangents, which return the cache when it is set
+#:set OO_BINDINGS = [b for b in oo_bindings('elas') if b[1] != 'dstress_dstrain']
+#:set OO_EXTRA = [('set_parameters', 'set_parameters_tbp', 'Sets E and nu: computes the Lamé parameters and caches the tangents.'), &
+    &            ('stress_dev_3D_transient', 'stress_dev_3D_transient_tbp', 'Deviatoric 3D stress (transient overload; analytic, D-017.12a).'), &
+    &            ('stress_dev_2D_transient', 'stress_dev_2D_transient_tbp', 'Deviatoric 2D stress (transient overload; analytic, D-017.12a).'), &
+    &            ('dstress_dstrain_dev_3D_transient', 'dstress_dstrain_dev_3D_transient_tbp', &
+    &             'Deviatoric 3D tangent (transient overload; analytic, D-017.12c).'), &
+    &            ('to_string', 'to_string_tbp', 'Formatted internal state.')] + &
+    & [('dstress_dstrain_' + d, 'dstress_dstrain_' + d + '_tbp', 'Tangent (' + d + '): the cache if set, else assembled.') &
+    &  for d in model_dims('elas')]
+#:set OO_STRAIN_T = lambda d: tname(d + '2Osym', 'dp')
+
+module muscle_elasticity_linear
+    !! Linear isotropic elasticity (Hooke law) in 3D and 2D (plane strain/stress and axisymmetry:
+    !! the 33 component is kept):
+    !! \[ \sigma_{ij} = \lambda\,\delta_{ij}\,\varepsilon_{kk} + 2\mu\,\varepsilon_{ij}, \qquad
+    !!    \lambda = \frac{E\nu}{(1+\nu)(1-2\nu)}, \quad \mu = \frac{E}{2(1+\nu)} \]
+    !! with the deviatoric stress
+    !! \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \), the tangent
+    !! \( C_{ijkl} = \lambda\,\delta_{ij}\delta_{kl} + \mu(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk}) \)
+    !! and the deviatoric tangent
+    !! \( C^{\mathrm{dev}}_{ijkl} = 2\mu\left(\mathbb{I}^S_{ijkl} - \tfrac{1}{3}\delta_{ij}\delta_{kl}\right) \)
+    !! (Voigt: normal diagonal \( 4\mu/3 \), normal off-diagonal \( -2\mu/3 \), shears \( \mu \)).
+    !! The deviatoric stress always comes from the analytic formula, in 3D and 2D (D-017.12a).
+    !!
+    !! Limits (D-017.12b): the model needs \( \nu < 1/2 \); with \( \nu = 1/2 \) (exact
+    !! incompressibility, not supported) the initializer divides by zero: \( \lambda = +\infty \),
+    !! the normal stresses are NaN and the tangent has infinite entries. \( \nu \) is not validated.
+    !!
+    !! Kernel API: parameter types `elas_linear_<k>` (built only with `elas_linear_init`, which
+    !! computes the private Lamé parameters), and `pure`
+    !! functions `elas_stress_linear_<d>_<k>(prm, strain)`, `elas_stress_dev_linear_<d>_<k>`,
+    !! `elas_dstress_dstrain_linear_<d>_<k>` and `elas_dstress_dstrain_dev_linear_<d>_<k>` for each
+    !! real kind and dimension (3D, 2D), also through the generics `elas_*` of
+    !! `muscle_elasticity_laws`. The tangents do not depend on the strain and are assembled on the
+    !! fly (D-017.12e).
+    !!
+    !! `Elasticity_linear` is the historical OO type (host only, removed in Phase 7), extending
+    !! `Base_elasticity`: `set_parameters(young, poisson, [calc_tan_3D], [calc_tan_2D])` and the
+    !! bindings `stress_3D/2D`, `stress_dev_3D/2D`, `dstress_dstrain_3D/2D` and
+    !! `dstress_dstrain_dev_3D` call the dp kernel functions; the tangents cached by `set_parameters`
+    !! (`calc_tan_3D/2D`, default on) live only in the OO type (D-017.12e) and are returned by
+    !! `dstress_dstrain_3D/2D` when set (same bits as the kernel function). The transient overloads of
+    !! `Base_elasticity` (`dstrain`, `dtime`, `internal`) and `stress_and_update_3D` ignore those
+    !! arguments (D-017.12b): they are the time-independent results. The deviatoric overloads
+    !! (`stress_dev_2D`, both transient `stress_dev` and `dstress_dstrain_dev_3D_transient`) are
+    !! overridden with the analytic formulas (before, `.dev.` of the stress and the projector of
+    !! `Base_elasticity`, D-017.12a/c): with \( \nu = 1/2 \) the deviatoric stress is finite (it only
+    !! uses \( \mu \)) while the full stress is NaN. There is no 2D deviatoric tangent nor
+    !! `stress_and_update_2D` in the OO API.
+    !!
+    !! ```fortran
+    !! type(elas_linear_dp) :: prm
+    !! type(ten_3D2Osym_dp) :: eps, sig
+    !! call elas_linear_init(prm, young=200000.0_dp, poisson=0.3_dp)
+    !! sig = elas_stress(prm, eps)
+    !! ```
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('elas') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
+    use muscle_elasticity_base, only : Base_elasticity, Base_internal_elasticity_variables
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('elas', 'linear')
+    public :: elas_linear_init, ${', '.join('elas_linear_init_' + k for k in REAL_KINDS)}$
+    public :: Elasticity_linear
+#:if defined('ENABLE_UDTIO')
+
+    public :: write(formatted)
+    interface write(formatted)
+        module procedure print_elasticity_linear
+    end interface
+#:endif
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('elas', 'linear', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('elas', 'linear', 'Elasticity_linear', 'Base_elasticity', PARAMS, bindings=OO_BINDINGS, &
+        & extra_bindings=OO_EXTRA, oo_private=True, oo_extra=OO_CACHE)
+
+    interface elas_linear_init
+        !! Parameters of the linear elastic model from E and nu.
+        module procedure ${', '.join('elas_linear_init_' + k for k in REAL_KINDS)}$
+    end interface elas_linear_init
+
+contains
+#:for k in REAL_KINDS
+
+    pure subroutine elas_linear_init_${k}$(prm, young, poisson)
+        !! Parameters of the linear elastic model in `real(${k}$)` from the Young modulus and the Poisson
+        !! ratio: the Lamé parameters \( \lambda \), \( \mu \) and \( e_1 = \lambda + 2\mu \).
+        !! Needs \( \nu < 1/2 \) (D-017.12b).
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(out) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: young
+            !! Young modulus \( E \).
+        real(${k}$), intent(in) :: poisson
+            !! Poisson ratio \( \nu \).
+
+        prm%lambda = young * poisson / ((1.0_${k}$ + poisson) * (1.0_${k}$ - 2.0_${k}$ * poisson))
+        prm%mu     = 0.5_${k}$ * young / (1.0_${k}$ + poisson)
+        prm%e1     = prm%lambda + 2.0_${k}$ * prm%mu
+    end subroutine elas_linear_init_${k}$
+#:for d in model_dims('elas')
+#:set L2 = layout('2Osym', d)
+#:set N = [L2.index(i, i)[0] for i in (1, 2, 3)]
+#:set SHEARS = [c.pos[0] for c in L2.comps if c.idx[0] != c.idx[1]]
+
+    $:MODEL_FUNCTION('elas', 'linear', 'stress', k, d)
+        real(${k}$) :: e1, lam, two_mu
+
+        e1     = prm%e1
+        lam    = prm%lambda
+        two_mu = 2.0_${k}$*prm%mu
+
+        ! sigma_ii = e1 eps_ii + lambda (eps_jj + eps_kk), (i, j, k) cyclic; shears 2 mu eps_ij
+        res%vals(${N[0]}$) = e1*strain%vals(${N[0]}$) + lam*(strain%vals(${N[1]}$) + strain%vals(${N[2]}$))
+        res%vals(${N[1]}$) = e1*strain%vals(${N[1]}$) + lam*(strain%vals(${N[2]}$) + strain%vals(${N[0]}$))
+        res%vals(${N[2]}$) = e1*strain%vals(${N[2]}$) + lam*(strain%vals(${N[0]}$) + strain%vals(${N[1]}$))
+#:for p in SHEARS
+        res%vals(${p}$) = two_mu*strain%vals(${p}$)
+#:endfor
+    end function elas_stress_linear_${d}$_${k}$
+
+    $:MODEL_FUNCTION('elas', 'linear', 'stress_dev', k, d, doc=r'Analytic, also in 2D (D-017.12a): \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).')
+        real(${k}$) :: two_mu, tr_comp
+
+        two_mu  = 2.0_${k}$ * prm%mu
+        tr_comp = two_mu / 3.0_${k}$ * (strain%vals(${N[0]}$) + strain%vals(${N[1]}$) + strain%vals(${N[2]}$))
+            ! = (2 mu/3) tr(eps), subtracted from each normal component
+
+#:for p in N
+        res%vals(${p}$) = two_mu*strain%vals(${p}$) - tr_comp
+#:endfor
+#:for p in SHEARS
+        res%vals(${p}$) = two_mu*strain%vals(${p}$)
+#:endfor
+    end function elas_stress_dev_linear_${d}$_${k}$
+
+    $:MODEL_FUNCTION('elas', 'linear', 'dstress_dstrain', k, d, doc=r'Constant: `strain` is not used. \( C_{iiii} = e_1 \), \( C_{iijj} = \lambda \), \( C_{ijij} = \mu \) (\( i \ne j \)), others 0.')
+
+#:for p, v in isotropic_4o3sym(layout('4O3sym', d), 'prm%e1', 'prm%lambda', 'prm%mu', '0.0_' + k)
+        res%vals(${p}$) = ${v}$
+#:endfor
+    end function elas_dstress_dstrain_linear_${d}$_${k}$
+
+    $:MODEL_FUNCTION('elas', 'linear', 'dstress_dstrain_dev', k, d, doc=r'Constant: `strain` is not used. Analytic: \( 4\mu/3 \) (normal diagonal), \( -2\mu/3 \) (normal off-diagonal), \( \mu \) (shears).')
+        real(${k}$) :: mu, c_diag, c_off
+
+        mu     = prm%mu
+        c_diag =  4.0_${k}$/3.0_${k}$ * mu   ! normal diagonal:     4mu/3
+        c_off  = -2.0_${k}$/3.0_${k}$ * mu   ! normal off-diagonal: -2mu/3
+
+#:for p, v in isotropic_4o3sym(layout('4O3sym', d), 'c_diag', 'c_off', 'mu', '0.0_' + k)
+        res%vals(${p}$) = ${v}$
+#:endfor
+    end function elas_dstress_dstrain_dev_linear_${d}$_${k}$
+#:endfor
+#:endfor
+    $:OO_ADAPTER_PROCS('elas', 'linear', 'Elasticity_linear', PARAMS, bindings=OO_BINDINGS)
+
+    pure subroutine set_parameters_tbp(self, young, poisson, calc_tan_3D, calc_tan_2D)
+        !! `%set_parameters(...)`: initialises the model from Young modulus and Poisson ratio
+        !! (Lamé parameters and, by default, the cached 3D and 2D tangents; type-bound, historical
+        !! API; host only). Calls `elas_linear_init_dp` and, for the cache, the kernel tangents.
+        !! A tangent not cached keeps its previous value, unused (as the historical code).
+        !! Needs \( \nu < 1/2 \) (D-017.12b).
+        implicit none
+        class(Elasticity_linear), intent(inout) :: self
+            !! The linear elasticity model object to initialise.
+        real(dp), intent(in) :: young
+            !! Young modulus \( E \).
+        real(dp), intent(in) :: poisson
+            !! Poisson ratio \( \nu \).
+        logical, optional, intent(in) :: calc_tan_3D
+            !! If `.TRUE.` (default), pre-calculates and caches the 3-D stiffness tensor.
+        logical, optional, intent(in) :: calc_tan_2D
+            !! If `.TRUE.` (default), pre-calculates and caches the 2-D stiffness tensor.
+        type(elas_linear_dp) :: prm
+#:for d in model_dims('elas')
+        type(${OO_STRAIN_T(d)}$) :: eps_${d}$
+#:endfor
+
+        call elas_linear_init_dp(prm, young, poisson)
+$:OO_COPY_PARAMS('self', 'prm', PARAMS)
+#:for d in model_dims('elas')
+
+        self%tan_init_${d}$ = .true.
+        if (present(calc_tan_${d}$)) self%tan_init_${d}$ = calc_tan_${d}$
+        if (self%tan_init_${d}$) then
+            eps_${d}$%vals = 0.0_dp  ! not used: the tangent is constant
+            self%tan_${d}$ = elas_dstress_dstrain_linear_${d}$_dp(prm, eps_${d}$)
+        end if
+#:endfor
+    end subroutine set_parameters_tbp
+#:for d in model_dims('elas')
+
+    pure function dstress_dstrain_${d}$_tbp(self, strain) result(res)
+        !! Tangent (${d}$; type-bound, historical API; host only): the tangent cached by
+        !! `set_parameters` if set, else `elas_dstress_dstrain_linear_${d}$_dp` (same bits).
+        implicit none
+        class(Elasticity_linear), intent(in) :: self
+            !! Model.
+        class(${OO_STRAIN_T(d)}$), intent(in) :: strain
+            !! Strain tensor (not used: the tangent is constant).
+        type(${tname(d + '4O3sym', 'dp')}$) :: res
+            !! Tangent.
+        type(elas_linear_dp) :: prm
+
+        if (self%tan_init_${d}$) then
+            res = self%tan_${d}$
+            return
+        end if
+$:OO_COPY_PARAMS('prm', 'self', PARAMS)
+        res = elas_dstress_dstrain_linear_${d}$_dp(prm, strain)
+    end function dstress_dstrain_${d}$_tbp
+#:endfor
+#:for d in model_dims('elas')
+
+    pure function stress_dev_${d}$_transient_tbp(self, strain, dstrain, dtime, internal) result(res)
+        !! Deviatoric ${d}$ stress, transient overload (type-bound, historical API; host only): the
+        !! analytic deviator of `stress_dev_${d}$` (D-017.12a); `dstrain`, `dtime` and `internal` are
+        !! not used (D-017.12b).
+        implicit none
+        class(Elasticity_linear), intent(in) :: self
+            !! Model.
+        class(${OO_STRAIN_T(d)}$), intent(in) :: strain
+            !! Strain tensor.
+        class(${OO_STRAIN_T(d)}$), intent(in) :: dstrain
+            !! Strain increment (not used).
+        real(dp), intent(in) :: dtime
+            !! Time step (not used).
+        class(Base_internal_elasticity_variables), intent(in) :: internal
+            !! Internal variables (not used).
+        type(${OO_STRAIN_T(d)}$) :: res
+            !! Deviatoric stress.
+
+        res = self%stress_dev_${d}$(strain)
+    end function stress_dev_${d}$_transient_tbp
+#:endfor
+
+    pure function dstress_dstrain_dev_3D_transient_tbp(self, strain, dstrain, dtime, internal) result(res)
+        !! Deviatoric 3D tangent, transient overload (type-bound, historical API; host only): the
+        !! analytic one of `dstress_dstrain_dev_3D` (D-017.12c; before, the projector of
+        !! `Base_elasticity`); `strain`, `dstrain`, `dtime` and `internal` are not used (D-017.12b).
+        implicit none
+        class(Elasticity_linear), intent(in) :: self
+            !! Model.
+        class(${OO_STRAIN_T('3D')}$), intent(in) :: strain
+            !! Strain tensor.
+        class(${OO_STRAIN_T('3D')}$), intent(in) :: dstrain
+            !! Strain increment (not used).
+        real(dp), intent(in) :: dtime
+            !! Time step (not used).
+        class(Base_internal_elasticity_variables), intent(in) :: internal
+            !! Internal variables (not used).
+        type(${tname('3D4O3sym', 'dp')}$) :: res
+            !! Deviatoric tangent.
+
+        res = self%dstress_dstrain_dev_3D(strain)
+    end function dstress_dstrain_dev_3D_transient_tbp
+
+    pure function to_string_tbp(self) result(str)
+        !! Formatted internal state of the model (type-bound, historical API; host only).
+        implicit none
+        class(Elasticity_linear), intent(in) :: self
+            !! Model.
+        character(len=275) :: str
+            !! Lamé parameters, e1 and cache flags.
+        character(len=1), parameter :: nl = new_line('A')
+
+        write(str, "(A, A, A, ES14.6, A, A, ES14.6, A, A, ES14.6, A, A, L1, A, A, L1, A)") &  ! lint: allow(io)
+            "=== Elasticity_linear Internal State ===", nl, &
+            "  Lambda (Lame 1st)     : ", self%lambda,       nl, &
+            "  Mu (Shear Modulus)    : ", self%mu,           nl, &
+            "  E1 (Lambda + 2*Mu)    : ", self%e1,           nl, &
+            "  3D Stiffness Cached?  : ", self%tan_init_3D,   nl, &
+            "  2D Stiffness Cached?  : ", self%tan_init_2D, nl
+    end function to_string_tbp
+#:if defined('ENABLE_UDTIO')
+
+    subroutine print_elasticity_linear(dtv, unit, iotype, v_list, iostat, iomsg)
+        !! Formatted output (UDTIO) of an `Elasticity_linear`: `to_string` (host only).
+        implicit none
+        class(Elasticity_linear), intent(in) :: dtv  ! lint: allow(oop)
+            !! Model.
+        integer, intent(in) :: unit
+            !! Unit.
+        character(len=*), intent(in) :: iotype
+            !! Edit descriptor type (not used).
+        integer, intent(in) :: v_list(:)
+            !! Edit descriptor parameters (not used).
+        integer, intent(out) :: iostat
+            !! I/O status.
+        character(len=*), intent(inout) :: iomsg
+            !! I/O message.
+
+        iostat = 0
+        write(unit, "(A)", iostat=iostat) trim(dtv%to_string())  ! lint: allow(io)
+
+        if (iostat /= 0) then
+            iomsg = "Error in print_elasticity_linear: Failed to write output."
+        end if
+    end subroutine print_elasticity_linear
+#:endif
+
+end module muscle_elasticity_linear

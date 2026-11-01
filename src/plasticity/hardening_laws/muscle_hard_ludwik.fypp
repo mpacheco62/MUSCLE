@@ -1,0 +1,67 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the hardening family (D-017.6): include/muscle_models_common.fypp
+#:set PARAMS = [('sigma0', 'real', '', r'Initial yield stress \( \sigma_0 \).', None), &
+    &          ('k', 'real', '', r'Strength coefficient \( K \).', None), &
+    &          ('n', 'real', '', r'Hardening exponent \( n \).', None)]
+
+module muscle_hard_ludwik
+    !! Ludwik isotropic hardening law:
+    !! \[ \sigma_y(\epsilon_p) = \sigma_0 + K \epsilon_p^n \]
+    !! with initial yield stress \( \sigma_0 \), strength coefficient \( K \) and hardening
+    !! exponent \( n \).
+    !!
+    !! The derivatives are evaluated at \( \epsilon_p + \delta \), not at \( \epsilon_p \)
+    !! (regularization at \( \epsilon_p = 0 \), where they are singular for \( n < 1 \), D-017.4a):
+    !! \[ \frac{d\sigma_y}{d\epsilon_p} \approx K n (\epsilon_p + \delta)^{n-1}, \quad
+    !!    \frac{d^2\sigma_y}{d\epsilon_p^2} \approx K n (n-1) (\epsilon_p + \delta)^{n-2} \]
+    !! so they are not the exact derivatives of the flow stress. The offset
+    !! \( \delta \) = `LUDWIK_EP_OFFSET_<k>` = \( 10^{-10} \) is the historical value (same results
+    !! as the original code in dp) and the same regularization in every kind: the derivatives are
+    !! finite at \( \epsilon_p = 0 \) and differ from the exact ones by a relative
+    !! \( \approx (1-n) \delta/\epsilon_p \) (resp. \( (2-n) \delta/\epsilon_p \)), e.g. \( 10^{-6} \) at
+    !! \( \epsilon_p = 10^{-4} \). In sp the offset vanishes by rounding,
+    !! \( \epsilon_p + \delta = \epsilon_p \), from \( \epsilon_p \approx 1.7 \cdot 10^{-3} \).
+    !!
+    !! Kernel API: parameter types `hard_ludwik_<k>` and `pure` functions
+    !! `hard_stress_ludwik_<k>(prm, ep)`, `hard_dstress_dep_ludwik_<k>(prm, ep)` and
+    !! `hard_ddstress_ddep_ludwik_<k>(prm, ep)` for each real kind, also through the generics
+    !! `hard_stress`, `hard_dstress_dep` and `hard_ddstress_ddep` of `muscle_hard_laws`.
+    !! `ludwik_hardening` is the historical OO type (host only, removed in Phase 7).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_hard_base, only : Base_hardening_laws
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('hard', 'ludwik')
+    public :: ludwik_hardening
+#:for k in REAL_KINDS
+    public :: LUDWIK_EP_OFFSET_${k}$
+
+    real(${k}$), parameter :: LUDWIK_EP_OFFSET_${k}$ = 1.0e-10_${k}$
+        !! Offset \( \delta \) added to \( \epsilon_p \) in the derivatives in `real(${k}$)`: regularization
+        !! at \( \epsilon_p = 0 \), same value in every kind (see the module documentation).
+#:endfor
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('hard', 'ludwik', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('hard', 'ludwik', 'ludwik_hardening', 'Base_hardening_laws', PARAMS)
+
+contains
+#:for k in REAL_KINDS
+    $:MODEL_FUNCTION('hard', 'ludwik', 'stress', k)
+        res = prm%sigma0 + prm%k*(ep)**prm%n
+    end function hard_stress_ludwik_${k}$
+
+    $:MODEL_FUNCTION('hard', 'ludwik', 'dstress_dep', k, doc='Evaluated at ep + LUDWIK_EP_OFFSET_' + k + '.')
+        res = prm%k*prm%n*(ep + LUDWIK_EP_OFFSET_${k}$)**(prm%n - 1.0_${k}$)
+    end function hard_dstress_dep_ludwik_${k}$
+
+    $:MODEL_FUNCTION('hard', 'ludwik', 'ddstress_ddep', k, doc='Evaluated at ep + LUDWIK_EP_OFFSET_' + k + '.')
+        res = prm%k*prm%n*(prm%n - 1.0_${k}$)*(ep + LUDWIK_EP_OFFSET_${k}$)**(prm%n - 2.0_${k}$)
+    end function hard_ddstress_ddep_ludwik_${k}$
+#:endfor
+    $:OO_ADAPTER_PROCS('hard', 'ludwik', 'ludwik_hardening', PARAMS)
+
+end module muscle_hard_ludwik

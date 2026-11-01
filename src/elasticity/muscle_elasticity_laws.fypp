@@ -1,0 +1,31 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+
+module muscle_elasticity_laws
+    !! Elastic models for kernels (D-007, D-017): the parameter types of every registered model
+    !! (`elas_<name>_<k>`, `ELASTICITY_MODELS` of tools/fypp/muscle_meta.py) and the family generics
+    !! (prefix `elas_`, D-017.5b), with the same names for every model, kind and dimension (3D and
+    !! 2D: plane strain/stress and axisymmetry, the 33 component is kept):
+    !!
+    !! - `elas_stress(prm, strain)`: stress \( \boldsymbol\sigma(\boldsymbol\varepsilon) \);
+    !! - `elas_stress_dev(prm, strain)`: its deviatoric part;
+    !! - `elas_dstress_dstrain(prm, strain)`: tangent
+    !!   \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) (a `4O3sym`);
+    !! - `elas_dstress_dstrain_dev(prm, strain)`: deviatoric tangent (a `4O3sym`).
+    !!
+    !! Models: `linear` (Hooke law) and `frozen` (the algorithmic elasticity of a linear viscoelastic
+    !! model over a time step, written per point by `visco_freeze`; module muscle_visco_frozen,
+    !! D-017.13).
+    !!
+    !! `prm` is the parameter type of a model (built with its initializer, e.g. `elas_linear_init`)
+    !! and `strain` the strain tensor (`2Osym`) of the same kind and dimension. The transient
+    !! overloads of the historical OO API (`dstrain`, `dtime`, `internal`) are not part of the
+    !! kernel API: every elastic model ignores them (D-017.12b).
+    $:FAMILY_USES('elas')
+    implicit none
+    private
+
+    $:FAMILY_EXPORTS('elas')
+
+end module muscle_elasticity_laws

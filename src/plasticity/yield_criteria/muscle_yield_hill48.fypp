@@ -1,0 +1,112 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the yield family (D-017.6): include/muscle_models_common.fypp
+#:set PARAMS = [('f', 'real', '', r'Anisotropy coefficient \( F \) (yy-zz).', None), &
+    &          ('g', 'real', '', r'Anisotropy coefficient \( G \) (zz-xx).', None), &
+    &          ('h', 'real', '', r'Anisotropy coefficient \( H \) (xx-yy).', None), &
+    &          ('l', 'real', '', r'Anisotropy coefficient \( L \) (shear yz).', None), &
+    &          ('m', 'real', '', r'Anisotropy coefficient \( M \) (shear xz).', None), &
+    &          ('n', 'real', '', r'Anisotropy coefficient \( N \) (shear xy).', None)]
+
+module muscle_yield_hill48
+    !! Hill (1948, Eq. 5) quadratic anisotropic yield criterion:
+    !! \[ \sigma_{eq}^2 = F(\sigma_{yy} - \sigma_{zz})^2 + G(\sigma_{zz} - \sigma_{xx})^2
+    !!    + H(\sigma_{xx} - \sigma_{yy})^2 + 2L\sigma_{yz}^2 + 2M\sigma_{xz}^2 + 2N\sigma_{xy}^2
+    !!    = \boldsymbol\sigma : \mathbb{P} : \boldsymbol\sigma \]
+    !! (tensorial shear components), with gradient \( \mathbb{P} : \boldsymbol\sigma/\sigma_{eq} \)
+    !! and Hessian \( (\mathbb{P} - \mathbf{n} \otimes \mathbf{n})/\sigma_{eq} \),
+    !! \( \mathbf{n} = \partial\sigma_{eq}/\partial\boldsymbol\sigma \). At a null equivalent stress
+    !! both derivatives are 0 (D-017.9; the original code gave NaN). With parameters for which
+    !! \( \mathbb{P} \) is not positive semidefinite, \( \sigma_{eq}^2 \) can vanish with
+    !! \( \mathbb{P} : \boldsymbol\sigma \ne 0 \): the derivatives are then 0 too (before, Inf), and
+    !! \( \sigma_{eq}^2 < 0 \) gives NaN. Von Mises is
+    !! \( F = G = H = 1/2 \), \( L = M = N = 3/2 \).
+    !!
+    !! Kernel API: parameter types `yield_hill48_<k>` and `pure` functions
+    !! `yield_stress_eq_hill48_3D_<k>(prm, sigma)`, `yield_dstress_eq_hill48_3D_<k>(prm, sigma)`,
+    !! `yield_ddstress_eq_hill48_3D_<k>(prm, sigma)` and the joint evaluation
+    !! `yield_stress_eq_and_derivatives_hill48_3D_<k>(prm, sigma, f, df[, ddf])` (the three in turn)
+    !! for each real kind, also through the generics `yield_*` of `muscle_yield_criteria`.
+    !! `Hill48` is the historical OO type (host only, removed in Phase 7).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
+        & operator(.tdotsym.), operator(/), operator(-), assignment(=)
+    use muscle_yield_base, only : Base_yield_critera
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('yield', 'hill48')
+    public :: Hill48
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('yield', 'hill48', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('yield', 'hill48', 'Hill48', 'Base_yield_critera', PARAMS)
+
+contains
+#:for k in REAL_KINDS
+#:for d in model_dims('yield')
+#:assert d == '3D', 'yield criteria: only 3D until a 2D vs 3D test exists (dims-2d-3d.md)'
+#:set T2 = tname(d + '2Osym', k)
+#:set T4 = tname(d + '4O3sym', k)
+
+    $:MODEL_FUNCTION('yield', 'hill48', 'stress_eq', k, d)
+        ! Storage of sigma: xx, yy, zz, xy, yz, xz
+        res = (prm%f*(sigma%vals(2) - sigma%vals(3))**2 + &
+               prm%g*(sigma%vals(3) - sigma%vals(1))**2 + &
+               prm%h*(sigma%vals(1) - sigma%vals(2))**2 + &
+               2*prm%l*sigma%vals(5)**2 + &
+               2*prm%m*sigma%vals(6)**2 + &
+               2*prm%n*sigma%vals(4)**2   &
+               )**0.5_${k}$
+    end function yield_stress_eq_hill48_${d}$_${k}$
+
+    $:MODEL_FUNCTION('yield', 'hill48', 'dstress_eq', k, d)
+        ! d(seq)/d(sigma) = (P : sigma)/seq; the tensorial xy component is n*sxy/seq
+        real(${k}$) :: seq, sxx, syy, szz
+
+        seq = yield_stress_eq_hill48_${d}$_${k}$(prm, sigma)
+        $:YIELD_ZERO_AT_NULL('seq', k)
+        sxx = sigma%vals(1)
+        syy = sigma%vals(2)
+        szz = sigma%vals(3)
+        res%vals(1) = prm%g*(sxx - szz) + prm%h*(sxx - syy)
+        res%vals(2) = prm%f*(syy - szz) + prm%h*(syy - sxx)
+        res%vals(3) = prm%f*(szz - syy) + prm%g*(szz - sxx)
+        res%vals(4) = prm%n*sigma%vals(4)
+        res%vals(5) = prm%l*sigma%vals(5)
+        res%vals(6) = prm%m*sigma%vals(6)
+        res = res/seq
+    end function yield_dstress_eq_hill48_${d}$_${k}$
+
+    $:MODEL_FUNCTION('yield', 'hill48', 'ddstress_eq', k, d)
+        ! (P - grad (x) grad)/seq, with P the constant tensor of seq**2 = sigma : P : sigma
+        type(${T2}$) :: grad
+        type(${T4}$) :: p
+        real(${k}$) :: seq
+
+        seq = yield_stress_eq_hill48_${d}$_${k}$(prm, sigma)
+        $:YIELD_ZERO_AT_NULL('seq', k)
+        grad = yield_dstress_eq_hill48_${d}$_${k}$(prm, sigma)
+        ! Storage of P: xxxx, yyyy, zzzz, xyxy, yzyz, xzxz, xxyy, yyzz, ..., xxzz (7, 8, 12), the
+        ! rest 0. Shear entries are n/2, l/2, m/2: the pairs (xy,xy), (xy,yx), (yx,xy) and (yx,yx)
+        ! give 4*p_xyxy*sxy**2, which must equal the term 2*n*sxy**2 of stress_eq.
+        p%vals = 0.0_${k}$
+        p%vals(1) = prm%g + prm%h
+        p%vals(2) = prm%f + prm%h
+        p%vals(3) = prm%f + prm%g
+        p%vals(4) = 0.5_${k}$*prm%n
+        p%vals(5) = 0.5_${k}$*prm%l
+        p%vals(6) = 0.5_${k}$*prm%m
+        p%vals(7) = -prm%h
+        p%vals(8) = -prm%f
+        p%vals(12) = -prm%g
+        res = (p - (.tdotsym. grad))/seq
+    end function yield_ddstress_eq_hill48_${d}$_${k}$
+
+    $:MODEL_JOINT_DEFAULT('yield', 'hill48', k, d)
+#:endfor
+#:endfor
+    $:OO_ADAPTER_PROCS('yield', 'hill48', 'Hill48', PARAMS)
+
+end module muscle_yield_hill48

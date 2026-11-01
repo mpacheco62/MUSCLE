@@ -1,7 +1,9 @@
 #! SPDX-License-Identifier: GPL-3.0-or-later
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #!
-#! Central finite differences without closures (D-016.1), usable in kernels: each macro expands to
+#! Central finite differences without closures (D-016.1), usable in kernels: FD_DERIV and FD_DERIV2
+#! (first and second derivative of a scalar function of a scalar), FD_GRAD, FD_JAC and FD_HESS (of
+#! functions of a tensor). Each macro expands to
 #! a `block ... end block` construct that calls the given function DIRECTLY (no `procedure(...)`
 #! argument, no type-bound call, nothing allocatable), so it can be used inside a `pure`
 #! procedure marked `@:DEVICE()`. Include with `#:include "muscle_fd.fypp"` (after
@@ -19,11 +21,20 @@
 #!           h = max(|x| rel, min), the historical rule, and at |x| = 0 (where the historical
 #!           minimum made f(+-h) round to f(0)) h = FD_STEP_ZERO_<k> = sqrt(eps) for the first
 #!           derivatives (FD_DERIV, FD_GRAD, FD_JAC: rounding error ~ sqrt(eps) and a step far below
-#!           any yield strain) and h = rel ~ eps**(1/4) for FD_HESS (rounding ~ eps/h**2), with
+#!           any yield strain) and h = rel ~ eps**(1/4) for FD_DERIV2 and FD_HESS (rounding ~ eps/h**2), with
 #!           |x| = abs(x) for a scalar and the
 #!           family `norm` (computed inline, same terms and order, muscle_meta.norm_terms) for a
 #!           tensor; rel = `<rel>_<k>` and min = `FD_STEP_MIN_<k>` (`FD_STEP_MIN_JAC_<k>` in
 #!           FD_JAC) of muscle_kinds.
+#!   scale:  optional scale of |x| (expression of kind k, > 0; a literal is checked at expansion,
+#!           D-017.5a): h = rel max(|x|, scale), also at
+#!           |x| = 0 (h = rel scale), instead of the default rule above. For a function that does not
+#!           vanish at x = 0 the default step collapses for a small but non-zero x (rounding error
+#!           ~ eps |f|/h); a family passes the natural scale of its argument (hardening: 1, the
+#!           scale of the equivalent plastic strain). Ignored if `step` is given.
+#!   lower:  (FD_DERIV, FD_DERIV2) optional lower bound of the domain of x (expression of kind k):
+#!           if x - h < lower the macro uses a one-sided (forward) stencil of the same order, so
+#!           the function is never evaluated below `lower` (e.g. ep >= 0 in hardening laws).
 #!   indent: column of the expanded `block` (default 8; the body is indented 4 more).
 #! Restrictions: inside the block the names starting with `fd_`, the kind and the tensor type of x
 #! (`use`d by the block) are reserved, so `fcall` and `x` must not use other entities with those
@@ -37,60 +48,129 @@
 #! Indents the expanded lines (not the #line markers) by `n` columns
 #:set fd_indent = lambda text, n: '\n'.join(l if not l or l.startswith('#') else ' ' * int(n) + l for l in text.rstrip('\n').split('\n'))
 #! `use` of the kind (and of the step constants if the default step is used)
-#:set fd_use_kind = lambda k, step, rel, mn, zero=None: 'use muscle_kinds, only : ' + k + ('' if step is not None else ''.join(', {}_{}'.format(c, k) for c in [rel, mn] + ([zero] if zero else [])))
+#:set fd_use_kind = lambda k, step, rel, mn, zero=None, scale=None: 'use muscle_kinds, only : ' + k + ('' if step is not None else ''.join(', {}_{}'.format(c, k) for c in [rel] + ([] if scale is not None else [mn] + ([zero] if zero else []))))
 #! Extra local of the default step: |x|
 #:set fd_decl_n = lambda step: '' if step is not None else ', fd_n'
-#! Step statements: explicit `step`, or |x| = nterms (list of terms) and the rule of D-016.4
-#:def FD_STEP(k, step, rel, mn, nterms, zero=None)
+#! Step statements: explicit `step`; or |x| = nterms (list of terms) and h = rel max(|x|, scale)
+#! (D-017.5a); or the rule of D-016.4
+#:def FD_STEP(k, step, rel, mn, nterms, zero=None, scale=None)
 #:if step is not None
 fd_h = ${step}$
+#:elif scale is not None
+fd_n = ${join_terms(nterms, indent=7)}$
+fd_h = ${rel}$_${k}$*max(fd_n, ${scale}$)
 #:else
 fd_n = ${join_terms(nterms, indent=7)}$
 fd_h = merge(max(fd_n*${rel}$_${k}$, ${mn}$_${k}$), ${zero or rel}$_${k}$, fd_n > 0.0_${k}$)
 #:endif
 #:enddef
+#! A literal `scale` must be > 0 (an expression is the caller's responsibility): `#:assert fd_scale_ok(scale)`
+#:set fd_scale_ok = lambda scale: muscle_meta.literal_value(scale) is None or muscle_meta.literal_value(scale) > 0.0
 #! Step at |x| = 0 of the first-derivative macros (FD_HESS uses rel, see above)
 #:set ZERO = 'FD_STEP_ZERO'
 #! Perturbation of component `c` of a 2nd-order layout: h, or h/2 for a shear component of 2Osym
 #:set fd_pert = lambda fam, c, k: 'fd_h' if fam == '2O' or c.idx[0] == c.idx[1] else 'fd_h/2.0_{}'.format(k)
 
-#! (a) Derivative of a scalar function of a scalar: res = (f(x + h) - f(x - h))/(2 h).
+#! (a) Derivative of a scalar function of a scalar: res = (f(x + h) - f(x - h))/(2 h); with `lower`
+#! and x - h < lower, the one-sided res = (4 f(x + h) - 3 f(x) - f(x + 2h))/(2 h) (same order).
 #! Default step relative to FD_STEP_CEN_<k>.
-#:def FD_DERIV(res, fcall, x, k, step=None, rel='FD_STEP_CEN', indent=8)
-$:fd_indent(_FD_DERIV(res, fcall, x, k, step, rel), indent)
+#:def FD_DERIV(res, fcall, x, k, step=None, scale=None, lower=None, rel='FD_STEP_CEN', indent=8)
+$:fd_indent(_FD_DERIV(res, fcall, x, k, step, rel, scale, lower), indent)
 #:enddef
-#:def _FD_DERIV(res, fcall, x, k, step, rel)
+#:def _FD_DERIV(res, fcall, x, k, step, rel, scale, lower)
 #:assert '{x}' in fcall
 #:set f = fcall.replace('{x}', 'fd_xv')
+#:assert fd_scale_ok(scale)
 block
-    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN', ZERO)}$
-    real(${k}$) :: fd_h, fd_xv, fd_fp, fd_fm${fd_decl_n(step)}$
-    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', ['abs({})'.format(x)], ZERO), 4)
-    fd_xv = ${x}$ + fd_h
-    fd_fp = ${f}$
-    fd_xv = ${x}$ - fd_h
-    fd_fm = ${f}$
-    ${res}$ = (fd_fp - fd_fm)/(2.0_${k}$*fd_h)
+    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN', ZERO, scale)}$
+    real(${k}$) :: fd_h, fd_xv, fd_fp, fd_fm${', fd_f0' if lower is not None else ''}$${fd_decl_n(step)}$
+    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', ['abs({})'.format(x)], ZERO, scale=scale), 4)
+#:if lower is not None
+    if (${x}$ - fd_h < ${lower}$) then
+        fd_xv = ${x}$
+        fd_f0 = ${f}$
+        fd_xv = ${x}$ + fd_h
+        fd_fp = ${f}$
+        fd_xv = ${x}$ + 2.0_${k}$*fd_h
+        fd_fm = ${f}$
+        ${res}$ = (4.0_${k}$*fd_fp - 3.0_${k}$*fd_f0 - fd_fm)/(2.0_${k}$*fd_h)
+    else
+        $:fd_indent(_FD_CENTRAL1(res, f, x, k), 8)
+    end if
+#:else
+    $:fd_indent(_FD_CENTRAL1(res, f, x, k), 4)
+#:endif
 end block
+#:enddef
+#:def _FD_CENTRAL1(res, f, x, k)
+fd_xv = ${x}$ + fd_h
+fd_fp = ${f}$
+fd_xv = ${x}$ - fd_h
+fd_fm = ${f}$
+${res}$ = (fd_fp - fd_fm)/(2.0_${k}$*fd_h)
+#:enddef
+
+#! (a2) Second derivative of a scalar function of a scalar: res = (f(x + h) - 2 f(x) + f(x - h))/h**2;
+#! with `lower` and x - h < lower, the one-sided
+#! res = (2 f(x) - 5 f(x + h) + 4 f(x + 2h) - f(x + 3h))/h**2 (same order).
+#! Default step relative to FD_STEP_CEN2_<k>, and h = rel at x = 0 (as FD_HESS: with a smaller step
+#! the rounding error ~ eps |f|/h**2 would dominate).
+#:def FD_DERIV2(res, fcall, x, k, step=None, scale=None, lower=None, rel='FD_STEP_CEN2', indent=8)
+$:fd_indent(_FD_DERIV2(res, fcall, x, k, step, rel, scale, lower), indent)
+#:enddef
+#:def _FD_DERIV2(res, fcall, x, k, step, rel, scale, lower)
+#:assert '{x}' in fcall
+#:set f = fcall.replace('{x}', 'fd_xv')
+#:assert fd_scale_ok(scale)
+block
+    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN', None, scale)}$
+    real(${k}$) :: fd_h, fd_xv, fd_f0, fd_fp, fd_fm${', fd_f3' if lower is not None else ''}$${fd_decl_n(step)}$
+    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', ['abs({})'.format(x)], scale=scale), 4)
+    fd_xv = ${x}$
+    fd_f0 = ${f}$
+#:if lower is not None
+    if (${x}$ - fd_h < ${lower}$) then
+        fd_xv = ${x}$ + fd_h
+        fd_fp = ${f}$
+        fd_xv = ${x}$ + 2.0_${k}$*fd_h
+        fd_fm = ${f}$
+        fd_xv = ${x}$ + 3.0_${k}$*fd_h
+        fd_f3 = ${f}$
+        ${res}$ = (2.0_${k}$*fd_f0 - 5.0_${k}$*fd_fp + 4.0_${k}$*fd_fm - fd_f3)/(fd_h*fd_h)
+    else
+        $:fd_indent(_FD_CENTRAL2(res, f, x, k), 8)
+    end if
+#:else
+    $:fd_indent(_FD_CENTRAL2(res, f, x, k), 4)
+#:endif
+end block
+#:enddef
+#:def _FD_CENTRAL2(res, f, x, k)
+fd_xv = ${x}$ + fd_h
+fd_fp = ${f}$
+fd_xv = ${x}$ - fd_h
+fd_fm = ${f}$
+${res}$ = (fd_fp - 2.0_${k}$*fd_f0 + fd_fm)/(fd_h*fd_h)
 #:enddef
 
 #! (b) Gradient of a scalar function of a `2Osym` (or `2O`, fam='2O') tensor, same type as x:
 #! res_p = (f(x + s_p e_p) - f(x - s_p e_p))/(2 h), s_p = h (h/2 for the shear components of
 #! 2Osym). Default step relative to FD_STEP_CEN_2OSYM_<k> (2Osym) or FD_STEP_CEN_<k> (2O).
-#:def FD_GRAD(res, fcall, x, k, d='3D', fam='2Osym', step=None, rel=None, indent=8)
-$:fd_indent(_FD_GRAD(res, fcall, x, k, d, fam, step, rel), indent)
+#:def FD_GRAD(res, fcall, x, k, d='3D', fam='2Osym', step=None, scale=None, rel=None, indent=8)
+$:fd_indent(_FD_GRAD(res, fcall, x, k, d, fam, step, rel, scale), indent)
 #:enddef
-#:def _FD_GRAD(res, fcall, x, k, d, fam, step, rel)
+#:def _FD_GRAD(res, fcall, x, k, d, fam, step, rel, scale)
 #:assert '{x}' in fcall
 #:set f = fcall.replace('{x}', 'fd_xv')
 #:set rel = rel if rel is not None else ('FD_STEP_CEN_2OSYM' if fam == '2Osym' else 'FD_STEP_CEN')
 #:set lay = layout(fam, d)
+#:assert fd_scale_ok(scale)
 block
-    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN', ZERO)}$
+    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN', ZERO, scale)}$
     use ${family_module(fam)}$, only : ${tname(d + fam, k)}$
     type(${tname(d + fam, k)}$) :: fd_xv
     real(${k}$) :: fd_h, fd_fp, fd_fm${fd_decl_n(step)}$
-    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', norm_terms(lay, x + '%vals'), ZERO), 4)
+    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', norm_terms(lay, x + '%vals'), ZERO, scale=scale), 4)
     fd_xv = ${x}$
 #:for c in lay.comps
 #:set p = c.pos[0]
@@ -107,20 +187,21 @@ end block
 #! (c) Jacobian of a `2Osym`-valued function of a `2Osym` tensor, as a `4O2sym` of the same
 #! dimension: column p = (f(x + s_p e_p) - f(x - s_p e_p))/(2 h). Default step relative to
 #! FD_STEP_CEN_JAC_<k>, minimum FD_STEP_MIN_JAC_<k>.
-#:def FD_JAC(res, fcall, x, k, d='3D', step=None, rel='FD_STEP_CEN_JAC', indent=8)
-$:fd_indent(_FD_JAC(res, fcall, x, k, d, step, rel), indent)
+#:def FD_JAC(res, fcall, x, k, d='3D', step=None, scale=None, rel='FD_STEP_CEN_JAC', indent=8)
+$:fd_indent(_FD_JAC(res, fcall, x, k, d, step, rel, scale), indent)
 #:enddef
-#:def _FD_JAC(res, fcall, x, k, d, step, rel)
+#:def _FD_JAC(res, fcall, x, k, d, step, rel, scale)
 #:assert '{x}' in fcall
 #:set f = fcall.replace('{x}', 'fd_xv')
 #:set T = tname(d + '2Osym', k)
 #:set lay = layout('2Osym', d)
+#:assert fd_scale_ok(scale)
 block
-    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN_JAC', ZERO)}$
+    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN_JAC', ZERO, scale)}$
     use ${family_module('2Osym')}$, only : ${T}$
     type(${T}$) :: fd_xv, fd_fp, fd_fm
     real(${k}$) :: fd_h${fd_decl_n(step)}$
-    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN_JAC', norm_terms(lay, x + '%vals'), ZERO), 4)
+    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN_JAC', norm_terms(lay, x + '%vals'), ZERO, scale=scale), 4)
     fd_xv = ${x}$
 #:for c in lay.comps
 #:set p = c.pos[0]
@@ -140,21 +221,22 @@ end block
 #! - (I, J), I /= J: (f_++ - f_+- - f_-+ + f_--)/(4 h^2), f_ab = f(x + a s_I e_I + b s_J e_J);
 #!   (I, J) = (shear, normal) for a mixed pair, otherwise the stored (row, column) order.
 #! Default step relative to FD_STEP_CEN2_<k>.
-#:def FD_HESS(res, fcall, x, k, d='3D', step=None, rel='FD_STEP_CEN2', indent=8)
-$:fd_indent(_FD_HESS(res, fcall, x, k, d, step, rel), indent)
+#:def FD_HESS(res, fcall, x, k, d='3D', step=None, scale=None, rel='FD_STEP_CEN2', indent=8)
+$:fd_indent(_FD_HESS(res, fcall, x, k, d, step, rel, scale), indent)
 #:enddef
-#:def _FD_HESS(res, fcall, x, k, d, step, rel)
+#:def _FD_HESS(res, fcall, x, k, d, step, rel, scale)
 #:assert '{x}' in fcall
 #:set f = fcall.replace('{x}', 'fd_xv')
 #:set lay = layout('2Osym', d)
 #:set base = lay.comps
 #:set shear = [c.idx[0] != c.idx[1] for c in base]
+#:assert fd_scale_ok(scale)
 block
-    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN')}$
+    ${fd_use_kind(k, step, rel, 'FD_STEP_MIN', None, scale)}$
     use ${family_module('2Osym')}$, only : ${tname(d + '2Osym', k)}$
     type(${tname(d + '2Osym', k)}$) :: fd_xv
     real(${k}$) :: fd_h, fd_f0, fd_fpp, fd_fpm, fd_fmp, fd_fmm${fd_decl_n(step)}$
-    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', norm_terms(lay, x + '%vals')), 4)
+    $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', norm_terms(lay, x + '%vals'), scale=scale), 4)
     fd_xv = ${x}$
     fd_f0 = ${f}$
 #:for c in layout('4O3sym', d).comps

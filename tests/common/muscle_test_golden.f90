@@ -29,7 +29,7 @@ module muscle_test_golden
 
     integer, parameter :: MAXV = 512
         !! Largest number of values of a record.
-    integer, parameter :: MAXREC = 2048
+    integer, parameter :: MAXREC = 4096
         !! Largest number of records of a reference file.
     integer, parameter :: KEYLEN = 160
         !! Largest length of a key.

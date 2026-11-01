@@ -1,0 +1,86 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the overstress family (D-017.6): include/muscle_models_common.fypp
+#! Note: the parameter `k` (historical keyword, `prm%k`) is unrelated to the fypp kind variable `${k}$`
+#! of the `#:for k in REAL_KINDS` loops: write the kind always as `${k}$` and the parameter as `prm%k`.
+#:set PARAMS = [('k', 'real', '', r'Viscous resistance \( K \) (stress time\(^{1/n}\)).', '1.0'), &
+    &          ('n', 'real', '', r'Positive rate exponent \( n \).', '1.0')]
+
+module muscle_vp_chaboche
+    !! Additive power overstress law, Chaboche (2008), Eq. (15), p. 1646:
+    !! \[ g(\sigma_{eq}, \epsilon_p) = \langle z \rangle^n, \quad
+    !!    z = \frac{\sigma_{eq} - \sigma_y(\epsilon_p)}{K} \]
+    !! with the static yield stress \( \sigma_y \) of a composed hardening law; \( K \) is independent
+    !! of \( \sigma_y \). Derivatives (chain rule):
+    !! \[ \frac{\partial g}{\partial\sigma_{eq}} = \frac{g_z}{K}, \quad
+    !!    \frac{\partial g}{\partial\epsilon_p} = -\frac{g_z}{K} \frac{d\sigma_y}{d\epsilon_p}, \quad
+    !!    g_z = n z^{n-1} \]
+    !! \( g \) and its derivatives are 0 for \( \sigma_{eq} \le \sigma_y \) by convention; the
+    !! right-hand derivative at the threshold is not 0 for \( n \le 1 \).
+    !!
+    !! Composed law (D-017.6b): the free functions receive \( \sigma_y \) (`sy`) and
+    !! \( d\sigma_y/d\epsilon_p \) (`dsy_dep`) already evaluated, e.g. with `hard_stress` and
+    !! `hard_dstress_dep` of `muscle_hard_laws`; `ep` is part of the family contract but unused.
+    !!
+    !! Kernel API: parameter types `os_chaboche_<k>` and `pure` functions
+    !! `os_flow_rate_chaboche_<k>(prm, sigma_eq, ep, sy)`, `os_dflow_dsigma_chaboche_<k>(prm,
+    !! sigma_eq, ep, sy)` and `os_dflow_dep_chaboche_<k>(prm, sigma_eq, ep, sy, dsy_dep)` for each real
+    !! kind, also through the generics `os_*` of `muscle_vp_overstress_laws`. `Chaboche_overstress` is
+    !! the historical OO type (host only, removed in Phase 7), with the composed law in its
+    !! polymorphic component `hard_law`.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_vp_overstress_base, only : Base_overstress_law
+    use muscle_hard_base, only : Base_hardening_laws
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('os', 'chaboche')
+    public :: Chaboche_overstress
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('os', 'chaboche', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('os', 'chaboche', 'Chaboche_overstress', 'Base_overstress_law', PARAMS)
+
+contains
+#:for k in REAL_KINDS
+    pure function os_chaboche_dz_${k}$(prm, z) result(res)
+        !! Slope \( g_z \) of the Chaboche law in `real(${k}$)` (0 for \( z \le 0 \)).
+        implicit none
+        @:DEVICE()
+        type(os_chaboche_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: z
+            !! Normalized overstress \( z \).
+        real(${k}$) :: res
+            !! \( g_z \).
+
+        if (z <= 0.0_${k}$) then
+            res = 0.0_${k}$
+        else
+            res = prm%n*z**(prm%n - 1.0_${k}$)
+        end if
+    end function os_chaboche_dz_${k}$
+
+    $:MODEL_FUNCTION('os', 'chaboche', 'flow_rate', k)
+        real(${k}$) :: z
+
+        z = (sigma_eq - sy)/prm%k
+        if (z <= 0.0_${k}$) then
+            res = 0.0_${k}$
+        else
+            res = z**prm%n
+        end if
+    end function os_flow_rate_chaboche_${k}$
+
+    $:MODEL_FUNCTION('os', 'chaboche', 'dflow_dsigma', k)
+        res = os_chaboche_dz_${k}$(prm, (sigma_eq - sy)/prm%k)/prm%k
+    end function os_dflow_dsigma_chaboche_${k}$
+
+    $:MODEL_FUNCTION('os', 'chaboche', 'dflow_dep', k)
+        res = -os_chaboche_dz_${k}$(prm, (sigma_eq - sy)/prm%k)*dsy_dep/prm%k
+    end function os_dflow_dep_chaboche_${k}$
+#:endfor
+    $:OO_ADAPTER_PROCS('os', 'chaboche', 'Chaboche_overstress', PARAMS)
+
+end module muscle_vp_chaboche

@@ -1,0 +1,31 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+
+module muscle_yield_criteria
+    !! Yield criteria for kernels (D-007, D-017): the parameter types of every registered criterion
+    !! (`yield_<name>_<k>`, `YIELD_MODELS` of tools/fypp/muscle_meta.py) and the family generics
+    !! (prefix `yield_`, D-017.5b), with the same names for every criterion, kind and dimension
+    !! (only 3D so far):
+    !!
+    !! - `yield_stress_eq(prm, sigma)`: equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \);
+    !! - `yield_dstress_eq(prm, sigma)`: gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \)
+    !!   (a `2Osym`);
+    !! - `yield_ddstress_eq(prm, sigma)`: second derivative
+    !!   \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) (a `4O3sym`);
+    !! - `call yield_stress_eq_and_derivatives(prm, sigma, f, df[, ddf])`: the three at once (the second
+    !!   derivative only if `ddf` is present), cheaper when the criterion shares work between them;
+    !! - `yield_joint_evaluation(prm)`: constant, true when the criterion writes its own joint
+    !!   evaluation (then a return mapping calls `yield_stress_eq_and_derivatives`; otherwise the
+    !!   functions one by one, the second derivative only when needed).
+    !!
+    !! `prm` is the parameter type of a criterion and `sigma` the stress tensor of the same kind.
+    !! At a null equivalent stress the derivatives are 0 (D-017.9). Example:
+    !! `f = yield_stress_eq(h, sigma) - hard_stress(law, ep)`.
+    $:FAMILY_USES('yield')
+    implicit none
+    private
+
+    $:FAMILY_EXPORTS('yield')
+
+end module muscle_yield_criteria

@@ -61,6 +61,72 @@ FAMILIES = ('2O', '2Osym', '4O', '4O2sym', '4O3sym')
 #: ``4O3T`` is \delta_ij \delta_kl and ``4O4T`` is (\delta_ik \delta_jl + \delta_il \delta_jk)/2.
 IDENTITIES = ('2O', '4O3T', '4O4T')
 
+#: Registered isotropic hardening laws (D-007.2): one template
+#: ``src/plasticity/hardening_laws/muscle_hard_<name>.fypp`` each (model contract D-017.6,
+#: include/muscle_models_common.fypp), exported by the family module ``muscle_hard_laws``.
+HARDENING_MODELS = ('bilinear', 'ludwik', 'swift', 'vocemod')
+
+#: Registered viscoplastic flow stress laws \( \sigma(\epsilon_p, \dot\epsilon_p) \) (D-017): one
+#: template ``src/plasticity/viscoplastic_laws/muscle_vp_<name>.fypp`` each, exported by
+#: ``muscle_vp_laws``. ``VISCOPLASTIC_COMPOSED``: those that compose a hardening law (D-017.6b).
+VISCOPLASTIC_MODELS = ('jc', 'jcfull', 'mrk', 'nnl', 'rk', 'va')
+VISCOPLASTIC_COMPOSED = ('jc', 'jcfull')
+
+#: Registered overstress laws \( \dot\lambda = g(\sigma_{eq}, \epsilon_p) \) (D-017): same
+#: directory and module names as the flow stress laws, exported by ``muscle_vp_overstress_laws``.
+OVERSTRESS_MODELS = ('chaboche', 'perzyna')
+OVERSTRESS_COMPOSED = ('chaboche', 'perzyna')
+
+#: Registered yield criteria \( \sigma_{eq}(\boldsymbol\sigma) \) (D-017): one template
+#: ``src/plasticity/yield_criteria/muscle_yield_<name>.fypp`` each, exported by
+#: ``muscle_yield_criteria``. ``YIELD_JOINT``: those that write their own joint evaluation of the
+#: equivalent stress and its derivatives (the others get the default, three calls in turn).
+YIELD_MODELS = ('vonmises', 'hill48', 'druckerprager', 'cpb06', 'cpb06ex2', 'yld2004')
+YIELD_JOINT = ('yld2004',)
+
+#: Registered elastic models (D-017.12): one template
+#: ``src/elasticity/muscle_elasticity_<name>.fypp`` each, exported by ``muscle_elasticity_laws``.
+ELASTICITY_MODELS = ('linear', 'frozen')
+
+#: Registered linear viscoelastic models (D-017.13): one template
+#: ``src/viscoelasticity/muscle_visco_<name>.fypp`` each, exported by ``muscle_visco_laws``. Their
+#: step map is affine in the elastic strain: the algorithmic ("frozen") elasticity of the step is
+#: the elastic model ``frozen`` (``elas_frozen_<k>``), which a return mapping uses as any other.
+VISCOELASTIC_MODELS = ('maxwell', 'kelvin')
+
+#: Registered kinematics (D-017.14): one template ``src/kinematics/muscle_kin_<name>.fypp`` each,
+#: exported by ``muscle_kin_laws``. They have no material parameters: the parameter type of a
+#: kinematics is empty and only selects it at compile time (generic resolution, D-008 renames).
+KINEMATICS_MODELS = ('small_strain', 'total_lagrangian', 'updated_lagrangian', 'material_logarithmic',
+                     'spatial_logarithmic', 'corotational')
+#: Kinematics updated from F (``kin_update``); the others (the corotational one) from a strain and a
+#: rotation (``kin_corot_update``, D-017.14d).
+KINEMATICS_F_MODELS = tuple(m for m in KINEMATICS_MODELS if m != 'corotational')
+
+#: Module of a model whose name does not follow ``ModelFamily.module`` (a model that keeps its
+#: historical module, ``model_module``): the frozen elasticity of the viscoelastic models.
+MODEL_MODULES = {('elas', 'frozen'): 'muscle_visco_frozen'}
+
+#: Readable names of the models in the generated FORD docs (``model_label``); a model not listed
+#: (e.g. a test-only law) is named by its identifier.
+MODEL_LABELS = {('hard', 'bilinear'): 'bilinear', ('hard', 'ludwik'): 'Ludwik', ('hard', 'swift'): 'Swift',
+                ('hard', 'vocemod'): 'modified Voce', ('vp', 'jc'): 'Johnson-Cook',
+                ('vp', 'rk'): 'Rusinek-Klepaczko', ('vp', 'jcfull'): 'full Johnson-Cook',
+                ('vp', 'mrk'): 'modified Rusinek-Klepaczko', ('vp', 'nnl'): 'Nemat-Nasser-Li',
+                ('vp', 'va'): 'VA', ('os', 'perzyna'): 'Perzyna',
+                ('os', 'chaboche'): 'Chaboche', ('yield', 'vonmises'): 'von Mises',
+                ('yield', 'hill48'): 'Hill (1948)', ('yield', 'cpb06'): 'CPB06 (Cazacu-Plunkett-Barlat 2006)',
+                ('yield', 'druckerprager'): 'extended linear Drucker-Prager',
+                ('yield', 'cpb06ex2'): 'CPB06ex2 (Plunkett-Cazacu-Barlat 2008)',
+                ('yield', 'yld2004'): 'Yld2004-18p (Barlat et al. 2005)',
+                ('elas', 'linear'): 'linear isotropic elastic',
+                ('elas', 'frozen'): 'frozen (algorithmic) viscoelastic',
+                ('visco', 'maxwell'): 'generalized Maxwell', ('visco', 'kelvin'): 'Kelvin-Voigt',
+                ('kin', 'small_strain'): 'small strain', ('kin', 'total_lagrangian'): 'total Lagrangian',
+                ('kin', 'material_logarithmic'): 'material logarithmic',
+                ('kin', 'updated_lagrangian'): 'updated Lagrangian',
+                ('kin', 'spatial_logarithmic'): 'spatial logarithmic', ('kin', 'corotational'): 'corotational'}
+
 _AXES = 'xyz'
 
 
@@ -831,3 +897,651 @@ def _check_op_table():
 
 
 _check_op_table()
+
+
+# ---------------------------------------------------------------------------------------------
+# Constitutive model families (D-007, D-017.6)
+# ---------------------------------------------------------------------------------------------
+# A family fixes the contract every model of it follows: the name of the parameter argument, the
+# arguments and result of each function (same names for every model, D-007), the step scale and
+# domain of the default finite differences, and the registered models. The macros of
+# include/muscle_models_common.fypp generate the repetitive code from it.
+
+#: Argument (or result) of a family function: ``name``; ``type`` = ``'real'``, ``'integer'``,
+#: ``'logical'`` or a tensor family (``'2Osym'``, ...; needs the dimension); ``shape`` = ``''``
+#: (scalar) or a fixed shape such as ``'(3)'``; ``doc`` = FORD text.
+ModelArg = namedtuple('ModelArg', 'name type shape doc')
+
+#: Function of a family: ``name`` (generic ``<prefix>_<name>``), ``doc`` (FORD summary, no final
+#: period), ``result`` (a ``ModelArg``), ``deriv`` = ``(function, argument)`` this one is the
+#: derivative of, or ``None``; ``extra`` (``ModelArg`` after the family arguments, only in this
+#: function, e.g. the time step), ``comp`` (names of the composition values it receives when the
+#: model composes another law, D-017.6b, after ``extra``) and ``default`` (formula of the default
+#: body in terms of the other functions, ``{name}`` = call of function ``name`` of the same model,
+#: generated by MODEL_DEFAULT; or ``None``).
+#: ``outs`` (optional): ``ModelArg`` of the ``intent(out)`` arguments of a procedure that is a
+#: subroutine (e.g. results with a ``status``, or a new state): then ``result`` is ``None`` and the
+#: outputs follow the other arguments. A subroutine has no finite difference nor default body.
+#: ``models`` (optional): the registered models that have this function (``None``: every model),
+#: for a family whose models do not all share it (the corotational kinematics is updated from a
+#: strain and a rotation, the others from F); ``model_procs`` of a model lists only its own.
+#: ``opts`` (optional): ``ModelArg`` of ``intent(in), optional`` arguments, last (after ``outs``).
+ModelFunc = namedtuple('ModelFunc', 'name doc result deriv extra comp default outs models opts',
+                       defaults=((), (), None, (), None, ()))
+
+#: Parameter of a model: ``name``, ``type`` and ``shape`` as in ``ModelArg``, ``doc`` (FORD text)
+#: and ``default`` (``None`` or a number written without kind, e.g. ``'0.0'``; the kind is added
+#: for real parameters).
+#: ``private`` (optional, default ``False``): the component is private to the model module (derived
+#: parameters such as the normalization factor of CPB06, D-017.10b): the type can then only be built
+#: with the initializer of the model (``yield_<m>_init``); the historical OO type keeps it public.
+ModelParam = namedtuple('ModelParam', 'name type shape doc default private', defaults=(False,))
+
+#: Value of a composed law (D-017.6b): the ``arg`` (``ModelArg``) the free functions receive, and
+#: the type-bound function of the composed OO law (``binding``) that the OO adapter evaluates at
+#: the family argument ``ModelComposition.arg`` to obtain it.
+CompValue = namedtuple('CompValue', 'arg binding')
+
+#: Composition of a family whose models may contain another law (viscoplastic laws with a hardening
+#: law): ``component`` (name of the polymorphic component of the OO adapter), ``base_type`` (its
+#: declared type), ``arg`` (family argument the composed values depend on: a finite difference
+#: in that argument cannot be taken with the values frozen) and ``values`` (``CompValue``).
+ModelComposition = namedtuple('ModelComposition', 'component base_type arg values')
+
+#: Joint evaluation of several functions of a family at the same arguments (yield criteria: the
+#: equivalent stress and its two derivatives, which a return mapping needs together): a
+#: subroutine ``<prefix>_<name>`` with the family arguments and one ``intent(out)`` argument per
+#: function of ``funcs`` (named ``outs``, of the type of the function result), and a ``flag``
+#: function ``<prefix>_<flag>(par)`` (constant ``logical``: whether the model writes its own,
+#: cheaper joint evaluation; the others get the default, the functions called in turn).
+#: ``models``: the registered models that write their own. ``oo_name`` / ``oo_flag``: bindings of
+#: the historical OO base (overridden by the adapter only for ``models``); ``oo_args``: OO dummy
+#: names of the family arguments.
+#: ``optional``: outputs that are ``optional`` arguments (not computed when absent, D-017.10a).
+ModelJoint = namedtuple('ModelJoint', 'name doc funcs outs flag flag_doc models oo_name oo_flag oo_args optional')
+
+#: A model family: ``prefix`` of every generated name (``hard`` -> ``hard_stress``,
+#: ``hard_bilinear_dp``), ``module`` (format of the model modules), ``family_module``, ``par``
+#: (name of the parameter argument: chosen by the family so that it cannot clash with a physical
+#: argument such as a pressure ``p``), ``args`` (``ModelArg`` of every function, in order),
+#: ``funcs`` (``ModelFunc``), ``fd_scale`` (scale of the argument in the default finite
+#: differences, ``h = rel max(|x|, scale)``, D-017.5a, or ``None``), ``fd_lower`` (lower bound of
+#: the domain of the differentiated argument, or ``None``: below ``lower + h`` the default finite
+#: differences are one-sided), ``models`` (the registry), ``composition`` (a
+#: ``ModelComposition`` or ``None``), ``composed`` (registered models that compose the other law)
+#: ``oo_funcs`` (functions bound by default in the OO adapter, ``None`` = all), ``oo_bindings``
+#: (default OO bindings ``(binding, function, OO dummy names)`` when the historical names differ
+#: from the family ones, or ``None``), ``dims`` (dimensions of a family with tensor arguments: the
+#: specific function names then carry the dimension, ``<prefix>_<func>_<model>_<dim>_<kind>``;
+#: ``None`` for a family of scalar arguments), ``joint`` (a ``ModelJoint`` or ``None``) and
+#: ``oo_class`` (the tensor arguments of the historical OO base are polymorphic, ``class(...)``,
+#: so the OO adapters declare them so to override its bindings; ``False``: ``type(...)``).
+#: A default OO binding of ``oo_bindings`` may carry a fourth element, the dimension of its tensor
+#: arguments (default ``OO_DIM``), for a historical API with bindings per dimension
+#: (``stress_3D``, ``stress_2D``).
+#: ``support``: templates of the family that follow ``module`` but are not models (shared types,
+#: macros included by the model templates).
+ModelFamily = namedtuple('ModelFamily',
+                         'prefix module family_module par args funcs fd_scale fd_lower models '
+                         'composition composed oo_funcs oo_bindings dims joint oo_class support',
+                         defaults=(None, (), None, None, None, None, False, ()))
+
+#: Dimension of the historical OO API (the OO adapters of a family with ``dims``).
+OO_DIM = '3D'
+
+_EP = ModelArg('ep', 'real', '', r'Equivalent plastic strain \( \epsilon_p \ge 0 \).')
+_EPD = ModelArg('epd', 'real', '', r'Equivalent plastic strain rate \( \dot\epsilon_p \).')
+_DT = ModelArg('dt', 'real', '', r'Time step \( \Delta t \) (\( \dot\epsilon_p = \Delta\epsilon_p/\Delta t \)).')
+_SEQ = ModelArg('sigma_eq', 'real', '', r'Equivalent stress \( \sigma_{eq} \).')
+_REAL = lambda doc: ModelArg('res', 'real', '', doc)
+_SIGMA = ModelArg('sigma', '2Osym', '', r'Stress tensor \( \boldsymbol\sigma \).')
+_STRAIN = ModelArg('strain', '2Osym', '', r'Strain tensor \( \boldsymbol\varepsilon \).')
+_COEFS = ModelArg('coefs', 'type:visco_coefs', '', r'Coefficients of the time step (`visco_step_coefficients`).')
+_STATE_N = ModelArg('state_n', 'type:visco_state', '', r'Converged state at \( t_n \).')
+_KIN_STATE = ModelArg('state', 'type:kin_state', '', r'Kinematic state (`kin_update` or `kin_corot_update`).')
+
+#: Composition with an isotropic hardening law (viscoplastic and overstress families): the
+#: composer evaluates ``hard_stress`` and ``hard_dstress_dep`` at ``ep`` and passes the values.
+_HARD_COMPOSITION = ModelComposition(
+    component='hard_law', base_type='Base_hardening_laws', arg='ep',
+    values=(CompValue(ModelArg('sy', 'real', '', r'Static yield stress \( \sigma_y(\epsilon_p) \) of the '
+                               r'composed hardening law (`hard_stress`).'), 'stress'),
+            CompValue(ModelArg('dsy_dep', 'real', '', r'Hardening modulus \( d\sigma_y/d\epsilon_p \) of '
+                               r'the composed hardening law (`hard_dstress_dep`).'), 'dstress_dep')))
+
+#: Model families by prefix.
+MODEL_FAMILIES = {
+    'hard': ModelFamily(
+        prefix='hard', module='muscle_hard_{}', family_module='muscle_hard_laws', par='prm',
+        args=(_EP,),
+        funcs=(ModelFunc('stress', r'Flow stress \( \sigma_y(\epsilon_p) \)',
+                         _REAL(r'\( \sigma_y \).'), None),
+               ModelFunc('dstress_dep', r'Hardening modulus \( d\sigma_y/d\epsilon_p \)',
+                         _REAL(r'\( d\sigma_y/d\epsilon_p \).'), ('stress', 'ep')),
+               ModelFunc('ddstress_ddep', r'Second derivative \( d^2\sigma_y/d\epsilon_p^2 \)',
+                         _REAL(r'\( d^2\sigma_y/d\epsilon_p^2 \).'),
+                         ('dstress_dep', 'ep'))),
+        fd_scale='1.0', fd_lower='0.0', models=HARDENING_MODELS),
+    # Flow stress laws sigma(ep, epd). The partial derivatives are the kernel API; dstress_dep is
+    # the historical derivative used by the return mapping, d sigma(ep_n + x, x/dt)/dx (with the
+    # time step), by default dflow_dep + dflow_depd/dt (the formula of the historical laws and of
+    # the numeric default of Base_viscoplastic_law). Default finite differences as the historical
+    # `derivative` (no scale, no lower bound: the laws are evaluated at epd < 0 too).
+    'vp': ModelFamily(
+        prefix='vp', module='muscle_vp_{}', family_module='muscle_vp_laws', par='prm',
+        args=(_EP, _EPD),
+        funcs=(ModelFunc('flow_stress', r'Viscoplastic flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \)',
+                         _REAL(r'\( \sigma \).'), None, comp=('sy',)),
+               ModelFunc('dflow_dep', r'Partial derivative \( \partial\sigma/\partial\epsilon_p \) '
+                         r'(at constant \( \dot\epsilon_p \))',
+                         _REAL(r'\( \partial\sigma/\partial\epsilon_p \).'), ('flow_stress', 'ep'),
+                         comp=('sy', 'dsy_dep')),
+               ModelFunc('dflow_depd', r'Partial derivative \( \partial\sigma/\partial\dot\epsilon_p \) '
+                         r'(at constant \( \epsilon_p \))',
+                         _REAL(r'\( \partial\sigma/\partial\dot\epsilon_p \).'), ('flow_stress', 'epd'),
+                         comp=('sy',)),
+               ModelFunc('dstress_dep', r'Derivative of the flow stress with respect to the plastic '
+                         r'strain increment, \( \partial\sigma/\partial\epsilon_p + '
+                         r'\partial\sigma/\partial\dot\epsilon_p/\Delta t \)',
+                         _REAL(r'\( d\sigma/d\Delta\epsilon_p \).'), None, extra=(_DT,),
+                         comp=('sy', 'dsy_dep'), default='{dflow_dep} + {dflow_depd}/dt')),
+        fd_scale=None, fd_lower=None, models=VISCOPLASTIC_MODELS,
+        composition=_HARD_COMPOSITION, composed=VISCOPLASTIC_COMPOSED,
+        oo_funcs=('flow_stress', 'dstress_dep')),
+    # Overstress laws g(sigma_eq, ep) (plastic multiplier rate). Default finite differences as the
+    # historical `derivative` of Base_overstress_law.
+    'os': ModelFamily(
+        prefix='os', module='muscle_vp_{}', family_module='muscle_vp_overstress_laws', par='prm',
+        args=(_SEQ, _EP),
+        funcs=(ModelFunc('flow_rate', r'Plastic multiplier rate \( g(\sigma_{eq}, \epsilon_p) \)',
+                         _REAL(r'\( g \).'), None, comp=('sy',)),
+               ModelFunc('dflow_dsigma', r'Derivative \( \partial g/\partial\sigma_{eq} \)',
+                         _REAL(r'\( \partial g/\partial\sigma_{eq} \).'), ('flow_rate', 'sigma_eq'),
+                         comp=('sy',)),
+               ModelFunc('dflow_dep', r'Derivative \( \partial g/\partial\epsilon_p \)',
+                         _REAL(r'\( \partial g/\partial\epsilon_p \).'), ('flow_rate', 'ep'),
+                         comp=('sy', 'dsy_dep'))),
+        fd_scale=None, fd_lower=None, models=OVERSTRESS_MODELS,
+        composition=_HARD_COMPOSITION, composed=OVERSTRESS_COMPOSED),
+    # Yield criteria sigma_eq(sigma) and their derivatives with respect to the stress tensor. Default
+    # finite differences as the numeric procedures of Base_yield_critera (FD_GRAD, and FD_HESS of
+    # stress_eq for the second derivative; no scale). Only 3D for now (dims-2d-3d.md: 2D needs a
+    # 2D vs 3D test first). The OO adapters keep the historical binding names.
+    'yield': ModelFamily(
+        prefix='yield', module='muscle_yield_{}', family_module='muscle_yield_criteria', par='prm',
+        args=(_SIGMA,),
+        funcs=(ModelFunc('stress_eq', r'Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \)',
+                         _REAL(r'\( \sigma_{eq} \).'), None),
+               ModelFunc('dstress_eq', r'Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \)',
+                         ModelArg('res', '2Osym', '', r'\( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).'),
+                         ('stress_eq', 'sigma')),
+               ModelFunc('ddstress_eq', r'Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \)',
+                         ModelArg('res', '4O3sym', '', r'\( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \).'),
+                         ('dstress_eq', 'sigma'))),
+        fd_scale=None, fd_lower=None, models=YIELD_MODELS,
+        oo_bindings=(('stress_eq', 'stress_eq', ('stress',)),
+                     ('dstressEq_dstress', 'dstress_eq', ('stress',)),
+                     ('ddstressEq_ddstress', 'ddstress_eq', ('stress',))),
+        dims=('3D',),
+        joint=ModelJoint(
+            name='stress_eq_and_derivatives',
+            doc=r'Equivalent stress and its first and second derivatives at the same stress',
+            funcs=('stress_eq', 'dstress_eq', 'ddstress_eq'), outs=('f', 'df', 'ddf'),
+            flag='joint_evaluation',
+            flag_doc=r'Whether the criterion writes its own joint evaluation (cheaper than the three '
+                     r'functions in turn)',
+            models=YIELD_JOINT, oo_name='stressEq_and_derivatives', oo_flag='joint_evaluation',
+            oo_args=('stress',), optional=('ddf',))),
+    # Elastic models sigma(eps): the stress, its deviatoric part and their tangents (D-017.12), in
+    # 3D and 2D (plane strain/stress and axisymmetry: the 33 component is kept). The tangents of
+    # 4O3sym have no default finite differences (tensor Jacobian): every model writes them. The
+    # transient variants of the historical OO API (strain increment, time step and internal
+    # variables, ignored by every elastic model) are not part of the kernel API: a model with
+    # internal variables belongs to the viscoelastic family. The OO base declares its tensor
+    # arguments `class(...)` and has one binding per dimension.
+    'elas': ModelFamily(
+        prefix='elas', module='muscle_elasticity_{}', family_module='muscle_elasticity_laws', par='prm',
+        args=(_STRAIN,),
+        funcs=(ModelFunc('stress', r'Stress \( \boldsymbol\sigma(\boldsymbol\varepsilon) \)',
+                         ModelArg('res', '2Osym', '', r'\( \boldsymbol\sigma \).'), None),
+               ModelFunc('stress_dev', r'Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \)',
+                         ModelArg('res', '2Osym', '', r'\( \operatorname{dev}\boldsymbol\sigma \).'), None),
+               ModelFunc('dstress_dstrain', r'Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \)',
+                         ModelArg('res', '4O3sym', '', r'\( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \).'),
+                         ('stress', 'strain')),
+               ModelFunc('dstress_dstrain_dev', r'Deviatoric tangent '
+                         r'\( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \)',
+                         ModelArg('res', '4O3sym', '',
+                                  r'\( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \).'),
+                         ('stress_dev', 'strain'))),
+        fd_scale=None, fd_lower=None, models=ELASTICITY_MODELS,
+        oo_bindings=(('stress_3D', 'stress', ('strain',), '3D'),
+                     ('stress_2D', 'stress', ('strain',), '2D'),
+                     ('stress_dev_3D', 'stress_dev', ('strain',), '3D'),
+                     ('stress_dev_2D', 'stress_dev', ('strain',), '2D'),
+                     ('dstress_dstrain_3D', 'dstress_dstrain', ('strain',), '3D'),
+                     ('dstress_dstrain_2D', 'dstress_dstrain', ('strain',), '2D'),
+                     ('dstress_dstrain_dev_3D', 'dstress_dstrain_dev', ('strain',), '3D')),
+        dims=('3D', '2D'), oo_class=True),
+    # Linear viscoelastic models (D-017.13), integrated over a time step: the first family with a
+    # state. The state is explicit (`visco_state_<k>`, fixed size, muscle_visco_types) and the
+    # converged state is never modified: `visco_update` reads `state_n` and writes `state_np1`.
+    # The work is split by how often it is done (as the historical Base_viscoelasticity):
+    # `visco_step_coefficients` once per step and material (it validates the time step: the only
+    # procedure with a `status`), `visco_freeze` once per step and point (the frozen elasticity
+    # `elas_frozen_<k>` of the step, an elastic model of the `elas` family that any return mapping
+    # uses), `visco_update` once per converged step and point. Only 3D (the state and the models
+    # are 3D, D-017.13c). The OO adapters keep the historical bindings, written by the author.
+    'visco': ModelFamily(
+        prefix='visco', module='muscle_visco_{}', family_module='muscle_visco_laws', par='prm',
+        args=(),
+        funcs=(ModelFunc('step_coefficients', r'Coefficients of a time step (algorithmic moduli and the factors '
+                         r'of each branch; the time step is validated)',
+                         None, None,
+                         extra=(ModelArg('dt', 'real', '', r'Time step \( \Delta t \).'),),
+                         outs=(ModelArg('coefs', 'type:visco_coefs', '', r'Coefficients of the step (default '
+                                        r'values when `status` is not `STATUS_OK`).'),
+                               ModelArg('status', 'integer', '', r'`STATUS_OK` or `STATUS_INVALID_TIME_STEP` '
+                                        r'(muscle_status).'))),
+               ModelFunc('freeze', r'Frozen (algorithmic) elasticity of a time step at a point, '
+                         r'\( \boldsymbol\sigma_{n+1} = \mathbb{C}^{alg} : \boldsymbol\varepsilon^e_{n+1} + '
+                         r'\boldsymbol\sigma^{hist}_n \)',
+                         ModelArg('elas', 'type:elas_frozen', '', r'Frozen elasticity (`elas_*` generics of '
+                                  r'muscle_elasticity_laws).'), None,
+                         extra=(_COEFS, _STATE_N)),
+               ModelFunc('update', r'State at \( t_{n+1} \) from the converged state and the elastic strain '
+                         r'at \( t_{n+1} \)',
+                         None, None,
+                         extra=(_COEFS, _STATE_N,
+                                ModelArg('strain_e', '3D2Osym', '', r'Elastic strain at \( t_{n+1} \).')),
+                         outs=(ModelArg('state_np1', 'type:visco_state', '', r'State at \( t_{n+1} \): '
+                                        r'`state_n` with the branches of the model updated; the inactive '
+                                        r'branches are copied from `state_n` (the historical OO update left '
+                                        r'those of `state_np1` untouched: the same values, zero, through the '
+                                        r'API).'),)),
+               ModelFunc('n_branches', r'Number of history tensors of the state used by the model',
+                         ModelArg('res', 'integer', '', r'Number of branches.'), None)),
+        fd_scale=None, fd_lower=None, models=VISCOELASTIC_MODELS, oo_funcs=(),
+        support=('muscle_visco_types', 'muscle_visco_adapters')),
+    # Kinematics (D-017.14): the configuration of a material point from its deformation gradient F.
+    # The state is explicit (`kin_state_<k>`, fixed size, muscle_kin_finite: F, F^-1, the polar
+    # rotation R, J, C, b, b^-1 and the strain measure of the kinematics) and is written by
+    # `kin_update`, the only procedure that validates (`status`, D-017.14a), or, in the corotational
+    # kinematics, by `kin_corot_update` from a strain and a rotation (D-017.14d). Only what depends on
+    # the kinematics is a family function: the update (which strain measure), the conversion of the
+    # constitutive stress (work conjugate of that strain) to Cauchy, and of the constitutive tangent
+    # to the spatial one. The strain measures, the stress conversions (PK1, PK2, Cauchy, Kirchhoff),
+    # the push-forward/pull-back of tangents and the corotational rotations are the same for every
+    # kinematics: functions of the state in muscle_kin_finite. No material parameters (empty
+    # parameter types, D-017.14). Only 3D (as the historical kinematics). The OO adapters keep the
+    # historical types and bindings, written with the macros of muscle_kin_adapters.
+    'kin': ModelFamily(
+        prefix='kin', module='muscle_kin_{}', family_module='muscle_kin_laws', par='prm',
+        args=(),
+        funcs=(ModelFunc('update', r'Kinematic state of a deformation gradient \( \mathbf{F} \) (the '
+                         r'deformation gradient is validated)',
+                         None, None,
+                         extra=(ModelArg('F', '3D2O', '', r'Deformation gradient \( \mathbf{F} \).'),),
+                         outs=(ModelArg('state', 'type:kin_state', '', r'Kinematic state (not valid when '
+                                        r'`status` is not `STATUS_OK`).'),
+                               ModelArg('status', 'integer', '', r'`STATUS_OK` or `STATUS_INVALID_DEFORMATION` '
+                                        r'(muscle_status).')),
+                         models=KINEMATICS_F_MODELS),
+               ModelFunc('corot_update', r'Kinematic state of a corotational kinematics from the strain in the '
+                         r'unrotated frame and the rotation (identity if absent)',
+                         None, None,
+                         extra=(ModelArg('strain', '3D2Osym', '', r'Strain in the unrotated frame.'),),
+                         outs=(ModelArg('state', 'type:kin_state', '', r'Kinematic state: strain, '
+                                        r'\( J = \exp(\operatorname{tr}\boldsymbol\varepsilon) \) and R; the '
+                                        r'F-based components keep the reference configuration.'),
+                               ModelArg('status', 'integer', '', r'`STATUS_OK` (no validation).')),
+                         models=('corotational',),
+                         opts=(ModelArg('R', '3D2O', '', r'Rotation \( \mathbf{R} \) (identity if absent).'),)),
+               ModelFunc('to_cauchy', r'Cauchy stress from the constitutive stress (work conjugate of the '
+                         r'strain of the kinematics)',
+                         ModelArg('res', '3D2Osym', '', r'Cauchy stress \( \boldsymbol\sigma \).'), None,
+                         extra=(_KIN_STATE, ModelArg('stress', '3D2Osym', '', r'Constitutive stress.'))),
+               ModelFunc('to_spatial_tangent', r'Spatial tangent from the constitutive tangent (no geometric '
+                         r'term, D-017.14b)',
+                         ModelArg('res', '3D4O2sym', '', r'Spatial tangent.'), None,
+                         extra=(_KIN_STATE, ModelArg('tangent', '3D4O2sym', '', r'Constitutive tangent.'))),
+               ModelFunc('is_finite_strain', r'Whether the kinematics is a finite strain one',
+                         ModelArg('res', 'logical', '', r'`.true.` for a finite strain kinematics.'), None)),
+        fd_scale=None, fd_lower=None, models=KINEMATICS_MODELS, oo_funcs=(),
+        support=('muscle_kin_finite', 'muscle_kin_adapters')),
+}
+
+
+def model_family(prefix):
+    """The ``ModelFamily`` of a prefix: ``model_family('hard').par`` -> ``'prm'``."""
+    return MODEL_FAMILIES[prefix]
+
+
+def model_func(prefix, name):
+    """The ``ModelFunc`` ``name`` of a family."""
+    for f in MODEL_FAMILIES[prefix].funcs:
+        if f.name == name:
+            return f
+    raise KeyError(f'family {prefix!r} has no function {name!r}')
+
+
+def model_label(prefix, model):
+    """Readable name of a model for the docs (``MODEL_LABELS``, else the identifier):
+    ``model_label('hard', 'vocemod')`` -> ``'modified Voce'``."""
+    return MODEL_LABELS.get((prefix, model), model)
+
+
+def model_module(prefix, model):
+    """Module of a model: ``MODEL_MODULES`` if listed there, else ``ModelFamily.module``:
+    ``model_module('elas', 'linear')`` -> ``muscle_elasticity_linear``,
+    ``model_module('elas', 'frozen')`` -> ``muscle_visco_frozen``."""
+    return MODEL_MODULES.get((prefix, model), MODEL_FAMILIES[prefix].module.format(model))
+
+
+def model_type(prefix, model, kind):
+    """Parameter type of a model: ``model_type('hard', 'bilinear', 'dp')`` -> ``hard_bilinear_dp``."""
+    return f'{prefix}_{model}_{kind}'
+
+
+def model_specific(prefix, func, model, kind, dim=None):
+    """Specific procedure name, generic + model (+ dimension) + kind (D-011.4):
+    ``model_specific('hard', 'stress', 'bilinear', 'dp')`` -> ``hard_stress_bilinear_dp``. In a
+    family with dimensions (``ModelFamily.dims``) the procedures with tensor arguments carry it,
+    ``model_specific('yield', 'stress_eq', 'hill48', 'dp', '3D')`` ->
+    ``yield_stress_eq_hill48_3D_dp``; the flag of the joint evaluation does not (its only argument
+    is the parameter type, which does not depend on the dimension)."""
+    fam = MODEL_FAMILIES.get(prefix)
+    if fam is not None and fam.dims and not (fam.joint and func == fam.joint.flag):
+        if dim not in fam.dims:
+            raise ValueError(f'{prefix}_{func}: dimension {dim!r} not in {fam.dims}')
+        return f'{prefix}_{func}_{model}_{dim}_{kind}'
+    return f'{prefix}_{func}_{model}_{kind}'
+
+
+def model_dims(prefix):
+    """Dimensions to instantiate the functions of a family for: ``ModelFamily.dims``, or
+    ``[None]`` for a family of scalar arguments (one instance, no dimension)."""
+    return list(MODEL_FAMILIES[prefix].dims or [None])
+
+
+def model_procs(prefix, model=None):
+    """Kernel procedures of a family, as the suffixes of its generics ``<prefix>_<name>``: the
+    functions, then the joint evaluation and its flag (if the family has one):
+    ``model_procs('yield')`` -> ``['stress_eq', 'dstress_eq', 'ddstress_eq',
+    'stress_eq_and_derivatives', 'joint_evaluation']``. With ``model``, only the functions that
+    model has (``ModelFunc.models``): ``model_procs('kin', 'corotational')`` ->
+    ``['corot_update', 'to_cauchy', 'to_spatial_tangent', 'is_finite_strain']``."""
+    fam = MODEL_FAMILIES[prefix]
+    res = [f.name for f in fam.funcs if model is None or f.models is None or model in f.models]
+    if fam.joint:
+        res += [fam.joint.name, fam.joint.flag]
+    return res
+
+
+def model_proc_doc(prefix, name):
+    """FORD summary of a kernel procedure of ``model_procs``."""
+    fam = MODEL_FAMILIES[prefix]
+    if fam.joint and name == fam.joint.name:
+        return fam.joint.doc
+    if fam.joint and name == fam.joint.flag:
+        return fam.joint.flag_doc
+    return model_func(prefix, name).doc
+
+
+def model_proc_specifics(prefix, name, model, kinds):
+    """Specific names of the kernel procedure ``name`` (of ``model_procs``) of a model, for every
+    kind of ``kinds`` and every dimension of the family (the joint flag has no dimension):
+    the module procedures of the family generic ``<prefix>_<name>`` for that model."""
+    fam = MODEL_FAMILIES[prefix]
+    dims = [None] if fam.joint and name == fam.joint.flag else model_dims(prefix)
+    return [model_specific(prefix, name, model, k, d) for d in dims for k in kinds]
+
+
+def model_specifics(prefix, model, kinds):
+    """Specific names of every kernel procedure of a model (``model_procs``) in ``kinds``: what the
+    model module makes public and the family module imports."""
+    return [s for n in model_procs(prefix, model) for s in model_proc_specifics(prefix, n, model, kinds)]
+
+
+def model_joint(prefix, model, joint=None):
+    """Whether a model writes its own joint evaluation: ``ModelJoint.models`` for a registered
+    model; a model not registered in the family (a test-only model) may set it with ``joint``
+    (``None``: not joint). For a registered model ``joint`` must agree with the registry."""
+    fam = MODEL_FAMILIES[prefix]
+    reg = fam.joint is not None and model in fam.joint.models
+    if joint is None:
+        return reg
+    if model in fam.models and bool(joint) != reg:
+        raise ValueError(f'{prefix} {model}: joint={joint} disagrees with ModelJoint.models')
+    if joint and fam.joint is None:
+        raise ValueError(f'family {prefix!r} has no joint evaluation')
+    return bool(joint)
+
+
+def model_joint_outs(prefix):
+    """``ModelArg`` of the ``intent(out)`` arguments of the joint evaluation of a family: the
+    result of each function of ``ModelJoint.funcs`` named as in ``ModelJoint.outs``."""
+    j = MODEL_FAMILIES[prefix].joint
+    return [model_func(prefix, f).result._replace(name=o) for f, o in zip(j.funcs, j.outs)]
+
+
+def model_decl(typ, shape, kind, dim=None):
+    """Fortran type spec of an argument or parameter (``ModelArg``/``ModelParam`` ``type``):
+    ``'real'`` -> ``real(dp)``, ``'integer'``, ``'logical'``, a tensor family -> ``type(ten_3D2Osym_dp)``
+    (``dim`` required), or a tensor family with its dimension, ``'2D4O3sym'`` ->
+    ``type(ten_2D4O3sym_dp)`` (a parameter of a fixed dimension, e.g. a tangent cached per dimension
+    in a parameter type shared by both), or ``'type:<name>'``, a derived type with one instance per
+    kind, ``'type:visco_state'`` -> ``type(visco_state_dp)``. ``shape`` is not part of the type spec
+    (it follows the name)."""
+    if typ.startswith('type:') and typ[5:].isidentifier():
+        return f'type({typ[5:]}_{kind})'
+    if typ == 'real':
+        return f'real({kind})'
+    if typ in ('integer', 'logical'):
+        return typ
+    if _dim_family(typ):
+        return f'type({tname(typ, kind)})'
+    if typ in FAMILIES:
+        if dim is None:
+            raise ValueError(f'tensor type {typ!r} needs a dimension')
+        return f'type({tname(dim + typ, kind)})'
+    raise ValueError(f'unknown model type {typ!r}')
+
+
+def _dim_family(typ):
+    """Whether ``typ`` is a tensor family with its dimension (``'3D4O3sym'``)."""
+    return typ[:2] in DIMS and typ[2:] in FAMILIES
+
+
+def model_default(param, kind):
+    """Default initialization of a parameter component (``' = 0.0_dp'``) or ``''``: a
+    real/integer/logical parameter, scalar or array (every element gets the scalar default), or a
+    tensor of a fixed dimension (``'3D2Osym'``) of rank-1 storage, whose default is a value for
+    every stored component (``' = ten_3D2Osym_dp([0.0_dp, ...])'``)."""
+    if param.default is None:
+        return ''
+    if _dim_family(param.type) and not param.shape:
+        lay = layout(param.type[2:], param.type[:2])
+        if len(lay.shape) != 1:
+            raise ValueError(f'parameter {param.name!r}: default of a tensor stored as a matrix')
+        lit = f'{param.default}_{kind}'
+        return ' = {}([{}])'.format(tname(param.type, kind), ', '.join([lit] * lay.shape[0]))
+    if param.type not in ('real', 'integer', 'logical'):
+        raise ValueError(f'parameter {param.name!r}: defaults only for intrinsic types and fixed-dimension tensors')
+    return ' = ' + (f'{param.default}_{kind}' if param.type == 'real' else str(param.default))
+
+
+def model_params_init_doc(prefix, model, params, validated=False):
+    """FORD clause of the parameter type of a model with private parameters (``''`` if none is
+    private): built only with the initializer ``<prefix>_<model>_init``, which computes the private
+    derived components (D-017.10b), or, with ``validated``, which validates the parameters (every
+    component private, none derived: e.g. the Prony series of Maxwell, D-017.13):
+    ``model_params_init_doc('visco', 'kelvin', [('k', 'real', '', 'K.', '0.0', True)], True)`` ->
+    `` (build it with `visco_kelvin_init`, which validates the private parameters)``."""
+    ps = model_params(params)
+    if not any(p.private for p in ps):
+        return ''
+    init = f'{prefix}_{model}_init'
+    if validated:
+        return f' (build it with `{init}`, which validates the private parameters)'
+    return (f' (build it with `{init}`, which computes the private derived components; do not change the '
+            f'inputs after `{init}`)')
+
+
+def model_params(params):
+    """Parameters of a model as ``ModelParam`` from tuples ``(name, type, shape, doc, default[,
+    private])``, checking them (types, unique names)."""
+    res = tuple(ModelParam(*p) for p in params)
+    names = [p.name.lower() for p in res]
+    if len(set(names)) != len(names):
+        raise ValueError(f'repeated parameter names: {names}')
+    for p in res:
+        if p.type not in ('real', 'integer', 'logical') and p.type not in FAMILIES and not _dim_family(p.type):
+            raise ValueError(f'parameter {p.name!r}: unknown type {p.type!r}')
+    return res
+
+
+def model_oo_extra(params, extra):
+    """OO-only components of a historical OO adapter (``ModelParam`` from tuples as in
+    ``model_params``): state that the historical type keeps but the kernel parameter type does not,
+    e.g. the tangents cached by ``Elasticity_linear`` (D-017.12e). They follow the parameters in the
+    OO type and are not copied to the kernel type; their names may not repeat a parameter name:
+    ``[p.name for p in model_oo_extra([('mu', 'real', '', 'M.', None)],
+    [('flag', 'logical', '', 'F.', '.false.')])]`` -> ``['flag']``."""
+    res = model_params(extra or ())
+    clash = {p.name.lower() for p in model_params(params)} & {p.name.lower() for p in res}
+    if clash:
+        raise ValueError(f'OO-only components repeat parameter names: {sorted(clash)}')
+    return res
+
+
+def model_composed(prefix, model):
+    """Whether a model of the family composes another law (``ModelFamily.composed``):
+    ``model_composed('vp', 'jc')`` -> ``True``, ``model_composed('vp', 'rk')`` -> ``False``."""
+    return model in MODEL_FAMILIES[prefix].composed
+
+
+def model_comp_values(prefix, func):
+    """``CompValue`` of the composition values a function receives (``ModelFunc.comp``), in
+    order: ``[v.arg.name for v in model_comp_values('vp', 'dflow_dep')]`` -> ``['sy', 'dsy_dep']``."""
+    fam = MODEL_FAMILIES[prefix]
+    names = model_func(prefix, func).comp
+    if not names:
+        return []
+    values = {v.arg.name: v for v in fam.composition.values}
+    return [values[n] for n in names]
+
+
+def model_oo_args(prefix, func):
+    """Arguments of a function in the OO adapter (and of every model that composes nothing):
+    the family arguments and the ``extra`` ones of the function."""
+    return list(MODEL_FAMILIES[prefix].args) + list(model_func(prefix, func).extra)
+
+
+def model_args(prefix, func, model):
+    """Arguments of a function of a model, after the parameter argument: the family arguments,
+    the ``extra`` ones of the function and, if the model composes another law, the composition
+    values the function receives (D-017.6b): ``[a.name for a in model_args('vp', 'dstress_dep',
+    'jc')]`` -> ``['ep', 'epd', 'dt', 'sy', 'dsy_dep']``."""
+    res = model_oo_args(prefix, func)
+    if model_composed(prefix, model):
+        res += [v.arg for v in model_comp_values(prefix, func)]
+    return res
+
+
+def model_call(prefix, func, model, kind, xarg=None, dim=None):
+    """Call of a model function with its arguments (``model_args``), the argument ``xarg``
+    replaced by ``{x}`` (the placeholder of the finite-difference macros): ``model_call('hard',
+    'stress', 'bilinear', 'dp', 'ep')`` -> ``hard_stress_bilinear_dp(prm, {x})``."""
+    fam = MODEL_FAMILIES[prefix]
+    args = [fam.par] + ['{x}' if a.name == xarg else a.name for a in model_args(prefix, func, model)]
+    return '{}({})'.format(model_specific(prefix, func, model, kind, dim), ', '.join(args))
+
+
+def model_oo_bindings(prefix, bindings=None, model=None):
+    """Bindings of an OO adapter as ``(binding, family function, OO dummy names or None,
+    dimension)``: ``bindings`` if given, else ``ModelFamily.oo_bindings`` if the family has
+    historical names, else every function of ``ModelFamily.oo_funcs`` (``None``: all) under its
+    own name with the family argument names. The dimension (of the tensor arguments and result) is
+    the optional fourth element of a given binding, by default ``OO_DIM`` in a family with
+    dimensions and ``None`` otherwise. With ``model``, the default bindings only cover the
+    functions that model has (``ModelFunc.models``), and a given binding of a function the model
+    does not have is an error."""
+    fam = MODEL_FAMILIES[prefix]
+    own = model_procs(prefix, model)
+    if bindings is None:
+        if fam.oo_bindings is not None:
+            bindings = [b for b in fam.oo_bindings if b[1] in own]
+        else:
+            bindings = [(f.name, f.name, None) for f in fam.funcs
+                        if (fam.oo_funcs is None or f.name in fam.oo_funcs) and f.name in own]
+    for b in bindings:
+        if b[1] not in own:
+            raise ValueError(f'OO binding {b[0]!r}: {prefix}_{b[1]} is not a function of {model!r}')
+    dflt = OO_DIM if fam.dims else None
+    res = []
+    for b in bindings:
+        if len(b) not in (3, 4):
+            raise ValueError(f'OO binding {b!r}: expected (binding, function, names[, dimension])')
+        dim = b[3] if len(b) == 4 else dflt
+        if fam.dims and dim not in fam.dims or not fam.dims and dim is not None:
+            raise ValueError(f'OO binding {b[0]!r}: dimension {dim!r} not in {fam.dims}')
+        res.append((b[0], b[1], b[2], dim))
+    return res
+
+
+def model_oo_decl(prefix, arg, kind, dim):
+    """Declaration of an argument of an OO adapter procedure (without attributes): as
+    ``model_decl``, but a tensor argument is ``class(...)`` in a family whose historical base
+    declares it so (``ModelFamily.oo_class``)."""
+    decl = model_decl(arg.type, arg.shape, kind, dim)
+    if MODEL_FAMILIES[prefix].oo_class and decl.startswith('type('):
+        decl = 'class(' + decl[len('type('):]
+    return decl
+
+
+def model_default_expr(prefix, func, model, kind, dim=None):
+    """Right-hand side of the default body of a function (``ModelFunc.default``) with every
+    ``{name}`` replaced by the call of that function of the model: ``model_default_expr('vp',
+    'dstress_dep', 'rk', 'dp')`` -> ``vp_dflow_dep_rk_dp(prm, ep, epd) +
+    vp_dflow_depd_rk_dp(prm, ep, epd)/dt``."""
+    f = model_func(prefix, func)
+    if f.default is None:
+        raise ValueError(f'{prefix}_{func} has no default formula')
+    calls = {g.name: model_call(prefix, g.name, model, kind, dim=dim) for g in MODEL_FAMILIES[prefix].funcs
+             if g.name != func}
+    return f.default.format(**calls)
+
+
+def isotropic_4o3sym(lay, diag, off, shear, zero):
+    """Stored components of an isotropic ``4O3sym`` tensor
+    \\( a\\,\\delta_{ij}\\delta_{kl} + b\\,(\\delta_{ik}\\delta_{jl} + \\delta_{il}\\delta_{jk}) \\)
+    of the layout ``lay`` (3D or 2D), in storage order, as ``[(position, expr)]`` from its three
+    distinct values, Fortran expressions: ``diag`` for \\( C_{iiii} \\) (a + 2b), ``off`` for
+    \\( C_{iijj} \\), i != j (a), ``shear`` for \\( C_{ijij} \\), i != j (b), and ``zero`` for every
+    other component: ``isotropic_4o3sym(layout('4O3sym', '2D'), 'e1', 'lam', 'mu', '0')[3]`` ->
+    ``(4, 'mu')`` (xyxy)."""
+    if lay.family != '4O3sym':
+        raise ValueError(f'isotropic_4o3sym: layout of family {lay.family!r}')
+    out = []
+    for c in lay.comps:
+        i, j, k, l = c.idx
+        if i == j and k == l:
+            expr = diag if i == k else off
+        elif i != j and (i, j) == (k, l):
+            expr = shear
+        else:
+            expr = zero
+        out.append((c.pos[0], expr))
+    return out
+
+
+def literal_value(text):
+    """Value of a real literal with or without kind (``'1.0'``, ``'1.0_dp'``, ``'2e-3_sp'``), or
+    ``None`` if ``text`` is ``None`` or any other expression (a variable, ``max(a, b)``, ...)."""
+    if text is None:
+        return None
+    try:
+        return float(str(text).strip().split('_')[0])
+    except ValueError:
+        return None

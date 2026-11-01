@@ -1,0 +1,94 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:set T2 = lambda k: tname('3D2Osym', k)
+
+module muscle_plastic_state
+    !! Module muscle_plastic_state
+    !! ===========================
+    !! State of an elastoplastic material point for kernels, in every real kind (support module of
+    !! the plasticity models, not a model family). Fixed size (no allocatable components): a state
+    !! is copied (commit, rollback, private copies, device arrays) without allocating memory. 3D only.
+    !!
+    !! - `plastic_state_<k>`: plastic strain, accumulated equivalent plastic strain and stress.
+    !! - `plastic_state_pack(state, hsv)` / `plastic_state_unpack(hsv, state)`: the state as the
+    !!   `PLASTIC_STATE_SIZE` components of an FE history array (statev / hsv):
+    !!
+    !!     - hsv(1:6)  : stress (xx, yy, zz, xy, yz, xz)
+    !!     - hsv(7:12) : plastic strain (xx, yy, zz, xy, yz, xz)
+    !!     - hsv(13)   : equivalent plastic strain
+    !!
+    !!   The array has exactly `PLASTIC_STATE_SIZE` components (explicit shape): the caller passes
+    !!   the section of its history array, so nothing is validated (no status).
+    !!
+    !! Kernels keep the converged and candidate states as separate arguments. The transactional
+    !! container of the historical OO API (`Plastic_material_history`, host only) is in
+    !! muscle_plastic_history; its states are `plastic_state_dp` (historical name `Plastic_state`).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(T2(k) for k in REAL_KINDS)}$
+    implicit none
+    private
+
+    integer, parameter, public :: PLASTIC_STATE_SIZE = 13
+        !! Number of components of a plastic state in an FE history array
+
+    public :: plastic_state_pack, plastic_state_unpack
+#:for k in REAL_KINDS
+    public :: plastic_state_${k}$, plastic_state_pack_${k}$, plastic_state_unpack_${k}$
+#:endfor
+#:for k in REAL_KINDS
+
+    type :: plastic_state_${k}$
+        !! Physical state of an elastoplastic material point at an instant, `real(${k}$)`.
+        type(${T2(k)}$) :: strain_p = ${T2(k)}$([${', '.join(['0.0_' + k] * 6)}$])
+            !! Plastic strain tensor.
+        real(${k}$) :: strain_pf = 0.0_${k}$
+            !! Accumulated equivalent plastic strain.
+        type(${T2(k)}$) :: stress = ${T2(k)}$([${', '.join(['0.0_' + k] * 6)}$])
+            !! Constitutive stress tensor.
+    end type plastic_state_${k}$
+#:endfor
+
+    interface plastic_state_pack
+        !! State to the components of an FE history array (every kind).
+        module procedure ${', '.join('plastic_state_pack_' + k for k in REAL_KINDS)}$
+    end interface plastic_state_pack
+
+    interface plastic_state_unpack
+        !! State from the components of an FE history array (every kind).
+        module procedure ${', '.join('plastic_state_unpack_' + k for k in REAL_KINDS)}$
+    end interface plastic_state_unpack
+
+contains
+#:for k in REAL_KINDS
+
+    pure subroutine plastic_state_pack_${k}$(state, hsv)
+        !! Writes `state` to the `PLASTIC_STATE_SIZE` components of an FE history array, `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(plastic_state_${k}$), intent(in) :: state
+            !! State to pack.
+        real(${k}$), intent(out) :: hsv(PLASTIC_STATE_SIZE)
+            !! Components of the history array (stress, plastic strain, equivalent plastic strain).
+
+        hsv(1:6) = state%stress%vals
+        hsv(7:12) = state%strain_p%vals
+        hsv(13) = state%strain_pf
+    end subroutine plastic_state_pack_${k}$
+
+    pure subroutine plastic_state_unpack_${k}$(hsv, state)
+        !! Reads a state from the `PLASTIC_STATE_SIZE` components of an FE history array, `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: hsv(PLASTIC_STATE_SIZE)
+            !! Components of the history array (stress, plastic strain, equivalent plastic strain).
+        type(plastic_state_${k}$), intent(out) :: state
+            !! Unpacked state.
+
+        state%stress%vals = hsv(1:6)
+        state%strain_p%vals = hsv(7:12)
+        state%strain_pf = hsv(13)
+    end subroutine plastic_state_unpack_${k}$
+#:endfor
+
+end module muscle_plastic_state

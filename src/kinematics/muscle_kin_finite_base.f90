@@ -2,22 +2,36 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 
 module muscle_kin_finite_base
-    use, intrinsic :: iso_fortran_env, only : real64
+    !! Historical OO base of the kinematics driven by the total deformation gradient F (host only,
+    !! removed in Phase 7 with Base_kinematics, D-017.1). The kinematic state is cached in the
+    !! historical components (`F`, `F_inv`, `R_rot`, `J`, `C_mat`, `b_spat`, `b_inv`) and every
+    !! binding calls the dp kernel procedures of muscle_kin_finite (D-017.14), ignoring their
+    !! `status`: same results as the historical code, also for an invalid F (D-017.14a).
+    !!
+    !! `finite_state_of(self)` and `finite_set_state(self, state)` copy the cached state to and
+    !! from a `kin_state_dp` (for the adapters of the concrete kinematics). Documented, not changed
+    !! (D-017.14b): `update_incremental` builds F_{n+1} = (drot + dstrain) F_n (additive) and ignores
+    !! `dt`; `update_F_base` does not update the strain of the concrete type; the tangent
+    !! transformations ignore their optional stress argument.
+    use muscle_kinds, only : dp
     use muscle_tensors
     use muscle_kinematics_base
-    use muscle_math_operations, only : eigenvals
-    use muscle_math_spectral_derivs, only : dEigenvalues_dTensor
+    use muscle_kin_finite, only : kin_state_dp, kin_finite_update_dp, kin_green_lagrange_dp, &
+        kin_euler_almansi_dp, kin_material_log_dp, kin_spatial_log_dp, kin_pk2_to_cauchy_dp, &
+        kin_cauchy_to_pk2_dp, kin_pk2_to_kirchhoff_dp, kin_kirchhoff_to_pk2_dp, kin_cauchy_to_kirchhoff_dp, &
+        kin_kirchhoff_to_cauchy_dp, kin_pk2_to_pk1_dp, kin_pk1_to_pk2_dp, kin_cauchy_to_pk1_dp, &
+        kin_pk1_to_cauchy_dp, kin_push_forward_tangent_dp, kin_pull_back_tangent_dp
     implicit none
     private
 
-    public :: Base_F_kinematics
+    public :: Base_F_kinematics, finite_state_of, finite_set_state
 
     type, abstract, extends(Base_kinematics) :: Base_F_kinematics
         !! Abstract Base Class for Kinematics driven by total Deformation Gradient F
         type(ten_3D2O)    :: F          !! Total deformation gradient F
         type(ten_3D2O)    :: F_inv      !! Inverse deformation gradient F^-1 (Cached)
         type(ten_3D2O)    :: R_rot      !! Rotation tensor R from polar decomp F = R*U (Cached)
-        real(real64)      :: J = 1.0D0  !! Jacobian det(F) (Cached)
+        real(dp)          :: J = 1.0_dp !! Jacobian det(F) (Cached)
         type(ten_3D2Osym) :: C_mat      !! Right Cauchy-Green tensor C = F^T * F (Cached)
         type(ten_3D2Osym) :: b_spat     !! Left Cauchy-Green tensor b = F * F^T (Cached)
         type(ten_3D2Osym) :: b_inv      !! Inverse Left Cauchy-Green tensor b^-1 = F^-T * F^-1 (Cached)
@@ -26,7 +40,7 @@ module muscle_kin_finite_base
         procedure :: update_F           => finite_update_F
         procedure :: update_incremental => finite_update_incremental
         generic   :: update             => update_F, update_incremental
-        
+
         procedure :: jacobian           => finite_jacobian
         procedure :: is_finite_strain   => finite_is_finite_strain
 
@@ -60,69 +74,54 @@ module muscle_kin_finite_base
 
 contains
 
+    pure function finite_state_of(self) result(state)
+        !! Kernel state (`kin_state_dp`) of the cached components; zero strain.
+        class(Base_F_kinematics), intent(in) :: self
+            !! Kinematics.
+        type(kin_state_dp) :: state
+            !! Kinematic state.
+
+        state%F = self%F
+        state%F_inv = self%F_inv
+        state%R = self%R_rot
+        state%J = self%J
+        state%C = self%C_mat
+        state%b = self%b_spat
+        state%b_inv = self%b_inv
+    end function finite_state_of
+
+    pure subroutine finite_set_state(self, state)
+        !! Caches a kernel state (`kin_state_dp`) in the historical components (not the strain).
+        class(Base_F_kinematics), intent(inout) :: self
+            !! Kinematics.
+        type(kin_state_dp), intent(in) :: state
+            !! Kinematic state.
+
+        self%F = state%F
+        self%F_inv = state%F_inv
+        self%R_rot = state%R
+        self%J = state%J
+        self%C_mat = state%C
+        self%b_spat = state%b
+        self%b_inv = state%b_inv
+    end subroutine finite_set_state
+
     pure subroutine finite_update_F(self, F)
+        !! Caches the kinematic state of F (`kin_finite_update_dp`; its status is ignored, D-017.14a).
         class(Base_F_kinematics), intent(inout) :: self
         type(ten_3D2O), intent(in)              :: F
-        real(real64) :: F11, F21, F31, F12, F22, F32, F13, F23, F33
-        real(real64) :: G11, G21, G31, G12, G22, G32, G13, G23, G33
-        real(real64) :: c11, c22, c33, c12, c23, c13
-        real(real64) :: b11, b22, b33, b12, b23, b13
-        real(real64) :: binv11, binv22, binv33, binv12, binv23, binv13
-        real(real64) :: eigC(3)
-        type(ten_3D2Osym) :: H_projectors(3), U_inv
-        integer :: a
-        logical :: ok
+        type(kin_state_dp) :: state
+        integer :: status
 
-        self%F = F
-        self%J = F%det()
-
-        ! 1. Unpack F
-        F11 = F%vals(1); F21 = F%vals(2); F31 = F%vals(3)
-        F12 = F%vals(4); F22 = F%vals(5); F32 = F%vals(6)
-        F13 = F%vals(7); F23 = F%vals(8); F33 = F%vals(9)
-
-        ! 2. Compute F_inv with the tensor inverse (adjugate + condition number, LU fallback for
-        !    ill-conditioned F; see M33INV). The former hand-written adjugate had no fallback and
-        !    divided by J = 0 for a singular F.
-        ! TODO: ok is not propagated yet; for a singular F, F_inv (and b_inv) are NaN (see TODO2.md,
-        !       "Cinemática: aviso cuando F es singular o J <= 0").
-        call inverse(F, self%F_inv, ok)
-        G11 = self%F_inv%vals(1); G21 = self%F_inv%vals(2); G31 = self%F_inv%vals(3)
-        G12 = self%F_inv%vals(4); G22 = self%F_inv%vals(5); G32 = self%F_inv%vals(6)
-        G13 = self%F_inv%vals(7); G23 = self%F_inv%vals(8); G33 = self%F_inv%vals(9)
-
-        ! 3. Compute C = F^T * F
-        c11 = F11*F11 + F21*F21 + F31*F31; c22 = F12*F12 + F22*F22 + F32*F32; c33 = F13*F13 + F23*F23 + F33*F33
-        c12 = F11*F12 + F21*F22 + F31*F32; c23 = F12*F13 + F22*F23 + F32*F33; c13 = F11*F13 + F21*F23 + F31*F33
-        call self%C_mat%init(xx=c11, yy=c22, zz=c33, xy=c12, yz=c23, xz=c13)
-
-        ! 4. Compute b = F * F^T
-        b11 = F11*F11 + F12*F12 + F13*F13; b22 = F21*F21 + F22*F22 + F23*F23; b33 = F31*F31 + F32*F32 + F33*F33
-        b12 = F11*F21 + F12*F22 + F13*F23; b23 = F21*F31 + F22*F32 + F23*F33; b13 = F11*F31 + F12*F32 + F13*F33
-        call self%b_spat%init(xx=b11, yy=b22, zz=b33, xy=b12, yz=b23, xz=b13)
-
-        ! 5. Compute b^-1 = F^-T * F^-1
-        binv11 = G11*G11 + G21*G21 + G31*G31; binv22 = G12*G12 + G22*G22 + G32*G32; binv33 = G13*G13 + G23*G23 + G33*G33
-        binv12 = G11*G12 + G21*G22 + G31*G32; binv23 = G12*G13 + G22*G23 + G32*G33; binv13 = G11*G13 + G21*G23 + G31*G33
-        call self%b_inv%init(xx=binv11, yy=binv22, zz=binv33, xy=binv12, yz=binv23, xz=binv13)
-        
-        ! 6. Analytic Rotation R = F * U^-1 via spectral decomposition of C
-        eigC = eigenvals(self%C_mat)
-        H_projectors = dEigenvalues_dTensor(self%C_mat, eigC)
-        U_inv = 0.0D0
-        do a = 1, 3
-            if (eigC(a) > 1.0D-12) then
-                U_inv = U_inv + (1.0D0 / sqrt(eigC(a))) * H_projectors(a)
-            end if
-        end do
-        self%R_rot = F * U_inv
+        call kin_finite_update_dp(F, state, status)
+        call finite_set_state(self, state)
     end subroutine finite_update_F
 
     pure subroutine finite_update_incremental(self, dstrain, drot, dt)
         class(Base_F_kinematics), intent(inout) :: self
         type(ten_3D2Osym), intent(in)            :: dstrain
         type(ten_3D2O), intent(in)                 :: drot
-        real(real64), intent(in), optional         :: dt
+        real(dp), intent(in), optional             :: dt
         type(ten_3D2O) :: F_inc
         F_inc = drot + dstrain
         call self%update_F(F_inc * self%F)
@@ -130,7 +129,7 @@ contains
 
     pure function finite_jacobian(self) result(J)
         class(Base_F_kinematics), intent(in) :: self
-        real(real64)                         :: J
+        real(dp)                             :: J
         J = self%J
     end function finite_jacobian
 
@@ -155,50 +154,24 @@ contains
     pure function finite_get_E_GL(self) result(E_gl)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym)                     :: E_gl
-
-        call E_gl%init( &
-            xx = 0.5D0 * (self%C_mat%vals(1) - 1.0D0), &
-            yy = 0.5D0 * (self%C_mat%vals(2) - 1.0D0), &
-            zz = 0.5D0 * (self%C_mat%vals(3) - 1.0D0), &
-            xy = 0.5D0 * self%C_mat%vals(4),           &
-            yz = 0.5D0 * self%C_mat%vals(5),           &
-            xz = 0.5D0 * self%C_mat%vals(6)            &
-        )
+        E_gl = kin_green_lagrange_dp(finite_state_of(self))
     end function finite_get_E_GL
 
     pure function finite_get_e_EA(self) result(e_ea)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym)                     :: e_ea
-
-        call e_ea%init( &
-            xx = 0.5D0 * (1.0D0 - self%b_inv%vals(1)), &
-            yy = 0.5D0 * (1.0D0 - self%b_inv%vals(2)), &
-            zz = 0.5D0 * (1.0D0 - self%b_inv%vals(3)), &
-            xy = -0.5D0 * self%b_inv%vals(4),          &
-            yz = -0.5D0 * self%b_inv%vals(5),          &
-            xz = -0.5D0 * self%b_inv%vals(6)           &
-        )
+        e_ea = kin_euler_almansi_dp(finite_state_of(self))
     end function finite_get_e_EA
 
     pure function finite_get_E_log(self) result(E_log)
+        !! Unused private procedure, kept (D-017.14b): the material Hencky strain.
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym)                     :: E_log
-        real(real64)      :: eigC(3)
-        type(ten_3D2Osym) :: H_projectors(3)
-        integer           :: a
-
-        eigC = eigenvals(self%C_mat)
-        H_projectors = dEigenvalues_dTensor(self%C_mat, eigC)
-
-        E_log = 0.0D0
-        do a = 1, 3
-            if (eigC(a) > 1.0D-12) then
-                E_log = E_log + (0.5D0 * log(eigC(a))) * H_projectors(a)
-            end if
-        end do
+        E_log = kin_material_log_dp(finite_state_of(self))
     end function finite_get_E_log
 
     pure function finite_get_b(self) result(b_tensor)
+        !! Unused private procedure, kept (D-017.14b): the left Cauchy-Green tensor.
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym)                     :: b_tensor
         b_tensor = self%b_spat
@@ -214,114 +187,84 @@ contains
         !! Material Hencky strain H = 0.5 * ln(C) = ln(U)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym)                     :: H_mat
-        real(real64)      :: eigC(3)
-        type(ten_3D2Osym) :: H_projectors(3)
-        integer           :: a
-
-        eigC = eigenvals(self%C_mat)
-        H_projectors = dEigenvalues_dTensor(self%C_mat, eigC)
-
-        H_mat = 0.0D0
-        do a = 1, 3
-            if (eigC(a) > 1.0D-12) then
-                H_mat = H_mat + (0.5D0 * log(eigC(a))) * H_projectors(a)
-            end if
-        end do
+        H_mat = kin_material_log_dp(finite_state_of(self))
     end function finite_get_H_mat
 
     pure function finite_get_h_spat(self) result(h_spat)
         !! Spatial Hencky strain h = 0.5 * ln(b) = ln(V)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym)                     :: h_spat
-        real(real64)      :: eigb(3)
-        type(ten_3D2Osym) :: H_projectors(3)
-        integer           :: a
-
-        eigb = eigenvals(self%b_spat)
-        H_projectors = dEigenvalues_dTensor(self%b_spat, eigb)
-
-        h_spat = 0.0D0
-        do a = 1, 3
-            if (eigb(a) > 1.0D-12) then
-                h_spat = h_spat + (0.5D0 * log(eigb(a))) * H_projectors(a)
-            end if
-        end do
+        h_spat = kin_spatial_log_dp(finite_state_of(self))
     end function finite_get_h_spat
 
     pure function PK2_to_Cauchy(self, S_material) result(sigma)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym), intent(in)        :: S_material
         type(ten_3D2Osym)                    :: sigma
-        sigma = (self%F .transform. S_material) / self%J
+        sigma = kin_pk2_to_cauchy_dp(finite_state_of(self), S_material)
     end function PK2_to_Cauchy
 
     pure function Cauchy_to_PK2(self, sigma_spatial) result(S)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym), intent(in)        :: sigma_spatial
         type(ten_3D2Osym)                    :: S
-        S = (self%F_inv .transform. sigma_spatial) * self%J
+        S = kin_cauchy_to_pk2_dp(finite_state_of(self), sigma_spatial)
     end function Cauchy_to_PK2
 
     pure function PK2_to_Kirchhoff(self, S) result(tau)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym), intent(in)        :: S
         type(ten_3D2Osym)                    :: tau
-        tau = self%F .transform. S
+        tau = kin_pk2_to_kirchhoff_dp(finite_state_of(self), S)
     end function PK2_to_Kirchhoff
 
     pure function Kirchhoff_to_PK2(self, tau) result(S)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym), intent(in)        :: tau
         type(ten_3D2Osym)                    :: S
-        S = self%F_inv .transform. tau
+        S = kin_kirchhoff_to_pk2_dp(finite_state_of(self), tau)
     end function Kirchhoff_to_PK2
 
     pure function Cauchy_to_Kirchhoff(self, sigma) result(tau)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym), intent(in)        :: sigma
         type(ten_3D2Osym)                    :: tau
-        tau = sigma * self%J
+        tau = kin_cauchy_to_kirchhoff_dp(finite_state_of(self), sigma)
     end function Cauchy_to_Kirchhoff
 
     pure function Kirchhoff_to_Cauchy(self, tau) result(sigma)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym), intent(in)        :: tau
         type(ten_3D2Osym)                    :: sigma
-        sigma = tau / self%J
+        sigma = kin_kirchhoff_to_cauchy_dp(finite_state_of(self), tau)
     end function Kirchhoff_to_Cauchy
 
     pure function PK2_to_PK1(self, S) result(P)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym), intent(in)        :: S
         type(ten_3D2O)                       :: P
-        P = self%F * S
+        P = kin_pk2_to_pk1_dp(finite_state_of(self), S)
     end function PK2_to_PK1
 
     pure function PK1_to_PK2(self, P) result(S)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2O), intent(in)           :: P
         type(ten_3D2Osym)                    :: S
-        type(ten_3D2O)                       :: S_gen
-        S_gen = self%F_inv * P
-        call S%init(xx=S_gen%vals(1), yy=S_gen%vals(5), zz=S_gen%vals(9), &
-                    xy=S_gen%vals(4), yz=S_gen%vals(8), xz=S_gen%vals(7))
+        S = kin_pk1_to_pk2_dp(finite_state_of(self), P)
     end function PK1_to_PK2
 
     pure function Cauchy_to_PK1(self, sigma) result(P)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2Osym), intent(in)        :: sigma
         type(ten_3D2O)                       :: P
-        P = (sigma * self%F_inv%transpose()) * self%J
+        P = kin_cauchy_to_pk1_dp(finite_state_of(self), sigma)
     end function Cauchy_to_PK1
 
     pure function PK1_to_Cauchy(self, P) result(sigma)
         class(Base_F_kinematics), intent(in) :: self
         type(ten_3D2O), intent(in)           :: P
         type(ten_3D2Osym)                    :: sigma
-        type(ten_3D2O)                       :: sig_gen
-        sig_gen = (P * self%F%transpose()) / self%J
-        call sigma%init(xx=sig_gen%vals(1), yy=sig_gen%vals(5), zz=sig_gen%vals(9), &
-                         xy=sig_gen%vals(4), yz=sig_gen%vals(8), xz=sig_gen%vals(7))
+        sigma = kin_pk1_to_cauchy_dp(finite_state_of(self), P)
     end function PK1_to_Cauchy
 
     pure function finite_push_tangent(self, C_material, stress_spatial) result(c_spatial)
@@ -331,7 +274,7 @@ contains
         type(ten_3D2Osym), intent(in), optional  :: stress_spatial
         type(ten_3D4O2sym)                       :: c_spatial
 
-        c_spatial = (self%F .transform. C_material) / self%J
+        c_spatial = kin_push_forward_tangent_dp(finite_state_of(self), C_material)
     end function finite_push_tangent
 
     pure function finite_pull_back_tangent(self, c_spatial, stress_material) result(C_material)
@@ -341,7 +284,7 @@ contains
         type(ten_3D2Osym), intent(in), optional  :: stress_material
         type(ten_3D4O2sym)                       :: C_material
 
-        C_material = (self%F_inv .transform. c_spatial) * self%J
+        C_material = kin_pull_back_tangent_dp(finite_state_of(self), c_spatial)
     end function finite_pull_back_tangent
 
 end module muscle_kin_finite_base

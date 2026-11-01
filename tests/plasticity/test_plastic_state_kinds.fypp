@@ -1,0 +1,121 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#!
+#! Kernel state of plasticity (muscle_plastic_state) in every kind:
+#! - defaults (zero state) and the FE history array layout of plastic_state_pack/unpack
+#!   (roundtrip exact: only copies);
+#! - dp: plastic_state_dp is the historical Plastic_state, and the kernel pack/unpack give the same
+#!   bits as Plastic_material_history%pack_to_fea/unpack_from_fea;
+#! - sp: unpacking the sp-rounded array gives exactly the sp-rounded dp state;
+#! - a `pure`, `@:DEVICE()` point procedure (unpack, candidate update, pack) against the same steps
+#!   written in the test, bit for bit.
+
+module test_plastic_state_point
+    !! Point procedure (kernel) that uses the plastic state, for every kind.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_plastic_state, only : PLASTIC_STATE_SIZE, plastic_state_pack, plastic_state_unpack, &
+        ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
+    implicit none
+    private
+#:for k in REAL_KINDS
+    public :: point_step_${k}$
+#:endfor
+
+contains
+#:for k in REAL_KINDS
+
+    pure subroutine point_step_${k}$(hsv, dep, hsv_new)
+        !! Reads the converged state, adds `dep` to the equivalent plastic strain of a candidate state
+        !! (converged state untouched) and writes the candidate, `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: hsv(PLASTIC_STATE_SIZE)
+            !! Converged state.
+        real(${k}$), intent(in) :: dep
+            !! Increment of the equivalent plastic strain.
+        real(${k}$), intent(out) :: hsv_new(PLASTIC_STATE_SIZE)
+            !! Candidate state.
+        type(plastic_state_${k}$) :: state_n, state_np1
+
+        call plastic_state_unpack(hsv, state_n)
+        state_np1 = state_n
+        state_np1%strain_pf = state_n%strain_pf + dep
+        call plastic_state_pack(state_np1, hsv_new)
+    end subroutine point_step_${k}$
+#:endfor
+
+end module test_plastic_state_point
+
+
+program test_plastic_state_kinds
+    use, intrinsic :: iso_fortran_env, only : int64
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_plastic_state, only : PLASTIC_STATE_SIZE, plastic_state_pack, plastic_state_unpack, &
+        ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
+    use muscle_plastic_history, only : Plastic_state, Plastic_material_history
+    use muscle_test_utils, only : check_true
+    use test_plastic_state_point
+    implicit none
+
+    logical :: passed
+    real(dp) :: ref(PLASTIC_STATE_SIZE)
+    integer :: i
+
+    passed = .true.
+    ref = [(0.37_dp*i - 1.1_dp*sin(real(i, dp)), i = 1, PLASTIC_STATE_SIZE)]
+#:for k in REAL_KINDS
+    call test_${k}$()
+#:endfor
+    call test_dp_vs_history()
+
+    if (.not. passed) stop 1
+    print '(a)', ' test_plastic_state_kinds: PASSED'
+
+contains
+#:for k in REAL_KINDS
+
+    subroutine test_${k}$()
+        !! Defaults, layout, roundtrip, sp-rounded state and the point procedure, `real(${k}$)`.
+        type(plastic_state_${k}$) :: s0, s
+        real(${k}$) :: hsv(PLASTIC_STATE_SIZE), out(PLASTIC_STATE_SIZE)
+
+        call check_true(passed, '${k}$ defaults', all(s0%stress%vals == 0.0_${k}$) .and. &
+            all(s0%strain_p%vals == 0.0_${k}$) .and. s0%strain_pf == 0.0_${k}$)
+        hsv = real(ref, ${k}$)
+        call plastic_state_unpack(hsv, s)
+        call check_true(passed, '${k}$ unpack layout (stress, plastic strain, equivalent)', &
+            all(s%stress%vals == real(ref(1:6), ${k}$)) .and. all(s%strain_p%vals == real(ref(7:12), ${k}$)) &
+            .and. s%strain_pf == real(ref(13), ${k}$))
+        call plastic_state_pack(s, out)
+        call check_true(passed, '${k}$ pack/unpack roundtrip', all(out == hsv))
+        call point_step_${k}$(hsv, 0.25_${k}$, out)
+        call check_true(passed, '${k}$ point procedure', all(out(1:12) == hsv(1:12)) .and. &
+            out(13) == hsv(13) + 0.25_${k}$)
+    end subroutine test_${k}$
+#:endfor
+
+    subroutine test_dp_vs_history()
+        !! The kernel type is the historical Plastic_state and gives the bits of the OO container.
+        type(Plastic_material_history) :: h
+        type(Plastic_state) :: s
+        type(plastic_state_dp) :: ks
+        real(dp) :: out_oo(PLASTIC_STATE_SIZE + 2), out_k(PLASTIC_STATE_SIZE)
+
+        call h%unpack_from_fea([ref, 5.0_dp, -5.0_dp])
+        call plastic_state_unpack(ref, ks)
+        s = ks
+        call check_true(passed, 'dp unpack vs unpack_from_fea', &
+            all(transfer([h%state_n%stress%vals, h%state_n%strain_p%vals, h%state_n%strain_pf], 1_int64, 13) == &
+                transfer([s%stress%vals, s%strain_p%vals, s%strain_pf], 1_int64, 13)))
+        h%state_np1%strain_pf = 0.125_dp
+        ks = h%state_np1
+        out_oo = 9.0_dp
+        call h%pack_to_fea(out_oo)
+        call plastic_state_pack(ks, out_k)
+        call check_true(passed, 'dp pack vs pack_to_fea (extra components untouched)', &
+            all(transfer(out_oo(1:PLASTIC_STATE_SIZE), 1_int64, 13) == transfer(out_k, 1_int64, 13)) .and. &
+            all(out_oo(PLASTIC_STATE_SIZE + 1:) == 9.0_dp))
+    end subroutine test_dp_vs_history
+
+end program test_plastic_state_kinds

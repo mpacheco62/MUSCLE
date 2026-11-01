@@ -1,0 +1,23 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+
+module muscle_vp_overstress_laws
+    !! Overstress viscoplastic laws for kernels (D-007, D-017): the parameter types of every
+    !! registered law (`os_<name>_<k>`, `OVERSTRESS_MODELS` of tools/fypp/muscle_meta.py) and the
+    !! family generics (prefix `os_`, D-017.5b), with the same names for every law and kind:
+    !!
+    !! - `os_flow_rate(prm, sigma_eq, ep[, sy])`: plastic multiplier rate \( g(\sigma_{eq}, \epsilon_p) \);
+    !! - `os_dflow_dsigma(prm, sigma_eq, ep[, sy])`: \( \partial g/\partial\sigma_{eq} \);
+    !! - `os_dflow_dep(prm, sigma_eq, ep[, sy, dsy_dep])`: \( \partial g/\partial\epsilon_p \).
+    !!
+    !! The laws that compose a hardening law (`OVERSTRESS_COMPOSED`, e.g. Perzyna) also take its
+    !! values already evaluated (D-017.6b): `sy` = `hard_stress(h, ep)` and `dsy_dep` =
+    !! `hard_dstress_dep(h, ep)`.
+    $:FAMILY_USES('os')
+    implicit none
+    private
+
+    $:FAMILY_EXPORTS('os')
+
+end module muscle_vp_overstress_laws

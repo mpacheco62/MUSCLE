@@ -1,0 +1,201 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Frozen elasticity of the viscoelastic models (D-017.13): a model of the elastic family `elas`
+#! (registered in ELASTICITY_MODELS, module kept by MODEL_MODULES of tools/fypp/muscle_meta.py), so
+#! that a return mapping written against the `elas_*` generics uses it as any other elasticity.
+#! The parameters are per point and per step (written by `visco_freeze`): public components.
+#! The historical OO type keeps every component private (`oo_private`) and inherits from
+#! Base_elasticity the 2D deviatoric stress (`.dev.` of `stress_2D`) and the transient overloads:
+#! only the bindings it overrode are generated.
+#:set PARAMS = [('k_alg', 'real', '', r'Algorithmic bulk modulus \( K^{alg} \).', '0.0'), &
+    &          ('g_alg', 'real', '', r'Algorithmic shear modulus \( G^{alg} \).', '0.0'), &
+    &          ('stress_hist', '3D2Osym', '', r'History stress \( \boldsymbol\sigma^{hist}_n \) (constant over the step).', '0.0')]
+#:set OO_BINDINGS = [b for b in oo_bindings('elas') if b[0] != 'stress_dev_2D']
+#:set OO_EXTRA = [('set', 'set_tbp', 'Sets the algorithmic moduli and the history stress.'), &
+    &            ('bulk', 'bulk_tbp', 'Algorithmic bulk modulus.'), &
+    &            ('shear', 'shear_tbp', 'Algorithmic shear modulus.'), &
+    &            ('history_stress', 'history_stress_tbp', 'History stress.'), &
+    &            ('to_string', 'to_string_tbp', 'Formatted internal state.')]
+#:set T2 = lambda d, k: tname(d + '2Osym', k)
+#:set L3 = layout('2Osym', '3D')
+
+module muscle_visco_frozen
+    !! Module muscle_visco_frozen
+    !! ==========================
+    !! Algorithmic ("frozen") elasticity of a linear viscoelastic model over one time step.
+    !!
+    !! Integrated over a step, every linear viscoelastic model is affine in the elastic strain:
+    !!
+    !! \[
+    !!   \boldsymbol{\sigma}_{n+1} = \mathbb{C}^{alg} : \boldsymbol{\varepsilon}^e_{n+1}
+    !!                             + \boldsymbol{\sigma}^{hist}_n
+    !! \]
+    !!
+    !! where \( \mathbb{C}^{alg} \) depends only on the time step and \( \boldsymbol{\sigma}^{hist}_n \)
+    !! only on the converged state t_n. Both are constant during the Newton iterations, so this is an
+    !! ordinary elastic model and can be handed to any return mapping solver without changes
+    !! (Delta sigma = -C_alg : Delta eps_p still holds).
+    !!
+    !! The isotropic case is stored with two scalars (K_alg, G_alg): stress and tangent are
+    !! evaluated without fourth-order products.
+    !!
+    !! Kernel API (D-017.13): it is the model `frozen` of the elastic family, parameter types
+    !! `elas_frozen_<k>` (public components `k_alg`, `g_alg`, `stress_hist`, written per point by
+    !! `visco_freeze` of muscle_visco_laws) and the `pure` functions `elas_stress_frozen_<d>_<k>`,
+    !! `elas_stress_dev_frozen_<d>_<k>`, `elas_dstress_dstrain_frozen_<d>_<k>` and
+    !! `elas_dstress_dstrain_dev_frozen_<d>_<k>` in 3D and 2D, also through the generics `elas_*`
+    !! of muscle_elasticity_laws. In 2D the history stress contributes its in-plane components
+    !! (11, 22, 33, 12): its 23 and 13 components are ignored (D-017.13c).
+    !!
+    !! `Elasticity_frozen` is the historical OO type (host only, removed in Phase 7), extending
+    !! `Base_elasticity`: `set(k_alg, g_alg, stress_hist)`, `bulk()`, `shear()`,
+    !! `history_stress()` and the bindings `stress_3D/2D`, `stress_dev_3D`,
+    !! `dstress_dstrain_3D/2D` and `dstress_dstrain_dev_3D`, which call the dp kernel functions.
+    !! The 2D deviatoric stress and the transient overloads are those of `Base_elasticity`
+    !! (`.dev.` of `stress_2D`: the same value as the kernel `elas_stress_dev_frozen_2D_dp` up to
+    !! rounding).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in DIMS for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
+        operator(.dev.), operator(*), operator(+)
+    use muscle_elasticity_base, only : Base_elasticity
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('elas', 'frozen')
+    public :: Elasticity_frozen
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('elas', 'frozen', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('elas', 'frozen', 'Elasticity_frozen', 'Base_elasticity', PARAMS, bindings=OO_BINDINGS, &
+        & extra_bindings=OO_EXTRA, oo_private=True)
+
+contains
+#:for k in REAL_KINDS
+#:for d in model_dims('elas')
+#:set L2 = layout('2Osym', d)
+#:set N = [L2.index(i, i)[0] for i in (1, 2, 3)]
+#! Each stored component of the strain and its position in the (3D) history stress
+#:set H = [(c.pos[0], L3.index(*c.idx)[0]) for c in L2.comps]
+
+    $:MODEL_FUNCTION('elas', 'frozen', 'stress', k, d, doc=r'\( \boldsymbol\sigma = 2G^{alg}\boldsymbol\varepsilon + (K^{alg} - \tfrac{2}{3}G^{alg})\,\mathrm{tr}(\boldsymbol\varepsilon)\,\mathbf{I} + \boldsymbol\sigma^{hist}_n \).')
+        real(${k}$) :: two_g, p
+
+        two_g = 2.0_${k}$*prm%g_alg
+        p = (prm%k_alg - two_g/3.0_${k}$)*(strain%vals(${N[0]}$) + strain%vals(${N[1]}$) + strain%vals(${N[2]}$))
+#:for p2, p3 in H
+#:if p2 in N
+        res%vals(${p2}$) = two_g*strain%vals(${p2}$) + p + prm%stress_hist%vals(${p3}$)
+#:else
+        res%vals(${p2}$) = two_g*strain%vals(${p2}$) + prm%stress_hist%vals(${p3}$)
+#:endif
+#:endfor
+    end function elas_stress_frozen_${d}$_${k}$
+
+    $:MODEL_FUNCTION('elas', 'frozen', 'stress_dev', k, d, doc=r'\( 2G^{alg}\operatorname{dev}\boldsymbol\varepsilon + \operatorname{dev}\boldsymbol\sigma^{hist}_n \).')
+#:if d == '3D'
+
+        res = 2.0_${k}$*prm%g_alg*(.dev. strain) + (.dev. prm%stress_hist)
+#:else
+        type(${T2(d, k)}$) :: hist
+
+#:for p2, p3 in H
+        hist%vals(${p2}$) = prm%stress_hist%vals(${p3}$)
+#:endfor
+        res = 2.0_${k}$*prm%g_alg*(.dev. strain) + (.dev. hist)
+#:endif
+    end function elas_stress_dev_frozen_${d}$_${k}$
+
+    $:MODEL_FUNCTION('elas', 'frozen', 'dstress_dstrain', k, d, doc=r'Constant: `strain` is not used. Isotropic with \( \mu = G^{alg} \), \( \lambda = K^{alg} - 2\mu/3 \).')
+        real(${k}$) :: e1, lam, mu
+
+        mu  = prm%g_alg
+        lam = prm%k_alg - 2.0_${k}$*mu/3.0_${k}$
+        e1  = lam + 2.0_${k}$*mu
+#:for p, v in isotropic_4o3sym(layout('4O3sym', d), 'e1', 'lam', 'mu', '0.0_' + k)
+        res%vals(${p}$) = ${v}$
+#:endfor
+    end function elas_dstress_dstrain_frozen_${d}$_${k}$
+
+    $:MODEL_FUNCTION('elas', 'frozen', 'dstress_dstrain_dev', k, d, doc=r'Constant: `strain` is not used. \( 4G^{alg}/3 \) (normal diagonal), \( -2G^{alg}/3 \) (normal off-diagonal), \( G^{alg} \) (shears).')
+        real(${k}$) :: d_n, o_n, mu
+
+        mu  = prm%g_alg
+        d_n =  4.0_${k}$*mu/3.0_${k}$
+        o_n = -2.0_${k}$*mu/3.0_${k}$
+#:for p, v in isotropic_4o3sym(layout('4O3sym', d), 'd_n', 'o_n', 'mu', '0.0_' + k)
+        res%vals(${p}$) = ${v}$
+#:endfor
+    end function elas_dstress_dstrain_dev_frozen_${d}$_${k}$
+#:endfor
+#:endfor
+    $:OO_ADAPTER_PROCS('elas', 'frozen', 'Elasticity_frozen', PARAMS, bindings=OO_BINDINGS)
+
+    pure subroutine set_tbp(self, k_alg, g_alg, stress_hist)
+        !! `%set(...)`: algorithmic moduli and history stress of the step (type-bound, historical API;
+        !! host only).
+        implicit none
+        class(Elasticity_frozen), intent(inout) :: self
+            !! Model.
+        real(dp), intent(in) :: k_alg
+            !! Algorithmic bulk modulus.
+        real(dp), intent(in) :: g_alg
+            !! Algorithmic shear modulus.
+        type(${T2('3D', 'dp')}$), intent(in) :: stress_hist
+            !! History stress.
+
+        self%k_alg = k_alg
+        self%g_alg = g_alg
+        self%stress_hist = stress_hist
+    end subroutine set_tbp
+
+    pure function bulk_tbp(self) result(res)
+        !! Algorithmic bulk modulus (type-bound, historical API; host only).
+        implicit none
+        class(Elasticity_frozen), intent(in) :: self
+            !! Model.
+        real(dp) :: res
+            !! \( K^{alg} \).
+
+        res = self%k_alg
+    end function bulk_tbp
+
+    pure function shear_tbp(self) result(res)
+        !! Algorithmic shear modulus (type-bound, historical API; host only).
+        implicit none
+        class(Elasticity_frozen), intent(in) :: self
+            !! Model.
+        real(dp) :: res
+            !! \( G^{alg} \).
+
+        res = self%g_alg
+    end function shear_tbp
+
+    pure function history_stress_tbp(self) result(res)
+        !! History stress (type-bound, historical API; host only).
+        implicit none
+        class(Elasticity_frozen), intent(in) :: self
+            !! Model.
+        type(${T2('3D', 'dp')}$) :: res
+            !! \( \boldsymbol\sigma^{hist}_n \).
+
+        res = self%stress_hist
+    end function history_stress_tbp
+
+    pure function to_string_tbp(self) result(str)
+        !! Formatted internal state (type-bound, historical API; host only).
+        implicit none
+        class(Elasticity_frozen), intent(in) :: self
+            !! Model.
+        character(len=275) :: str
+            !! Moduli and history stress.
+        character(len=1), parameter :: nl = new_line('A')
+
+        write(str, "(A, A, A, ES14.6, A, A, ES14.6, A, A, 6ES11.3, A)") &  ! lint: allow(io)
+            "=== Elasticity_frozen Internal State ===", nl, &
+            "  K_alg (Bulk)          : ", self%k_alg, nl, &
+            "  G_alg (Shear)         : ", self%g_alg, nl, &
+            "  Stress hist           : ", self%stress_hist%vals, nl
+    end function to_string_tbp
+
+end module muscle_visco_frozen

@@ -4,25 +4,25 @@
 module muscle_plastic_history
     !! Module muscle_plastic_history
     !! =============================
-    !! Provides persistent, transaction-aware material state management for plasticity.
+    !! Provides persistent, transaction-aware material state management for plasticity (historical
+    !! OO API, host only; removed in Phase 7 with the OO adapters, D-017.1).
+    !!
+    !! The states are the kernel type `plastic_state_dp` of muscle_plastic_state (historical name
+    !! `Plastic_state`, same components and defaults); `pack_to_fea`/`unpack_from_fea` call its kernel
+    !! procedures `plastic_state_pack`/`plastic_state_unpack` (FEA history array layout there) after
+    !! checking the size of the array. Kernels keep the two states as separate arguments instead of
+    !! this container.
 
-    use, intrinsic :: iso_fortran_env, only : real64
-    use muscle_tensors
+    use muscle_kinds, only : dp
+    use muscle_tensors, only : ten_3D2Osym
+    use muscle_plastic_state, only : PLASTIC_STATE_SIZE, Plastic_state => plastic_state_dp, &
+        plastic_state_pack, plastic_state_unpack
     implicit none
     private
 
     public :: Plastic_state
     public :: Plastic_material_history
 
-    ! --- 1. Physical State Snapshot ---
-    type :: Plastic_state
-        !! Physical state of an elastoplastic material point at a specific instant
-        type(ten_3D2Osym) :: strain_p  = ten_3D2Osym((/0d0, 0d0, 0d0, 0d0, 0d0, 0d0/)) !! Plastic strain tensor
-        real(real64)      :: strain_pf = 0.0D0                                        !! Accumulated equivalent plastic strain
-        type(ten_3D2Osym) :: stress    = ten_3D2Osym((/0d0, 0d0, 0d0, 0d0, 0d0, 0d0/)) !! Constitutive stress tensor
-    end type Plastic_state
-
-    ! --- 2. Persistent History Container with Transaction Semantics ---
     type :: Plastic_material_history
         !! Transactional history container holding converged state (t_n) and trial state (t_n+1).
         type(Plastic_state) :: state_n   !! Converged state at beginning of step t_n (Read-Only during NR)
@@ -41,7 +41,7 @@ contains
         !! Initializes material history state for both t_n and t_n+1.
         class(Plastic_material_history), intent(inout) :: self
         type(ten_3D2Osym), intent(in), optional        :: strain_p
-        real(real64), intent(in), optional             :: strain_pf
+        real(dp), intent(in), optional                 :: strain_pf
         type(ten_3D2Osym), intent(in), optional        :: stress
 
         if (present(strain_p)) then
@@ -79,16 +79,14 @@ contains
         !! - hsv(7:12) : Plastic Strain (xx, yy, zz, xy, yz, xz)
         !! - hsv(13)   : Equivalent Plastic Strain
         class(Plastic_material_history), intent(inout) :: self
-        real(real64), intent(in)                       :: hsv(:)
+        real(dp), intent(in)                           :: hsv(:)
 
-        if (size(hsv) < 13) then
+        if (size(hsv) < PLASTIC_STATE_SIZE) then
             error stop "ERROR FATAL [Plastic_material_history%unpack_from_fea]: " // &
                        "El arreglo 'hsv' (statev) debe tener al menos 13 componentes."
         end if
 
-        self%state_n%stress%vals   = hsv(1:6)
-        self%state_n%strain_p%vals  = hsv(7:12)
-        self%state_n%strain_pf      = hsv(13)
+        call plastic_state_unpack(hsv(1:PLASTIC_STATE_SIZE), self%state_n)
 
         ! Initialize candidate state_np1 to match state_n at step start
         self%state_np1 = self%state_n
@@ -97,16 +95,14 @@ contains
     pure subroutine history_pack(self, hsv)
         !! Packs trial state_np1 into a flat 1D FEA history array for solver output.
         class(Plastic_material_history), intent(in) :: self
-        real(real64), intent(inout)                 :: hsv(:)
+        real(dp), intent(inout)                     :: hsv(:)
 
-        if (size(hsv) < 13) then
+        if (size(hsv) < PLASTIC_STATE_SIZE) then
             error stop "ERROR FATAL [Plastic_material_history%pack_to_fea]: " // &
                        "El arreglo 'hsv' (statev) debe tener al menos 13 componentes."
         end if
 
-        hsv(1:6)  = self%state_np1%stress%vals
-        hsv(7:12) = self%state_np1%strain_p%vals
-        hsv(13)   = self%state_np1%strain_pf
+        call plastic_state_pack(self%state_np1, hsv(1:PLASTIC_STATE_SIZE))
     end subroutine history_pack
 
 end module muscle_plastic_history

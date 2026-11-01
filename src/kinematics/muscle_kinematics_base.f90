@@ -4,6 +4,7 @@
 module muscle_kinematics_base
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_tensors
+    use muscle_kin_finite, only : kin_rotate_to_corotational_dp, kin_rotate_from_corotational_dp
     implicit none
     private
 
@@ -128,7 +129,7 @@ contains
         type(ten_3D2Osym)                  :: res
 
         if (present(R)) then
-            res = R%transpose() .transform. T
+            res = kin_rotate_to_corotational_dp(T, R)
         else
             res = T
         end if
@@ -141,7 +142,7 @@ contains
         type(ten_3D2Osym)                  :: res
 
         if (present(R)) then
-            res = R .transform. T_corot
+            res = kin_rotate_from_corotational_dp(T_corot, R)
         else
             res = T_corot
         end if

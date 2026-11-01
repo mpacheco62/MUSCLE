@@ -1,0 +1,78 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#:include "muscle_kin_adapters.fypp"
+#! Model contract of the kinematics family (D-017.14): include/muscle_models_common.fypp. No
+#! parameters: the parameter type is empty and only selects the kinematics.
+#:set S2 = lambda k: tname('3D2Osym', k)
+#:set C4 = lambda k: tname('3D4O2sym', k)
+
+module muscle_kin_material_logarithmic
+    !! Module muscle_kin_material_logarithmic
+    !! ======================================
+    !! Kinematic strategy using Material Hencky strain H = ln(U) = 0.5*ln(C).
+    !! Conjugate stress is Rotated Kirchhoff stress tau_R.
+    !!
+    !! The rotated Kirchhoff stress is converted to Cauchy with the rotation of the polar
+    !! decomposition, \( \boldsymbol\sigma = J^{-1}\mathbf{R}\boldsymbol\tau_R\mathbf{R}^T \), and the
+    !! constitutive tangent \( d\boldsymbol\tau_R/d\mathbf{H} \) to the spatial one with
+    !! \( c_{ijkl} = J^{-1} R_{iI} R_{jJ} R_{kK} R_{lL} C_{IJKL} \). Documented, not changed
+    !! (D-017.14b): the spatial tangent lacks the derivative of \( \ln\mathbf{C} \) and the geometric
+    !! term. The Hencky strain drops the eigenvalues of C at or below `KIN_EIG_MIN_<k>` (which
+    !! also give `STATUS_INVALID_DEFORMATION`, D-017.14a).
+    !!
+    !! Kernel API (D-017.14): the (empty) parameter type `kin_material_logarithmic_<k>` and the
+    !! `pure` procedures `kin_update_material_logarithmic_<k>(prm, F, state, status)` (one spectral
+    !! decomposition of C for the rotation and the strain),
+    !! `kin_to_cauchy_material_logarithmic_<k>(prm, state, stress)`,
+    !! `kin_to_spatial_tangent_material_logarithmic_<k>(prm, state, tangent)` and
+    !! `kin_is_finite_strain_material_logarithmic_<k>(prm)`, also through the generics `kin_*` of
+    !! muscle_kin_laws.
+    !!
+    !! `Material_logarithmic_kinematics` is the historical OO type (host only, removed in Phase 7),
+    !! extending `Base_F_kinematics`: its bindings call the dp kernel procedures and ignore the
+    !! status (same results as before, D-017.14a).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname('3D2O', k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$, &
+        operator(.transform.), operator(/)
+    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_log_measure
+    use muscle_kin_finite_base, only : Base_F_kinematics, finite_state_of, finite_set_state
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('kin', 'material_logarithmic')
+    public :: Material_logarithmic_kinematics
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('kin', 'material_logarithmic', k, [])
+#:endfor
+    $:KIN_F_OO_TYPE('material_logarithmic', 'Material_logarithmic_kinematics', 'Cached Hencky strain H = ln(U)')
+
+contains
+#:for k in REAL_KINDS
+
+    $:MODEL_FUNCTION('kin', 'material_logarithmic', 'update', k, doc=r'Strain: material Hencky \( \mathbf{H} = \tfrac{1}{2}\ln\mathbf{C} \), from the spectral decomposition of the rotation.')
+        real(${k}$) :: eig(3)
+        type(${S2(k)}$) :: proj(3)
+
+        call kin_finite_update(F, state, status, eig, proj)
+        state%strain = kin_log_measure(eig, proj)
+    end subroutine kin_update_material_logarithmic_${k}$
+
+    $:MODEL_FUNCTION('kin', 'material_logarithmic', 'to_cauchy', k, doc=r'Rotated Kirchhoff stress to Cauchy, \( J^{-1}\mathbf{R}\boldsymbol\tau_R\mathbf{R}^T \).')
+
+        res = (state%R .transform. stress) / state%J
+    end function kin_to_cauchy_material_logarithmic_${k}$
+
+    $:MODEL_FUNCTION('kin', 'material_logarithmic', 'to_spatial_tangent', k, doc=r'Rotation with R and division by J (no derivative of ln C, D-017.14b).')
+
+        res = (state%R .transform. tangent) / state%J
+    end function kin_to_spatial_tangent_material_logarithmic_${k}$
+
+    $:MODEL_FUNCTION('kin', 'material_logarithmic', 'is_finite_strain', k)
+
+        res = .true.
+    end function kin_is_finite_strain_material_logarithmic_${k}$
+#:endfor
+    $:KIN_F_OO_PROCS('material_logarithmic', 'Material_logarithmic_kinematics')
+
+end module muscle_kin_material_logarithmic

@@ -1,0 +1,79 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the yield family (D-017.6): include/muscle_models_common.fypp
+#:set PARAMS = []
+
+module muscle_yield_vonmises
+    !! Von Mises yield criterion (no parameters):
+    !! \[ \sigma_{eq} = \sqrt{\tfrac{3}{2}\, \mathbf{s} : \mathbf{s}}, \quad
+    !!    \frac{\partial\sigma_{eq}}{\partial\boldsymbol\sigma} = \frac{3}{2} \frac{\mathbf{s}}{\sigma_{eq}}, \quad
+    !!    \frac{\partial^2\sigma_{eq}}{\partial\boldsymbol\sigma^2} = \frac{3}{2\sigma_{eq}} \mathbb{I}^S
+    !!    - \frac{9}{4\sigma_{eq}} \mathbf{n} \otimes \mathbf{n} - \frac{1}{2\sigma_{eq}} \mathbf{I} \otimes \mathbf{I} \]
+    !! with \( \mathbf{s} = \operatorname{dev}\boldsymbol\sigma \) and \( \mathbf{n} = \mathbf{s}/\sigma_{eq} \)
+    !! (the Hessian is written with \( \mathbf{n} \), not \( \mathbf{s} \otimes \mathbf{s}/\sigma_{eq}^3 \), so
+    !! that no power of \( \sigma_{eq} \) under- or overflows: D-017.10d). At a null equivalent stress
+    !! (zero or hydrostatic stress) both derivatives are 0 (D-017.9; the original code gave NaN).
+    !!
+    !! Kernel API: parameter types `yield_vonmises_<k>` (empty) and `pure` functions
+    !! `yield_stress_eq_vonmises_3D_<k>(prm, sigma)`, `yield_dstress_eq_vonmises_3D_<k>(prm, sigma)`,
+    !! `yield_ddstress_eq_vonmises_3D_<k>(prm, sigma)` and the joint evaluation
+    !! `yield_stress_eq_and_derivatives_vonmises_3D_<k>(prm, sigma, f, df[, ddf])` (the three in turn)
+    !! for each real kind, also through the generics `yield_*` of `muscle_yield_criteria`.
+    !! `VonMises` is the historical OO type (host only, removed in Phase 7).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
+        & iden_4O4T, iden_4O3T, operator(.dev.), operator(.ddot.), operator(.tdotsym.), operator(*), &
+        & operator(/), operator(-), assignment(=)
+    use muscle_yield_base, only : Base_yield_critera
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('yield', 'vonmises')
+    public :: VonMises
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('yield', 'vonmises', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('yield', 'vonmises', 'VonMises', 'Base_yield_critera', PARAMS)
+
+contains
+#:for k in REAL_KINDS
+#:for d in model_dims('yield')
+#:assert d == '3D', 'yield criteria: only 3D until a 2D vs 3D test exists (dims-2d-3d.md)'
+#:set T2 = tname(d + '2Osym', k)
+
+    $:MODEL_FUNCTION('yield', 'vonmises', 'stress_eq', k, d)
+        type(${T2}$) :: dev
+
+        dev = .dev. sigma
+        res = (1.5_${k}$*(dev .ddot. dev))**0.5_${k}$
+    end function yield_stress_eq_vonmises_${d}$_${k}$
+
+    $:MODEL_FUNCTION('yield', 'vonmises', 'dstress_eq', k, d)
+        type(${T2}$) :: dev
+        real(${k}$) :: seq
+
+        seq = yield_stress_eq_vonmises_${d}$_${k}$(prm, sigma)
+        $:YIELD_ZERO_AT_NULL('seq', k)
+        dev = .dev. sigma
+        res = 1.5_${k}$*dev/seq
+    end function yield_dstress_eq_vonmises_${d}$_${k}$
+
+    $:MODEL_FUNCTION('yield', 'vonmises', 'ddstress_eq', k, d)
+        ! n = dev/seq is O(1): no power of seq beyond the first (D-017.10d)
+        type(${T2}$) :: n
+        real(${k}$) :: seq
+
+        seq = yield_stress_eq_vonmises_${d}$_${k}$(prm, sigma)
+        $:YIELD_ZERO_AT_NULL('seq', k)
+        n = (.dev. sigma)/seq
+        res = (3.0_${k}$/(2.0_${k}$*seq))*iden_4O4T() - (9.0_${k}$/(4.0_${k}$*seq))*(.tdotsym. n) &
+            & - (1.0_${k}$/(2.0_${k}$*seq))*iden_4O3T()
+    end function yield_ddstress_eq_vonmises_${d}$_${k}$
+
+    $:MODEL_JOINT_DEFAULT('yield', 'vonmises', k, d)
+#:endfor
+#:endfor
+    $:OO_ADAPTER_PROCS('yield', 'vonmises', 'VonMises', PARAMS)
+
+end module muscle_yield_vonmises

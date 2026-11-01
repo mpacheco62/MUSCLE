@@ -1,0 +1,72 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#:include "muscle_kin_adapters.fypp"
+#! Model contract of the kinematics family (D-017.14): include/muscle_models_common.fypp. No
+#! parameters: the parameter type is empty and only selects the kinematics.
+#:set S2 = lambda k: tname('3D2Osym', k)
+#:set C4 = lambda k: tname('3D4O2sym', k)
+
+module muscle_kin_total_lagrangian
+    !! Module muscle_kin_total_lagrangian
+    !! ==================================
+    !! Total Lagrangian kinematics: the strain is the Green-Lagrange strain
+    !! \( \mathbf{E} = \tfrac{1}{2}(\mathbf{C} - \mathbf{I}) \) and the constitutive stress its work
+    !! conjugate, the second Piola-Kirchhoff stress \( \mathbf{S} \), pushed forward to Cauchy,
+    !! \( \boldsymbol\sigma = J^{-1}\mathbf{F}\mathbf{S}\mathbf{F}^T \); the constitutive tangent is
+    !! pushed forward with F, \( c_{ijkl} = J^{-1} F_{iI} F_{jJ} F_{kK} F_{lL} C_{IJKL} \) (no
+    !! geometric term, D-017.14b).
+    !!
+    !! Kernel API (D-017.14): the (empty) parameter type `kin_total_lagrangian_<k>` and the `pure`
+    !! procedures `kin_update_total_lagrangian_<k>(prm, F, state, status)` (status:
+    !! `STATUS_INVALID_DEFORMATION` for det F <= 0, a singular F or a vanishing eigenvalue of C,
+    !! D-017.14a), `kin_to_cauchy_total_lagrangian_<k>(prm, state, stress)`,
+    !! `kin_to_spatial_tangent_total_lagrangian_<k>(prm, state, tangent)` and
+    !! `kin_is_finite_strain_total_lagrangian_<k>(prm)`, also through the generics `kin_*` of
+    !! muscle_kin_laws.
+    !!
+    !! `Total_lagrangian_kinematics` is the historical OO type (host only, removed in Phase 7),
+    !! extending `Base_F_kinematics`: its bindings call the dp kernel procedures and ignore the
+    !! status (same results as before, D-017.14a).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname('3D2O', k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$
+    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_green_lagrange, &
+        kin_pk2_to_cauchy, kin_push_forward_tangent
+    use muscle_kin_finite_base, only : Base_F_kinematics, finite_state_of, finite_set_state
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('kin', 'total_lagrangian')
+    public :: Total_lagrangian_kinematics
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('kin', 'total_lagrangian', k, [])
+#:endfor
+    $:KIN_F_OO_TYPE('total_lagrangian', 'Total_lagrangian_kinematics', 'Cached Green-Lagrange strain E')
+
+contains
+#:for k in REAL_KINDS
+
+    $:MODEL_FUNCTION('kin', 'total_lagrangian', 'update', k, doc=r'Strain: Green-Lagrange \( \mathbf{E} \).')
+
+        call kin_finite_update(F, state, status)
+        state%strain = kin_green_lagrange(state)
+    end subroutine kin_update_total_lagrangian_${k}$
+
+    $:MODEL_FUNCTION('kin', 'total_lagrangian', 'to_cauchy', k, doc=r'Push-forward of the second Piola-Kirchhoff stress.')
+
+        res = kin_pk2_to_cauchy(state, stress)
+    end function kin_to_cauchy_total_lagrangian_${k}$
+
+    $:MODEL_FUNCTION('kin', 'total_lagrangian', 'to_spatial_tangent', k, doc=r'Push-forward with F.')
+
+        res = kin_push_forward_tangent(state, tangent)
+    end function kin_to_spatial_tangent_total_lagrangian_${k}$
+
+    $:MODEL_FUNCTION('kin', 'total_lagrangian', 'is_finite_strain', k)
+
+        res = .true.
+    end function kin_is_finite_strain_total_lagrangian_${k}$
+#:endfor
+    $:KIN_F_OO_PROCS('total_lagrangian', 'Total_lagrangian_kinematics')
+
+end module muscle_kin_total_lagrangian

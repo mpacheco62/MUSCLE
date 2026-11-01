@@ -1,0 +1,375 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Threshold of the eigenvalues of C (D-017.14a): dp keeps the historical 1e-12 (same bits); sp
+#! takes the same multiple of the machine epsilon (1e-12/eps_dp = 4.5e3 -> 5.4e-4 in sp), rounded
+#! down to a power of ten (1e-4). The closed form eigenvalues of C have an absolute error ~ eps |C|,
+#! so at the threshold (|C| ~ 1) their relative error is ~ eps/threshold: ~2e-4 in dp, ~1e-3 in sp
+#! (1.2e-7/1e-4); below it the smallest eigenvalue, and lambda^(-1/2) in R and ln(lambda) in the
+#! Hencky strains, are not reliable.
+#:set EIG_MIN = {'sp': '1.0e-4', 'dp': '1.0e-12'}
+#:set T2 = lambda k: tname('3D2O', k)
+#:set S2 = lambda k: tname('3D2Osym', k)
+#:set C4 = lambda k: tname('3D4O2sym', k)
+#! Kernel API of this module: (name, doc) of every generic over the kinds
+#:set MEASURES = [('kin_green_lagrange', r'Green-Lagrange strain \( \mathbf{E} = \tfrac{1}{2}(\mathbf{C} - \mathbf{I}) \)'), &
+    &            ('kin_euler_almansi', r'Euler-Almansi strain \( \mathbf{e} = \tfrac{1}{2}(\mathbf{I} - \mathbf{b}^{-1}) \)'), &
+    &            ('kin_material_log', r'Material Hencky strain \( \mathbf{H} = \tfrac{1}{2}\ln\mathbf{C} = \ln\mathbf{U} \)'), &
+    &            ('kin_spatial_log', r'Spatial Hencky strain \( \mathbf{h} = \tfrac{1}{2}\ln\mathbf{b} = \ln\mathbf{V} \)')]
+#! Stress conversions: (name, input type, result type, formula of the result in terms of `x` and the
+#! state `st`, doc)
+#:set CONV = [('kin_pk2_to_cauchy', 'sym', 'sym', '(st%F .transform. x) / st%J', r'\( \boldsymbol\sigma = J^{-1}\mathbf{F}\mathbf{S}\mathbf{F}^T \)'), &
+    &        ('kin_cauchy_to_pk2', 'sym', 'sym', '(st%F_inv .transform. x) * st%J', r'\( \mathbf{S} = J\mathbf{F}^{-1}\boldsymbol\sigma\mathbf{F}^{-T} \)'), &
+    &        ('kin_pk2_to_kirchhoff', 'sym', 'sym', 'st%F .transform. x', r'\( \boldsymbol\tau = \mathbf{F}\mathbf{S}\mathbf{F}^T \)'), &
+    &        ('kin_kirchhoff_to_pk2', 'sym', 'sym', 'st%F_inv .transform. x', r'\( \mathbf{S} = \mathbf{F}^{-1}\boldsymbol\tau\mathbf{F}^{-T} \)'), &
+    &        ('kin_cauchy_to_kirchhoff', 'sym', 'sym', 'x * st%J', r'\( \boldsymbol\tau = J\boldsymbol\sigma \)'), &
+    &        ('kin_kirchhoff_to_cauchy', 'sym', 'sym', 'x / st%J', r'\( \boldsymbol\sigma = J^{-1}\boldsymbol\tau \)'), &
+    &        ('kin_pk2_to_pk1', 'sym', 'gen', 'st%F * x', r'\( \mathbf{P} = \mathbf{F}\mathbf{S} \)'), &
+    &        ('kin_pk1_to_pk2', 'gen', 'sym', 'st%F_inv * x', r'\( \mathbf{S} = \mathbf{F}^{-1}\mathbf{P} \) (symmetric part read from the upper triangle)'), &
+    &        ('kin_cauchy_to_pk1', 'sym', 'gen', '(x * transpose(st%F_inv)) * st%J', r'\( \mathbf{P} = J\boldsymbol\sigma\mathbf{F}^{-T} \)'), &
+    &        ('kin_pk1_to_cauchy', 'gen', 'sym', '(x * transpose(st%F)) / st%J', r'\( \boldsymbol\sigma = J^{-1}\mathbf{P}\mathbf{F}^T \) (symmetric part read from the upper triangle)')]
+#:set TANGENTS = [('kin_push_forward_tangent', '(st%F .transform. x) / st%J', r'Push-forward of a tangent, \( c_{ijkl} = J^{-1} F_{iI} F_{jJ} F_{kK} F_{lL} C_{IJKL} \)'), &
+    &            ('kin_pull_back_tangent', '(st%F_inv .transform. x) * st%J', r'Pull-back of a tangent, \( C_{IJKL} = J F^{-1}_{Ii} F^{-1}_{Jj} F^{-1}_{Kk} F^{-1}_{Ll} c_{ijkl} \)')]
+#:set ROTATIONS = [('kin_rotate_to_corotational', 'transpose(R) .transform. T', r'Rotation to the corotational frame, \( \mathbf{R}^T\mathbf{T}\mathbf{R} \)'), &
+    &             ('kin_rotate_from_corotational', 'R .transform. T', r'Rotation from the corotational frame, \( \mathbf{R}\mathbf{T}\mathbf{R}^T \)')]
+#:set GENERICS = ['kin_finite_update', 'kin_log_measure'] + [m[0] for m in MEASURES] + [c[0] for c in CONV] + [t[0] for t in TANGENTS] + [r[0] for r in ROTATIONS]
+#:set TYPE_OF = lambda kind, k: S2(k) if kind == 'sym' else T2(k)
+
+module muscle_kin_finite
+    !! Module muscle_kin_finite
+    !! ========================
+    !! Finite strain kinematics for kernels (D-017.14), in every real kind, 3D only (as the
+    !! historical kinematics): the explicit state of a material point and the functions of it that
+    !! do not depend on the kinematics (the strain measures, the stress conversions, the push-forward
+    !! and pull-back of tangents and the corotational rotations). The kinematics themselves
+    !! (`kin_update` or `kin_corot_update`, `kin_to_cauchy`, `kin_to_spatial_tangent`,
+    !! `kin_is_finite_strain`) are in the model modules `muscle_kin_<name>` and the family module
+    !! muscle_kin_laws, which re-exports
+    !! this one.
+    !!
+    !! - `kin_state_<k>`: fixed size state (no allocatable components): the deformation gradient
+    !!   \( \mathbf{F} \), its inverse, the rotation \( \mathbf{R} \) of the polar decomposition
+    !!   \( \mathbf{F} = \mathbf{R}\mathbf{U} \), \( J = \det\mathbf{F} \),
+    !!   \( \mathbf{C} = \mathbf{F}^T\mathbf{F} \), \( \mathbf{b} = \mathbf{F}\mathbf{F}^T \),
+    !!   \( \mathbf{b}^{-1} \) and the strain measure of the kinematics. The default value is the
+    !!   reference configuration (\( \mathbf{F} = \mathbf{I} \), zero strain), which a small strain
+    !!   kinematics keeps (only its strain changes), so that every function of this module is the
+    !!   identity on a small strain state.
+    !! - `call kin_finite_update(F, state, status [, eig_c, proj_c])`: every component but the
+    !!   strain (the common part of `kin_update`). \( \mathbf{R} = \mathbf{F}\mathbf{U}^{-1} \) with
+    !!   \( \mathbf{U}^{-1} = \sum_a \lambda_a^{-1/2}\mathbf{P}_a \) from the eigenvalues
+    !!   \( \lambda_a \) of \( \mathbf{C} \) and their eigenprojections (`eigenvals`,
+    !!   `dEigenvalues_dTensor`); the eigenvalues at or below `KIN_EIG_MIN_<k>` are dropped.
+    !! - `kin_log_measure(eig, proj)`: the Hencky strain \( \sum_a \tfrac{1}{2}\ln\lambda_a\mathbf{P}_a \)
+    !!   from the spectral decomposition returned by `kin_finite_update` (a logarithmic kinematics
+    !!   reuses the one of the rotation).
+    !!
+    !! Status (D-017.14a): `STATUS_INVALID_DEFORMATION` (muscle_status) when det F <= 0 (or NaN),
+    !! when `inverse` fails for F, or when an eigenvalue of C is at or below `KIN_EIG_MIN_<k>`
+    !! (1e-12 in dp as the historical code, 1e-4 in sp: the same multiple of the machine
+    !! epsilon). The state is still computed with the same formulas (the historical OO kinematics
+    !! call these procedures and ignore the status, D-017.14a: same bits), but it is not valid.
+    !!
+    !! Known limits, only documented (D-017.14b): the rotation loses precision near
+    !! \( \mathbf{C} \approx \mathbf{I} \) (\( |\mathbf{R}^T\mathbf{R} - \mathbf{I}| \approx 3.3\cdot10^{-11} \)
+    !! with \( \mathbf{F} \approx \mathbf{I} + 10^{-3} \) in dp: the eigenprojections of
+    !! Cayley-Hamilton with nearly repeated eigenvalues); the tangent transformations have no
+    !! geometric (stress) term; `kin_pk1_to_pk2` and `kin_pk1_to_cauchy` read the symmetric result
+    !! from the upper triangle of the general product (no symmetrization).
+    !!
+    !! ```fortran
+    !! type(kin_state_dp) :: st
+    !! call kin_finite_update(F, st, status)
+    !! sig = kin_pk2_to_cauchy(st, S)
+    !! ```
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK, STATUS_INVALID_DEFORMATION
+    use muscle_tensor_2o, only : ${', '.join(T2(k) for k in REAL_KINDS)}$, det, transpose, inverse
+    use muscle_tensors, only : ${', '.join(S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$, &
+        operator(+), operator(*), operator(/), operator(.transform.), assignment(=)
+    use muscle_math_operations, only : eigenvals
+    use muscle_math_spectral_derivs, only : dEigenvalues_dTensor
+    implicit none
+    private
+
+#:for g in GENERICS
+    public :: ${g}$, ${', '.join(g + '_' + k for k in REAL_KINDS)}$
+#:endfor
+#:for name, _, _ in ROTATIONS
+    public :: ${', '.join(name + '_tangent_' + k for k in REAL_KINDS)}$
+#:endfor
+#:for k in REAL_KINDS
+    public :: kin_state_${k}$, KIN_EIG_MIN_${k}$
+
+    real(${k}$), parameter :: KIN_EIG_MIN_${k}$ = ${EIG_MIN[k]}$_${k}$
+        !! Smallest admissible eigenvalue of \( \mathbf{C} \) in `real(${k}$)` (D-017.14a): the smaller
+        !! ones are dropped from \( \mathbf{U}^{-1} \) and the logarithmic strains and give
+        !! `STATUS_INVALID_DEFORMATION`.
+
+    type :: kin_state_${k}$
+        !! Kinematic state of a material point in `real(${k}$)` (3D). Default: the reference
+        !! configuration. A corotational state (`kin_corot_update`) keeps F = I and the other F-based
+        !! components at the reference configuration but has its own J and R: the F-based functions
+        !! of this module (conversions, push-forward/pull-back, strain measures) are not consistent
+        !! with it (e.g. `kin_pk2_to_cauchy` divides by its J with F = I).
+        type(${T2(k)}$) :: F = ${T2(k)}$([1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            0.0_${k}$, 1.0_${k}$])
+            !! Deformation gradient \( \mathbf{F} \).
+        type(${T2(k)}$) :: F_inv = ${T2(k)}$([1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            0.0_${k}$, 1.0_${k}$])
+            !! Inverse deformation gradient \( \mathbf{F}^{-1} \).
+        type(${T2(k)}$) :: R = ${T2(k)}$([1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            0.0_${k}$, 1.0_${k}$])
+            !! Rotation \( \mathbf{R} \) of the polar decomposition \( \mathbf{F} = \mathbf{R}\mathbf{U} \).
+        real(${k}$) :: J = 1.0_${k}$
+            !! Jacobian \( J = \det\mathbf{F} \); in a corotational state
+            !! \( J = \exp(\operatorname{tr}\boldsymbol\varepsilon) \) with F = I.
+        type(${S2(k)}$) :: C = ${S2(k)}$([1.0_${k}$, 1.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Right Cauchy-Green tensor \( \mathbf{C} = \mathbf{F}^T\mathbf{F} \).
+        type(${S2(k)}$) :: b = ${S2(k)}$([1.0_${k}$, 1.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Left Cauchy-Green tensor \( \mathbf{b} = \mathbf{F}\mathbf{F}^T \).
+        type(${S2(k)}$) :: b_inv = ${S2(k)}$([1.0_${k}$, 1.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Inverse left Cauchy-Green tensor \( \mathbf{b}^{-1} = \mathbf{F}^{-T}\mathbf{F}^{-1} \).
+        type(${S2(k)}$) :: strain = ${S2(k)}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Strain measure of the kinematics (written by `kin_update`; zero after `kin_finite_update`).
+    end type kin_state_${k}$
+#:endfor
+
+    interface kin_finite_update
+        !! Kinematic state of a deformation gradient, except the strain (every kind).
+        module procedure ${', '.join('kin_finite_update_' + k for k in REAL_KINDS)}$
+    end interface kin_finite_update
+
+    interface kin_log_measure
+        !! Hencky strain from the eigenvalues and eigenprojections of C or b (every kind).
+        module procedure ${', '.join('kin_log_measure_' + k for k in REAL_KINDS)}$
+    end interface kin_log_measure
+#:for name, doc in MEASURES
+
+    interface ${name}$
+        !! ${doc}$ of a kinematic state (every kind).
+        module procedure ${', '.join(name + '_' + k for k in REAL_KINDS)}$
+    end interface ${name}$
+#:endfor
+#:for name, _, _, _, doc in CONV
+
+    interface ${name}$
+        !! Stress conversion ${doc}$ (every kind).
+        module procedure ${', '.join(name + '_' + k for k in REAL_KINDS)}$
+    end interface ${name}$
+#:endfor
+#:for name, _, doc in TANGENTS
+
+    interface ${name}$
+        !! ${doc}$ (every kind).
+        module procedure ${', '.join(name + '_' + k for k in REAL_KINDS)}$
+    end interface ${name}$
+#:endfor
+#:for name, _, doc in ROTATIONS
+
+    interface ${name}$
+        !! ${doc}$, of a symmetric second order tensor or of a tangent (every kind).
+        module procedure ${', '.join(name + '_' + k for k in REAL_KINDS)}$
+        module procedure ${', '.join(name + '_tangent_' + k for k in REAL_KINDS)}$
+    end interface ${name}$
+#:endfor
+
+contains
+#:for k in REAL_KINDS
+
+    pure subroutine kin_finite_update_${k}$(F, state, status, eig_c, proj_c)
+        !! Kinematic state of the deformation gradient `F` in `real(${k}$)`, except the strain (zero):
+        !! \( \mathbf{F}^{-1} \) (`inverse`: adjugate, LU when ill conditioned), \( J \),
+        !! \( \mathbf{C} \), \( \mathbf{b} \), \( \mathbf{b}^{-1} \) and
+        !! \( \mathbf{R} = \mathbf{F}\sum_a \lambda_a^{-1/2}\mathbf{P}_a \) over the eigenvalues of
+        !! \( \mathbf{C} \) above `KIN_EIG_MIN_${k}$`. Optionally returns those eigenvalues and
+        !! eigenprojections (for a logarithmic strain without a second decomposition).
+        implicit none
+        @:DEVICE()
+        type(${T2(k)}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state (strain zero; not valid unless `status` is `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (det F <= 0 or NaN, singular F, or an
+            !! eigenvalue of C at or below `KIN_EIG_MIN_${k}$`).
+        real(${k}$), intent(out), optional :: eig_c(3)
+            !! Eigenvalues of \( \mathbf{C} \) (descending).
+        type(${S2(k)}$), intent(out), optional :: proj_c(3)
+            !! Eigenprojections of \( \mathbf{C} \) (`dEigenvalues_dTensor`).
+        real(${k}$) :: F11, F21, F31, F12, F22, F32, F13, F23, F33
+        real(${k}$) :: G11, G21, G31, G12, G22, G32, G13, G23, G33
+        real(${k}$) :: eig(3)
+        type(${S2(k)}$) :: proj(3), U_inv
+        integer :: a
+        logical :: ok
+
+        state%F = F
+        state%J = det(F)
+
+        F11 = F%vals(1); F21 = F%vals(2); F31 = F%vals(3)
+        F12 = F%vals(4); F22 = F%vals(5); F32 = F%vals(6)
+        F13 = F%vals(7); F23 = F%vals(8); F33 = F%vals(9)
+
+        ! Adjugate + condition number, LU fallback for an ill-conditioned F (M33INV); NaN if singular
+        call inverse(F, state%F_inv, ok)
+        G11 = state%F_inv%vals(1); G21 = state%F_inv%vals(2); G31 = state%F_inv%vals(3)
+        G12 = state%F_inv%vals(4); G22 = state%F_inv%vals(5); G32 = state%F_inv%vals(6)
+        G13 = state%F_inv%vals(7); G23 = state%F_inv%vals(8); G33 = state%F_inv%vals(9)
+
+        ! C = F^T F, b = F F^T, b^-1 = F^-T F^-1 (Voigt order xx, yy, zz, xy, yz, xz)
+        state%C%vals = [F11*F11 + F21*F21 + F31*F31, F12*F12 + F22*F22 + F32*F32, F13*F13 + F23*F23 + F33*F33, &
+                        F11*F12 + F21*F22 + F31*F32, F12*F13 + F22*F23 + F32*F33, F11*F13 + F21*F23 + F31*F33]
+        state%b%vals = [F11*F11 + F12*F12 + F13*F13, F21*F21 + F22*F22 + F23*F23, F31*F31 + F32*F32 + F33*F33, &
+                        F11*F21 + F12*F22 + F13*F23, F21*F31 + F22*F32 + F23*F33, F11*F31 + F12*F32 + F13*F33]
+        state%b_inv%vals = [G11*G11 + G21*G21 + G31*G31, G12*G12 + G22*G22 + G32*G32, G13*G13 + G23*G23 + G33*G33, &
+                            G11*G12 + G21*G22 + G31*G32, G12*G13 + G22*G23 + G32*G33, G11*G13 + G21*G23 + G31*G33]
+
+        ! R = F U^-1, U^-1 from the spectral decomposition of C
+        eig = eigenvals(state%C)
+        proj = dEigenvalues_dTensor(state%C, eig)
+        U_inv = 0.0_${k}$
+        do a = 1, 3
+            if (eig(a) > KIN_EIG_MIN_${k}$) then
+                U_inv = U_inv + (1.0_${k}$ / sqrt(eig(a))) * proj(a)
+            end if
+        end do
+        state%R = F * U_inv
+
+        ! Status (D-017.14a); NaN fails every test
+        if (ok .and. state%J > 0.0_${k}$ .and. all(eig > KIN_EIG_MIN_${k}$)) then
+            status = STATUS_OK
+        else
+            status = STATUS_INVALID_DEFORMATION
+        end if
+        if (present(eig_c)) eig_c = eig
+        if (present(proj_c)) proj_c = proj
+    end subroutine kin_finite_update_${k}$
+
+    pure function kin_log_measure_${k}$(eig, proj) result(res)
+        !! \( \sum_a \tfrac{1}{2}\ln\lambda_a\,\mathbf{P}_a \) over the eigenvalues above
+        !! `KIN_EIG_MIN_${k}$` (`real(${k}$)`): the Hencky strain of C or b.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: eig(3)
+            !! Eigenvalues.
+        type(${S2(k)}$), intent(in) :: proj(3)
+            !! Eigenprojections.
+        type(${S2(k)}$) :: res
+            !! Hencky strain.
+        integer :: a
+
+        res = 0.0_${k}$
+        do a = 1, 3
+            if (eig(a) > KIN_EIG_MIN_${k}$) then
+                res = res + (0.5_${k}$ * log(eig(a))) * proj(a)
+            end if
+        end do
+    end function kin_log_measure_${k}$
+
+    pure function kin_green_lagrange_${k}$(st) result(res)
+        !! Green-Lagrange strain \( \mathbf{E} = \tfrac{1}{2}(\mathbf{C} - \mathbf{I}) \) of a
+        !! `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(${S2(k)}$) :: res
+            !! \( \mathbf{E} \).
+
+        res%vals = [0.5_${k}$ * (st%C%vals(1) - 1.0_${k}$), 0.5_${k}$ * (st%C%vals(2) - 1.0_${k}$), &
+                    0.5_${k}$ * (st%C%vals(3) - 1.0_${k}$), 0.5_${k}$ * st%C%vals(4), 0.5_${k}$ * st%C%vals(5), &
+                    0.5_${k}$ * st%C%vals(6)]
+    end function kin_green_lagrange_${k}$
+
+    pure function kin_euler_almansi_${k}$(st) result(res)
+        !! Euler-Almansi strain \( \mathbf{e} = \tfrac{1}{2}(\mathbf{I} - \mathbf{b}^{-1}) \) of a
+        !! `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(${S2(k)}$) :: res
+            !! \( \mathbf{e} \).
+
+        res%vals = [0.5_${k}$ * (1.0_${k}$ - st%b_inv%vals(1)), 0.5_${k}$ * (1.0_${k}$ - st%b_inv%vals(2)), &
+                    0.5_${k}$ * (1.0_${k}$ - st%b_inv%vals(3)), -0.5_${k}$ * st%b_inv%vals(4), &
+                    -0.5_${k}$ * st%b_inv%vals(5), -0.5_${k}$ * st%b_inv%vals(6)]
+    end function kin_euler_almansi_${k}$
+#:for name, src in [('kin_material_log', 'C'), ('kin_spatial_log', 'b')]
+
+    pure function ${name}$_${k}$(st) result(res)
+        !! ${dict(MEASURES)[name]}$ of a `real(${k}$)` kinematic state, from the
+        !! eigenvalues of \( \mathbf{${src}$} \) above `KIN_EIG_MIN_${k}$`.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(${S2(k)}$) :: res
+            !! Hencky strain.
+        real(${k}$) :: eig(3)
+
+        eig = eigenvals(st%${src}$)
+        res = kin_log_measure_${k}$(eig, dEigenvalues_dTensor(st%${src}$, eig))
+    end function ${name}$_${k}$
+#:endfor
+#:for name, tin, tout, formula, doc in CONV
+
+    pure function ${name}$_${k}$(st, x) result(res)
+        !! Stress conversion ${doc}$ with a `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(${TYPE_OF(tin, k)}$), intent(in) :: x
+            !! Stress to convert.
+        type(${TYPE_OF(tout, k)}$) :: res
+            !! Converted stress.
+#:if tin == 'gen' and tout == 'sym'
+        type(${T2(k)}$) :: g
+
+        g = ${formula}$
+        res%vals = [g%vals(1), g%vals(5), g%vals(9), g%vals(4), g%vals(8), g%vals(7)]
+#:else
+
+        res = ${formula}$
+#:endif
+    end function ${name}$_${k}$
+#:endfor
+#:for name, formula, doc in TANGENTS
+
+    pure function ${name}$_${k}$(st, x) result(res)
+        !! ${doc}$, with a `real(${k}$)` kinematic state (no geometric term, D-017.14b).
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(${C4(k)}$), intent(in) :: x
+            !! Tangent to transform.
+        type(${C4(k)}$) :: res
+            !! Transformed tangent.
+
+        res = ${formula}$
+    end function ${name}$_${k}$
+#:endfor
+#:for name, formula, doc in ROTATIONS
+#:for suffix, TT, what in [('', S2(k), 'Symmetric tensor'), ('_tangent', C4(k), 'Tangent (fourth order, minor symmetries)')]
+
+    pure function ${name}$${suffix}$_${k}$(T, R) result(res)
+        !! ${doc}$ (`real(${k}$)`${', tangent: every index rotated' if suffix else ''}$).
+        implicit none
+        @:DEVICE()
+        type(${TT}$), intent(in) :: T
+            !! ${what}$.
+        type(${T2(k)}$), intent(in) :: R
+            !! Rotation \( \mathbf{R} \).
+        type(${TT}$) :: res
+            !! Rotated tensor.
+
+        res = ${formula}$
+    end function ${name}$${suffix}$_${k}$
+#:endfor
+#:endfor
+#:endfor
+
+end module muscle_kin_finite

@@ -1,0 +1,45 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+
+module muscle_visco_laws
+    !! Linear viscoelastic models for kernels (D-007, D-017.13): the parameter types of every
+    !! registered model (`visco_<name>_<k>`, `VISCOELASTIC_MODELS` of tools/fypp/muscle_meta.py), the
+    !! state and coefficient types (muscle_visco_types), the frozen elasticity `elas_frozen_<k>`
+    !! (an elastic model, muscle_visco_frozen) and the family generics (prefix `visco_`), with the
+    !! same names for every model and kind (3D only, D-017.13c). The state is explicit and the
+    !! converged state is never modified:
+    !!
+    !! - `call visco_step_coefficients(prm, dt, coefs, status)`: coefficients of the time step (once per
+    !!   step and material); the only procedure that validates: `status` is `STATUS_OK` or
+    !!   `STATUS_INVALID_TIME_STEP` (muscle_status; D-017.13b: dt < 0 in every model, dt = 0 in a
+    !!   Kelvin-Voigt solid);
+    !! - `elas = visco_freeze(prm, coefs, state_n)`: frozen elasticity of the step at a point
+    !!   (`elas_frozen_<k>`, used through the `elas_*` generics of muscle_elasticity_laws by the
+    !!   return mapping, as any elasticity);
+    !! - `call visco_update(prm, coefs, state_n, strain_e, state_np1)`: state at t_n+1 from the
+    !!   converged state and the elastic strain at t_n+1 (`state_n` intent(in), `state_np1`
+    !!   intent(out));
+    !! - `visco_n_branches(prm)`: number of history tensors (`visco_state_init`).
+    !!
+    !! A step at a point, as a solver does it:
+    !!
+    !! ```fortran
+    !! call visco_step_coefficients(prm, dt, coefs, status)       ! once per step (all points)
+    !! elas = visco_freeze(prm, coefs, state_n)              ! frozen elasticity of the point
+    !! ! ... return mapping with elas_stress(elas, eps_e) ... (elastic: eps_e = eps)
+    !! call visco_update(prm, coefs, state_n, eps_e, state_np1)
+    !! ! global convergence: state_n = state_np1
+    !! ```
+    $:FAMILY_USES('visco')
+    use muscle_visco_types, only : MAX_VISCO_BRANCHES, visco_state_init, &
+        ${', '.join('visco_state_{0}, visco_coefs_{0}'.format(k) for k in REAL_KINDS)}$
+    use muscle_visco_frozen, only : ${', '.join('elas_frozen_' + k for k in REAL_KINDS)}$
+    implicit none
+    private
+
+    $:FAMILY_EXPORTS('visco')
+    public :: MAX_VISCO_BRANCHES, visco_state_init
+    public :: ${', '.join('visco_state_{0}, visco_coefs_{0}, elas_frozen_{0}'.format(k) for k in REAL_KINDS)}$
+
+end module muscle_visco_laws

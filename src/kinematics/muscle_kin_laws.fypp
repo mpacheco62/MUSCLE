@@ -1,0 +1,59 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Kernel API common to every kinematics (muscle_kin_finite), re-exported
+#:set COMMON = ['kin_finite_update', 'kin_log_measure', 'kin_green_lagrange', 'kin_euler_almansi', &
+    &          'kin_material_log', 'kin_spatial_log', 'kin_pk2_to_cauchy', 'kin_cauchy_to_pk2', &
+    &          'kin_pk2_to_kirchhoff', 'kin_kirchhoff_to_pk2', 'kin_cauchy_to_kirchhoff', 'kin_kirchhoff_to_cauchy', &
+    &          'kin_pk2_to_pk1', 'kin_pk1_to_pk2', 'kin_cauchy_to_pk1', 'kin_pk1_to_cauchy', &
+    &          'kin_push_forward_tangent', 'kin_pull_back_tangent', 'kin_rotate_to_corotational', &
+    &          'kin_rotate_from_corotational'] + ['kin_state_' + k for k in REAL_KINDS] + &
+    &         ['KIN_EIG_MIN_' + k for k in REAL_KINDS]
+
+module muscle_kin_laws
+    !! Kinematics for kernels (D-007, D-017.14): the (empty) parameter types of every registered
+    !! kinematics (`kin_<name>_<k>`, `KINEMATICS_MODELS` of tools/fypp/muscle_meta.py), the family
+    !! generics (prefix `kin_`, same names for every kinematics and kind; 3D only) and, re-exported
+    !! from muscle_kin_finite, the state and its functions common to every kinematics. A kinematics
+    !! has no material parameters: its parameter type only selects it at compile time.
+    !!
+    !! - `call kin_update(prm, F, state, status)`: kinematic state of the deformation gradient
+    !!   (`kin_state_<k>`: F, F^-1, R, J, C, b, b^-1 and the strain of the kinematics); the only
+    !!   procedure that validates: `STATUS_INVALID_DEFORMATION` (muscle_status) when det F <= 0,
+    !!   F is singular or an eigenvalue of C is at or below `KIN_EIG_MIN_<k>` (D-017.14a); every
+    !!   kinematics but the corotational one;
+    !! - `call kin_corot_update(prm, strain, state, status [, R])`: the corotational kinematics
+    !!   (D-017.14d): strain in the unrotated frame, \( J = \exp(\operatorname{tr}\boldsymbol\varepsilon) \)
+    !!   and the rotation (the identity if absent); no validation;
+    !! - `sig = kin_to_cauchy(prm, state, stress)`: Cauchy stress from the constitutive stress (work
+    !!   conjugate of `state%strain`);
+    !! - `c = kin_to_spatial_tangent(prm, state, tangent)`: spatial tangent from the constitutive
+    !!   one (no geometric term, D-017.14b);
+    !! - `kin_is_finite_strain(prm)`;
+    !! - with a status other than `STATUS_OK` the outputs must not be used (D-017.14f): the state
+    !!   is still computed (same bits as the historical OO kinematics);
+    !! - common (muscle_kin_finite): `kin_finite_update`, `kin_log_measure`, the strain measures
+    !!   `kin_green_lagrange`, `kin_euler_almansi`, `kin_material_log`, `kin_spatial_log`, the stress
+    !!   conversions `kin_<a>_to_<b>` (PK1, PK2, Cauchy, Kirchhoff), `kin_push_forward_tangent`,
+    !!   `kin_pull_back_tangent` and `kin_rotate_to/from_corotational`.
+    !!
+    !! A point of a total Lagrangian material, as a solver does it:
+    !!
+    !! ```fortran
+    !! type(kin_total_lagrangian_dp) :: kin
+    !! type(kin_state_dp) :: st
+    !! call kin_update(kin, F, st, status)          ! reject the step if status /= STATUS_OK
+    !! S = elas_stress(elas, st%strain)             ! constitutive model in the strain of kin
+    !! sig = kin_to_cauchy(kin, st, S)
+    !! ```
+    $:FAMILY_USES('kin')
+    use muscle_kin_finite, only : &
+        ${', &\n        '.join(COMMON)}$
+    implicit none
+    private
+
+    $:FAMILY_EXPORTS('kin')
+    public :: &
+        ${', &\n        '.join(COMMON)}$
+
+end module muscle_kin_laws

@@ -1,0 +1,113 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
+#:set PARAMS = [('C', 'real', '', r'Strain rate sensitivity \( C \).', '0.0'), &
+    &          ('epdmax', 'real', '', r'Reference equivalent plastic strain rate \( \dot\epsilon_{p0} \).', '1.0'), &
+    &          ('m', 'real', '', r'Thermal softening exponent \( m \) (0: no softening).', '0.0'), &
+    &          ('Troom', 'real', '', r'Reference (room) temperature \( T_{room} \) (K).', '293.15'), &
+    &          ('Tmelt', 'real', '', r'Melting temperature \( T_{melt} \) (K).', '1.0e3'), &
+    &          ('T_current', 'real', '', r'Current temperature \( T \) (K), set by the caller.', '0.0')]
+#! The OO adapter keeps the inherited numeric dstress_dep of Base_viscoplastic_law (D-017.8)
+#:set OO_BINDINGS = [('flow_stress', 'flow_stress', None)]
+
+module muscle_vp_jcfull
+    !! Full Johnson-Cook viscoplastic law (strain rate and thermal softening terms): the static yield
+    !! stress \( \sigma_y(\epsilon_p) \) of a composed hardening law scaled by
+    !! \[ \sigma(\epsilon_p, \dot\epsilon_p) = \sigma_y(\epsilon_p)
+    !!    \left[ 1 + C \ln \frac{\dot\epsilon_p}{\dot\epsilon_{p0}} \right] \left[ 1 - T^{*m} \right], \quad
+    !!    T^* = \frac{T - T_{room}}{T_{melt} - T_{room}} \in [0, 1] \]
+    !! (\( T^* = 0 \) if \( T_{melt} \le T_{room} \); no thermal factor if \( m = 0 \)). The temperature
+    !! \( T \) is the parameter `T_current`, updated by the caller. Partial derivatives (new in the
+    !! kernel API, D-017.8):
+    !! \[ \frac{\partial\sigma}{\partial\epsilon_p} = \frac{d\sigma_y}{d\epsilon_p}
+    !!    \left[ 1 + C \ln \frac{\dot\epsilon_p}{\dot\epsilon_{p0}} \right] \left[ 1 - T^{*m} \right], \quad
+    !!    \frac{\partial\sigma}{\partial\dot\epsilon_p} = \sigma_y \frac{C}{\dot\epsilon_p} \left[ 1 - T^{*m} \right] \]
+    !! and `dstress_dep` = `dflow_dep + dflow_depd/dt`.
+    !!
+    !! Known issue (D-017.7, kept with the same results as the original code): `flow_stress` (and
+    !! the derivatives) are 0 for \( \dot\epsilon_p \le 0 \) (the rate is floored at `tiny` only for
+    !! positive rates).
+    !!
+    !! Composed law (D-017.6b): the free functions receive \( \sigma_y \) (`sy`) and
+    !! \( d\sigma_y/d\epsilon_p \) (`dsy_dep`) already evaluated; `ep` is part of the family contract
+    !! but unused.
+    !!
+    !! Kernel API: parameter types `vp_jcfull_<k>` and `pure` functions `vp_flow_stress_jcfull_<k>`,
+    !! `vp_dflow_dep_jcfull_<k>`, `vp_dflow_depd_jcfull_<k>` and `vp_dstress_dep_jcfull_<k>` for each
+    !! real kind, also through the generics `vp_*` of `muscle_vp_laws`.
+    !! `JohnsonCook_full_visco_hardening` is the historical OO type (host only, removed in Phase 7),
+    !! with the composed law in its polymorphic component `hard_law`; it binds only `flow_stress`, so
+    !! its `dstress_dep` is still the inherited finite difference of `Base_viscoplastic_law` (same
+    !! results as the original code, D-017.8). For \( \dot\epsilon_p \le 0 \) the adapter evaluates
+    !! `hard_law` (the original code did not): same result, but `hard_law` must be allocated.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_vp_base, only : Base_viscoplastic_law
+    use muscle_hard_base, only : Base_hardening_laws
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('vp', 'jcfull')
+    public :: JohnsonCook_full_visco_hardening
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('vp', 'jcfull', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('vp', 'jcfull', 'JohnsonCook_full_visco_hardening', 'Base_viscoplastic_law', PARAMS, bindings=OO_BINDINGS)
+
+contains
+#:for k in REAL_KINDS
+    pure function vp_jcfull_temp_${k}$(prm) result(res)
+        !! Thermal factor \( 1 - T^{*m} \) of the full Johnson-Cook model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(vp_jcfull_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$) :: res
+            !! \( 1 - T^{*m} \) (1 if \( m = 0 \)).
+        real(${k}$) :: Tstar, denomT
+
+        denomT = prm%Tmelt - prm%Troom
+        if (denomT > 0.0_${k}$) then
+            Tstar = (prm%T_current - prm%Troom)/denomT
+        else
+            Tstar = 0.0_${k}$
+        end if
+        Tstar = max(0.0_${k}$, min(1.0_${k}$, Tstar))
+
+        if (prm%m /= 0.0_${k}$) then
+            res = 1.0_${k}$ - Tstar**prm%m
+        else
+            res = 1.0_${k}$
+        end if
+    end function vp_jcfull_temp_${k}$
+
+    $:MODEL_FUNCTION('vp', 'jcfull', 'flow_stress', k)
+        if (epd <= 0.0_${k}$) then
+            res = 0.0_${k}$
+            return
+        end if
+        res = sy*(1.0_${k}$ + prm%C*log(max(epd, tiny(1.0_${k}$))/prm%epdmax))*vp_jcfull_temp_${k}$(prm)
+    end function vp_flow_stress_jcfull_${k}$
+
+    $:MODEL_FUNCTION('vp', 'jcfull', 'dflow_dep', k)
+        if (epd <= 0.0_${k}$) then
+            res = 0.0_${k}$
+            return
+        end if
+        res = dsy_dep*(1.0_${k}$ + prm%C*log(max(epd, tiny(1.0_${k}$))/prm%epdmax))*vp_jcfull_temp_${k}$(prm)
+    end function vp_dflow_dep_jcfull_${k}$
+
+    $:MODEL_FUNCTION('vp', 'jcfull', 'dflow_depd', k)
+        ! The rate floor `tiny` makes sigma constant below it
+        if (epd < tiny(1.0_${k}$)) then
+            res = 0.0_${k}$
+            return
+        end if
+        res = sy*(prm%C/epd)*vp_jcfull_temp_${k}$(prm)
+    end function vp_dflow_depd_jcfull_${k}$
+
+    $:MODEL_DEFAULT('vp', 'jcfull', 'dstress_dep', k)
+#:endfor
+    $:OO_ADAPTER_PROCS('vp', 'jcfull', 'JohnsonCook_full_visco_hardening', PARAMS, bindings=OO_BINDINGS)
+
+end module muscle_vp_jcfull

@@ -1,0 +1,94 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
+#:set PARAMS = [('C', 'real', '', r'Strain rate sensitivity \( C \).', None), &
+    &          ('epdmax', 'real', '', r'Reference equivalent plastic strain rate \( \dot\epsilon_{p0} \).', None), &
+    &          ('epmin', 'real', '', r'Minimum strain rate \( \dot\epsilon_{min} \) (floor of the rate, avoids \( \ln 0 \)).', &
+    &           '1.0e-7')]
+
+module muscle_vp_jc
+    !! Johnson-Cook viscoplastic law (strain rate term; no temperature term): the static yield
+    !! stress \( \sigma_y(\epsilon_p) \) of a composed hardening law scaled by the rate factor
+    !! \[ \sigma(\epsilon_p, \dot\epsilon_p) = \sigma_y(\epsilon_p) \left[ 1 + C \ln x \right], \quad
+    !!    x = \frac{\max^*(\dot\epsilon_p, \dot\epsilon_{min})}{\dot\epsilon_{p0}} \]
+    !! where \( \max^* \) takes \( \dot\epsilon_{min} \) when \( \dot\epsilon_p \le \dot\epsilon_{min} \)
+    !! (then \( \partial\sigma/\partial\dot\epsilon_p = 0 \)). Partial derivatives:
+    !! \[ \frac{\partial\sigma}{\partial\epsilon_p} = \frac{d\sigma_y}{d\epsilon_p} (1 + C \ln x), \quad
+    !!    \frac{\partial\sigma}{\partial\dot\epsilon_p} = \sigma_y \frac{C}{x \dot\epsilon_{p0}} \]
+    !!
+    !! Composed law (D-017.6b): the free functions receive \( \sigma_y \) (`sy`) and
+    !! \( d\sigma_y/d\epsilon_p \) (`dsy_dep`) already evaluated, e.g. with `hard_stress` and
+    !! `hard_dstress_dep` of `muscle_hard_laws`; `ep` is part of the family contract but unused.
+    !!
+    !! Kernel API: parameter types `vp_jc_<k>` and `pure` functions `vp_flow_stress_jc_<k>(prm, ep,
+    !! epd, sy)`, `vp_dflow_dep_jc_<k>(prm, ep, epd, sy, dsy_dep)`, `vp_dflow_depd_jc_<k>(prm, ep,
+    !! epd, sy)` and `vp_dstress_dep_jc_<k>(prm, ep, epd, dt, sy, dsy_dep)` (derivative with respect
+    !! to the plastic strain increment, \( \partial\sigma/\partial\epsilon_p +
+    !! \partial\sigma/\partial\dot\epsilon_p/\Delta t \)) for each real kind, also through the
+    !! generics `vp_*` of `muscle_vp_laws`. `JC_viscoplastic` is the historical OO type (host only,
+    !! removed in Phase 7), with the composed law in its polymorphic component `hard_law`.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_vp_base, only : Base_viscoplastic_law
+    use muscle_hard_base, only : Base_hardening_laws
+    implicit none
+    private
+
+    $:MODEL_PUBLIC('vp', 'jc')
+    public :: JC_viscoplastic
+#:for k in REAL_KINDS
+    $:MODEL_PARAMS_TYPE('vp', 'jc', k, PARAMS)
+#:endfor
+    $:OO_ADAPTER_TYPE('vp', 'jc', 'JC_viscoplastic', 'Base_viscoplastic_law', PARAMS)
+
+contains
+#:for k in REAL_KINDS
+    pure subroutine vp_jc_rate_${k}$(prm, epd, x, dx)
+        !! Normalized rate \( x \) of the Johnson-Cook model in `real(${k}$)` and \( dx/d\dot\epsilon_p \)
+        !! times \( \dot\epsilon_{p0} \) (1, or 0 on the floor \( \dot\epsilon_p \le \dot\epsilon_{min} \)).
+        implicit none
+        @:DEVICE()
+        type(vp_jc_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate.
+        real(${k}$), intent(out) :: x
+            !! \( x \).
+        real(${k}$), intent(out) :: dx
+            !! \( \dot\epsilon_{p0} \, dx/d\dot\epsilon_p \).
+
+        x = epd/prm%epdmax
+        dx = 1.0_${k}$
+        if (epd <= prm%epmin) then
+            x = prm%epmin/prm%epdmax
+            dx = 0.0_${k}$
+        end if
+    end subroutine vp_jc_rate_${k}$
+
+    $:MODEL_FUNCTION('vp', 'jc', 'flow_stress', k)
+        real(${k}$) :: x, dx
+        call vp_jc_rate_${k}$(prm, epd, x, dx)
+        res = sy*(1.0_${k}$ + prm%C*log(x))
+    end function vp_flow_stress_jc_${k}$
+
+    $:MODEL_FUNCTION('vp', 'jc', 'dflow_dep', k)
+        real(${k}$) :: x, dx
+        call vp_jc_rate_${k}$(prm, epd, x, dx)
+        res = dsy_dep*(1.0_${k}$ + prm%C*log(x))
+    end function vp_dflow_dep_jc_${k}$
+
+    $:MODEL_FUNCTION('vp', 'jc', 'dflow_depd', k)
+        real(${k}$) :: x, dx
+        call vp_jc_rate_${k}$(prm, epd, x, dx)
+        res = sy*(prm%C*dx/x/prm%epdmax)
+    end function vp_dflow_depd_jc_${k}$
+
+    $:MODEL_FUNCTION('vp', 'jc', 'dstress_dep', k, doc='dflow_dep + dflow_depd/dt, computed once (original operation order).')
+        real(${k}$) :: x, dx
+        call vp_jc_rate_${k}$(prm, epd, x, dx)
+        res = dsy_dep*(1.0_${k}$ + prm%C*log(x)) + sy*(prm%C*dx/x/prm%epdmax)/dt
+    end function vp_dstress_dep_jc_${k}$
+#:endfor
+    $:OO_ADAPTER_PROCS('vp', 'jc', 'JC_viscoplastic', PARAMS)
+
+end module muscle_vp_jc
