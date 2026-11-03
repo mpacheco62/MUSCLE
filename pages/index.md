@@ -14,7 +14,10 @@ Mathematical foundation of the library, including plastic return mapping, yield 
 A guide on using the optimized tensor engine, custom operators (`.ddot.`, `.tdotsym.`), and Voigt notation storage.
 
 ### [FEA Integration](integration.html)
-Instructions on how to link MUSCLE with Finite Element solvers like LS-DYNA (UMAT) and ANSYS (USERMAT).
+How to call a declared material from the user subroutines of Abaqus (UMAT), ANSYS (USERMAT) and LS-DYNA (umat41).
 
 ### [Developer Guide](contributing.html)
-Information for developers on how to extend the library by adding new hardening laws or yield criteria using the Object-Oriented framework.
+How to add a model (FYPP template + `muscle_meta` registries) or a solver, and make it available to the declared materials.
+
+### [Migration from the OO API](migration.html)
+Equivalence table from the former object-oriented API (`Elasticity_linear`, `Closest_point`, `Plastic_material_history`, ...) to the declared materials, and what is no longer available.

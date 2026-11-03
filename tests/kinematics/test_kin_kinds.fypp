@@ -5,14 +5,10 @@
 #! Kernel API of the kinematics family (D-017.14) in every kind, through the generics of
 #! muscle_kin_laws (kin_update, kin_corot_update, kin_to_cauchy, kin_to_spatial_tangent,
 #! kin_is_finite_strain and the common functions of the state), for the six kinematics:
-#! - the dp kernel against the historical OO types (state, strain, stress and tangent conversions,
-#!   strain measures, the ten stress conversions, push-forward/pull-back of tangents, corotational
-#!   rotations; the corotational one with and without R), bit for bit;
 #! - sp against dp (sp inputs converted to dp) on deformation gradients whose eigenvalues of C are
 #!   distinct by at least ~0.04 or exactly repeated (the eigenprojections of nearly repeated
 #!   eigenvalues lose precision, D-017.14b);
-#! - status (D-017.14a): det F < 0, singular F, nearly singular F, a NaN component (dp and sp; in dp the
-#!   invalid state of the kernel and of the OO types with the same bits, D-017.14f), an eigenvalue of C
+#! - status (D-017.14a): det F < 0, singular F, nearly singular F, a NaN component (dp and sp), an eigenvalue of C
 #!   between the sp and dp thresholds (STATUS_OK in dp, invalid in sp), and small strain (never
 #!   invalid) and corotational (no validation);
 #! - objectivity: a pure rotation gives R = Q, J = 1 and zero strain; a superposed rotation Q F
@@ -22,7 +18,7 @@
 #! - a `pure`, `@:DEVICE()` point procedure that updates the kinematics and converts a stress and a
 #!   tangent, run inside an `!$omp target` region (host fallback, as math-math_kernels_target) and on
 #!   the CPU, bit for bit.
-#! Tolerances: dp vs OO and target vs CPU exact (same code); sp vs dp relative to the largest value
+#! Tolerances: target vs CPU exact (same code); sp vs dp relative to the largest value
 #! of each group within max(4 TOL_APPROX_sp, 8 eps_sp kappa(C)) (see test_sp_vs_dp); objectivity
 #! 10 TOL_APPROX_<k> relative to the largest component (measured: dp 4.2e-14, sp 2.7e-5, both on the
 #! rotated spatial tangent).
@@ -31,10 +27,6 @@
 #! kinematics of F, as in the golden test)
 #:set MODELS = ['small_strain', 'total_lagrangian', 'updated_lagrangian', 'material_logarithmic', 'spatial_logarithmic']
 #:set ALL = MODELS + ['corotational']
-#:set OO = {'small_strain': 'Small_strain_kinematics', 'total_lagrangian': 'Total_lagrangian_kinematics', &
-    &      'updated_lagrangian': 'Updated_lagrangian_kinematics', &
-    &      'material_logarithmic': 'Material_logarithmic_kinematics', &
-    &      'spatial_logarithmic': 'Spatial_logarithmic_kinematics', 'corotational': 'Corotational_kinematics'}
 #:set FINITE = MODELS[1:]
 #! Spatial strain measures (rotate with a superposed rotation; their constitutive stress is spatial)
 #:set SPATIAL = ['updated_lagrangian', 'spatial_logarithmic']
@@ -126,8 +118,6 @@ module test_kin_cases
         kin_push_forward_tangent, kin_pull_back_tangent, kin_rotate_to_corotational, &
         kin_rotate_from_corotational, ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, &
         ${', '.join('kin_{0}_{1}'.format(m, k) for m in ALL for k in REAL_KINDS)}$
-    ! The historical OO types and the kernel generics in the same scope
-    use muscle_kinematics, only : ${', '.join(OO[m] for m in ALL)}$
     use muscle_math_operations, only : eigenvals
     use test_kin_point, only : NSTATE, NOUT, ${', '.join('pack_state_' + k for k in REAL_KINDS)}$, &
         ${', '.join('point_{0}_{1}'.format(m, k) for m in ALL for k in REAL_KINDS)}$
@@ -136,7 +126,7 @@ module test_kin_cases
     implicit none
     private
 
-    public :: test_kernel_vs_oo, test_status, test_point_target
+    public :: test_status, test_point_target
 #:for k in REAL_KINDS
     public :: test_objectivity_${k}$
 #:endfor
@@ -222,134 +212,6 @@ contains
         end do
     end function input_C
 
-    subroutine test_kernel_vs_oo(passed)
-        !! dp kernel against the historical OO types, bit for bit.
-        logical, intent(inout) :: passed
-#:for m in MODELS
-        type(${OO[m]}$) :: oo_${m}$
-        type(kin_${m}$_dp) :: k_${m}$
-#:endfor
-        type(Corotational_kinematics) :: oo_corotational
-        type(kin_corotational_dp) :: k_corotational
-        type(kin_state_dp) :: st
-        type(ten_3D2O_dp) :: F, P, Q, R, Rm
-        type(ten_3D2Osym_dp) :: S, a, b, eps
-        type(ten_3D4O2sym_dp) :: C, c1, c2
-        integer :: ic, status
-        character(len=2) :: tag
-
-        S%vals = input_S()
-        P%vals = input_P()
-        C%vals = input_C()
-        R%vals = rot([2.0_dp, -1.0_dp, 0.5_dp], 50.0_dp)
-        do ic = 1, NCASES
-            write(tag, '(i2)') ic
-            F%vals = case_F(ic)
-#:for m in MODELS
-            call oo_${m}$%update(F)
-            call kin_update(k_${m}$, F, st, status)
-            call check_true(passed, 'dp ${m}$ status OK, case ' // tag, status == STATUS_OK)
-#:if m == 'small_strain'
-            a = oo_${m}$%get_strain()
-            call check_approx(passed, 'dp ${m}$ strain kernel = OO, case ' // tag, st%strain%vals, a%vals, 0.0_dp)
-#:else
-            call check_approx(passed, 'dp ${m}$ state kernel = OO, case ' // tag, pack_state_dp(st), &
-                [oo_${m}$%F%vals, oo_${m}$%F_inv%vals, oo_${m}$%R_rot%vals, oo_${m}$%J, oo_${m}$%C_mat%vals, &
-                 oo_${m}$%b_spat%vals, oo_${m}$%b_inv%vals, oo_${m}$%strain%vals], 0.0_dp)
-#:endif
-            a = kin_to_cauchy(k_${m}$, st, S)
-            b = oo_${m}$%to_Cauchy(S)
-            call check_approx(passed, 'dp ${m}$ to_cauchy kernel = OO, case ' // tag, a%vals, b%vals, 0.0_dp)
-            c1 = kin_to_spatial_tangent(k_${m}$, st, C)
-            c2 = oo_${m}$%to_spatial_tangent(C)
-            call check_approx(passed, 'dp ${m}$ to_spatial_tangent kernel = OO, case ' // tag, c1%vals, c2%vals, &
-                              0.0_dp)
-            call check_true(passed, 'dp ${m}$ is_finite_strain kernel = OO', &
-                            kin_is_finite_strain(k_${m}$) .eqv. oo_${m}$%is_finite_strain())
-#:endfor
-            ! Common functions of the state against the bindings of Base_F_kinematics
-            call kin_update(k_total_lagrangian, F, st, status)
-            associate (o => oo_total_lagrangian)
-                call check_approx(passed, 'dp measures kernel = OO, case ' // tag, &
-                    [vals6(kin_green_lagrange(st)), vals6(kin_euler_almansi(st)), vals6(kin_material_log(st)), &
-                     vals6(kin_spatial_log(st))], &
-                    [vals6(o%get_GreenLagrange()), vals6(o%get_EulerAlmansi()), &
-                     vals6(o%get_Material_Logarithmic()), vals6(o%get_Spatial_Logarithmic())], 0.0_dp)
-                call check_approx(passed, 'dp symmetric conversions kernel = OO, case ' // tag, &
-                    [vals6(kin_pk2_to_cauchy(st, S)), vals6(kin_cauchy_to_pk2(st, S)), &
-                     vals6(kin_pk2_to_kirchhoff(st, S)), vals6(kin_kirchhoff_to_pk2(st, S)), &
-                     vals6(kin_cauchy_to_kirchhoff(st, S)), vals6(kin_kirchhoff_to_cauchy(st, S)), &
-                     vals6(kin_pk1_to_pk2(st, P)), vals6(kin_pk1_to_cauchy(st, P))], &
-                    [vals6(o%convert_PK2_to_Cauchy(S)), vals6(o%convert_Cauchy_to_PK2(S)), &
-                     vals6(o%convert_PK2_to_Kirchhoff(S)), vals6(o%convert_Kirchhoff_to_PK2(S)), &
-                     vals6(o%convert_Cauchy_to_Kirchhoff(S)), vals6(o%convert_Kirchhoff_to_Cauchy(S)), &
-                     vals6(o%convert_PK1_to_PK2(P)), vals6(o%convert_PK1_to_Cauchy(P))], 0.0_dp)
-                Q = kin_pk2_to_pk1(st, S)
-                P = o%convert_PK2_to_PK1(S)
-                call check_approx(passed, 'dp PK2 > PK1 kernel = OO, case ' // tag, Q%vals, P%vals, 0.0_dp)
-                Q = kin_cauchy_to_pk1(st, S)
-                P = o%convert_Cauchy_to_PK1(S)
-                call check_approx(passed, 'dp Cauchy > PK1 kernel = OO, case ' // tag, Q%vals, P%vals, 0.0_dp)
-                P%vals = input_P()
-                c1 = kin_push_forward_tangent(st, C)
-                c2 = o%push_forward_tangent(C)
-                call check_approx(passed, 'dp push-forward kernel = OO, case ' // tag, c1%vals, c2%vals, 0.0_dp)
-                c1 = kin_pull_back_tangent(st, C)
-                c2 = o%pull_back_tangent(C)
-                call check_approx(passed, 'dp pull-back kernel = OO, case ' // tag, c1%vals, c2%vals, 0.0_dp)
-                call check_approx(passed, 'dp corotational rotations kernel = OO', &
-                    [vals6(kin_rotate_to_corotational(S, R)), vals6(kin_rotate_from_corotational(S, R))], &
-                    [vals6(o%rotate_to_corotational(S, R)), vals6(o%rotate_from_corotational(S, R))], 0.0_dp)
-            end associate
-            ! Corotational: strain and R of the material logarithmic kinematics of F, then without R
-            call kin_update(k_material_logarithmic, F, st, status)
-            eps = st%strain
-            Rm = st%R
-            call oo_corotational%update(eps, Rm)
-            call kin_corot_update(k_corotational, eps, st, status, Rm)
-            call check_true(passed, 'dp corotational status OK, case ' // tag, status == STATUS_OK)
-            call check_approx(passed, 'dp corotational state kernel = OO, case ' // tag, [st%strain%vals, st%J, &
-                              st%R%vals], [oo_corotational%strain%vals, oo_corotational%J, oo_corotational%R_rot%vals], &
-                              0.0_dp)
-            a = kin_to_cauchy(k_corotational, st, S)
-            b = oo_corotational%to_Cauchy(S)
-            call check_approx(passed, 'dp corotational to_cauchy kernel = OO, case ' // tag, a%vals, b%vals, 0.0_dp)
-            c1 = kin_to_spatial_tangent(k_corotational, st, C)
-            c2 = oo_corotational%to_spatial_tangent(C)
-            call check_approx(passed, 'dp corotational to_spatial_tangent kernel = OO, case ' // tag, c1%vals, &
-                              c2%vals, 0.0_dp)
-            a = kin_rotate_to_corotational(S, st%R)
-            b = oo_corotational%pull_back_stress(S)
-            call check_approx(passed, 'dp corotational pull-back of the stress kernel = OO, case ' // tag, a%vals, &
-                              b%vals, 0.0_dp)
-            call check_true(passed, 'dp corotational is_finite_strain kernel = OO', &
-                            kin_is_finite_strain(k_corotational) .eqv. oo_corotational%is_finite_strain())
-            ! Without R: identity rotation in the kernel, has_rotation false in the OO type
-            call oo_corotational%update(eps)
-            call kin_corot_update(k_corotational, eps, st, status)
-            call check_true(passed, 'dp corotational without R: status OK, has_rotation false', &
-                            status == STATUS_OK .and. .not. oo_corotational%has_rotation)
-            call check_approx(passed, 'dp corotational without R: strain, J kernel = OO, R = I, case ' // tag, &
-                              [st%strain%vals, st%J, st%R%vals], [oo_corotational%strain%vals, oo_corotational%J, &
-                              1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp], 0.0_dp)
-            a = kin_to_cauchy(k_corotational, st, S)
-            b = oo_corotational%to_Cauchy(S)
-            call check_approx(passed, 'dp corotational without R: to_cauchy kernel = OO, case ' // tag, a%vals, &
-                              b%vals, 0.0_dp)
-            c1 = kin_to_spatial_tangent(k_corotational, st, C)
-            c2 = oo_corotational%to_spatial_tangent(C)
-            call check_approx(passed, 'dp corotational without R: to_spatial_tangent kernel = OO, case ' // tag, &
-                              c1%vals, c2%vals, 0.0_dp)
-        end do
-    end subroutine test_kernel_vs_oo
-
-    pure function same_bits(a, b) result(res)
-        !! Whether two dp arrays have the same bits (NaN payloads and signed zeros included).
-        real(dp), intent(in) :: a(:), b(:)
-        logical :: res
-        res = size(a) == size(b)
-        if (res) res = all(transfer(a, 1_int64, size(a)) == transfer(b, 1_int64, size(b)))
-    end function same_bits
 
     pure function vals6(t) result(v)
         type(ten_3D2Osym_dp), intent(in) :: t
@@ -408,18 +270,12 @@ contains
 #:endif
 
     subroutine test_status(passed)
-        !! Status of kin_update (D-017.14a) in every kind; in dp, the (invalid) state, Cauchy stress
-        !! and spatial tangent of the kernel and of the historical OO types have the same bits, also
-        !! with det F < 0, a singular or nearly singular F and a NaN component (D-017.14f).
+        !! Status of kin_update (D-017.14a) in every kind, also with det F < 0, a singular or nearly
+        !! singular F and a NaN component.
         logical, intent(inout) :: passed
         real(dp) :: f9(9)
         integer :: ic, status
         character(len=40) :: label
-        type(ten_3D2Osym_dp) :: S, a, b
-        type(ten_3D4O2sym_dp) :: C, c1, c2
-#:for m in MODELS
-        type(${OO[m]}$) :: oo_${m}$
-#:endfor
 #:for k in REAL_KINDS
         type(kin_state_${k}$) :: st_${k}$
         type(${tname('3D2O', k)}$) :: F_${k}$
@@ -429,8 +285,6 @@ contains
         type(${tname('3D2Osym', k)}$) :: e_${k}$
 #:endfor
 
-        S%vals = input_S()
-        C%vals = input_C()
         do ic = 1, 7
             select case (ic)
             case (1)
@@ -467,27 +321,10 @@ contains
                 call check_true(passed, '${k}$ ${m}$ STATUS_INVALID_DEFORMATION: ' // trim(label), &
                                 status == STATUS_INVALID_DEFORMATION)
             end if
-#:if k == 'dp'
-            call oo_${m}$%update(F_dp)
-            call check_true(passed, 'dp ${m}$ state kernel = OO (bits): ' // trim(label), same_bits(pack_state_dp(st_dp), &
-                [oo_${m}$%F%vals, oo_${m}$%F_inv%vals, oo_${m}$%R_rot%vals, oo_${m}$%J, oo_${m}$%C_mat%vals, &
-                 oo_${m}$%b_spat%vals, oo_${m}$%b_inv%vals, oo_${m}$%strain%vals]))
-            a = kin_to_cauchy(k_${m}$_dp, st_dp, S)
-            b = oo_${m}$%to_Cauchy(S)
-            c1 = kin_to_spatial_tangent(k_${m}$_dp, st_dp, C)
-            c2 = oo_${m}$%to_spatial_tangent(C)
-            call check_true(passed, 'dp ${m}$ Cauchy stress and tangent kernel = OO (bits): ' // trim(label), &
-                            same_bits([a%vals, reshape(c1%vals, [36])], [b%vals, reshape(c2%vals, [36])]))
-#:endif
 #:endfor
             ! Small strain does not validate
             call kin_update(k_small_strain_${k}$, F_${k}$, st_${k}$, status)
             call check_true(passed, '${k}$ small_strain STATUS_OK: ' // trim(label), status == STATUS_OK)
-#:if k == 'dp'
-            call oo_small_strain%update(F_dp)
-            call check_true(passed, 'dp small_strain strain kernel = OO (bits): ' // trim(label), &
-                            same_bits(st_dp%strain%vals, oo_small_strain%strain%vals))
-#:endif
             ! Neither does the corotational one (strain and rotation are inputs; here R = F, not a rotation)
             e_${k}$%vals = real([-3.0_dp, 1.0_dp, 0.5_dp, 0.2_dp, 0.0_dp, 0.0_dp], ${k}$)
             call kin_corot_update(k_corotational_${k}$, e_${k}$, st_${k}$, status, F_${k}$)
@@ -632,9 +469,6 @@ program test_kin_kinds
     integer :: code
 
     code = 0
-    passed = .true.
-    call test_kernel_vs_oo(passed)
-    call record(passed, 1, 'dp kernel = OO', code)
 #:if 'sp' in REAL_KINDS
     passed = .true.
     call test_sp_vs_dp(passed)

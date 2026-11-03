@@ -1,0 +1,36 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_material_state
+    !! Module muscle_material_state
+    !! ============================
+    !! State of a point of a declared material whose elasticity is the frozen elasticity of a linear
+    !! viscoelastic model (D-017.13d, D-018.4), in every real kind: the plastic state of the return
+    !! mapping and the viscoelastic state, both of fixed size (no allocatable components). 3D only.
+    !!
+    !! - `visco_plastic_state_<k>`: components `plastic` (`plastic_state_<k>`, muscle_plastic_state) and
+    !!   `visco` (`visco_state_<k>`, muscle_visco_types); the default value is the zero state.
+    !!
+    !! The point kernel of such a material (`mat_update`) takes it in place of `plastic_state_<k>`; its
+    !! FE history layout is that of the material (`mat_pack_<name>` / `mat_unpack_<name>`).
+    use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
+    use muscle_visco_types, only : ${', '.join('visco_state_' + k for k in REAL_KINDS)}$
+    implicit none
+    private
+
+#:for k in REAL_KINDS
+    public :: visco_plastic_state_${k}$
+#:endfor
+#:for k in REAL_KINDS
+
+    type :: visco_plastic_state_${k}$
+        !! State of a point of a material with a viscoelastic elasticity at an instant, `real(${k}$)`.
+        type(plastic_state_${k}$) :: plastic
+            !! Plastic state (plastic strain, equivalent plastic strain, stress).
+        type(visco_state_${k}$) :: visco
+            !! Viscoelastic state (elastic strain and history tensors).
+    end type visco_plastic_state_${k}$
+#:endfor
+
+end module muscle_material_state

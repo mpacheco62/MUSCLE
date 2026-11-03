@@ -15,62 +15,35 @@ module muscle_kin_corotational
     !! with the rotation \( \mathbf{R} \) of that frame, the volume ratio is
     !! \( J = \exp(\operatorname{tr}\boldsymbol\varepsilon) \), and the constitutive stress and
     !! tangent are rotated to the spatial frame, \( \boldsymbol\sigma = \mathbf{R}\hat{\boldsymbol\sigma}\mathbf{R}^T \),
-    !! \( c_{ijkl} = R_{iI} R_{jJ} R_{kK} R_{lL} C_{IJKL} \) (no division by J, no geometric term,
-    !! D-017.14b).
+    !! \( c_{ijkl} = R_{iI} R_{jJ} R_{kK} R_{lL} C_{IJKL} \) (no division by J). The geometric term of the
+    !! Jaumann rate of the Kirchhoff stress over J is the volume change, \( \boldsymbol\sigma\otimes\mathbf{I} \):
+    !! the corotational frame is rotated by the FE code (Abaqus, ANSYS), so there is no spin term
+    !! (D-018.15f).
     !!
     !! Kernel API (D-017.14d): the (empty) parameter type `kin_corotational_<k>` and the `pure`
     !! procedures `kin_corot_update_corotational_<k>(prm, strain, state, status [, R])` (the state
     !! holds the strain, J and R, the identity when `R` is absent; its F-based components keep the
     !! reference configuration, so the F-based functions of muscle_kin_finite do not apply to it; no
     !! validation: `STATUS_OK`; without `R` the conversions apply \( \mathbf{I} \) with
-    !! `.transform.`, which differs from the identity of the OO type only with Inf/NaN components or
-    !! a negative zero), `kin_to_cauchy_corotational_<k>(prm, state, stress)`,
-    !! `kin_to_spatial_tangent_corotational_<k>(prm, state, tangent)` and
+    !! `.transform.`, which differs from the identity only with Inf/NaN components or a negative
+    !! zero), `kin_to_cauchy_corotational_<k>(prm, state, stress)`,
+    !! `kin_to_spatial_tangent_corotational_<k>(prm, state, tangent)`,
+    !! `kin_geometric_tangent_corotational_<k>(prm, state, stress)` and
     !! `kin_is_finite_strain_corotational_<k>(prm)`, also through the generics `kin_corot_update` and
     !! `kin_*` of muscle_kin_laws. Back to the corotational frame: `kin_rotate_to_corotational`.
-    !!
-    !! `Corotational_kinematics` is the historical OO type (host only, removed in Phase 7), extending
-    !! `Base_kinematics`: `update(strain [, R])` calls the dp kernel procedure; without `R` the stored
-    !! `R_rot` is kept but not used (`has_rotation` false: the transformations are the identity,
-    !! D-017.14b), as before.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
     use muscle_tensors, only : ${', '.join(T2(k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$
     use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_rotate_from_corotational, &
-        kin_rotate_to_corotational
-    use muscle_kinematics_base, only : Base_kinematics
+        kin_rotate_to_corotational, kin_volumetric_tangent
     implicit none
     private
 
     $:MODEL_PUBLIC('kin', 'corotational')
-    public :: Corotational_kinematics
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('kin', 'corotational', k, [])
+    $:MODEL_PARAMS_TYPE('kin', 'corotational', k, model_param_list('kin', 'corotational'))
 #:endfor
 
-    ! Historical OO interface (host only, D-017.1): removed in Phase 7 with Base_kinematics.
-    type, extends(Base_kinematics) :: Corotational_kinematics
-        !! The corotational kinematics through the polymorphic `Base_kinematics` interface
-        !! (historical API, double precision, host only). Kernels use `kin_corotational_dp`,
-        !! `kin_state_dp` and the free procedures.
-        type(${S2('dp')}$) :: strain             !! Strain in unrotated frame
-        type(${T2('dp')}$) :: R_rot              !! Rotation matrix R
-        real(dp)          :: J = 1.0_dp          !! Volume ratio det(F) = exp(tr(eps))
-        logical           :: has_rotation = .FALSE.
-    contains
-        procedure :: update_corotational => update_corotational_tbp
-        generic   :: update              => update_corotational
-
-        procedure :: jacobian            => jacobian_tbp
-        procedure :: is_finite_strain    => is_finite_strain_tbp
-        procedure :: get_strain          => get_strain_tbp
-        procedure :: push_forward_stress => push_stress_tbp
-        procedure :: pull_back_stress     => pull_stress_tbp
-        procedure :: push_forward_tangent => push_tangent_tbp
-        procedure :: pull_back_tangent   => pull_tangent_tbp
-        procedure :: to_Cauchy => to_Cauchy_tbp
-        procedure :: to_spatial_tangent  => to_spatial_tangent_tbp
-    end type Corotational_kinematics
 
 contains
 #:for k in REAL_KINDS
@@ -93,123 +66,15 @@ contains
         res = kin_rotate_from_corotational(tangent, state%R)
     end function kin_to_spatial_tangent_corotational_${k}$
 
+    $:MODEL_FUNCTION('kin', 'corotational', 'geometric_tangent', k, doc=r'The volume change, \( \boldsymbol\sigma\otimes\mathbf{I} \) (`kin_volumetric_tangent`; no spin: the FE code rotates the frame).')
+
+        res = kin_volumetric_tangent(stress)
+    end function kin_geometric_tangent_corotational_${k}$
+
     $:MODEL_FUNCTION('kin', 'corotational', 'is_finite_strain', k)
 
         res = .true.
     end function kin_is_finite_strain_corotational_${k}$
 #:endfor
-
-    pure subroutine update_corotational_tbp(self, strain, R)
-        !! Strain, J and (if present) R (type-bound, historical API; host only). Calls
-        !! `kin_corot_update_corotational_dp`; without R the stored `R_rot` is kept, unused.
-        class(Corotational_kinematics), intent(inout) :: self
-        type(${S2('dp')}$), intent(in)                 :: strain
-        type(${T2('dp')}$), intent(in), optional       :: R
-        type(kin_corotational_dp) :: prm
-        type(kin_state_dp) :: state
-        integer :: status
-
-        call kin_corot_update_corotational_dp(prm, strain, state, status, R)
-        self%strain = state%strain
-        self%J = state%J
-        self%has_rotation = present(R)
-        if (present(R)) self%R_rot = state%R
-    end subroutine update_corotational_tbp
-
-    pure function jacobian_tbp(self) result(J)
-        class(Corotational_kinematics), intent(in) :: self
-        real(dp)                                   :: J
-        J = self%J
-    end function jacobian_tbp
-
-    pure function is_finite_strain_tbp(self) result(res)
-        class(Corotational_kinematics), intent(in) :: self
-        logical                                    :: res
-        type(kin_corotational_dp) :: prm
-        res = kin_is_finite_strain_corotational_dp(prm)
-    end function is_finite_strain_tbp
-
-    pure function get_strain_tbp(self) result(strain)
-        class(Corotational_kinematics), intent(in) :: self
-        type(${S2('dp')}$)                          :: strain
-        strain = self%strain
-    end function get_strain_tbp
-
-    pure function to_Cauchy_tbp(self, constitutive_stress) result(sigma_cauchy)
-        !! Converts unrotated constitutive stress to global spatial Cauchy stress:
-        !! sigma = R * sigma_hat * R^T (if R is present)
-        class(Corotational_kinematics), intent(in) :: self
-        type(${S2('dp')}$), intent(in)              :: constitutive_stress
-        type(${S2('dp')}$)                          :: sigma_cauchy
-        type(kin_corotational_dp) :: prm
-        type(kin_state_dp) :: state
-
-        if (self%has_rotation) then
-            state%R = self%R_rot
-            sigma_cauchy = kin_to_cauchy_corotational_dp(prm, state, constitutive_stress)
-        else
-            sigma_cauchy = constitutive_stress
-        end if
-    end function to_Cauchy_tbp
-
-    pure function to_spatial_tangent_tbp(self, C_constitutive, stress_spatial) result(c_spatial)
-        !! Converts unrotated tangent stiffness to global spatial tangent stiffness:
-        !! c_spat_ijkl = R_iI * R_jJ * R_kK * R_lL * C_IJKL (if R is present)
-        class(Corotational_kinematics), intent(in) :: self
-        type(${C4('dp')}$), intent(in)             :: C_constitutive
-        type(${S2('dp')}$), intent(in), optional    :: stress_spatial
-        type(${C4('dp')}$)                         :: c_spatial
-        type(kin_corotational_dp) :: prm
-        type(kin_state_dp) :: state
-
-        if (self%has_rotation) then
-            state%R = self%R_rot
-            c_spatial = kin_to_spatial_tangent_corotational_dp(prm, state, C_constitutive)
-        else
-            c_spatial = C_constitutive
-        end if
-    end function to_spatial_tangent_tbp
-
-    pure function push_stress_tbp(self, S_material) result(sigma_spatial)
-        class(Corotational_kinematics), intent(in) :: self
-        type(${S2('dp')}$), intent(in)              :: S_material
-        type(${S2('dp')}$)                          :: sigma_spatial
-
-        sigma_spatial = self%to_Cauchy(S_material)
-    end function push_stress_tbp
-
-    pure function pull_stress_tbp(self, sigma_spatial) result(S_material)
-        class(Corotational_kinematics), intent(in) :: self
-        type(${S2('dp')}$), intent(in)              :: sigma_spatial
-        type(${S2('dp')}$)                          :: S_material
-
-        if (self%has_rotation) then
-            S_material = kin_rotate_to_corotational(sigma_spatial, self%R_rot)
-        else
-            S_material = sigma_spatial
-        end if
-    end function pull_stress_tbp
-
-    pure function push_tangent_tbp(self, C_material, stress_spatial) result(c_spatial)
-        class(Corotational_kinematics), intent(in) :: self
-        type(${C4('dp')}$), intent(in)             :: C_material
-        type(${S2('dp')}$), intent(in), optional    :: stress_spatial
-        type(${C4('dp')}$)                         :: c_spatial
-
-        c_spatial = self%to_spatial_tangent(C_material, stress_spatial)
-    end function push_tangent_tbp
-
-    pure function pull_tangent_tbp(self, c_spatial, stress_material) result(C_material)
-        class(Corotational_kinematics), intent(in) :: self
-        type(${C4('dp')}$), intent(in)             :: c_spatial
-        type(${S2('dp')}$), intent(in), optional    :: stress_material
-        type(${C4('dp')}$)                         :: C_material
-
-        if (self%has_rotation) then
-            C_material = kin_rotate_to_corotational(c_spatial, self%R_rot)
-        else
-            C_material = c_spatial
-        end if
-    end function pull_tangent_tbp
 
 end module muscle_kin_corotational

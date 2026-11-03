@@ -32,12 +32,14 @@ subroutine test_vonMises_stresseq_hydrostatic(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
-    type(VonMises) :: vm
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: to_test1 
 
     real(real64) :: result
@@ -46,7 +48,7 @@ subroutine test_vonMises_stresseq_hydrostatic(passed)
 
     call to_test1%init((/5D0, 5D0, 5D0, 0D0, 0D0, 0D0/))
 
-    result = vm%stress_eq(to_test1)
+    result = yield_stress_eq(vm, to_test1)
     passed = (abs(result - expected_result1) < EPS)
     if (.not. passed) return
 end subroutine
@@ -55,12 +57,14 @@ subroutine test_vonMises_stresseq_simple_tensile(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
-    type(VonMises) :: vm
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: to_test2
 
     real(real64) :: result
@@ -68,7 +72,7 @@ subroutine test_vonMises_stresseq_simple_tensile(passed)
 
     call to_test2%init((/5D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     
-    result = vm%stress_eq(to_test2)
+    result = yield_stress_eq(vm, to_test2)
     passed = (abs(result - expected_result2) < EPS)
     if (.not. passed) return
     
@@ -78,12 +82,14 @@ subroutine test_vonMises_stresseq_zero_stress(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
-    type(VonMises) :: vm
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: to_test1 
 
     real(real64) :: result
@@ -92,7 +98,7 @@ subroutine test_vonMises_stresseq_zero_stress(passed)
 
     call to_test1%init((/0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
 
-    result = vm%stress_eq(to_test1)
+    result = yield_stress_eq(vm, to_test1)
     passed = (abs(result - expected_result1) < EPS)
     if (.not. passed) return
 end subroutine
@@ -101,12 +107,14 @@ subroutine test_vonMises_stresseq_biaxial(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
-    type(VonMises) :: vm
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: to_test3
 
     real(real64) :: result
@@ -114,7 +122,7 @@ subroutine test_vonMises_stresseq_biaxial(passed)
 
 
     call to_test3%init((/5D0, 5D0, 0D0, 0D0, 0D0, 0D0/))
-    result = vm%stress_eq(to_test3)
+    result = yield_stress_eq(vm, to_test3)
     passed = (abs(result - expected_result3) < EPS)
     if (.not. passed) return
 
@@ -124,19 +132,21 @@ subroutine test_vonMises_stresseq_shear(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
-    type(VonMises) :: vm
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: to_test4
 
     real(real64) :: result
     real(real64) :: expected_result4 = 3D0**0.5D0 
 
     call to_test4%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
-    result = vm%stress_eq(to_test4)
+    result = yield_stress_eq(vm, to_test4)
     passed = (abs(result - expected_result4) < EPS)
     if (.not. passed) return
 end subroutine
@@ -145,62 +155,64 @@ subroutine test_vonMises_stresseq_derivates(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
-    type(VonMises) :: vm
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: to_test
 
     type(ten_3D2Osym) :: result1, result2
     real(real64), parameter :: TOL = 1D-10
 
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    result1 = vm%dstressEq_dstress(to_test)
-    result2 = vm%dstressEq_dstress_numeric(to_test)
+    result1 = yield_dstress_eq(vm, to_test)
+    result2 = num_dstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
-    result1 = vm%dstressEq_dstress(to_test)
-    result2 = vm%dstressEq_dstress_numeric(to_test)
+    result1 = yield_dstress_eq(vm, to_test)
+    result2 = num_dstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
-    result1 = vm%dstressEq_dstress(to_test)
-    result2 = vm%dstressEq_dstress_numeric(to_test)
+    result1 = yield_dstress_eq(vm, to_test)
+    result2 = num_dstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
-    result1 = vm%dstressEq_dstress(to_test)
-    result2 = vm%dstressEq_dstress_numeric(to_test)
+    result1 = yield_dstress_eq(vm, to_test)
+    result2 = num_dstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
-    result1 = vm%dstressEq_dstress(to_test)
-    result2 = vm%dstressEq_dstress_numeric(to_test)
+    result1 = yield_dstress_eq(vm, to_test)
+    result2 = num_dstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
-    result1 = vm%dstressEq_dstress(to_test)
-    result2 = vm%dstressEq_dstress_numeric(to_test)
+    result1 = yield_dstress_eq(vm, to_test)
+    result2 = num_dstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
-    result1 = vm%dstressEq_dstress(to_test)
-    result2 = vm%dstressEq_dstress_numeric(to_test)
+    result1 = yield_dstress_eq(vm, to_test)
+    result2 = num_dstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
-    result1 = vm%dstressEq_dstress(to_test)
-    result2 = vm%dstressEq_dstress_numeric(to_test)
+    result1 = yield_dstress_eq(vm, to_test)
+    result2 = num_dstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=TOL)
     if (.not. passed) return
 
@@ -211,18 +223,20 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     
     logical, intent(out) :: passed
 
-    type(VonMises) :: vm
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: to_test
 
     type(ten_3D4O3sym) :: result1, result2
 
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
-    result1 = vm%ddstressEq_ddstress(to_test)
-    result2 = vm%ddstressEq_ddstress_numeric(to_test)
+    result1 = yield_ddstress_eq(vm, to_test)
+    result2 = num_ddstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=1D-7) 
     if (.not. passed) then
         print*, "1.- Error: ddstressEq_ddstress failed"
@@ -236,8 +250,8 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     end if
 
     call to_test%init((/0D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
-    result1 = vm%ddstressEq_ddstress(to_test)
-    result2 = vm%ddstressEq_ddstress_numeric(to_test)
+    result1 = yield_ddstress_eq(vm, to_test)
+    result2 = num_ddstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=1D-7) 
     if (.not. passed) then
         print*, "2.- Error: ddstressEq_ddstress failed"
@@ -251,8 +265,8 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     end if
 
     call to_test%init((/0D0, 0D0, 1D0, 0D0, 0D0, 0D0/))
-    result1 = vm%ddstressEq_ddstress(to_test)
-    result2 = vm%ddstressEq_ddstress_numeric(to_test)
+    result1 = yield_ddstress_eq(vm, to_test)
+    result2 = num_ddstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=1D-7) 
     if (.not. passed) then
         print*, "3.- Error: ddstressEq_ddstress failed"
@@ -266,8 +280,8 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     end if
 
     call to_test%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
-    result1 = vm%ddstressEq_ddstress(to_test)
-    result2 = vm%ddstressEq_ddstress_numeric(to_test)
+    result1 = yield_ddstress_eq(vm, to_test)
+    result2 = num_ddstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=1D-7) 
     if (.not. passed) then
         print*, "4.- Error: ddstressEq_ddstress failed"
@@ -281,8 +295,8 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     end if
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 1D0, 0D0/))
-    result1 = vm%ddstressEq_ddstress(to_test)
-    result2 = vm%ddstressEq_ddstress_numeric(to_test)
+    result1 = yield_ddstress_eq(vm, to_test)
+    result2 = num_ddstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=1D-7) 
     if (.not. passed) then
         print*, "5.- Error: ddstressEq_ddstress failed"
@@ -296,8 +310,8 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     end if
 
     call to_test%init((/0D0, 0D0, 0D0, 0D0, 0D0, 1D0/))
-    result1 = vm%ddstressEq_ddstress(to_test)
-    result2 = vm%ddstressEq_ddstress_numeric(to_test)
+    result1 = yield_ddstress_eq(vm, to_test)
+    result2 = num_ddstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=1D-7) 
     if (.not. passed) then
         print*, "6.- Error: ddstressEq_ddstress failed"
@@ -311,8 +325,8 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     end if
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
-    result1 = vm%ddstressEq_ddstress(to_test)
-    result2 = vm%ddstressEq_ddstress_numeric(to_test)
+    result1 = yield_ddstress_eq(vm, to_test)
+    result2 = num_ddstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=1D-7) 
     if (.not. passed) then
         print*, "7.- Error: ddstressEq_ddstress failed"
@@ -326,8 +340,8 @@ subroutine test_vonMises_stresseq_derivates2(passed)
     end if
 
     call to_test%init((/1D0, 1D0, 0D0, 0D0, 0D0, 0D0/))
-    result1 = vm%ddstressEq_ddstress(to_test)
-    result2 = vm%ddstressEq_ddstress_numeric(to_test)
+    result1 = yield_ddstress_eq(vm, to_test)
+    result2 = num_ddstress_eq(vm, to_test)
     passed = result1%is_approx(result2, tol=1D-7) 
     if (.not. passed) then
         print*, "8.- Error: ddstressEq_ddstress failed"

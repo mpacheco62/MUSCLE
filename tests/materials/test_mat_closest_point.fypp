@@ -1,0 +1,68 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "mat_golden_common.fypp"
+#! Materials of the test registry (tools/fypp/muscle_materials.py) solved by closest_point: each one needs
+#! at least one entry in CASES, with golden names of golden_params.py.
+#:set SOLVER = 'closest_point'
+#:set MATS = solver_materials(SOLVER)
+
+program test_mat_closest_point
+    !! Declared materials with the closest point return mapping (Phase 7, D-018): the point kernel
+    !! `mat_update` of the materials of the test registry against every golden record of the OO solver
+    !! (tests/reference/solvers/closest_point_dp.txt, D-018.3/D-018.10a applied), with the checks of
+    !! mat_golden_common.fypp. Rate independent: the time step of the cases is 0 (not used), except
+    !! that of the viscoelastic elasticities (0.1, as the golden test).
+    $:MAT_TEST_USES(MATS)
+    implicit none
+
+    $:MAT_TEST_DECLS()
+    ! Tolerances relative to the largest component (measured maxima of the cases in brackets,
+    ! gfortran 15.2 Debug; margin 3-20x)
+    real(sp), parameter :: TOL_SP_STRESS = 5.0e-5_sp
+        !! sp vs dp, stress [1.4e-5]: the sp Newton tolerance (1e-5 sigma_y).
+    real(sp), parameter :: TOL_SP_STRAIN_P = 5.0e-5_sp
+        !! sp vs dp, plastic strain [1.4e-5]: the rounding of a difference of strains near the yield strain.
+    real(sp), parameter :: TOL_SP_EP = 5.0e-5_sp
+        !! sp vs dp, equivalent plastic strain [1.4e-5].
+    real(sp), parameter :: TOL_SP_TANGENT = 2.0e-5_sp
+        !! sp vs dp, analytic tangent [4.5e-6].
+    real(sp), parameter :: TOL_SP_FD = 5.0e-4_sp
+        !! sp analytic tangent vs finite differences [1.0e-4]: truncation of the sp step
+        !! (FD_STEP_CEN_JAC_sp = 5e-3 relative) and the Newton tolerance of the perturbed solutions.
+    real(dp), parameter :: TOL_DP_FD = 1.0e-6_dp
+        !! dp analytic tangent vs finite differences [5.2e-8].
+    type(golden_case), parameter :: CASES(*) = [ &
+        golden_case(1, 'cp_vm_swift', 'lin1000', '', 'swift_small', 'vonmises', 200, 0.0_dp, 3.80e-2_dp), &
+        golden_case(2, 'cp_vm_bilinear', 'steel', '', 'bilinear', 'vonmises', 200, 0.0_dp, 9.09e-4_dp), &
+        golden_case(3, 'cp_vm_swift', 'steel', '', 'swift', 'vonmises', 200, 0.0_dp, 5.71e-4_dp), &
+        golden_case(4, 'cp_vm_ludwik', 'steel', '', 'ludwik', 'vonmises', 200, 0.0_dp, 9.09e-4_dp), &
+        golden_case(5, 'cp_vm_vocemod', 'steel', '', 'vocemod', 'vonmises', 200, 0.0_dp, 1.24e-3_dp), &
+        golden_case(6, 'cp_hill48_swift', 'steel', '', 'swift', 'hill48-2', 200, 0.0_dp, 5.68e-4_dp), &
+        golden_case(7, 'cp_hill48_vocemod', 'steel', '', 'vocemod', 'hill48-3', 200, 0.0_dp, 1.60e-3_dp), &
+        golden_case(8, 'cp_hill48_bilinear', 'steel', '', 'bilinear', 'hill48-2', 200, 0.0_dp, 9.04e-4_dp), &
+        golden_case(9, 'cp_dp_bilinear', 'steel', '', 'bilinear', 'dp-1', 200, 0.0_dp, 9.05e-4_dp), &
+        golden_case(10, 'cp_dp_swift', 'steel', '', 'swift', 'dp-2', 200, 0.0_dp, 3.64e-4_dp), &
+        golden_case(11, 'cp_dp_ludwik', 'steel', '', 'ludwik', 'dp-3', 200, 0.0_dp, 7.39e-4_dp), &
+        golden_case(12, 'cp_cpb06_swift', 'steel', '', 'swift', 'cpb06-2', 200, 0.0_dp, 5.71e-4_dp), &
+        golden_case(13, 'cp_cpb06_vocemod', 'steel', '', 'vocemod', 'cpb06-3', 200, 0.0_dp, 1.18e-3_dp), &
+        golden_case(14, 'cp_cpb06_bilinear', 'steel', '', 'bilinear', 'cpb06-4', 200, 0.0_dp, 9.16e-4_dp), &
+        golden_case(15, 'cp_cpb06ex2_swift', 'steel', '', 'swift', 'cpb06ex2-1', 200, 0.0_dp, 5.61e-4_dp), &
+        golden_case(16, 'cp_cpb06ex2_bilinear', 'steel', '', 'bilinear', 'cpb06ex2-3', 200, 0.0_dp, 9.13e-4_dp), &
+        golden_case(17, 'cp_yld2004_swift', 'steel', '', 'swift', 'yld2004-2', 200, 0.0_dp, 5.63e-4_dp), &
+        golden_case(18, 'cp_yld2004_vocemod', 'steel', '', 'vocemod', 'yld2004-4', 200, 0.0_dp, 1.25e-3_dp), &
+        golden_case(19, 'cp_maxwell_vm_bilinear', 'maxwell', '', 'bilinear', 'vonmises', 200, 0.1_dp, 1.56e-2_dp), &
+        golden_case(20, 'cp_kelvin_hill48_swift', 'kelvin', '', 'swift', 'hill48-2', 200, 0.1_dp, 6.55e-3_dp), &
+        golden_case(21, 'cp_vm_swift', 'lin1000', '', 'swift_small', 'vonmises', 1, 0.0_dp, 3.80e-2_dp), &
+        golden_case(22, 'cp_cpb06_ludwik', 'steel', '', 'ludwik', 'cpb06-4', 3, 0.0_dp, 9.16e-4_dp)]
+        !! Golden cases of test_cp_golden (case number, material, golden names, Newton limit, time
+        !! step, A_Y).
+
+    $:MAT_TEST_MAIN('test_mat_closest_point', 'solvers/closest_point_dp.txt', MATS, 'bilinear')
+
+contains
+    $:MAT_TEST_PROCS(SOLVER, MATS, 'closest_point', golden_tangent='always', zero_stress=False, &
+        & tangent_num='after')
+
+end program test_mat_closest_point

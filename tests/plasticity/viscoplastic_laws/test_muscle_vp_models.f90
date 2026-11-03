@@ -1,10 +1,8 @@
 module test_muscle_vp_models_mod
-    use muscle_hard_vocemod
-    use muscle_vp_jc
-    use muscle_vp_rk
-    use muscle_vp_mrk
-    use muscle_vp_nnl
-    use muscle_vp_va
+    ! Fits of the viscoplastic laws against Python reference values, through the kernel API (the
+    ! Johnson-Cook law receives the modified Voce hardening values evaluated by hard_stress, D-017.6b).
+    use muscle_hard_laws, only : hard_stress, hard_vocemod_dp
+    use muscle_vp_laws, only : vp_flow_stress, vp_jc_dp, vp_rk_dp, vp_mrk_dp, vp_nnl_dp, vp_va_dp
     implicit none
     private
     public :: test_viscoplastic
@@ -100,12 +98,12 @@ contains
     subroutine test_viscoplastic(passed)
         logical, intent(out) :: passed
 
-        type(Voce_modified_hardening) :: voce
-        type(JC_viscoplastic)  :: jc
-        type(RK_viscoplastic)  :: rk
-        type(MRK_viscoplastic) :: mrk
-        type(NNL_viscoplastic) :: nnl
-        type(VA_viscoplastic)  :: va
+        type(hard_vocemod_dp) :: voce
+        type(vp_jc_dp)  :: jc
+        type(vp_rk_dp)  :: rk
+        type(vp_mrk_dp) :: mrk
+        type(vp_nnl_dp) :: nnl
+        type(vp_va_dp)  :: va
 
         double precision :: pred_JC(nPts), pred_RK(nPts), pred_MRK(nPts)
         double precision :: pred_NNL(nPts), pred_VA(nPts)
@@ -118,27 +116,26 @@ contains
         character(len=30) :: stFINAL
 
         ! ---- JC
-        voce = Voce_modified_hardening(sy=272.075784D0, k=0.04230655D0, q=297.603923D0, n=1.48375781D0)
-        jc = JC_viscoplastic(C=0.00946101D0, epdmax=0.32D0)
-        jc%hard_law = voce  ! Error in gfortran-12 if not assigned here
+        voce = hard_vocemod_dp(sy=272.075784D0, k=0.04230655D0, q=297.603923D0, n=1.48375781D0)
+        jc = vp_jc_dp(C=0.00946101D0, epdmax=0.32D0)
 
         ! ---- RK ----
-        rk = RK_viscoplastic(B0 = 18.5805384D0, epdmax = 0.01D0, nu = 0.02014578D0, &
+        rk = vp_rk_dp(B0 = 18.5805384D0, epdmax = 0.01D0, nu = 0.02014578D0, &
                              ep0 = 2.36959316D0, n0 = 3.05066530D0, D2 = 1.5302D-08, D1 = 0.41425354D0, &
                              epdmin = 1.0D-06, sig0 = 1.1693D-05, m = 0.94914871D0)
 
         ! ---- MRK ----
-        mrk = MRK_viscoplastic(B01=100.020701D0, B02=100.0D0, epdmax=0.01D0, &
+        mrk = vp_mrk_dp(B01=100.020701D0, B02=100.0D0, epdmax=0.01D0, &
                                nu1=0.01439459D0, nu2=0.14313556D0, n0=3.95295384D0, D2=5.6375D-12, &
                                epdmin=1.0D-05, sig_u=253.772550D0, chi1=9.1503D-04, chi2=0.01942062D0)
 
         ! ---- NNL ----
-        nnl = NNL_viscoplastic(sig_a=334.776175D0, sig_0=5.88318003D0, KG0=0.21906996D0, &
+        nnl = vp_nnl_dp(sig_a=334.776175D0, sig_0=5.88318003D0, KG0=0.21906996D0, &
                                n1=0.06301105D0, epd0=0.01425422D0, at=22.8752986D0, &
                                n0=0.97427303D0, q=2.D0, p=0.6666667D0)
 
         ! ---- VA ----
-        va = VA_viscoplastic(B=374.525856D0, B1=0.00331794D0, B2=0.50280316D0, &
+        va = vp_va_dp(B=374.525856D0, B1=0.00331794D0, B2=0.50280316D0, &
                              n=0.26412620D0, m=0.03766668D0, sig_u=195.233128D0)
         va%B     = 374.525856D0
         va%B1    = 0.00331794D0
@@ -157,11 +154,11 @@ contains
         do r = 1, nRates
 
             do i = 1, nPts
-                pred_JC(i)  = jc%flow_stress(ep_test(i,r),  epd_rates(r))
-                pred_RK(i)  = rk%flow_stress(ep_test(i,r),  epd_rates(r))
-                pred_MRK(i) = mrk%flow_stress(ep_test(i,r), epd_rates(r))
-                pred_NNL(i) = nnl%flow_stress(ep_test(i,r), epd_rates(r))
-                pred_VA(i)  = va%flow_stress(ep_test(i,r),  epd_rates(r))
+                pred_JC(i)  = vp_flow_stress(jc, ep_test(i,r), epd_rates(r), hard_stress(voce, ep_test(i,r)))
+                pred_RK(i)  = vp_flow_stress(rk, ep_test(i,r),  epd_rates(r))
+                pred_MRK(i) = vp_flow_stress(mrk, ep_test(i,r), epd_rates(r))
+                pred_NNL(i) = vp_flow_stress(nnl, ep_test(i,r), epd_rates(r))
+                pred_VA(i)  = vp_flow_stress(va, ep_test(i,r),  epd_rates(r))
             end do
 
             errJC  = nrmsd(ref_JC(:,r),  pred_JC)

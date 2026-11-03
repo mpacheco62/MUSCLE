@@ -10,20 +10,37 @@
 #! Tolerance of `.approx.` of the scaled identities (D-014): dp keeps the historical 1e-10, sp
 #! uses the general sp tolerance.
 #:set TOL_APPROX_IDEN = {'sp': '1.0e-5', 'dp': '1.0e-10'}
-#! Finite-difference steps (D-016.2, D-016.4, D-016.7). dp keeps the historical values of each
-#! routine of muscle_math_derivatives / muscle_math_operations. sp: forward step
-#! ~sqrt(epsilon(1.0_sp)) = 3.5e-4 -> 3e-4 (same criterion as the historical dp 1e-8 ~
-#! sqrt(epsilon(1.0_dp))); central first derivatives ~epsilon**(1/3) ~ 5e-3; central second
-#! derivatives ~epsilon**(1/4) ~ 2e-2. The central steps are relative to the size of the argument
+#! Finite-difference steps (D-016.2, D-016.4, D-016.7). dp keeps the values of each
+#! historical finite-difference routine (the macros of include/muscle_fd.fypp). sp: central first
+#! derivatives ~epsilon**(1/3) ~ 5e-3; central second derivatives ~epsilon**(1/4) ~ 2e-2. The
+#! steps are relative to the size of the argument
 #! with the historical absolute minimum, h = max(|x| rel, min), and h = rel at a zero argument
 #! (D-016.4). Minimum: dp 1e-40 (1e-35 in the jacobian), the historical values; sp 1e-30 (D-016.2).
-#:set FD_STEP_FWD = {'sp': '3.0e-4', 'dp': '1.0e-8'}
 #:set FD_STEP_CEN = {'sp': '5.0e-3', 'dp': '1.0e-7'}
 #:set FD_STEP_CEN_2OSYM = {'sp': '5.0e-3', 'dp': '1.0e-6'}
 #:set FD_STEP_CEN_JAC = {'sp': '5.0e-3', 'dp': '1.0e-4'}
 #:set FD_STEP_CEN2 = {'sp': '2.0e-2', 'dp': '1.0e-4'}
 #:set FD_STEP_MIN = {'sp': '1.0e-30', 'dp': '1.0e-40'}
 #:set FD_STEP_MIN_JAC = {'sp': '1.0e-30', 'dp': '1.0e-35'}
+#! Default relative tolerance of the Newton iterations of the return mappings (D-018.3): the
+#! iteration stops when |f| < tol sigma_y (and the plastic strain residual is below tol). sp: 1e-5
+#! (~84 ulp); dp: 1e-10 (the historical absolute 1e-5 was ~3e-8 relative with sigma_y ~ 300 MPa).
+#:set NEWTON_TOL = {'sp': '1.0e-5', 'dp': '1.0e-10'}
+#! Elastic predictor threshold of the return mappings, f_trial/sigma_y <= tol: dp keeps the historical
+#! 1e-8; sp 1e-5 (as NEWTON_TOL_sp: below it a step on the yield surface would enter the Newton loop
+#! and converge at once, so iters = 0 would no longer mean an elastic step).
+#:set TOL_ELASTIC = {'sp': '1.0e-5', 'dp': '1.0e-8'}
+#! Lower bound of the flow stress sigma_y in the relative criteria of the return mappings (historical
+#! value of the elastic predictor, both kinds; D-018.11b)
+#:set SY_MIN = {'sp': '1.0e-10', 'dp': '1.0e-10'}
+#! Band of the relative eigenvalue gaps of C (or b) where the spectral decompositions of the finite
+#! strain kinematics use Jacobi rotations instead of the closed form (D-018.19a). dp: the
+#! Cayley-Hamilton eigenprojections lose ~eps/gap^2 (relative) and take two eigenvalues as repeated
+#! below a gap of ~3e-6 (ln C without its deviatoric part); Jacobi is accurate to ~eps/gap. Below
+#! 1e-12 (~4500 eps) a gap is rounding (repeated eigenvalues, where the closed form is exact); at
+#! 1e-2 the closed form errs ~1e-12 (measured). sp: Jacobi always (D-018.15f), band [0, huge).
+#:set KIN_JACOBI_GAP_LO = {'sp': '0.0_sp', 'dp': '1.0e-12_dp'}
+#:set KIN_JACOBI_GAP_HI = {'sp': 'huge(1.0_sp)', 'dp': '1.0e-2_dp'}
 
 module muscle_kinds
     !! Real kinds of MUSCLE and the constants that depend on them.
@@ -57,23 +74,20 @@ module muscle_kinds
     real(${k}$), parameter, public :: EPS_ABS_${k}$ = 1.0e-30_${k}$
         !! Lower bound of the scale of relative comparisons in `real(${k}$)` (avoids a zero
         !! threshold when both operands vanish; normal in both kinds).
-    real(${k}$), parameter, public :: FD_STEP_FWD_${k}$ = ${FD_STEP_FWD[k]}$_${k}$
-        !! Absolute step of the forward finite differences in `real(${k}$)`, \( \approx
-        !! \sqrt{\epsilon} \) (1e-8 in dp, the historical value; 3e-4 in sp).
     real(${k}$), parameter, public :: FD_STEP_CEN_${k}$ = ${FD_STEP_CEN[k]}$_${k}$
         !! Relative step of the central first derivatives of a scalar function of a scalar or of a
-        !! `2O` tensor, and of `derivative_escalar_tensor3x3sym`, in `real(${k}$)`, \( \approx
+        !! `2O` tensor (`FD_DERIV`, `FD_GRAD`) in `real(${k}$)`, \( \approx
         !! \epsilon^{1/3} \) (1e-7 in dp, the historical value; 5e-3 in sp). Step \( h =
         !! \max(|x|\,rel, min) \) (\( h = rel \) if \( |x| = 0 \)), \( |x| \) the absolute value or
         !! the `norm` of the argument, `min` = `FD_STEP_MIN_${k}$`.
     real(${k}$), parameter, public :: FD_STEP_CEN_2OSYM_${k}$ = ${FD_STEP_CEN_2OSYM[k]}$_${k}$
         !! Relative step of the central gradient of a scalar function of a `2Osym` tensor
-        !! (`derivative`, `FD_GRAD`) in `real(${k}$)` (1e-6 in dp, the historical value; 5e-3 in sp).
+        !! (`FD_GRAD`) in `real(${k}$)` (1e-6 in dp, the historical value; 5e-3 in sp).
     real(${k}$), parameter, public :: FD_STEP_CEN_JAC_${k}$ = ${FD_STEP_CEN_JAC[k]}$_${k}$
         !! Relative step of the central jacobian of a `2Osym`-valued function of a `2Osym` tensor
-        !! (`derivative`, `FD_JAC`) in `real(${k}$)` (1e-4 in dp, the historical value; 5e-3 in sp).
+        !! (`FD_JAC`) in `real(${k}$)` (1e-4 in dp, the historical value; 5e-3 in sp).
     real(${k}$), parameter, public :: FD_STEP_CEN2_${k}$ = ${FD_STEP_CEN2[k]}$_${k}$
-        !! Relative step of the central second derivatives (`derivative2O`, `FD_HESS`) in
+        !! Relative step of the central second derivatives (`FD_HESS`) in
         !! `real(${k}$)`, \( \approx \epsilon^{1/4} \) (1e-4 in dp, the historical value; 2e-2 in sp).
     real(${k}$), parameter, public :: FD_STEP_ZERO_${k}$ = sqrt(epsilon(1.0_${k}$))
         !! `real(${k}$)`: step of the first-derivative finite differences at an argument exactly
@@ -86,5 +100,27 @@ module muscle_kinds
     real(${k}$), parameter, public :: FD_STEP_MIN_JAC_${k}$ = ${FD_STEP_MIN_JAC[k]}$_${k}$
         !! Minimum step of the central jacobian (`FD_JAC`) at a non-zero argument in `real(${k}$)`
         !! (1e-35 in dp, the historical value; 1e-30 in sp).
+    real(${k}$), parameter, public :: NEWTON_TOL_${k}$ = ${NEWTON_TOL[k]}$_${k}$
+        !! Default relative tolerance of the Newton iterations of the return mappings in
+        !! `real(${k}$)` (D-018.3): converged when \( |f| < tol\,\sigma_y \) (1e-10 in dp, 1e-5 in
+        !! sp, ~84 ulp); each material may set its own. The plastic strain residual (dimensionless)
+        !! is checked against the same tolerance.
+    real(${k}$), parameter, public :: TOL_ELASTIC_${k}$ = ${TOL_ELASTIC[k]}$_${k}$
+        !! Elastic predictor threshold of the return mappings in `real(${k}$)`: the step is elastic
+        !! when \( f_{trial}/\sigma_y \le tol \) (1e-8 in dp, the historical value; 1e-5 in sp).
+    real(${k}$), parameter, public :: SY_MIN_${k}$ = ${SY_MIN[k]}$_${k}$
+        !! Lower bound of the flow stress \( \sigma_y \) in the relative criteria of the return
+        !! mappings in `real(${k}$)` (`TOL_ELASTIC`, `NEWTON_TOL`: \( \max(\sigma_y, \) `SY_MIN`\( ) \)),
+        !! so that a flow stress of zero neither divides nor stalls the Newton loop (D-018.11b; 1e-10,
+        !! the historical value of the elastic predictor, in both kinds).
+    real(${k}$), parameter, public :: KIN_JACOBI_GAP_LO_${k}$ = ${KIN_JACOBI_GAP_LO[k]}$
+        !! Lower end of the band of relative eigenvalue gaps where the finite strain kinematics
+        !! decompose C (or b) with Jacobi rotations, `real(${k}$)` (D-018.19a): a gap
+        !! \( (\lambda_a - \lambda_{a+1})/\max|\lambda| \) below it is rounding (repeated
+        !! eigenvalues, exact in the closed form). 1e-12 in dp; 0 in sp (always Jacobi).
+    real(${k}$), parameter, public :: KIN_JACOBI_GAP_HI_${k}$ = ${KIN_JACOBI_GAP_HI[k]}$
+        !! Upper end (excluded) of the Jacobi band of `KIN_JACOBI_GAP_LO_${k}$`, `real(${k}$)`
+        !! (D-018.19a): above it the closed form (eigenvalues and Cayley-Hamilton eigenprojections)
+        !! is accurate (~1e-12 relative at 1e-2 in dp). 1e-2 in dp; `huge` in sp (always Jacobi).
 #:endfor
 end module muscle_kinds

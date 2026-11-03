@@ -1,25 +1,29 @@
 add_muscle_test(muscle_math_operations test_muscle_math_operations.f90)
-add_muscle_test(muscle_math_derivatives test_muscle_math_derivatives.f90)
+add_muscle_fypp_test(muscle_math_derivatives test_muscle_math_derivatives.fypp)
 add_muscle_test(muscle_math_spectral_derivs test_muscle_math_spectral_derivs.f90)
 add_muscle_fypp_test(muscle_math_inverses test_muscle_math_inverses.fypp)
 # Small fixed-size LU solvers for kernels (muscle_math_lu_solve), sp and dp
 add_muscle_fypp_test(math_lu_solve test_math_lu_solve.fypp)
 # Finite-difference macros of include/muscle_fd.fypp (in MUSCLE_FYPP_DEPENDS) against analytical
-# derivatives and the host-only API
+# derivatives
 add_muscle_fypp_test(math_fd_macros test_math_fd_macros.fypp)
-# The bit-for-bit comparison with the host API (library code, which calls the function through a
-# procedure argument) needs the test functions not to be inlined into the macro stencils: with
-# inlining, -O3 vectorization changes the last bits (measured: 4e-11 relative).
-# -fno-inline is accepted by gfortran and ifx (IntelLLVM; ifx also takes -inline-level=0).
-if (CMAKE_Fortran_COMPILER_ID MATCHES "GNU|Intel")
-    target_compile_options(test_math_fd_macros PRIVATE -fno-inline)
-endif()
 
 # Golden (characterization) tests of the public routines of the math modules, double precision,
 # bit for bit against references captured from the original code (tests/reference/math/,
-# regenerate.sh there).
+# regenerate.sh there). The finite differences (derivatives, operations) are the macros of
+# include/muscle_fd.fypp, which call the test functions directly: the references were captured
+# through a procedure argument, so the test functions must not be inlined into the macro stencils
+# (with inlining, -O3 vectorization changes the last bits, measured 4e-11 relative, D-016.9).
+# -fno-inline is accepted by gfortran and ifx (IntelLLVM; ifx also takes -inline-level=0).
 foreach(_module IN ITEMS derivatives operations spectral_derivs linsolvers)
-    add_muscle_test(math_golden_${_module} test_math_golden_${_module}.f90)
+    if (_module MATCHES "^(derivatives|operations)$")
+        add_muscle_fypp_test(math_golden_${_module} test_math_golden_${_module}.fypp)
+        if (CMAKE_Fortran_COMPILER_ID MATCHES "GNU|Intel")
+            target_compile_options(test_math_golden_${_module} PRIVATE -fno-inline)
+        endif()
+    else()
+        add_muscle_test(math_golden_${_module} test_math_golden_${_module}.f90)
+    endif()
     set_tests_properties(math-math_golden_${_module} PROPERTIES
                          ENVIRONMENT "MUSCLE_TEST_REFERENCE_DIR=${BASE_TESTS_DIR}/reference")
 endforeach()
@@ -34,9 +38,6 @@ add_muscle_fypp_test(math_spectral_kinds test_math_spectral_kinds.fypp)
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     target_compile_options(test_math_spectral_kinds PRIVATE -ffpe-trap=overflow,invalid)
 endif()
-# Host-only derivative_escalar_tensor3x3* of muscle_math_operations in sp and dp against analytical
-# gradients (generic and zero argument)
-add_muscle_fypp_test(math_fd_operations_kinds test_math_fd_operations_kinds.fypp)
 # Math kernel routines (eigenvals, spectral_decomposition, dEigenvalues_dTensor, FD_GRAD, LU6SOLVE)
 # called from a pure point procedure inside an OpenMP target region, sp and dp, bit for bit
 # against the CPU call

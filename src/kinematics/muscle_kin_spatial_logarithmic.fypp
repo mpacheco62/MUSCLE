@@ -1,7 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
-#:include "muscle_kin_adapters.fypp"
 #! Model contract of the kinematics family (D-017.14): include/muscle_models_common.fypp. No
 #! parameters: the parameter type is empty and only selects the kinematics.
 #:set S2 = lambda k: tname('3D2Osym', k)
@@ -14,8 +13,9 @@ module muscle_kin_spatial_logarithmic
     !! Conjugate stress is spatial Kirchhoff stress tau.
     !!
     !! The Kirchhoff stress is converted to Cauchy, \( \boldsymbol\sigma = J^{-1}\boldsymbol\tau \),
-    !! and the constitutive tangent to the spatial one dividing by J (no geometric term,
-    !! D-017.14b). The Hencky strain comes from the eigenvalues and eigenprojections of b (those of C
+    !! and the constitutive tangent to the spatial one through the derivative of \( \ln\mathbf{b} \)
+    !! (`kin_spatial_log_tangent`, divided by J; before D-018.15f only the division by J); the
+    !! geometric term at a fixed Kirchhoff stress is zero. The Hencky strain comes from the eigenvalues and eigenprojections of b (those of C
     !! are mathematically the same eigenvalues, but computed from other components: reusing them
     !! would change the bits, D-017.14e) and drops those at or below `KIN_EIG_MIN_<k>`; the status
     !! only checks the eigenvalues of C (D-017.14e).
@@ -24,27 +24,22 @@ module muscle_kin_spatial_logarithmic
     !! procedures `kin_update_spatial_logarithmic_<k>(prm, F, state, status)` (status:
     !! `STATUS_INVALID_DEFORMATION` for det F <= 0, a singular F or a vanishing eigenvalue of C,
     !! D-017.14a), `kin_to_cauchy_spatial_logarithmic_<k>(prm, state, stress)`,
-    !! `kin_to_spatial_tangent_spatial_logarithmic_<k>(prm, state, tangent)` and
+    !! `kin_to_spatial_tangent_spatial_logarithmic_<k>(prm, state, tangent)`,
+    !! `kin_geometric_tangent_spatial_logarithmic_<k>(prm, state, stress)` and
     !! `kin_is_finite_strain_spatial_logarithmic_<k>(prm)`, also through the generics `kin_*` of
     !! muscle_kin_laws.
-    !!
-    !! `Spatial_logarithmic_kinematics` is the historical OO type (host only, removed in Phase 7),
-    !! extending `Base_F_kinematics`: its bindings call the dp kernel procedures and ignore the
-    !! status (same results as before, D-017.14a).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D2O', k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$, &
         operator(/)
-    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_spatial_log
-    use muscle_kin_finite_base, only : Base_F_kinematics, finite_state_of, finite_set_state
+    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_spatial_log, &
+        kin_spatial_log_tangent
     implicit none
     private
 
     $:MODEL_PUBLIC('kin', 'spatial_logarithmic')
-    public :: Spatial_logarithmic_kinematics
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('kin', 'spatial_logarithmic', k, [])
+    $:MODEL_PARAMS_TYPE('kin', 'spatial_logarithmic', k, model_param_list('kin', 'spatial_logarithmic'))
 #:endfor
-    $:KIN_F_OO_TYPE('spatial_logarithmic', 'Spatial_logarithmic_kinematics', 'Cached spatial Hencky strain h = ln(V)')
 
 contains
 #:for k in REAL_KINDS
@@ -60,16 +55,20 @@ contains
         res = stress / state%J
     end function kin_to_cauchy_spatial_logarithmic_${k}$
 
-    $:MODEL_FUNCTION('kin', 'spatial_logarithmic', 'to_spatial_tangent', k, doc=r'Division by J.')
+    $:MODEL_FUNCTION('kin', 'spatial_logarithmic', 'to_spatial_tangent', k, doc=r'Through the derivative of \( \ln\mathbf{b} \) (`kin_spatial_log_tangent`), divided by J.')
 
-        res = tangent / state%J
+        res = kin_spatial_log_tangent(state, tangent) / state%J
     end function kin_to_spatial_tangent_spatial_logarithmic_${k}$
+
+    $:MODEL_FUNCTION('kin', 'spatial_logarithmic', 'geometric_tangent', k, doc=r'Zero: the constitutive stress is the Kirchhoff stress.')
+
+        res%vals = 0.0_${k}$
+    end function kin_geometric_tangent_spatial_logarithmic_${k}$
 
     $:MODEL_FUNCTION('kin', 'spatial_logarithmic', 'is_finite_strain', k)
 
         res = .true.
     end function kin_is_finite_strain_spatial_logarithmic_${k}$
 #:endfor
-    $:KIN_F_OO_PROCS('spatial_logarithmic', 'Spatial_logarithmic_kinematics')
 
 end module muscle_kin_spatial_logarithmic

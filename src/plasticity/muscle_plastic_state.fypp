@@ -21,9 +21,8 @@ module muscle_plastic_state
     !!   The array has exactly `PLASTIC_STATE_SIZE` components (explicit shape): the caller passes
     !!   the section of its history array, so nothing is validated (no status).
     !!
-    !! Kernels keep the converged and candidate states as separate arguments. The transactional
-    !! container of the historical OO API (`Plastic_material_history`, host only) is in
-    !! muscle_plastic_history; its states are `plastic_state_dp` (historical name `Plastic_state`).
+    !! Kernels keep the converged and candidate states as separate arguments: the caller (the FE
+    !! program, in its history array) keeps the converged one.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(T2(k) for k in REAL_KINDS)}$
     implicit none

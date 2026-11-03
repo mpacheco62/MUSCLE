@@ -45,7 +45,7 @@ add_subdirectory(tensors)
 add_subdirectory(kinematics)
 add_subdirectory(elasticity)
 add_subdirectory(viscoelasticity)
-add_subdirectory(solvers)
+add_subdirectory(materials)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")

@@ -4,8 +4,7 @@
 #! Model contract of the overstress family (D-017.6): include/muscle_models_common.fypp
 #! Note: the parameter `k` (historical keyword, `prm%k`) is unrelated to the fypp kind variable `${k}$`
 #! of the `#:for k in REAL_KINDS` loops: write the kind always as `${k}$` and the parameter as `prm%k`.
-#:set PARAMS = [('k', 'real', '', r'Viscous resistance \( K \) (stress time\(^{1/n}\)).', '1.0'), &
-    &          ('n', 'real', '', r'Positive rate exponent \( n \).', '1.0')]
+#:set PARAMS = model_param_list('os', 'chaboche')
 
 module muscle_vp_chaboche
     !! Additive power overstress law, Chaboche (2008), Eq. (15), p. 1646:
@@ -26,21 +25,15 @@ module muscle_vp_chaboche
     !! Kernel API: parameter types `os_chaboche_<k>` and `pure` functions
     !! `os_flow_rate_chaboche_<k>(prm, sigma_eq, ep, sy)`, `os_dflow_dsigma_chaboche_<k>(prm,
     !! sigma_eq, ep, sy)` and `os_dflow_dep_chaboche_<k>(prm, sigma_eq, ep, sy, dsy_dep)` for each real
-    !! kind, also through the generics `os_*` of `muscle_vp_overstress_laws`. `Chaboche_overstress` is
-    !! the historical OO type (host only, removed in Phase 7), with the composed law in its
-    !! polymorphic component `hard_law`.
+    !! kind, also through the generics `os_*` of `muscle_vp_overstress_laws`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_vp_overstress_base, only : Base_overstress_law
-    use muscle_hard_base, only : Base_hardening_laws
     implicit none
     private
 
     $:MODEL_PUBLIC('os', 'chaboche')
-    public :: Chaboche_overstress
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('os', 'chaboche', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('os', 'chaboche', 'Chaboche_overstress', 'Base_overstress_law', PARAMS)
 
 contains
 #:for k in REAL_KINDS
@@ -81,6 +74,5 @@ contains
         res = -os_chaboche_dz_${k}$(prm, (sigma_eq - sy)/prm%k)*dsy_dep/prm%k
     end function os_dflow_dep_chaboche_${k}$
 #:endfor
-    $:OO_ADAPTER_PROCS('os', 'chaboche', 'Chaboche_overstress', PARAMS)
 
 end module muscle_vp_chaboche

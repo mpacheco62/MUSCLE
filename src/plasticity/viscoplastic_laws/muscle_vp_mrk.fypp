@@ -2,17 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = [('B01', 'real', '', r'Linear hardening modulus \( B_{01} \).', None), &
-    &          ('B02', 'real', '', r'Saturation hardening modulus \( B_{02} \).', None), &
-    &          ('epdmax', 'real', '', r'Upper limit rate \( \dot\epsilon_{max} \).', None), &
-    &          ('nu1', 'real', '', r'Rate sensitivity of \( B_1 \), \( \nu_1 \).', None), &
-    &          ('nu2', 'real', '', r'Rate sensitivity of \( B_2 \), \( \nu_2 \).', None), &
-    &          ('n0', 'real', '', r'Saturation rate at the reference rate \( n_0 \).', None), &
-    &          ('D2', 'real', '', r'Rate sensitivity of the saturation rate \( D_2 \).', None), &
-    &          ('epdmin', 'real', '', r'Lower limit rate \( \dot\epsilon_{min} \).', None), &
-    &          ('chi1', 'real', '', r'Rate sensitivity of the rate factor \( \chi_1 \).', None), &
-    &          ('chi2', 'real', '', r'Exponent of the rate factor \( \chi_2 \).', None), &
-    &          ('sig_u', 'real', '', r'Athermal stress \( \sigma_u \).', None)]
+#:set PARAMS = model_param_list('vp', 'mrk')
 
 module muscle_vp_mrk
     !! Modified Rusinek-Klepaczko (MRK) viscoplastic law (self-contained: it does not compose a
@@ -49,19 +39,15 @@ module muscle_vp_mrk
     !! Kernel API: parameter types `vp_mrk_<k>` and `pure` functions `vp_flow_stress_mrk_<k>(prm, ep,
     !! epd)`, `vp_dflow_dep_mrk_<k>`, `vp_dflow_depd_mrk_<k>(prm, ep, epd)` and
     !! `vp_dstress_dep_mrk_<k>(prm, ep, epd, dt)` for each real kind, also through the generics `vp_*`
-    !! of `muscle_vp_laws`. `MRK_viscoplastic` is the historical OO type (host only, removed in
-    !! Phase 7).
+    !! of `muscle_vp_laws`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_vp_base, only : Base_viscoplastic_law
     implicit none
     private
 
     $:MODEL_PUBLIC('vp', 'mrk')
-    public :: MRK_viscoplastic
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('vp', 'mrk', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('vp', 'mrk', 'MRK_viscoplastic', 'Base_viscoplastic_law', PARAMS)
 
 contains
 #:for k in REAL_KINDS
@@ -170,6 +156,5 @@ contains
         res = dep + depd/dt
     end function vp_dstress_dep_mrk_${k}$
 #:endfor
-    $:OO_ADAPTER_PROCS('vp', 'mrk', 'MRK_viscoplastic', PARAMS)
 
 end module muscle_vp_mrk

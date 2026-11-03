@@ -2,14 +2,9 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the yield family (D-017.6): include/muscle_models_common.fypp
-#! Lp and Lpp are derived from the coefficients of Cp and Cpp by the initializer (`yield_yld2004_init`,
-#! OO `init`): private in the kernel type (D-017.10b). Components in the historical order (OO type)
-#:set PARAMS = [('Lp', 'real', '(3,3)', r"Normal block of \( \mathbf{L}^\prime = \mathbf{C}^\prime \mathbb{P}_{dev} \), which maps (sxx, syy, szz) to (Spxx, Spyy, Spzz).", None, True), &
-    &          ('cp_shear', 'real', '(3)', r"Shear factors of \( \mathbf{C}^\prime \) on (xy, yz, xz): (cp44, cp55, cp66).", None), &
-    &          ('Lpp', 'real', '(3,3)', r'Normal block of \( \mathbf{L}^{\prime\prime} = \mathbf{C}^{\prime\prime} \mathbb{P}_{dev} \).', None, True), &
-    &          ('cpp_shear', 'real', '(3)', r"Shear factors of \( \mathbf{C}^{\prime\prime} \) on (xy, yz, xz): (cpp44, cpp55, cpp66).", None), &
-    &          ('a', 'real', '', r'Exponent \( a \ge 2 \) (the analytical derivatives need it).', None)]
-#:set OO_EXTRA = [('init', 'init_tbp', "Sets the coefficients of Cp and Cpp and a, and computes Lp and Lpp.")]
+#! Lp and Lpp are derived from the coefficients of Cp and Cpp by the initializer (`yield_yld2004_init`):
+#! private in the kernel type (D-017.10b). Components in the historical order (of the retired OO type)
+#:set PARAMS = model_param_list('yield', 'yld2004')
 
 module muscle_yield_yld2004
     !! Yld2004-18p anisotropic yield criterion (Barlat et al., 2005).
@@ -47,25 +42,21 @@ module muscle_yield_yld2004
     !! `yield_stress_eq_and_derivatives_yld2004_3D_<k>(prm, sigma, f, df[, ddf])` (one spectral
     !! decomposition of Sp and one of Spp; the Hessian only if `ddf` is present; the same bits as the
     !! three functions) for each real kind, also through the generics `yield_*` of
-    !! `muscle_yield_criteria` (`yield_joint_evaluation` is true). `Yld2004` is the historical OO
-    !! type (host only, removed in Phase 7).
+    !! `muscle_yield_criteria` (`yield_joint_evaluation` is true).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
         & operator(.tdotsym.), operator(*), operator(+), assignment(=)
     use muscle_math_operations, only : eigenvals
     use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian
     use muscle_anisotropic_yield, only : yield_lin_pull_back, yield_lin_pull_back_hessian
-    use muscle_yield_base, only : Base_yield_critera
     implicit none
     private
 
     $:MODEL_PUBLIC('yield', 'yld2004')
     public :: yield_yld2004_init, ${', '.join('yield_yld2004_init_' + k for k in REAL_KINDS)}$
-    public :: Yld2004
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('yield', 'yld2004', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('yield', 'yld2004', 'Yld2004', 'Base_yield_critera', PARAMS, extra_bindings=OO_EXTRA)
 
     interface yield_yld2004_init
         !! Parameters of the Yld2004-18p model from the coefficients of Cp and Cpp and a (computes Lp
@@ -76,22 +67,7 @@ module muscle_yield_yld2004
 contains
 #:for k in REAL_KINDS
 
-    pure subroutine yield_yld2004_init_${k}$(prm, cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66, &
-                                        cpp12, cpp13, cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66, a)
-        !! Parameters of the Yld2004-18p model in `real(${k}$)`: Lp = Cp P_dev and Lpp = Cpp P_dev
-        !! (Barlat et al., 2005, Eqs. 11 and 15), so that each call applies them to the stress
-        !! without forming the deviator. cpIJ = cp_IJ and cppIJ = cpp_IJ; the shears follow the
-        !! library order: 44 -> xy, 55 -> yz, 66 -> xz.
-        implicit none
-        @:DEVICE()
-        type(yield_yld2004_${k}$), intent(out) :: prm
-            !! Parameters.
-        real(${k}$), intent(in) :: cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66
-            !! Coefficients of Cp.
-        real(${k}$), intent(in) :: cpp12, cpp13, cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66
-            !! Coefficients of Cpp.
-        real(${k}$), intent(in) :: a
-            !! Exponent.
+    $:MODEL_INIT('yield', 'yld2004', k)
 
         prm%Lp = yield_yld2004_deviatoric_block_${k}$(cp12, cp13, cp21, cp23, cp31, cp32)
         prm%cp_shear(1) = cp44
@@ -453,26 +429,5 @@ contains
     end function yield_yld2004_hessian_${d}$_${k}$
 #:endfor
 #:endfor
-    $:OO_ADAPTER_PROCS('yield', 'yld2004', 'Yld2004', PARAMS)
-
-    subroutine init_tbp(self, cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66, &
-                        cpp12, cpp13, cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66, a)
-        !! `%init(...)`: stores Lp = Cp P_dev and Lpp = Cpp P_dev (Barlat et al., 2005, Eqs. 11 and
-        !! 15) (type-bound, historical API; host only). Calls `yield_yld2004_init_dp`.
-        implicit none
-        class(Yld2004), intent(inout) :: self
-            !! Model.
-        real(dp), intent(in) :: cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66
-            !! Coefficients of Cp.
-        real(dp), intent(in) :: cpp12, cpp13, cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66
-            !! Coefficients of Cpp.
-        real(dp), intent(in) :: a
-            !! Exponent.
-        type(yield_yld2004_dp) :: prm
-
-        call yield_yld2004_init_dp(prm, cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66, &
-                                   cpp12, cpp13, cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66, a)
-$:OO_COPY_PARAMS('self', 'prm', PARAMS)
-    end subroutine init_tbp
 
 end module muscle_yield_yld2004

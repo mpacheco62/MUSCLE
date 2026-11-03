@@ -5,9 +5,8 @@
 #! Kernel API of the hardening laws (D-017) in every kind: the free functions of the laws written
 #! with the model contract macros (include/muscle_models_common.fypp), called through the family
 #! generics of muscle_hard_laws, against the analytical formulas (bilinear, Ludwik, Swift, modified
-#! Voce; references evaluated in dp from the kind-k parameters, with exp/log instead of **); the historical OO types against
-#! the dp free functions (bit for bit), including the constructor validation hook and parameter
-#! defaults of the adapter; the finite-difference derivatives of MODEL_FD (test-only laws below),
+#! Voce; references evaluated in dp from the kind-k parameters, with exp/log instead of **); the
+#! finite-difference derivatives of MODEL_FD (test-only laws below),
 #! one-sided where ep - h < 0 (hardening domain ep >= 0); and a `pure`, `@:DEVICE()` point
 #! procedure that calls them.
 #! Tolerances of the finite differences (relative, measured x ~10): see FD_TOL below.
@@ -17,8 +16,7 @@
 
 #! Test-only laws (modified Voce, as muscle_hard_vocemod): fdvoce gives only stress (dstress_dep
 #! by FD_DERIV, ddstress_ddep by FD_DERIV2 of stress); fdvoce1 gives stress and dstress_dep
-#! (ddstress_ddep by FD_DERIV of dstress_dep), with an OO adapter that validates its parameters
-#! (n -> |n|) and a default k = 0; fdpow (Sy + k ep^1.5) is undefined for ep < 0: its default
+#! (ddstress_ddep by FD_DERIV of dstress_dep), with a default k = 0; fdpow (Sy + k ep^1.5) is undefined for ep < 0: its default
 #! derivative must stay finite at ep = 0 (one-sided stencil).
 #:set VOCE = [('Sy', 'real', '', 'Initial yield stress.', None), ('k', 'real', '', 'Linear modulus.', '0.0'), &
     & ('q', 'real', '', 'Saturation stress.', None), ('n', 'real', '', 'Saturation rate.', None)]
@@ -50,19 +48,15 @@ contains
 end module muscle_hard_fdvoce
 
 module muscle_hard_fdvoce1
-    !! Test law: modified Voce hardening, stress and analytical first derivative; OO adapter with
-    !! validation.
+    !! Test law: modified Voce hardening, stress and analytical first derivative.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_hard_base, only : Base_hardening_laws
     implicit none
     private
 
     $:MODEL_PUBLIC('hard', 'fdvoce1')
-    public :: Voce_test
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('hard', 'fdvoce1', k, VOCE)
 #:endfor
-    $:OO_ADAPTER_TYPE('hard', 'fdvoce1', 'Voce_test', 'Base_hardening_laws', VOCE, validate='check_voce')
 
 contains
 #:for k in REAL_KINDS
@@ -79,14 +73,6 @@ contains
 
     $:MODEL_FD('hard', 'fdvoce1', 'ddstress_ddep', k)
 #:endfor
-    $:OO_ADAPTER_PROCS('hard', 'fdvoce1', 'Voce_test', VOCE, validate='check_voce')
-
-    subroutine check_voce(self)
-        !! Validation hook of `Voce_test`: a negative saturation rate is taken by its magnitude.
-        type(Voce_test), intent(inout) :: self
-            !! New model.
-        self%n = abs(self%n)
-    end subroutine check_voce
 
 end module muscle_hard_fdvoce1
 
@@ -176,9 +162,6 @@ program test_hard_laws_kinds
     call record(test_swift_${k}$(), ${10*i + 5}$, 'Swift free functions ${k}$', code)
     call record(test_vocemod_${k}$(), ${10*i + 6}$, 'modified Voce free functions ${k}$', code)
 #:endfor
-    call record(test_oo_adapter(), 97, 'Bilinear_hardening adapter = dp free functions', code)
-    call record(test_oo_adapters_power(), 98, 'Ludwik, Swift, modified Voce adapters = dp free functions', code)
-    call record(test_oo_validate(), 99, 'OO adapter validation hook and defaults', code)
     if (code /= 0) stop code
     print '(a)', ' Passed!'
 
@@ -385,90 +368,5 @@ contains
         end do
     end function test_vocemod_${k}$
 #:endfor
-
-    function test_oo_adapter() result(passed)
-        !! The historical type-bound procedures give the bits of the dp free functions.
-        use muscle_hard_base, only : Base_hardening_laws
-        use muscle_hard_bilinear, only : Bilinear_hardening
-        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_ddstress_ddep, hard_bilinear_dp
-        logical :: passed
-        class(Base_hardening_laws), allocatable :: h
-        type(hard_bilinear_dp) :: p
-        real(dp) :: ep
-        integer :: j
-
-        passed = .true.
-        h = Bilinear_hardening(y0=250.0_dp, K=1000.0_dp)
-        p = hard_bilinear_dp(y0=250.0_dp, K=1000.0_dp)
-        do j = 1, size(EPS_PTS)
-            ep = EPS_PTS(j)
-            call check_approx(passed, 'OO stress', h%stress(ep), hard_stress(p, ep), 0.0_dp)
-            call check_approx(passed, 'OO dstress_dep', h%dstress_dep(ep), hard_dstress_dep(p, ep), 0.0_dp)
-            call check_approx(passed, 'OO ddstress_ddep', h%ddstress_ddep(ep), hard_ddstress_ddep(p, ep), 0.0_dp)
-        end do
-    end function test_oo_adapter
-
-    function test_oo_adapters_power() result(passed)
-        !! The historical types `ludwik_hardening`, `Swift_hardening` and `Voce_modified_hardening`
-        !! (same keywords as before) give the bits of the dp free functions, through the base class.
-        use muscle_hard_base, only : Base_hardening_laws
-        use muscle_hard_ludwik, only : ludwik_hardening
-        use muscle_hard_swift, only : Swift_hardening
-        use muscle_hard_vocemod, only : Voce_modified_hardening
-        use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_ddstress_ddep, hard_ludwik_dp, &
-            hard_swift_dp, hard_vocemod_dp
-        logical :: passed
-        class(Base_hardening_laws), allocatable :: hl, hs, hv
-        type(hard_ludwik_dp) :: pl
-        type(hard_swift_dp) :: ps
-        type(hard_vocemod_dp) :: pv
-        real(dp) :: ep
-        integer :: j
-
-        passed = .true.
-        hl = ludwik_hardening(sigma0=250.0_dp, k=500.0_dp, n=0.2_dp)
-        pl = hard_ludwik_dp(sigma0=250.0_dp, k=500.0_dp, n=0.2_dp)
-        hs = Swift_hardening(k=500.0_dp, n=0.2_dp, e0=0.01_dp)
-        ps = hard_swift_dp(k=500.0_dp, n=0.2_dp, e0=0.01_dp)
-        hv = Voce_modified_hardening(Sy=200.0_dp, k=500.0_dp, q=150.0_dp, n=20.0_dp)
-        pv = hard_vocemod_dp(Sy=200.0_dp, k=500.0_dp, q=150.0_dp, n=20.0_dp)
-        do j = 1, size(EPS_PTS)
-            ep = EPS_PTS(j)
-            call check_approx(passed, 'OO Ludwik', [hl%stress(ep), hl%dstress_dep(ep), hl%ddstress_ddep(ep)], &
-                              [hard_stress(pl, ep), hard_dstress_dep(pl, ep), hard_ddstress_ddep(pl, ep)], 0.0_dp)
-            call check_approx(passed, 'OO Swift', [hs%stress(ep), hs%dstress_dep(ep), hs%ddstress_ddep(ep)], &
-                              [hard_stress(ps, ep), hard_dstress_dep(ps, ep), hard_ddstress_ddep(ps, ep)], 0.0_dp)
-            call check_approx(passed, 'OO Voce', [hv%stress(ep), hv%dstress_dep(ep), hv%ddstress_ddep(ep)], &
-                              [hard_stress(pv, ep), hard_dstress_dep(pv, ep), hard_ddstress_ddep(pv, ep)], 0.0_dp)
-        end do
-    end function test_oo_adapters_power
-
-    function test_oo_validate() result(passed)
-        !! OO adapter with a validation hook and a parameter default: `Voce_test(...)` calls
-        !! `check_voce` (n -> |n|) and leaves the default k = 0; type-bound = dp free functions.
-        use muscle_hard_base, only : Base_hardening_laws
-        use muscle_hard_fdvoce1, only : Voce_test, hard_fdvoce1_dp, hard_stress_fdvoce1_dp, &
-            hard_dstress_dep_fdvoce1_dp, hard_ddstress_ddep_fdvoce1_dp
-        logical :: passed
-        class(Base_hardening_laws), allocatable :: h
-        type(Voce_test) :: v
-        type(hard_fdvoce1_dp) :: p
-        real(dp) :: ep
-        integer :: j
-
-        passed = .true.
-        v = Voce_test(Sy=250.0_dp, q=150.0_dp, n=-5.0_dp)
-        call check_approx(passed, 'OO constructor: validated n', v%n, 5.0_dp, 0.0_dp)
-        call check_approx(passed, 'OO constructor: default k', v%k, 0.0_dp, 0.0_dp)
-        h = v
-        p = hard_fdvoce1_dp(Sy=250.0_dp, k=0.0_dp, q=150.0_dp, n=5.0_dp)
-        do j = 1, size(EPS_PTS)
-            ep = EPS_PTS(j)
-            call check_approx(passed, 'OO Voce stress', h%stress(ep), hard_stress_fdvoce1_dp(p, ep), 0.0_dp)
-            call check_approx(passed, 'OO Voce dstress_dep', h%dstress_dep(ep), hard_dstress_dep_fdvoce1_dp(p, ep), 0.0_dp)
-            call check_approx(passed, 'OO Voce ddstress_ddep', h%ddstress_ddep(ep), &
-                              hard_ddstress_ddep_fdvoce1_dp(p, ep), 0.0_dp)
-        end do
-    end function test_oo_validate
 
 end program test_hard_laws_kinds

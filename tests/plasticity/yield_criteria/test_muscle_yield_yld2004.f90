@@ -29,14 +29,16 @@ subroutine Yld2004_test_materials(yld)
     ! yld(2): AA2090-T3, a = 8 (Barlat et al., 2005, Table 2). The table lists the shears as
     ! (yz, zx, xy); here (c44, c55, c66) = (xy, yz, xz) = (c66, c44, c55) of the table.
     use muscle_yield_yld2004
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
-    type(Yld2004), intent(out) :: yld(2)
+    type(yield_yld2004_dp), intent(out) :: yld(2)
 
-    call yld(1)%init(cp12=1D0, cp13=1D0, cp21=1D0, cp23=1D0, cp31=1D0, cp32=1D0, &
+    call yield_yld2004_init_dp(yld(1), cp12=1D0, cp13=1D0, cp21=1D0, cp23=1D0, cp31=1D0, cp32=1D0, &
                      cp44=1D0, cp55=1D0, cp66=1D0, &
                      cpp12=1D0, cpp13=1D0, cpp21=1D0, cpp23=1D0, cpp31=1D0, cpp32=1D0, &
                      cpp44=1D0, cpp55=1D0, cpp66=1D0, a=2D0)
-    call yld(2)%init(cp12=-0.069888D0, cp13=0.936408D0, cp21=0.079143D0, cp23=1.003060D0, &
+    call yield_yld2004_init_dp(yld(2), cp12=-0.069888D0, cp13=0.936408D0, cp21=0.079143D0, cp23=1.003060D0, &
                      cp31=0.524741D0, cp32=1.363180D0, cp44=0.954322D0, cp55=1.023770D0, cp66=1.069060D0, &
                      cpp12=0.981171D0, cpp13=0.476741D0, cpp21=0.575316D0, cpp23=0.866827D0, &
                      cpp31=1.145010D0, cpp32=-0.079294D0, cpp44=1.404620D0, cpp55=1.051660D0, &
@@ -51,14 +53,16 @@ subroutine test_Yld2004_stresseq_1(passed)
     use muscle_tensors
     use muscle_yield_yld2004
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     logical, intent(out) :: passed
 
     ! Measured errors are below 4e-16; 1e-12 leaves room for other compilers and still separates
     ! the shear assignments, which differ by more than 1e-3
     real(real64), parameter :: TOL = 1.0D-12
-    type(Yld2004) :: yld(2)
-    type(VonMises) :: vm
+    type(yield_yld2004_dp) :: yld(2)
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: s, s_aa(4)
     real(real64) :: expected(4), err
     integer :: i
@@ -68,7 +72,7 @@ subroutine test_Yld2004_stresseq_1(passed)
     ! Isotropic limit, general 3D state: 4 f**2 = sum_ij (s_i - s_j)**2, i.e. von Mises
     ! (three distinct eigenvalues with all shears present)
     call s%init((/180D0, -40D0, 25D0, 60D0, -30D0, 45D0/))
-    err = abs(yld(1)%stress_eq(s) - vm%stress_eq(s))/vm%stress_eq(s)
+    err = abs(yield_stress_eq(yld(1), s) - yield_stress_eq(vm, s))/yield_stress_eq(vm, s)
     passed = err <= TOL
     if (.not. passed) print*, "Yld2004 isotropic vs von Mises, rel. error =", err
     if (.not. passed) return
@@ -84,7 +88,7 @@ subroutine test_Yld2004_stresseq_1(passed)
     expected = (/99.932153929799531134D0, 110.32696825195229388D0, &
                  122.30436942533559492D0, 187.28212180970985109D0/)
     do i = 1, 4
-        err = abs(yld(2)%stress_eq(s_aa(i)) - expected(i))/expected(i)
+        err = abs(yield_stress_eq(yld(2), s_aa(i)) - expected(i))/expected(i)
         passed = err <= TOL
         if (.not. passed) print*, "Yld2004 AA2090-T3 state", i, "rel. error =", err
         if (.not. passed) return
@@ -92,40 +96,42 @@ subroutine test_Yld2004_stresseq_1(passed)
 
     ! Homogeneity of degree 1 and pressure insensitivity on the rotated state
     s = 2.5D0*s_aa(4)
-    err = abs(yld(2)%stress_eq(s) - 2.5D0*expected(4))/expected(4)
+    err = abs(yield_stress_eq(yld(2), s) - 2.5D0*expected(4))/expected(4)
     passed = err <= TOL
     if (.not. passed) print*, "Yld2004 homogeneity, rel. error =", err
     if (.not. passed) return
     call s%init(s_aa(4)%vals + (/300D0, 300D0, 300D0, 0D0, 0D0, 0D0/))
-    err = abs(yld(2)%stress_eq(s) - expected(4))/expected(4)
+    err = abs(yield_stress_eq(yld(2), s) - expected(4))/expected(4)
     passed = err <= TOL
     if (.not. passed) print*, "Yld2004 pressure insensitivity, rel. error =", err
 end subroutine test_Yld2004_stresseq_1
 
 subroutine test_Yld2004_gradient_2(passed)
-    ! yld%dstressEq_dstress against analytical values: von Mises in the isotropic limit and an
+    ! yield_dstress_eq against analytical values: von Mises in the isotropic limit and an
     ! independent high-precision reference for AA2090-T3. Both states have normal and shear
     ! components at once.
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_yld2004
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     logical, intent(out) :: passed
 
-    ! The base-class finite differences agree to about 1e-10 on these states (measured 9.8e-11
+    ! The finite differences (yield_test_numeric) agree to about 1e-10 on these states (measured 9.8e-11
     ! and 3.9e-11); 1e-8 keeps a margin and still separates any wrong coefficient (> 1e-3)
     real(real64), parameter :: TOL = 1.0D-8
-    type(Yld2004) :: yld(2)
-    type(VonMises) :: vm
+    type(yield_yld2004_dp) :: yld(2)
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: s, g, expected
 
     call Yld2004_test_materials(yld)
 
     ! Isotropic limit, general 3D state: three distinct eigenvalues with all shears present
     call s%init((/180D0, -40D0, 25D0, 60D0, -30D0, 45D0/))
-    g = yld(1)%dstressEq_dstress(s)
-    passed = g%is_approx(vm%dstressEq_dstress(s), tol=TOL)
+    g = yield_dstress_eq(yld(1), s)
+    passed = g%is_approx(yield_dstress_eq(vm, s), tol=TOL)
     if (.not. passed) print*, "Yld2004 gradient vs von Mises:", g%vals
     if (.not. passed) return
 
@@ -135,7 +141,7 @@ subroutine test_Yld2004_gradient_2(passed)
     call expected%init((/0.46131648419506646702D0, -0.81171119189451749695D0, &
                          0.35039470769945102992D0, 0.31754139064342329668D0, &
                          -0.45754809859404116078D0, 0.43880414633419044754D0/))
-    g = yld(2)%dstressEq_dstress(s)
+    g = yield_dstress_eq(yld(2), s)
     passed = g%is_approx(expected, tol=TOL)
     if (.not. passed) print*, "Yld2004 gradient vs reference:", g%vals
 end subroutine test_Yld2004_gradient_2
@@ -148,16 +154,18 @@ subroutine Yld2004_derivative_materials(yld)
     ! yld(4): the coefficients of AA2090-T3 (as yld(2)) with a = 6, the exponent for BCC metals
     ! (Barlat et al., 2005, p. 1017).
     use muscle_yield_yld2004
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
-    type(Yld2004), intent(out) :: yld(4)
+    type(yield_yld2004_dp), intent(out) :: yld(4)
 
     call Yld2004_test_materials(yld(1:2))
-    call yld(3)%init(cp12=1D0, cp13=1D0, cp21=1D0, cp23=1D0, cp31=1D0, cp32=1D0, &
+    call yield_yld2004_init_dp(yld(3), cp12=1D0, cp13=1D0, cp21=1D0, cp23=1D0, cp31=1D0, cp32=1D0, &
                      cp44=1D0, cp55=1D0, cp66=1D0, &
                      cpp12=1D0, cpp13=1D0, cpp21=0.575316D0, cpp23=0.866827D0, &
                      cpp31=1.145010D0, cpp32=-0.079294D0, cpp44=1.404620D0, cpp55=1.051660D0, &
                      cpp66=1.147100D0, a=2D0)
-    call yld(4)%init(cp12=-0.069888D0, cp13=0.936408D0, cp21=0.079143D0, cp23=1.003060D0, &
+    call yield_yld2004_init_dp(yld(4), cp12=-0.069888D0, cp13=0.936408D0, cp21=0.079143D0, cp23=1.003060D0, &
                      cp31=0.524741D0, cp32=1.363180D0, cp44=0.954322D0, cp55=1.023770D0, cp66=1.069060D0, &
                      cpp12=0.981171D0, cpp13=0.476741D0, cpp21=0.575316D0, cpp23=0.866827D0, &
                      cpp31=1.145010D0, cpp32=-0.079294D0, cpp44=1.404620D0, cpp55=1.051660D0, &
@@ -186,21 +194,23 @@ subroutine Yld2004_test_states(s)
 end subroutine Yld2004_test_states
 
 subroutine test_Yld2004_gradient_numeric_3(passed)
-    ! yld%dstressEq_dstress against the finite differences of the base class (four materials,
+    ! yield_dstress_eq against central finite differences (yield_test_numeric) (four materials,
     ! five states), and against von Mises in the isotropic limit and the AA2090-T3 reference of
     ! test 2 with a tolerance at round-off level.
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_yld2004
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     logical, intent(out) :: passed
 
-    ! The base-class finite differences agree to 2e-10 or better on these states; von Mises and
+    ! The finite differences (yield_test_numeric) agree to 2e-10 or better on these states; von Mises and
     ! the reference hold to round-off (measured 7e-16): 1e-12 leaves room for other compilers
     real(real64), parameter :: TOL_NUM = 1.0D-8, TOL = 1.0D-12
-    type(Yld2004) :: yld(4)
-    type(VonMises) :: vm
+    type(yield_yld2004_dp) :: yld(4)
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: s(5), g, expected
     integer :: m, i
 
@@ -208,12 +218,12 @@ subroutine test_Yld2004_gradient_numeric_3(passed)
     call Yld2004_test_states(s)
     do m = 1, 4
         do i = 1, 5
-            g = yld(m)%dstressEq_dstress(s(i))
-            passed = g%is_approx(yld(m)%dstressEq_dstress_numeric(s(i)), tol=TOL_NUM)
+            g = yield_dstress_eq(yld(m), s(i))
+            passed = g%is_approx(num_dstress_eq(yld(m), s(i)), tol=TOL_NUM)
             if (.not. passed) print*, "Yld2004 gradient vs numeric, material", m, "state", i, g%vals
             if (.not. passed) return
             if (m == 1) then
-                passed = g%is_approx(vm%dstressEq_dstress(s(i)), tol=TOL)
+                passed = g%is_approx(yield_dstress_eq(vm, s(i)), tol=TOL)
                 if (.not. passed) print*, "Yld2004 gradient vs von Mises, state", i, g%vals
                 if (.not. passed) return
             end if
@@ -224,24 +234,26 @@ subroutine test_Yld2004_gradient_numeric_3(passed)
     call expected%init((/0.46131648419506646702D0, -0.81171119189451749695D0, &
                          0.35039470769945102992D0, 0.31754139064342329668D0, &
                          -0.45754809859404116078D0, 0.43880414633419044754D0/))
-    g = yld(2)%dstressEq_dstress(s(1))
+    g = yield_dstress_eq(yld(2), s(1))
     passed = g%is_approx(expected, tol=TOL)
     if (.not. passed) print*, "Yld2004 gradient vs reference:", g%vals
 end subroutine test_Yld2004_gradient_numeric_3
 
 subroutine test_Yld2004_hessian_4(passed)
-    ! yld%ddstressEq_ddstress against the finite differences of the base class, von Mises in the
+    ! yield_ddstress_eq against central finite differences (yield_test_numeric), von Mises in the
     ! isotropic limit and an independent high-precision reference for AA2090-T3 (H : X).
     ! Called by program test_muscle_yield_yld2004 (STOP 4)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_yld2004
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
 
-    ! Against the base-class Hessian: second-order central differences with step
+    ! Against the finite-difference Hessian (yield_test_numeric): second-order central differences with step
     ! h = 1e-4 ||sigma||, so the rounding error eps*f/h**2 is ~2e-8 relative and the truncation
     ! O(h**2) grows with the exponent a. Measured: 6.1e-7 or less (worst for AA2090-T3, a = 8)
     real(real64), parameter :: TOL_NUM = 1.0D-5
@@ -252,8 +264,8 @@ subroutine test_Yld2004_hessian_4(passed)
     ! (df/dlam_a - df/dlam_b)/(lam_a - lam_b) of the spectral functions loses digits as eps/gap,
     ! up to ~2e-7 for gaps just above their threshold (1e-9). Measured: 2.3e-9
     real(real64), parameter :: TOL_NEAR = 1.0D-6
-    type(Yld2004) :: yld(4)
-    type(VonMises) :: vm
+    type(yield_yld2004_dp) :: yld(4)
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: s(8), x, hx, expected
     type(ten_3D4O3sym) :: h
     real(real64) :: delta(3), tol_vm
@@ -273,15 +285,15 @@ subroutine test_Yld2004_hessian_4(passed)
 
     do m = 1, 4
         do i = 1, 8
-            h = yld(m)%ddstressEq_ddstress(s(i))
+            h = yield_ddstress_eq(yld(m), s(i))
             write(label, '(a, i0, a, i0)') "Yld2004 Hessian vs numeric: material ", m, ", state ", i
-            call check_approx(passed, trim(label), h, yld(m)%ddstressEq_ddstress_numeric(s(i)), &
+            call check_approx(passed, trim(label), h, num_ddstress_eq(yld(m), s(i)), &
                               tol=TOL_NUM)
             if (.not. passed) return
             if (m == 1) then
                 tol_vm = merge(TOL, TOL_NEAR, i <= 5)
                 write(label, '(a, i0)') "Yld2004 isotropic Hessian vs von Mises: state ", i
-                call check_approx(passed, trim(label), h, vm%ddstressEq_ddstress(s(i)), tol=tol_vm)
+                call check_approx(passed, trim(label), h, yield_ddstress_eq(vm, s(i)), tol=tol_vm)
                 if (.not. passed) return
             end if
         end do
@@ -293,13 +305,13 @@ subroutine test_Yld2004_hessian_4(passed)
     call expected%init((/-0.0014821575782850093216D0, 0.0021762432256393042999D0, &
                          -0.00069408564735429497827D0, 0.0034707049991813534300D0, &
                          0.00092921489684781910143D0, 0.00081961465048068192313D0/))
-    h = yld(2)%ddstressEq_ddstress(s(1))
+    h = yield_ddstress_eq(yld(2), s(1))
     hx = h .ddot. x
     call check_approx(passed, "Yld2004 Hessian vs reference: AA2090-T3, H : X", hx, expected, tol=TOL)
 end subroutine test_Yld2004_hessian_4
 
 subroutine test_Yld2004_joint_evaluation_5(passed)
-    ! yld%stressEq_and_derivatives against stress_eq, dstressEq_dstress and ddstressEq_ddstress
+    ! yield_stress_eq_and_derivatives against yield_stress_eq, yield_dstress_eq and yield_ddstress_eq
     ! called one by one, on the four materials and five states of the derivative tests: one
     ! decomposition of Sp and one of Spp serve the three results. Also checks that Yld2004
     ! declares joint_evaluation(), so that the return mapping uses the joint evaluation.
@@ -307,6 +319,8 @@ subroutine test_Yld2004_joint_evaluation_5(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_yld2004
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
@@ -315,7 +329,7 @@ subroutine test_Yld2004_joint_evaluation_5(passed)
     ! Measured: 0 difference; the relative tolerance 1e-14 (~50 eps) leaves margin for other
     ! compilers
     real(real64), parameter :: TOL = 1.0D-14
-    type(Yld2004) :: yld(4)
+    type(yield_yld2004_dp) :: yld(4)
     type(ten_3D2Osym) :: s(5), df
     type(ten_3D4O3sym) :: ddf
     real(real64) :: f
@@ -325,16 +339,16 @@ subroutine test_Yld2004_joint_evaluation_5(passed)
     passed = .true.
     call Yld2004_derivative_materials(yld)
     call Yld2004_test_states(s)
-    call check_true(passed, "Yld2004 declares joint_evaluation", yld(1)%joint_evaluation())
+    call check_true(passed, "Yld2004 declares joint_evaluation", yield_joint_evaluation(yld(1)))
     do m = 1, 4
         do i = 1, 5
-            call yld(m)%stressEq_and_derivatives(s(i), f, df, ddf)
+            call yield_stress_eq_and_derivatives(yld(m), s(i), f, df, ddf)
             write(label, '(a, i0, a, i0)') "Yld2004 joint stress_eq: material ", m, ", state ", i
-            call check_approx(passed, trim(label), f, yld(m)%stress_eq(s(i)), tol=TOL)
+            call check_approx(passed, trim(label), f, yield_stress_eq(yld(m), s(i)), tol=TOL)
             write(label, '(a, i0, a, i0)') "Yld2004 joint gradient: material ", m, ", state ", i
-            call check_approx(passed, trim(label), df, yld(m)%dstressEq_dstress(s(i)), tol=TOL)
+            call check_approx(passed, trim(label), df, yield_dstress_eq(yld(m), s(i)), tol=TOL)
             write(label, '(a, i0, a, i0)') "Yld2004 joint Hessian: material ", m, ", state ", i
-            call check_approx(passed, trim(label), ddf, yld(m)%ddstressEq_ddstress(s(i)), tol=TOL)
+            call check_approx(passed, trim(label), ddf, yield_ddstress_eq(yld(m), s(i)), tol=TOL)
             if (.not. passed) return
         end do
     end do

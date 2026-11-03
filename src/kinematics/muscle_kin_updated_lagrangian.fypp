@@ -1,7 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
-#:include "muscle_kin_adapters.fypp"
 #! Model contract of the kinematics family (D-017.14): include/muscle_models_common.fypp. No
 #! parameters: the parameter type is empty and only selects the kinematics.
 #:set S2 = lambda k: tname('3D2Osym', k)
@@ -12,33 +11,32 @@ module muscle_kin_updated_lagrangian
     !! ====================================
     !! Updated Lagrangian kinematics: the strain is the Euler-Almansi strain
     !! \( \mathbf{e} = \tfrac{1}{2}(\mathbf{I} - \mathbf{b}^{-1}) \) and the constitutive stress and
-    !! tangent are already the spatial (Cauchy) ones: `kin_to_cauchy` and `kin_to_spatial_tangent`
-    !! are the identity (no geometric term, D-017.14b).
+    !! tangent are the spatial (Cauchy) ones: `kin_to_cauchy` is the identity. With
+    !! \( \delta\mathbf{F} = \delta\boldsymbol\varepsilon\,\mathbf{F} \) the strain changes by
+    !! \( \delta\mathbf{e} = \tfrac{1}{2}(\delta\boldsymbol\varepsilon\,\mathbf{b}^{-1} + \mathbf{b}^{-1}\delta\boldsymbol\varepsilon) \):
+    !! `kin_to_spatial_tangent` is \( \mathbb{A} : \delta\mathbf{e} \) (`kin_almansi_tangent`; it was the
+    !! identity before D-018.15f) and the geometric term of the Kirchhoff stress \( J\boldsymbol\sigma \) is
+    !! \( \boldsymbol\sigma\otimes\mathbf{I} \) (`kin_volumetric_tangent`).
     !!
     !! Kernel API (D-017.14): the (empty) parameter type `kin_updated_lagrangian_<k>` and the `pure`
     !! procedures `kin_update_updated_lagrangian_<k>(prm, F, state, status)` (status:
     !! `STATUS_INVALID_DEFORMATION` for det F <= 0, a singular F or a vanishing eigenvalue of C,
     !! D-017.14a), `kin_to_cauchy_updated_lagrangian_<k>(prm, state, stress)`,
-    !! `kin_to_spatial_tangent_updated_lagrangian_<k>(prm, state, tangent)` and
+    !! `kin_to_spatial_tangent_updated_lagrangian_<k>(prm, state, tangent)`,
+    !! `kin_geometric_tangent_updated_lagrangian_<k>(prm, state, stress)` and
     !! `kin_is_finite_strain_updated_lagrangian_<k>(prm)`, also through the generics `kin_*` of
     !! muscle_kin_laws.
-    !!
-    !! `Updated_lagrangian_kinematics` is the historical OO type (host only, removed in Phase 7),
-    !! extending `Base_F_kinematics`: its bindings call the dp kernel procedures and ignore the
-    !! status (same results as before, D-017.14a).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D2O', k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$
-    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_euler_almansi
-    use muscle_kin_finite_base, only : Base_F_kinematics, finite_state_of, finite_set_state
+    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_euler_almansi, &
+        kin_almansi_tangent, kin_volumetric_tangent
     implicit none
     private
 
     $:MODEL_PUBLIC('kin', 'updated_lagrangian')
-    public :: Updated_lagrangian_kinematics
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('kin', 'updated_lagrangian', k, [])
+    $:MODEL_PARAMS_TYPE('kin', 'updated_lagrangian', k, model_param_list('kin', 'updated_lagrangian'))
 #:endfor
-    $:KIN_F_OO_TYPE('updated_lagrangian', 'Updated_lagrangian_kinematics', 'Cached Euler-Almansi strain e')
 
 contains
 #:for k in REAL_KINDS
@@ -54,16 +52,20 @@ contains
         res = stress
     end function kin_to_cauchy_updated_lagrangian_${k}$
 
-    $:MODEL_FUNCTION('kin', 'updated_lagrangian', 'to_spatial_tangent', k, doc=r'The identity: the constitutive tangent is spatial.')
+    $:MODEL_FUNCTION('kin', 'updated_lagrangian', 'to_spatial_tangent', k, doc=r'The constitutive tangent through the derivative of the Euler-Almansi strain (`kin_almansi_tangent`).')
 
-        res = tangent
+        res = kin_almansi_tangent(state, tangent)
     end function kin_to_spatial_tangent_updated_lagrangian_${k}$
+
+    $:MODEL_FUNCTION('kin', 'updated_lagrangian', 'geometric_tangent', k, doc=r'The volume change of the Kirchhoff stress, \( \boldsymbol\sigma\otimes\mathbf{I} \) (`kin_volumetric_tangent`).')
+
+        res = kin_volumetric_tangent(stress)
+    end function kin_geometric_tangent_updated_lagrangian_${k}$
 
     $:MODEL_FUNCTION('kin', 'updated_lagrangian', 'is_finite_strain', k)
 
         res = .true.
     end function kin_is_finite_strain_updated_lagrangian_${k}$
 #:endfor
-    $:KIN_F_OO_PROCS('updated_lagrangian', 'Updated_lagrangian_kinematics')
 
 end module muscle_kin_updated_lagrangian

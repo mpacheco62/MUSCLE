@@ -2,12 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = [('B', 'real', '', r'Hardening modulus \( B \).', None), &
-    &          ('n', 'real', '', r'Hardening exponent \( n \).', None), &
-    &          ('B1', 'real', '', r'Rate coefficient \( B_1 \).', None), &
-    &          ('B2', 'real', '', r'Rate offset \( B_2 \).', None), &
-    &          ('m', 'real', '', r'Rate exponent \( m \) (0: no rate term).', None), &
-    &          ('sig_u', 'real', '', r'Athermal stress \( \sigma_u \).', None)]
+#:set PARAMS = model_param_list('vp', 'va')
 
 module muscle_vp_va
     !! VA viscoplastic law (self-contained: it does not compose a hardening law):
@@ -29,19 +24,15 @@ module muscle_vp_va
     !! Kernel API: parameter types `vp_va_<k>` and `pure` functions `vp_flow_stress_va_<k>(prm, ep,
     !! epd)`, `vp_dflow_dep_va_<k>`, `vp_dflow_depd_va_<k>(prm, ep, epd)` and
     !! `vp_dstress_dep_va_<k>(prm, ep, epd, dt)` for each real kind, also through the generics `vp_*`
-    !! of `muscle_vp_laws`. `VA_viscoplastic` is the historical OO type (host only, removed in
-    !! Phase 7).
+    !! of `muscle_vp_laws`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_vp_base, only : Base_viscoplastic_law
     implicit none
     private
 
     $:MODEL_PUBLIC('vp', 'va')
-    public :: VA_viscoplastic
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('vp', 'va', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('vp', 'va', 'VA_viscoplastic', 'Base_viscoplastic_law', PARAMS)
 
 contains
 #:for k in REAL_KINDS
@@ -103,6 +94,5 @@ contains
               + (prm%B*(ep_eff**prm%n)*vp_va_drate_${k}$(prm, epd))/dt
     end function vp_dstress_dep_va_${k}$
 #:endfor
-    $:OO_ADAPTER_PROCS('vp', 'va', 'VA_viscoplastic', PARAMS)
 
 end module muscle_vp_va

@@ -45,8 +45,13 @@ component, applying the symmetries of the family; ``None`` for a structural zero
 shear) and ``Comp.voigt`` / ``Layout.base`` (the 2nd-order layout indexing a 4th-order one).
 """
 
+import importlib.util
 import itertools
+import os
+import re
+import sys
 from collections import namedtuple
+from types import MappingProxyType
 
 #: Real kinds known to MUSCLE (Fortran constants ``sp`` and ``dp``).
 KINDS = ('sp', 'dp')
@@ -71,6 +76,10 @@ HARDENING_MODELS = ('bilinear', 'ludwik', 'swift', 'vocemod')
 #: ``muscle_vp_laws``. ``VISCOPLASTIC_COMPOSED``: those that compose a hardening law (D-017.6b).
 VISCOPLASTIC_MODELS = ('jc', 'jcfull', 'mrk', 'nnl', 'rk', 'va')
 VISCOPLASTIC_COMPOSED = ('jc', 'jcfull')
+#: Viscoplastic laws with a rate floor (the flow stress is constant below a minimum rate) that give the
+#: Newton iterations of the rate-dependent return mapping the right-hand rate derivative there
+#: (``vp_newton_dstress_dep``, D-018.19b); the others use ``vp_dstress_dep``.
+VISCOPLASTIC_FLOOR = ('jc',)
 
 #: Registered overstress laws \( \dot\lambda = g(\sigma_{eq}, \epsilon_p) \) (D-017): same
 #: directory and module names as the flow stress laws, exported by ``muscle_vp_overstress_laws``.
@@ -83,16 +92,27 @@ OVERSTRESS_COMPOSED = ('chaboche', 'perzyna')
 #: equivalent stress and its derivatives (the others get the default, three calls in turn).
 YIELD_MODELS = ('vonmises', 'hill48', 'druckerprager', 'cpb06', 'cpb06ex2', 'yld2004')
 YIELD_JOINT = ('yld2004',)
+#: Isotropic yield criteria (the others have anisotropy axes): with a spatial strain measure, a material
+#: with another criterion runs its return mapping in the frame of the polar rotation (D-018.15f).
+YIELD_ISOTROPIC = ('vonmises', 'druckerprager')
 
 #: Registered elastic models (D-017.12): one template
 #: ``src/elasticity/muscle_elasticity_<name>.fypp`` each, exported by ``muscle_elasticity_laws``.
 ELASTICITY_MODELS = ('linear', 'frozen')
+#: Isotropic elastic models: a return mapping in a rotated frame (spatial strain measure with an
+#: anisotropic yield criterion, D-018.15f) needs one (the elasticity is then frame independent).
+ELASTICITY_ISOTROPIC = ('linear', 'frozen')
 
 #: Registered linear viscoelastic models (D-017.13): one template
 #: ``src/viscoelasticity/muscle_visco_<name>.fypp`` each, exported by ``muscle_visco_laws``. Their
 #: step map is affine in the elastic strain: the algorithmic ("frozen") elasticity of the step is
 #: the elastic model ``frozen`` (``elas_frozen_<k>``), which a return mapping uses as any other.
 VISCOELASTIC_MODELS = ('maxwell', 'kelvin')
+
+#: Maximum number of branches (history tensors) of a viscoelastic state (``MAX_VISCO_BRANCHES`` of
+#: muscle_visco_types, D-017.13c): the size of the fixed state and the largest
+#: ``Material.visco_branches``.
+MAX_VISCO_BRANCHES = 10
 
 #: Registered kinematics (D-017.14): one template ``src/kinematics/muscle_kin_<name>.fypp`` each,
 #: exported by ``muscle_kin_laws``. They have no material parameters: the parameter type of a
@@ -102,6 +122,13 @@ KINEMATICS_MODELS = ('small_strain', 'total_lagrangian', 'updated_lagrangian', '
 #: Kinematics updated from F (``kin_update``); the others (the corotational one) from a strain and a
 #: rotation (``kin_corot_update``, D-017.14d).
 KINEMATICS_F_MODELS = tuple(m for m in KINEMATICS_MODELS if m != 'corotational')
+#: Kinematics whose material kernel takes the strain already rotated to the corotational frame by the
+#: FE code, as Abaqus and ANSYS do (D-018.15f): the small strain signature, Jaumann tangent; the
+#: rotation of the stored plastic strain is the job of the FE adapter.
+KINEMATICS_FE_ROTATED = ('corotational',)
+#: Kinematics with a spatial strain measure (Euler-Almansi, spatial Hencky): a material rotates its
+#: stored plastic strain with the rotation increment of the polar decomposition (D-018.15f).
+KINEMATICS_SPATIAL = ('updated_lagrangian', 'spatial_logarithmic')
 
 #: Module of a model whose name does not follow ``ModelFamily.module`` (a model that keeps its
 #: historical module, ``model_module``): the frozen elasticity of the viscoelastic models.
@@ -934,19 +961,18 @@ ModelFunc = namedtuple('ModelFunc', 'name doc result deriv extra comp default ou
 #: for real parameters).
 #: ``private`` (optional, default ``False``): the component is private to the model module (derived
 #: parameters such as the normalization factor of CPB06, D-017.10b): the type can then only be built
-#: with the initializer of the model (``yield_<m>_init``); the historical OO type keeps it public.
+#: with the initializer of the model (``yield_<m>_init``).
 ModelParam = namedtuple('ModelParam', 'name type shape doc default private', defaults=(False,))
 
 #: Value of a composed law (D-017.6b): the ``arg`` (``ModelArg``) the free functions receive, and
-#: the type-bound function of the composed OO law (``binding``) that the OO adapter evaluates at
-#: the family argument ``ModelComposition.arg`` to obtain it.
-CompValue = namedtuple('CompValue', 'arg binding')
+#: the function of the composed family (``func``, e.g. ``'stress'`` for ``hard_stress``) that the
+#: caller (the material, D-017.13d) evaluates at the family argument ``ModelComposition.arg``.
+CompValue = namedtuple('CompValue', 'arg func')
 
 #: Composition of a family whose models may contain another law (viscoplastic laws with a hardening
-#: law): ``component`` (name of the polymorphic component of the OO adapter), ``base_type`` (its
-#: declared type), ``arg`` (family argument the composed values depend on: a finite difference
-#: in that argument cannot be taken with the values frozen) and ``values`` (``CompValue``).
-ModelComposition = namedtuple('ModelComposition', 'component base_type arg values')
+#: law): ``arg`` (family argument the composed values depend on: a finite difference in that
+#: argument cannot be taken with the values frozen) and ``values`` (``CompValue``).
+ModelComposition = namedtuple('ModelComposition', 'arg values')
 
 #: Joint evaluation of several functions of a family at the same arguments (yield criteria: the
 #: equivalent stress and its two derivatives, which a return mapping needs together): a
@@ -954,11 +980,9 @@ ModelComposition = namedtuple('ModelComposition', 'component base_type arg value
 #: function of ``funcs`` (named ``outs``, of the type of the function result), and a ``flag``
 #: function ``<prefix>_<flag>(par)`` (constant ``logical``: whether the model writes its own,
 #: cheaper joint evaluation; the others get the default, the functions called in turn).
-#: ``models``: the registered models that write their own. ``oo_name`` / ``oo_flag``: bindings of
-#: the historical OO base (overridden by the adapter only for ``models``); ``oo_args``: OO dummy
-#: names of the family arguments.
+#: ``models``: the registered models that write their own.
 #: ``optional``: outputs that are ``optional`` arguments (not computed when absent, D-017.10a).
-ModelJoint = namedtuple('ModelJoint', 'name doc funcs outs flag flag_doc models oo_name oo_flag oo_args optional')
+ModelJoint = namedtuple('ModelJoint', 'name doc funcs outs flag flag_doc models optional')
 
 #: A model family: ``prefix`` of every generated name (``hard`` -> ``hard_stress``,
 #: ``hard_bilinear_dp``), ``module`` (format of the model modules), ``family_module``, ``par``
@@ -968,26 +992,16 @@ ModelJoint = namedtuple('ModelJoint', 'name doc funcs outs flag flag_doc models 
 #: differences, ``h = rel max(|x|, scale)``, D-017.5a, or ``None``), ``fd_lower`` (lower bound of
 #: the domain of the differentiated argument, or ``None``: below ``lower + h`` the default finite
 #: differences are one-sided), ``models`` (the registry), ``composition`` (a
-#: ``ModelComposition`` or ``None``), ``composed`` (registered models that compose the other law)
-#: ``oo_funcs`` (functions bound by default in the OO adapter, ``None`` = all), ``oo_bindings``
-#: (default OO bindings ``(binding, function, OO dummy names)`` when the historical names differ
-#: from the family ones, or ``None``), ``dims`` (dimensions of a family with tensor arguments: the
-#: specific function names then carry the dimension, ``<prefix>_<func>_<model>_<dim>_<kind>``;
-#: ``None`` for a family of scalar arguments), ``joint`` (a ``ModelJoint`` or ``None``) and
-#: ``oo_class`` (the tensor arguments of the historical OO base are polymorphic, ``class(...)``,
-#: so the OO adapters declare them so to override its bindings; ``False``: ``type(...)``).
-#: A default OO binding of ``oo_bindings`` may carry a fourth element, the dimension of its tensor
-#: arguments (default ``OO_DIM``), for a historical API with bindings per dimension
-#: (``stress_3D``, ``stress_2D``).
+#: ``ModelComposition`` or ``None``), ``composed`` (registered models that compose the other law),
+#: ``dims`` (dimensions of a family with tensor arguments: the specific function names then carry
+#: the dimension, ``<prefix>_<func>_<model>_<dim>_<kind>``; ``None`` for a family of scalar
+#: arguments) and ``joint`` (a ``ModelJoint`` or ``None``).
 #: ``support``: templates of the family that follow ``module`` but are not models (shared types,
 #: macros included by the model templates).
 ModelFamily = namedtuple('ModelFamily',
                          'prefix module family_module par args funcs fd_scale fd_lower models '
-                         'composition composed oo_funcs oo_bindings dims joint oo_class support',
-                         defaults=(None, (), None, None, None, None, False, ()))
-
-#: Dimension of the historical OO API (the OO adapters of a family with ``dims``).
-OO_DIM = '3D'
+                         'composition composed dims joint support',
+                         defaults=(None, (), None, None, ()))
 
 _EP = ModelArg('ep', 'real', '', r'Equivalent plastic strain \( \epsilon_p \ge 0 \).')
 _EPD = ModelArg('epd', 'real', '', r'Equivalent plastic strain rate \( \dot\epsilon_p \).')
@@ -1003,7 +1017,7 @@ _KIN_STATE = ModelArg('state', 'type:kin_state', '', r'Kinematic state (`kin_upd
 #: Composition with an isotropic hardening law (viscoplastic and overstress families): the
 #: composer evaluates ``hard_stress`` and ``hard_dstress_dep`` at ``ep`` and passes the values.
 _HARD_COMPOSITION = ModelComposition(
-    component='hard_law', base_type='Base_hardening_laws', arg='ep',
+    arg='ep',
     values=(CompValue(ModelArg('sy', 'real', '', r'Static yield stress \( \sigma_y(\epsilon_p) \) of the '
                                r'composed hardening law (`hard_stress`).'), 'stress'),
             CompValue(ModelArg('dsy_dep', 'real', '', r'Hardening modulus \( d\sigma_y/d\epsilon_p \) of '
@@ -1024,9 +1038,9 @@ MODEL_FAMILIES = {
         fd_scale='1.0', fd_lower='0.0', models=HARDENING_MODELS),
     # Flow stress laws sigma(ep, epd). The partial derivatives are the kernel API; dstress_dep is
     # the historical derivative used by the return mapping, d sigma(ep_n + x, x/dt)/dx (with the
-    # time step), by default dflow_dep + dflow_depd/dt (the formula of the historical laws and of
-    # the numeric default of Base_viscoplastic_law). Default finite differences as the historical
-    # `derivative` (no scale, no lower bound: the laws are evaluated at epd < 0 too).
+    # time step), by default dflow_dep + dflow_depd/dt (the formula of the historical laws). Default
+    # finite differences with the historical steps (no scale, no lower bound: the laws are evaluated
+    # at epd < 0 too).
     'vp': ModelFamily(
         prefix='vp', module='muscle_vp_{}', family_module='muscle_vp_laws', par='prm',
         args=(_EP, _EPD),
@@ -1044,12 +1058,18 @@ MODEL_FAMILIES = {
                          r'strain increment, \( \partial\sigma/\partial\epsilon_p + '
                          r'\partial\sigma/\partial\dot\epsilon_p/\Delta t \)',
                          _REAL(r'\( d\sigma/d\Delta\epsilon_p \).'), None, extra=(_DT,),
-                         comp=('sy', 'dsy_dep'), default='{dflow_dep} + {dflow_depd}/dt')),
+                         comp=('sy', 'dsy_dep'), default='{dflow_dep} + {dflow_depd}/dt'),
+               ModelFunc('newton_dstress_dep', r'Derivative `dstress_dep` for the Newton direction of a '
+                         r'rate-dependent return mapping: on the rate floor of a law with one, the right-hand '
+                         r'rate derivative at the floor instead of the 0 of the constant part, so that an '
+                         r'iteration started at a zero rate sees the rate sensitivity (D-018.19b; elsewhere '
+                         r'`dstress_dep`)',
+                         _REAL(r'\( d\sigma/d\Delta\epsilon_p \) for the Newton direction.'), None, extra=(_DT,),
+                         comp=('sy', 'dsy_dep'), models=VISCOPLASTIC_FLOOR)),
         fd_scale=None, fd_lower=None, models=VISCOPLASTIC_MODELS,
-        composition=_HARD_COMPOSITION, composed=VISCOPLASTIC_COMPOSED,
-        oo_funcs=('flow_stress', 'dstress_dep')),
-    # Overstress laws g(sigma_eq, ep) (plastic multiplier rate). Default finite differences as the
-    # historical `derivative` of Base_overstress_law.
+        composition=_HARD_COMPOSITION, composed=VISCOPLASTIC_COMPOSED),
+    # Overstress laws g(sigma_eq, ep) (plastic multiplier rate). Default finite differences with the
+    # historical steps.
     'os': ModelFamily(
         prefix='os', module='muscle_vp_{}', family_module='muscle_vp_overstress_laws', par='prm',
         args=(_SEQ, _EP),
@@ -1064,9 +1084,8 @@ MODEL_FAMILIES = {
         fd_scale=None, fd_lower=None, models=OVERSTRESS_MODELS,
         composition=_HARD_COMPOSITION, composed=OVERSTRESS_COMPOSED),
     # Yield criteria sigma_eq(sigma) and their derivatives with respect to the stress tensor. Default
-    # finite differences as the numeric procedures of Base_yield_critera (FD_GRAD, and FD_HESS of
-    # stress_eq for the second derivative; no scale). Only 3D for now (dims-2d-3d.md: 2D needs a
-    # 2D vs 3D test first). The OO adapters keep the historical binding names.
+    # finite differences with the historical steps (FD_GRAD, and FD_HESS of stress_eq for the second
+    # derivative; no scale). Only 3D for now (dims-2d-3d.md: 2D needs a 2D vs 3D test first).
     'yield': ModelFamily(
         prefix='yield', module='muscle_yield_{}', family_module='muscle_yield_criteria', par='prm',
         args=(_SIGMA,),
@@ -1079,9 +1098,6 @@ MODEL_FAMILIES = {
                          ModelArg('res', '4O3sym', '', r'\( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \).'),
                          ('dstress_eq', 'sigma'))),
         fd_scale=None, fd_lower=None, models=YIELD_MODELS,
-        oo_bindings=(('stress_eq', 'stress_eq', ('stress',)),
-                     ('dstressEq_dstress', 'dstress_eq', ('stress',)),
-                     ('ddstressEq_ddstress', 'ddstress_eq', ('stress',))),
         dims=('3D',),
         joint=ModelJoint(
             name='stress_eq_and_derivatives',
@@ -1090,15 +1106,11 @@ MODEL_FAMILIES = {
             flag='joint_evaluation',
             flag_doc=r'Whether the criterion writes its own joint evaluation (cheaper than the three '
                      r'functions in turn)',
-            models=YIELD_JOINT, oo_name='stressEq_and_derivatives', oo_flag='joint_evaluation',
-            oo_args=('stress',), optional=('ddf',))),
+            models=YIELD_JOINT, optional=('ddf',))),
     # Elastic models sigma(eps): the stress, its deviatoric part and their tangents (D-017.12), in
     # 3D and 2D (plane strain/stress and axisymmetry: the 33 component is kept). The tangents of
-    # 4O3sym have no default finite differences (tensor Jacobian): every model writes them. The
-    # transient variants of the historical OO API (strain increment, time step and internal
-    # variables, ignored by every elastic model) are not part of the kernel API: a model with
-    # internal variables belongs to the viscoelastic family. The OO base declares its tensor
-    # arguments `class(...)` and has one binding per dimension.
+    # 4O3sym have no default finite differences (tensor Jacobian): every model writes them. A model
+    # with internal variables belongs to the viscoelastic family.
     'elas': ModelFamily(
         prefix='elas', module='muscle_elasticity_{}', family_module='muscle_elasticity_laws', par='prm',
         args=(_STRAIN,),
@@ -1115,23 +1127,16 @@ MODEL_FAMILIES = {
                                   r'\( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \).'),
                          ('stress_dev', 'strain'))),
         fd_scale=None, fd_lower=None, models=ELASTICITY_MODELS,
-        oo_bindings=(('stress_3D', 'stress', ('strain',), '3D'),
-                     ('stress_2D', 'stress', ('strain',), '2D'),
-                     ('stress_dev_3D', 'stress_dev', ('strain',), '3D'),
-                     ('stress_dev_2D', 'stress_dev', ('strain',), '2D'),
-                     ('dstress_dstrain_3D', 'dstress_dstrain', ('strain',), '3D'),
-                     ('dstress_dstrain_2D', 'dstress_dstrain', ('strain',), '2D'),
-                     ('dstress_dstrain_dev_3D', 'dstress_dstrain_dev', ('strain',), '3D')),
-        dims=('3D', '2D'), oo_class=True),
+        dims=('3D', '2D')),
     # Linear viscoelastic models (D-017.13), integrated over a time step: the first family with a
     # state. The state is explicit (`visco_state_<k>`, fixed size, muscle_visco_types) and the
     # converged state is never modified: `visco_update` reads `state_n` and writes `state_np1`.
-    # The work is split by how often it is done (as the historical Base_viscoelasticity):
+    # The work is split by how often it is done:
     # `visco_step_coefficients` once per step and material (it validates the time step: the only
     # procedure with a `status`), `visco_freeze` once per step and point (the frozen elasticity
     # `elas_frozen_<k>` of the step, an elastic model of the `elas` family that any return mapping
     # uses), `visco_update` once per converged step and point. Only 3D (the state and the models
-    # are 3D, D-017.13c). The OO adapters keep the historical bindings, written by the author.
+    # are 3D, D-017.13c).
     'visco': ModelFamily(
         prefix='visco', module='muscle_visco_{}', family_module='muscle_visco_laws', par='prm',
         args=(),
@@ -1156,13 +1161,11 @@ MODEL_FAMILIES = {
                                 ModelArg('strain_e', '3D2Osym', '', r'Elastic strain at \( t_{n+1} \).')),
                          outs=(ModelArg('state_np1', 'type:visco_state', '', r'State at \( t_{n+1} \): '
                                         r'`state_n` with the branches of the model updated; the inactive '
-                                        r'branches are copied from `state_n` (the historical OO update left '
-                                        r'those of `state_np1` untouched: the same values, zero, through the '
-                                        r'API).'),)),
+                                        r'branches are copied from `state_n`.'),)),
                ModelFunc('n_branches', r'Number of history tensors of the state used by the model',
                          ModelArg('res', 'integer', '', r'Number of branches.'), None)),
-        fd_scale=None, fd_lower=None, models=VISCOELASTIC_MODELS, oo_funcs=(),
-        support=('muscle_visco_types', 'muscle_visco_adapters')),
+        fd_scale=None, fd_lower=None, models=VISCOELASTIC_MODELS,
+        support=('muscle_visco_types',)),
     # Kinematics (D-017.14): the configuration of a material point from its deformation gradient F.
     # The state is explicit (`kin_state_<k>`, fixed size, muscle_kin_finite: F, F^-1, the polar
     # rotation R, J, C, b, b^-1 and the strain measure of the kinematics) and is written by
@@ -1173,8 +1176,7 @@ MODEL_FAMILIES = {
     # to the spatial one. The strain measures, the stress conversions (PK1, PK2, Cauchy, Kirchhoff),
     # the push-forward/pull-back of tangents and the corotational rotations are the same for every
     # kinematics: functions of the state in muscle_kin_finite. No material parameters (empty
-    # parameter types, D-017.14). Only 3D (as the historical kinematics). The OO adapters keep the
-    # historical types and bindings, written with the macros of muscle_kin_adapters.
+    # parameter types, D-017.14). Only 3D (as the historical kinematics).
     'kin': ModelFamily(
         prefix='kin', module='muscle_kin_{}', family_module='muscle_kin_laws', par='prm',
         args=(),
@@ -1201,15 +1203,366 @@ MODEL_FAMILIES = {
                          r'strain of the kinematics)',
                          ModelArg('res', '3D2Osym', '', r'Cauchy stress \( \boldsymbol\sigma \).'), None,
                          extra=(_KIN_STATE, ModelArg('stress', '3D2Osym', '', r'Constitutive stress.'))),
-               ModelFunc('to_spatial_tangent', r'Spatial tangent from the constitutive tangent (no geometric '
-                         r'term, D-017.14b)',
+               ModelFunc('to_spatial_tangent', r'Spatial tangent from the constitutive tangent: the part of '
+                         r'\( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) through the '
+                         r'constitutive stress, for \( \delta\mathbf{F} = \delta\boldsymbol\varepsilon\,\mathbf{F} \) '
+                         r'(with the derivative of the strain measure, D-018.15f; without the geometric term)',
                          ModelArg('res', '3D4O2sym', '', r'Spatial tangent.'), None,
                          extra=(_KIN_STATE, ModelArg('tangent', '3D4O2sym', '', r'Constitutive tangent.'))),
+               ModelFunc('geometric_tangent', r'Geometric term of the spatial tangent: the part of '
+                         r'\( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) at a fixed '
+                         r'constitutive stress (D-018.15f); `to_spatial_tangent` plus this is the tangent of the '
+                         r'Jaumann rate of the Kirchhoff stress',
+                         ModelArg('res', '3D4O2sym', '', r'Geometric term.'), None,
+                         extra=(_KIN_STATE, ModelArg('stress', '3D2Osym', '', r'Cauchy stress.'))),
                ModelFunc('is_finite_strain', r'Whether the kinematics is a finite strain one',
                          ModelArg('res', 'logical', '', r'`.true.` for a finite strain kinematics.'), None)),
-        fd_scale=None, fd_lower=None, models=KINEMATICS_MODELS, oo_funcs=(),
-        support=('muscle_kin_finite', 'muscle_kin_adapters')),
+        fd_scale=None, fd_lower=None, models=KINEMATICS_MODELS,
+        support=('muscle_kin_finite',)),
 }
+
+
+# ---------------------------------------------------------------------------------------------
+# Parameters and initializers of the registered models (D-018.17e: single source)
+# ---------------------------------------------------------------------------------------------
+# The model templates read their parameter type (``model_param_list``) and the header of their
+# initializer (``MODEL_INIT`` of include/muscle_models_common.fypp, from ``MODEL_INITS``) from here;
+# the generated material initializers (``mat_init_<name>``, flat parameter array of an FE code) use
+# the same inputs (``model_inputs``).
+
+_P = ModelParam
+
+#: Parameters of every registered model, ``MODEL_PARAMS[(prefix, model)]`` (``ModelParam``, storage
+#: order = order of the positional structure constructor; see include/muscle_models_common.fypp).
+MODEL_PARAMS = MappingProxyType({
+    ('elas', 'frozen'): (
+        _P('k_alg', 'real', '', r'Algorithmic bulk modulus \( K^{alg} \).', '0.0'),
+        _P('g_alg', 'real', '', r'Algorithmic shear modulus \( G^{alg} \).', '0.0'),
+        _P('stress_hist', '3D2Osym', '',
+           r'History stress \( \boldsymbol\sigma^{hist}_n \) (constant over the step).', '0.0'),
+    ),
+    ('elas', 'linear'): (
+        _P('lambda', 'real', '', r'Lamé first parameter \( \lambda = E\nu/[(1+\nu)(1-2\nu)] \).', '0.0', True),
+        _P('mu', 'real', '', r'Shear modulus \( \mu = E/[2(1+\nu)] \).', '0.0', True),
+        _P('e1', 'real', '', r'Diagonal constant \( e_1 = \lambda + 2\mu \) of Hooke law.', '0.0', True),
+    ),
+    ('yield', 'cpb06'): (
+        _P('C1', 'real', '(3,3)',
+           r'Normal block \( C_{ij} \), i, j = 1..3, of the linear transformation \( \mathbf{C} \).', None),
+        _P('C2', 'real', '(3)',
+           r'Shear factors \( (C_{44}, C_{55}, C_{66}) \) of \( \mathbf{C} \) (xy, yz, xz).', None),
+        _P('k', 'real', '', r'Strength differential parameter \( k \in [-1, 1] \).', None),
+        _P('a', 'real', '', r'Exponent \( a \ge 1 \).', None),
+        _P('B', 'real', '',
+           r'Normalization factor \( B \) (Cazacu et al., 2006, Eq. 12), from C1, k and a.', None, True),
+        _P('L', 'real', '(3,3)',
+           r'Normal block of \( \mathbf{L} = \mathbf{C} \mathbb{P}_{dev} \) (Eq. 8), from C1.', None, True),
+    ),
+    ('yield', 'cpb06ex2'): (
+        _P('L', 'real', '(3,3)',
+           r'Normal block of \( \mathbf{L} = \mathbf{C} \mathbb{P}_{dev} \), which maps the normal stresses '
+           r'to those of \( \boldsymbol\Sigma \) (Plunkett et al., 2008, Eq. 9).', None, True),
+        _P('Lp', 'real', '(3,3)',
+           r'Normal block of \( \mathbf{L}^\prime = \mathbf{C}^\prime \mathbb{P}_{dev} \), for \( '
+           r'\boldsymbol\Sigma^\prime \) (Eq. 9; suffix p = primed in the paper).', None, True),
+        _P('c_shear', 'real', '(3)',
+           r'Shear factors of \( \mathbf{C} \) on the tensorial shears (xy, yz, xz).', None),
+        _P('cp_shear', 'real', '(3)',
+           r'Shear factors of \( \mathbf{C}^\prime \) on the tensorial shears (xy, yz, xz).', None),
+        _P('k', 'real', '', r'Strength differential parameter \( k \) of \( \boldsymbol\Sigma \) (Eq. 8).', None),
+        _P('kp', 'real', '',
+           r'Strength differential parameter \( k^\prime \) of \( \boldsymbol\Sigma^\prime \) (Eq. 8).', None),
+        _P('a', 'real', '', r'Degree of homogeneity \( a \) (Eq. 8).', None),
+        _P('B', 'real', '',
+           r'Normalization: \( \sigma_{eq} = s \) in uniaxial tension \( s \) along RD (Eq. 11 with \( '
+           r'\theta = 0 \)).', None, True),
+    ),
+    ('yield', 'druckerprager'): (
+        _P('f_factor', 'real', '',
+           r'Calibration factor \( f \) of the deviatoric term (hardening mode).', '0.0', True),
+        _P('I1_factor', 'real', '', r'Coefficient \( \tan\beta \, f \) of the pressure \( p \).', '0.0', True),
+        _P('K', 'real', '',
+           r'Ratio \( K \) of the yield stresses in triaxial tension and compression (\( 0.778 \le K \le 1 '
+           r'\)).', '0.0'),
+        _P('hardening_mode', 'integer', '',
+           r'Hardening calibration mode (`DP_HARDENING_TENSION`, `DP_HARDENING_COMPRESSION` or '
+           r'`DP_HARDENING_SHEAR`).', 'DP_HARDENING_TENSION'),
+    ),
+    ('yield', 'hill48'): (
+        _P('f', 'real', '', r'Anisotropy coefficient \( F \) (yy-zz).', None),
+        _P('g', 'real', '', r'Anisotropy coefficient \( G \) (zz-xx).', None),
+        _P('h', 'real', '', r'Anisotropy coefficient \( H \) (xx-yy).', None),
+        _P('l', 'real', '', r'Anisotropy coefficient \( L \) (shear yz).', None),
+        _P('m', 'real', '', r'Anisotropy coefficient \( M \) (shear xz).', None),
+        _P('n', 'real', '', r'Anisotropy coefficient \( N \) (shear xy).', None),
+    ),
+    ('yield', 'vonmises'): (),
+    ('yield', 'yld2004'): (
+        _P('Lp', 'real', '(3,3)',
+           r'Normal block of \( \mathbf{L}^\prime = \mathbf{C}^\prime \mathbb{P}_{dev} \), which maps (sxx, '
+           r'syy, szz) to (Spxx, Spyy, Spzz).', None, True),
+        _P('cp_shear', 'real', '(3)',
+           r'Shear factors of \( \mathbf{C}^\prime \) on (xy, yz, xz): (cp44, cp55, cp66).', None),
+        _P('Lpp', 'real', '(3,3)',
+           r'Normal block of \( \mathbf{L}^{\prime\prime} = \mathbf{C}^{\prime\prime} \mathbb{P}_{dev} \).', None, True),
+        _P('cpp_shear', 'real', '(3)',
+           r'Shear factors of \( \mathbf{C}^{\prime\prime} \) on (xy, yz, xz): (cpp44, cpp55, cpp66).', None),
+        _P('a', 'real', '', r'Exponent \( a \ge 2 \) (the analytical derivatives need it).', None),
+    ),
+    ('hard', 'bilinear'): (
+        _P('y0', 'real', '', r'Initial yield stress \( \sigma_{y0} \).', None),
+        _P('K', 'real', '', r'Hardening modulus \( K \).', None),
+    ),
+    ('hard', 'ludwik'): (
+        _P('sigma0', 'real', '', r'Initial yield stress \( \sigma_0 \).', None),
+        _P('k', 'real', '', r'Strength coefficient \( K \).', None),
+        _P('n', 'real', '', r'Hardening exponent \( n \).', None),
+    ),
+    ('hard', 'swift'): (
+        _P('k', 'real', '', r'Strength coefficient \( K \).', None),
+        _P('e0', 'real', '', r'Initial strain offset \( \epsilon_0 \) (> 0, see the module documentation).', None),
+        _P('n', 'real', '', r'Hardening exponent \( n \).', None),
+    ),
+    ('hard', 'vocemod'): (
+        _P('Sy', 'real', '', r'Initial yield stress \( \sigma_{y0} \).', None),
+        _P('k', 'real', '', r'Linear hardening modulus \( k \) (asymptotic slope).', None),
+        _P('q', 'real', '', r'Saturation stress range \( q \) of the exponential term.', None),
+        _P('n', 'real', '', r'Saturation rate \( n \).', None),
+    ),
+    ('vp', 'jc'): (
+        _P('C', 'real', '', r'Strain rate sensitivity \( C \).', None),
+        _P('epdmax', 'real', '', r'Reference equivalent plastic strain rate \( \dot\epsilon_{p0} \).', None),
+        _P('epmin', 'real', '',
+           r'Minimum strain rate \( \dot\epsilon_{min} \) (floor of the rate, avoids \( \ln 0 \)).', '1.0e-7'),
+    ),
+    ('vp', 'jcfull'): (
+        _P('C', 'real', '', r'Strain rate sensitivity \( C \).', '0.0'),
+        _P('epdmax', 'real', '', r'Reference equivalent plastic strain rate \( \dot\epsilon_{p0} \).', '1.0'),
+        _P('m', 'real', '', r'Thermal softening exponent \( m \) (0: no softening).', '0.0'),
+        _P('Troom', 'real', '', r'Reference (room) temperature \( T_{room} \) (K).', '293.15'),
+        _P('Tmelt', 'real', '', r'Melting temperature \( T_{melt} \) (K).', '1.0e3'),
+        _P('T_current', 'real', '', r'Current temperature \( T \) (K), set by the caller.', '0.0'),
+    ),
+    ('vp', 'mrk'): (
+        _P('B01', 'real', '', r'Linear hardening modulus \( B_{01} \).', None),
+        _P('B02', 'real', '', r'Saturation hardening modulus \( B_{02} \).', None),
+        _P('epdmax', 'real', '', r'Upper limit rate \( \dot\epsilon_{max} \).', None),
+        _P('nu1', 'real', '', r'Rate sensitivity of \( B_1 \), \( \nu_1 \).', None),
+        _P('nu2', 'real', '', r'Rate sensitivity of \( B_2 \), \( \nu_2 \).', None),
+        _P('n0', 'real', '', r'Saturation rate at the reference rate \( n_0 \).', None),
+        _P('D2', 'real', '', r'Rate sensitivity of the saturation rate \( D_2 \).', None),
+        _P('epdmin', 'real', '', r'Lower limit rate \( \dot\epsilon_{min} \).', None),
+        _P('chi1', 'real', '', r'Rate sensitivity of the rate factor \( \chi_1 \).', None),
+        _P('chi2', 'real', '', r'Exponent of the rate factor \( \chi_2 \).', None),
+        _P('sig_u', 'real', '', r'Athermal stress \( \sigma_u \).', None),
+    ),
+    ('vp', 'nnl'): (
+        _P('sig_a', 'real', '', r'Athermal stress coefficient \( \sigma_a \).', None),
+        _P('n1', 'real', '', r'Athermal hardening exponent \( n_1 \).', None),
+        _P('sig_0', 'real', '', r'Thermal stress coefficient \( \sigma_0 \).', None),
+        _P('KG0', 'real', '', r'Normalized activation coefficient \( k T/G_0 \).', None),
+        _P('epd0', 'real', '', r'Reference strain rate \( \dot\epsilon_0 \).', None),
+        _P('at', 'real', '', r'Microstructure evolution coefficient \( a \).', None),
+        _P('n0', 'real', '', r'Microstructure evolution exponent \( n_0 \).', None),
+        _P('q', 'real', '', r'Barrier profile exponent \( q \).', None),
+        _P('p', 'real', '', r'Barrier profile exponent \( p \).', None),
+        _P('eps_log', 'real', '', r'Floor of the logarithm arguments and of the rate.', '1.0e-12'),
+        _P('eps_base', 'real', '', r'Floor of \( 1 - X^{1/q} \).', '1.0e-12'),
+    ),
+    ('vp', 'rk'): (
+        _P('B0', 'real', '', r'Modulus of plasticity \( B_0 \).', None),
+        _P('ep0', 'real', '', r'Strain offset \( \epsilon_0 \).', None),
+        _P('n0', 'real', '', r'Hardening exponent at the reference rate \( n_0 \).', None),
+        _P('D2', 'real', '', r'Rate sensitivity of the hardening exponent \( D_2 \).', None),
+        _P('D1', 'real', '', r'Rate sensitivity of the effective stress \( D_1 \).', None),
+        _P('nu', 'real', '', r'Rate sensitivity of the modulus \( \nu \).', None),
+        _P('epdmin', 'real', '', r'Lower limit rate \( \dot\epsilon_{min} \).', None),
+        _P('epdmax', 'real', '', r'Upper limit rate \( \dot\epsilon_{max} \).', None),
+        _P('sig0', 'real', '', r'Effective stress at 0 K \( \sigma_0^* \).', None),
+        _P('m', 'real', '', r'Exponent of the effective stress \( m \).', None),
+        _P('epmin', 'real', '', r'Floor of the rate in the derivatives.', '1.0e-6'),
+        _P('epmax', 'real', '', r'Unused (historical component).', '10000.0'),
+    ),
+    ('vp', 'va'): (
+        _P('B', 'real', '', r'Hardening modulus \( B \).', None),
+        _P('n', 'real', '', r'Hardening exponent \( n \).', None),
+        _P('B1', 'real', '', r'Rate coefficient \( B_1 \).', None),
+        _P('B2', 'real', '', r'Rate offset \( B_2 \).', None),
+        _P('m', 'real', '', r'Rate exponent \( m \) (0: no rate term).', None),
+        _P('sig_u', 'real', '', r'Athermal stress \( \sigma_u \).', None),
+    ),
+    ('os', 'chaboche'): (
+        _P('k', 'real', '', r'Viscous resistance \( K \) (stress time\(^{1/n}\)).', '1.0'),
+        _P('n', 'real', '', r'Positive rate exponent \( n \).', '1.0'),
+    ),
+    ('os', 'perzyna'): (
+        _P('eta', 'real', '', r'Viscosity (relaxation time) \( \eta \).', '1.0'),
+        _P('n', 'real', '', r'Rate sensitivity exponent \( N \).', '1.0'),
+    ),
+    ('visco', 'kelvin'): (
+        _P('k', 'real', '', r'Elastic bulk modulus \( K \).', '0.0', True),
+        _P('g', 'real', '', r'Elastic shear modulus \( G \).', '0.0', True),
+        _P('zeta', 'real', '', r'Volumetric viscosity of the dashpot \( \zeta \).', '0.0', True),
+        _P('mu_v', 'real', '', r'Deviatoric viscosity of the dashpot \( \mu_v \).', '0.0', True),
+    ),
+    ('visco', 'maxwell'): (
+        _P('k', 'real', '', r'Bulk modulus \( K \).', '0.0', True),
+        _P('g_inf', 'real', '', r'Long-term shear modulus \( G_\infty \).', '0.0', True),
+        _P('n', 'integer', '', r'Number of Maxwell branches.', '0', True),
+        _P('g', 'real', '(MAX_VISCO_BRANCHES)',
+           r'Branch shear moduli \( G_k \) (0 in the unused slots).', '0.0', True),
+        _P('tau', 'real', '(MAX_VISCO_BRANCHES)',
+           r'Branch relaxation times \( \tau_k \) (1 in the unused slots).', '1.0', True),
+    ),
+
+    ('kin', 'small_strain'): (),
+    ('kin', 'total_lagrangian'): (),
+    ('kin', 'updated_lagrangian'): (),
+    ('kin', 'material_logarithmic'): (),
+    ('kin', 'spatial_logarithmic'): (),
+    ('kin', 'corotational'): (),
+})
+
+#: Input of the initializer of a model (``ModelInit``): ``name`` (dummy argument, also the keyword of a
+#: generated call), ``type`` (``'real'`` or ``'integer'``), ``shape`` (``''`` or ``'(:)'``: one value per
+#: branch of a viscoelastic model, assumed shape), ``doc`` (FORD text) and ``domain`` (optional: Fortran
+#: condition on the value ``{x}``, literals of kind ``{k}``, that the material initializer from a parameter
+#: array checks, ``STATUS_INVALID_PARAMETER`` otherwise; the model initializer itself does not, D-018.17e).
+ModelInput = namedtuple('ModelInput', 'name type shape doc domain', defaults=('', None))
+
+#: Initializer ``<prefix>_<model>_init`` of a model whose parameters are not its inputs (derived or
+#: validated private components, D-017.10b): ``doc`` (lines of the FORD summary, ``{k}`` = kind),
+#: ``inputs`` (``ModelInput``, in the order of the dummy arguments after the parameters ``prm``),
+#: ``status`` (FORD text of a final ``integer, intent(out) :: status``, or ``None`` without one),
+#: ``prm_intent`` and ``prm_doc`` (the parameter argument). The template writes the body.
+ModelInit = namedtuple('ModelInit', 'doc inputs status prm_intent prm_doc', defaults=(None, 'out', 'Parameters.'))
+
+_R = lambda name, doc, shape='': ModelInput(name, 'real', shape, doc)
+
+
+_SHEAR_AXES = {'44': 'xy', '55': 'yz', '66': 'xz'}
+
+
+def _matrix_inputs(prefix, rows_cols, symbol):
+    """Real inputs ``<prefix><i><j>``, coefficient ``ij`` of the matrix ``symbol`` (LaTeX), for the index
+    pairs ``rows_cols`` (44, 55, 66: the shears xy, yz, xz, library order):
+    ``[i.name for i in _matrix_inputs('c', ['11', '44'], 'C')]`` -> ``['c11', 'c44']``."""
+    return tuple(_R(f'{prefix}{ij}', rf'Coefficient \( {symbol}_{{{ij}}} \)'
+                    + (f' (shear {_SHEAR_AXES[ij]})' if ij in _SHEAR_AXES else '') + '.') for ij in rows_cols)
+
+
+_NORMAL = ('11', '12', '13', '21', '22', '23', '31', '32', '33')
+_SHEAR = ('44', '55', '66')
+_OFF_DIAG = ('12', '13', '21', '23', '31', '32')
+_STATUS = r'`STATUS_OK` or `STATUS_INVALID_PARAMETER`.'
+
+#: Initializers of the models built with one (``MODEL_INITS[(prefix, model)]``).
+MODEL_INITS = MappingProxyType({
+    ('elas', 'linear'): ModelInit(
+        doc=(r'Parameters of the linear elastic model in `real({k})` from the Young modulus and the Poisson',
+             r'ratio: the Lamé parameters \( \lambda \), \( \mu \) and \( e_1 = \lambda + 2\mu \).',
+             r'Needs \( \nu < 1/2 \) (D-017.12b).'),
+        inputs=(ModelInput('young', 'real', '', r'Young modulus \( E > 0 \).', '{x} > 0.0_{k}'),
+                ModelInput('poisson', 'real', '', r'Poisson ratio \( -1 < \nu < 1/2 \).',
+                           '{x} > -1.0_{k} .and. {x} < 0.5_{k}'))),
+    ('yield', 'druckerprager'): ModelInit(
+        doc=(r'Parameters of the Drucker-Prager model in `real({k})` matching the Abaqus material',
+             r'options: the calibration factor f of the hardening mode and the pressure coefficient',
+             r'tan(beta) f. An unknown mode keeps the previous f (as the original `init`; 0 for a',
+             r'default-initialized `prm`), so `prm` is `intent(inout)`.'),
+        inputs=(_R('beta_deg', r'Friction angle beta in degrees.'),
+                _R('K', r'Yield stress ratio K (0.778 <= K <= 1).'),
+                ModelInput('hardening_mode', 'integer', '',
+                           r'Hardening calibration mode (`DP_HARDENING_*`: 1 tension, 2 compression, 3 shear).',
+                           '{x} >= 1 .and. {x} <= 3')),
+        prm_intent='inout', prm_doc=r'Parameters (defined on entry: default initialization or a previous `init`).'),
+    ('yield', 'cpb06'): ModelInit(
+        doc=(r'Parameters of the CPB06 model in `real({k})` from the components of the linear',
+             r'transformation C, k and a; computes the normalization factor B (Cazacu et al., 2006,',
+             r'Eq. 12) and the normal block L of C P_dev, so that they are not computed in every call.'),
+        inputs=_matrix_inputs('c', _NORMAL + _SHEAR, 'C')
+        + (_R('k', r'Strength differential parameter.'), _R('a', r'Exponent.'))),
+    ('yield', 'cpb06ex2'): ModelInit(
+        doc=(r'Parameters of the CPB06ex2 model in `real({k})`: the maps of Plunkett et al. (2008),',
+             r'Eqs. (9)-(10), and the normalization B of Eq. (8) to unit uniaxial tension in RD, as in',
+             r'Eq. (11), so that they are not computed in every call.'),
+        inputs=_matrix_inputs('c', _NORMAL + _SHEAR, 'C')
+        + (_R('k', r'Strength differential parameter of Sigma.'),)
+        + _matrix_inputs('cp', _NORMAL + _SHEAR, r'C^\prime')
+        + (_R('kp', r'Strength differential parameter of Sigmap.'), _R('a', r'Degree of homogeneity.'))),
+    ('yield', 'yld2004'): ModelInit(
+        doc=(r'Parameters of the Yld2004-18p model in `real({k})`: Lp = Cp P_dev and Lpp = Cpp P_dev',
+             r'(Barlat et al., 2005, Eqs. 11 and 15), so that each call applies them to the stress',
+             r'without forming the deviator. cpIJ = cp_IJ and cppIJ = cpp_IJ; the shears follow the',
+             r'library order: 44 -> xy, 55 -> yz, 66 -> xz.'),
+        inputs=_matrix_inputs('cp', _OFF_DIAG + _SHEAR, r'C^\prime')
+        + _matrix_inputs('cpp', _OFF_DIAG + _SHEAR, r'C^{\prime\prime}')
+        + (_R('a', r'Exponent.'),)),
+    ('visco', 'maxwell'): ModelInit(
+        doc=(r'Parameters of the generalized Maxwell model in `real({k})` from the Prony series with',
+             r'absolute moduli. `STATUS_INVALID_PARAMETER` (and the default parameters) if `shear` and',
+             r'`tau` differ in size, have more than `MAX_VISCO_BRANCHES` branches or a `tau <= 0`.'),
+        inputs=(_R('bulk', r'Bulk modulus \( K \).'), _R('shear_inf', r'Long-term shear modulus \( G_\infty \).'),
+                _R('shear', r'Branch shear moduli \( G_k \).', '(:)'),
+                _R('tau', r'Branch relaxation times \( \tau_k \).', '(:)')),
+        status=_STATUS),
+    ('visco', 'kelvin'): ModelInit(
+        doc=(r'Parameters of the Kelvin-Voigt solid in `real({k})`: elastic moduli and viscosities.',
+             r'`STATUS_INVALID_PARAMETER` (and the default parameters) if any of them is negative.'),
+        inputs=(_R('bulk', r'Bulk modulus \( K \).'), _R('shear', r'Shear modulus \( G \).'),
+                _R('bulk_viscosity', r'Volumetric viscosity \( \zeta \).'),
+                _R('shear_viscosity', r'Deviatoric viscosity \( \mu_v \).')),
+        status=_STATUS),
+})
+
+
+def model_param_list(prefix, model):
+    """Parameters of a registered model (``MODEL_PARAMS``, as ``ModelParam``): what its template passes
+    to ``MODEL_PARAMS_TYPE``: ``[p.name for p in model_param_list('hard', 'bilinear')]`` ->
+    ``['y0', 'K']``."""
+    try:
+        return MODEL_PARAMS[(prefix, model)]
+    except KeyError:
+        raise ValueError(f'no parameters registered for model {model!r} of family {prefix!r}') from None
+
+
+def model_init(prefix, model):
+    """``ModelInit`` of a model built with an initializer, or ``None`` (built by setting its public
+    parameter components)."""
+    return MODEL_INITS.get((prefix, model))
+
+
+def model_inputs(prefix, model):
+    """Inputs that build a model (``ModelInput``): those of its initializer (``MODEL_INITS``), or else its
+    parameters, every one public (set as components): ``[i.name for i in model_inputs('elas',
+    'linear')]`` -> ``['young', 'poisson']``."""
+    init = model_init(prefix, model)
+    if init is not None:
+        return init.inputs
+    params = model_param_list(prefix, model)
+    private = [p.name for p in params if p.private]
+    if private:
+        raise ValueError(f'model {model!r} of family {prefix!r} has private parameters {private} but no '
+                         f'initializer in MODEL_INITS')
+    return tuple(ModelInput(p.name, p.type, p.shape, p.doc) for p in params)
+
+
+def model_init_signature(prefix, model, kind, indent=4, width=120):
+    """First line(s) of the initializer of a model, ``pure subroutine <prefix>_<model>_init_<k>(prm,
+    inputs..., status)``, continued with ``&`` before ``width`` columns."""
+    init = model_init(prefix, model)
+    args = [model_family(prefix).par] + [i.name for i in init.inputs] + (['status'] if init.status else [])
+    head = ' ' * indent + f'pure subroutine {prefix}_{model}_init_{kind}('
+    lines, cur = [], head
+    for n, a in enumerate(args):
+        piece = a + (', ' if n < len(args) - 1 else ')')
+        if len(cur) + len(piece.rstrip()) + 2 > width:
+            lines.append(cur.rstrip() + ' &')
+            cur = ' ' * (len(head)) + piece
+        else:
+            cur += piece
+    lines.append(cur.rstrip())
+    return '\n'.join(lines)
 
 
 def model_family(prefix):
@@ -1401,20 +1754,6 @@ def model_params(params):
     return res
 
 
-def model_oo_extra(params, extra):
-    """OO-only components of a historical OO adapter (``ModelParam`` from tuples as in
-    ``model_params``): state that the historical type keeps but the kernel parameter type does not,
-    e.g. the tangents cached by ``Elasticity_linear`` (D-017.12e). They follow the parameters in the
-    OO type and are not copied to the kernel type; their names may not repeat a parameter name:
-    ``[p.name for p in model_oo_extra([('mu', 'real', '', 'M.', None)],
-    [('flag', 'logical', '', 'F.', '.false.')])]`` -> ``['flag']``."""
-    res = model_params(extra or ())
-    clash = {p.name.lower() for p in model_params(params)} & {p.name.lower() for p in res}
-    if clash:
-        raise ValueError(f'OO-only components repeat parameter names: {sorted(clash)}')
-    return res
-
-
 def model_composed(prefix, model):
     """Whether a model of the family composes another law (``ModelFamily.composed``):
     ``model_composed('vp', 'jc')`` -> ``True``, ``model_composed('vp', 'rk')`` -> ``False``."""
@@ -1432,18 +1771,12 @@ def model_comp_values(prefix, func):
     return [values[n] for n in names]
 
 
-def model_oo_args(prefix, func):
-    """Arguments of a function in the OO adapter (and of every model that composes nothing):
-    the family arguments and the ``extra`` ones of the function."""
-    return list(MODEL_FAMILIES[prefix].args) + list(model_func(prefix, func).extra)
-
-
 def model_args(prefix, func, model):
     """Arguments of a function of a model, after the parameter argument: the family arguments,
     the ``extra`` ones of the function and, if the model composes another law, the composition
     values the function receives (D-017.6b): ``[a.name for a in model_args('vp', 'dstress_dep',
     'jc')]`` -> ``['ep', 'epd', 'dt', 'sy', 'dsy_dep']``."""
-    res = model_oo_args(prefix, func)
+    res = list(MODEL_FAMILIES[prefix].args) + list(model_func(prefix, func).extra)
     if model_composed(prefix, model):
         res += [v.arg for v in model_comp_values(prefix, func)]
     return res
@@ -1456,48 +1789,6 @@ def model_call(prefix, func, model, kind, xarg=None, dim=None):
     fam = MODEL_FAMILIES[prefix]
     args = [fam.par] + ['{x}' if a.name == xarg else a.name for a in model_args(prefix, func, model)]
     return '{}({})'.format(model_specific(prefix, func, model, kind, dim), ', '.join(args))
-
-
-def model_oo_bindings(prefix, bindings=None, model=None):
-    """Bindings of an OO adapter as ``(binding, family function, OO dummy names or None,
-    dimension)``: ``bindings`` if given, else ``ModelFamily.oo_bindings`` if the family has
-    historical names, else every function of ``ModelFamily.oo_funcs`` (``None``: all) under its
-    own name with the family argument names. The dimension (of the tensor arguments and result) is
-    the optional fourth element of a given binding, by default ``OO_DIM`` in a family with
-    dimensions and ``None`` otherwise. With ``model``, the default bindings only cover the
-    functions that model has (``ModelFunc.models``), and a given binding of a function the model
-    does not have is an error."""
-    fam = MODEL_FAMILIES[prefix]
-    own = model_procs(prefix, model)
-    if bindings is None:
-        if fam.oo_bindings is not None:
-            bindings = [b for b in fam.oo_bindings if b[1] in own]
-        else:
-            bindings = [(f.name, f.name, None) for f in fam.funcs
-                        if (fam.oo_funcs is None or f.name in fam.oo_funcs) and f.name in own]
-    for b in bindings:
-        if b[1] not in own:
-            raise ValueError(f'OO binding {b[0]!r}: {prefix}_{b[1]} is not a function of {model!r}')
-    dflt = OO_DIM if fam.dims else None
-    res = []
-    for b in bindings:
-        if len(b) not in (3, 4):
-            raise ValueError(f'OO binding {b!r}: expected (binding, function, names[, dimension])')
-        dim = b[3] if len(b) == 4 else dflt
-        if fam.dims and dim not in fam.dims or not fam.dims and dim is not None:
-            raise ValueError(f'OO binding {b[0]!r}: dimension {dim!r} not in {fam.dims}')
-        res.append((b[0], b[1], b[2], dim))
-    return res
-
-
-def model_oo_decl(prefix, arg, kind, dim):
-    """Declaration of an argument of an OO adapter procedure (without attributes): as
-    ``model_decl``, but a tensor argument is ``class(...)`` in a family whose historical base
-    declares it so (``ModelFamily.oo_class``)."""
-    decl = model_decl(arg.type, arg.shape, kind, dim)
-    if MODEL_FAMILIES[prefix].oo_class and decl.startswith('type('):
-        decl = 'class(' + decl[len('type('):]
-    return decl
 
 
 def model_default_expr(prefix, func, model, kind, dim=None):
@@ -1545,3 +1836,571 @@ def literal_value(text):
         return float(str(text).strip().split('_')[0])
     except ValueError:
         return None
+
+
+# ---------------------------------------------------------------------------------------------------
+# Declared materials (Phase 7, D-008, D-018)
+# ---------------------------------------------------------------------------------------------------
+
+#: A declared material (D-008.1, D-018.9): a combination of registered models solved by one return
+#: mapping. ``name`` (lower case Fortran identifier: module ``muscle_mat_<name>``, type
+#: ``mat_<name>_<k>``), ``solver`` (a key of ``MATERIAL_SOLVERS``) and the model of each family
+#: the solver needs, by family prefix (``elas``, ``yield_`` -- ``yield`` is a Python keyword --,
+#: ``hard``, ``vp``, ``os``, ``visco``; ``None`` = not used); ``doc``: one line for the FORD docs. The
+#: parameters are not part of the declaration: they are components of the material type, set at
+#: run time. An elasticity of ``MATERIAL_ELAS_PER_POINT`` (the frozen viscoelastic one, ``elas='frozen'``)
+#: needs the model of its family (``visco='maxwell'``) and ``visco_branches``: the number of branches
+#: the history array of a point keeps (fixed per material, at most ``MAX_VISCO_BRANCHES``; the kernel
+#: returns ``STATUS_INVALID_PARAMETER`` for a model with more). ``kin``: a kinematics
+#: (``KINEMATICS_MODELS``, D-018.15) makes a finite strain material, whose point kernel takes the
+#: deformation gradients at t_n and t_n+1, or, with ``KINEMATICS_FE_ROTATED``, the strain rotated by the
+#: FE code (any solver with a consistent tangent: not ``cutting_plane``; not with a viscoelastic
+#: elasticity yet; a spatial measure with an anisotropic yield criterion needs an isotropic
+#: elasticity, ``ELASTICITY_ISOTROPIC``), and
+#: ``tangent_rate`` (``MATERIAL_TANGENT_RATES``, only with ``kin``) chooses its spatial tangent.
+Material = namedtuple('Material', 'name solver elas yield_ hard vp os doc visco visco_branches kin tangent_rate',
+                      defaults=(None, None, None, None, None, '', None, 0, None, 'none'))
+
+#: Field of ``Material`` of each model family a solver may use.
+MATERIAL_FIELDS = {'elas': 'elas', 'yield': 'yield_', 'hard': 'hard', 'vp': 'vp', 'os': 'os', 'visco': 'visco',
+                   'kin': 'kin'}
+
+#: Spatial tangents of a finite strain material (D-018.15f): ``none``, ``kin_to_spatial_tangent`` (the
+#: part through the constitutive stress), or ``jaumann``, plus ``kin_geometric_tangent``: the tangent of
+#: the Jaumann rate of the Kirchhoff stress over J (Abaqus UMAT, ANSYS USERMAT).
+MATERIAL_TANGENT_RATES = ('none', 'jaumann')
+
+#: Elastic models whose parameters are written at each point and step by a model of another family
+#: (D-017.13d): ``{elas model: family prefix}``. The material has a component of that family in place
+#: of ``elas`` and a state with the state of that family (``material_state``): the frozen elasticity of
+#: a step comes from the viscoelastic model and its converged state (`visco_freeze`).
+MATERIAL_ELAS_PER_POINT = MappingProxyType({'frozen': 'visco'})
+
+#: A return mapping solver usable by a material: ``families`` (prefixes of the model families it
+#: calls, in the order of the components of the material type; each one is required), ``nstate``
+#: (number of state variables of a point in an FE history array, without the stress, D-018.7),
+#: ``unsupported`` (``{prefix: models}`` registered in the family but not yet usable by the solver),
+#: ``composes`` (``{prefix: composed prefix}``: a model of family ``prefix`` that composes another law,
+#: ``ModelFamily.composed``, takes it from the component of the composed family, which the material
+#: then has, right after the composer; with a model that composes nothing the material has no such
+#: component, D-017.6b), ``dt`` (the solver uses the time step: rate-dependent; every point kernel
+#: takes it, D-018.12c) and ``iter_nw`` (default iteration limit of the material, component
+#: ``iter_nw``: the historical limit of the solver). The defaults are immutable (``MappingProxyType``).
+#: Its body (``src/solvers/muscle_<solver>_body.fypp``) is included by
+#: ``src/materials/muscle_material.fypp`` with ``k`` fixed.
+MaterialSolver = namedtuple('MaterialSolver', 'families nstate unsupported composes dt iter_nw',
+                            defaults=(MappingProxyType({}), MappingProxyType({}), False, 200))
+
+#: Return mapping solvers of the declared materials (D-018.1). The plastic state of all of them is the
+#: plastic strain (6) and the equivalent plastic strain; a material with the frozen viscoelastic
+#: elasticity adds its viscoelastic state (``material_state_size``).
+MATERIAL_SOLVERS = {
+    'closest_point': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
+    # Overstress viscoplasticity (Perzyna, Chaboche): every overstress law composes a hardening law
+    'closest_point_perzyna': MaterialSolver(families=('elas', 'yield', 'os'), nstate=7, composes={'os': 'hard'},
+                                            dt=True),
+    # Consistency viscoplasticity (flow stress sigma(ep, epd)): Johnson-Cook composes a hardening law
+    'closest_point_time': MaterialSolver(families=('elas', 'yield', 'vp'), nstate=7, composes={'vp': 'hard'},
+                                         dt=True),
+    # Monolithic Newton on (plastic strain, plastic multiplier): a 7x7 system solved by an own LU (D-018.1)
+    'closest_point_2': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
+    # Explicit cutting plane (D-018.1): 100 corrections at most, as the historical solver
+    'cutting_plane': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7, iter_nw=100),
+}
+
+#: Procedures of a material module, ``mat_<proc>_<name>_<k>`` (``material_proc``): ``update`` is
+#: the point kernel (public generic ``mat_update``, shared by every material module), ``pack`` /
+#: ``unpack`` move the state to / from an FE history array (public generics ``mat_pack_<name>`` /
+#: ``mat_unpack_<name>``: their arguments do not involve the material type), the others are private
+#: pieces of the solver (``solve``: the return mapping with the elasticity of the step and the plastic
+#: state, called by ``update``; ``merit``: merit function of a line search). ``step`` (public generic
+#: ``mat_step``, only with a viscoelastic elasticity): coefficients of a time step, once per step for
+#: every point, an argument of ``update``. ``batch``: the batch API over SoA arrays (public generic
+#: ``material_batch``, ``muscle_update_<name>``), which runs ``update`` on every point of a batch.
+#: ``point`` / ``pointdd``: the point API over flat arrays for FE codes without / with the tangent
+#: ``ddsdde`` (specifics of the public generic ``material_point``, ``muscle_point_<name>``, D-018.17b; two
+#: specifics instead of an optional argument, D-018.16b); ``rotate``: rotation of the tensorial parts of an FE history
+#: array (public generic ``material_rotate_hsv``, ``mat_rotate_hsv_<name>``, D-018.17c; only for a
+#: material whose input is a strain, ``material_strain_input``); ``init``: the material from a flat parameter
+#: array (public generic ``mat_init_<name>``, D-018.17a; ``material_props``).
+MATERIAL_PROCS = ('update', 'solve', 'step', 'iter', 'tangent', 'merit', 'pack', 'unpack', 'batch', 'point',
+                  'pointdd', 'rotate', 'init')
+
+#: Maximum length of a Fortran identifier (F2008).
+FORTRAN_NAME_MAX = 63
+
+#: Maximum length of ``Material.doc`` (one line of the generated FORD docs).
+MATERIAL_DOC_MAX = 80
+
+_MATERIAL_NAME_RE = r'[a-z][a-z0-9_]*'
+
+
+def material_solver_body(solver):
+    """Body of a solver of ``MATERIAL_SOLVERS`` (D-018.5), relative to ``src/solvers/``, included by
+    ``src/materials/muscle_material.fypp``: ``material_solver_body('closest_point')`` ->
+    ``muscle_closest_point_body.fypp``. The CMake dependencies of the material modules come from it
+    (``muscle_meta.py solver-bodies``)."""
+    if solver not in MATERIAL_SOLVERS:
+        raise ValueError(f'unknown solver {solver!r} (MATERIAL_SOLVERS: {", ".join(MATERIAL_SOLVERS)})')
+    return f'muscle_{solver}_body.fypp'
+
+
+def material_module(name):
+    """Module of a material: ``material_module('cp_vm_swift')`` -> ``muscle_mat_cp_vm_swift``."""
+    return f'muscle_mat_{name}'
+
+
+def material_type(name, kind):
+    """Type of a material: ``material_type('cp_vm_swift', 'dp')`` -> ``mat_cp_vm_swift_dp``."""
+    return f'mat_{name}_{kind}'
+
+
+def material_nstate(name):
+    """Constant with the size of the state of a material in an FE history array:
+    ``material_nstate('cp_vm_swift')`` -> ``MAT_CP_VM_SWIFT_NSTATE``."""
+    return f'MAT_{name.upper()}_NSTATE'
+
+
+def material_visco(mat):
+    """Family prefix of the model that writes the elasticity of the material at each point
+    (``MATERIAL_ELAS_PER_POINT``: ``'visco'`` for ``elas='frozen'``), or ``None`` (a material
+    elasticity with constant parameters, a component of the material type)."""
+    return MATERIAL_ELAS_PER_POINT.get(mat.elas)
+
+
+def material_state_size(mat):
+    """Number of state variables of a point of the material in an FE history array (value of
+    ``material_nstate``): the plastic state of the solver (``MaterialSolver.nstate``) and, with a
+    viscoelastic elasticity, the elastic strain (6) and ``visco_branches`` history tensors (6 each)."""
+    n = MATERIAL_SOLVERS[mat.solver].nstate
+    if material_visco(mat) is not None:
+        n += 6 + 6*mat.visco_branches
+    return n
+
+
+def material_state(mat, kind):
+    """``(module, type)`` of the state of a point of the material (argument of ``mat_update``):
+    ``plastic_state_<k>`` of muscle_plastic_state, or with a viscoelastic elasticity
+    ``visco_plastic_state_<k>`` of muscle_material_state (components ``plastic`` and ``visco``)."""
+    if material_visco(mat) is not None:
+        return 'muscle_material_state', f'visco_plastic_state_{kind}'
+    return 'muscle_plastic_state', f'plastic_state_{kind}'
+
+
+def material_spatial_kin(mat):
+    """Whether the material has a kinematics with a spatial strain measure (``KINEMATICS_SPATIAL``): its
+    kernel rotates the converged plastic strain with the rotation increment (D-018.15f)."""
+    return mat.kin in KINEMATICS_SPATIAL
+
+
+def material_rotated(mat):
+    """Whether the return mapping of the material runs in the frame of the polar rotation: a spatial
+    strain measure with an anisotropic yield criterion (D-018.15f)."""
+    return material_spatial_kin(mat) and mat.yield_ is not None and mat.yield_ not in YIELD_ISOTROPIC
+
+
+def material_proc(proc, name, kind):
+    """Specific procedure of a material (generic ``mat_<proc>`` + material + kind, D-011.4):
+    ``material_proc('update', 'cp_vm_swift', 'dp')`` -> ``mat_update_cp_vm_swift_dp``."""
+    if proc not in MATERIAL_PROCS:
+        raise ValueError(f'unknown material procedure {proc!r} (MATERIAL_PROCS: {MATERIAL_PROCS})')
+    return f'mat_{proc}_{name}_{kind}'
+
+
+def material_batch(name):
+    """Public generic of the batch API of a material (every kind, specifics ``material_proc('batch', ...)``):
+    ``material_batch('cp_vm_swift')`` -> ``muscle_update_cp_vm_swift``. Its length is that of
+    ``material_proc('unpack', name, k)``, so ``material_identifiers`` already bounds it."""
+    return f'muscle_update_{name}'
+
+
+def material_point(name):
+    """Public generic of the point API of a material for FE codes (D-018.17b, every kind, specifics
+    ``material_proc('point', ...)``): ``material_point('cp_vm_swift')`` -> ``muscle_point_cp_vm_swift``.
+    Shorter than ``material_proc('tangent', name, k)``, so ``material_identifiers`` already bounds it."""
+    return f'muscle_point_{name}'
+
+
+def material_rotate_hsv(name):
+    """Public generic of the rotation of the tensorial parts of an FE history array (D-018.17c, every
+    kind, specifics ``material_proc('rotate', ...)``): ``material_rotate_hsv('cp_vm_swift')`` ->
+    ``mat_rotate_hsv_cp_vm_swift``. As long as ``material_proc('tangent', name, k)``, so
+    ``material_identifiers`` already bounds it."""
+    return f'mat_rotate_hsv_{name}'
+
+
+def material_strain_input(mat):
+    """Whether the input of the point kernel of the material is a strain (small strain, or the
+    corotational kinematics: the strain rotated by the FE code, D-018.15f) rather than the deformation
+    gradients F_n, F_np1 of a finite strain kinematics. Only such a material has
+    ``material_rotate_hsv``: with F the kernel itself keeps the state objective."""
+    return mat.kin is None or mat.kin in KINEMATICS_FE_ROTATED
+
+
+def material_identifiers(name):
+    """Every Fortran identifier generated for a material name (module, types, procedures) in every
+    kind of ``KINDS``: what the name length is validated against."""
+    ids = [material_module(name), material_nstate(name)]
+    for k in KINDS:
+        ids.append(material_type(name, k))
+        ids += [material_proc(p, name, k) for p in MATERIAL_PROCS]
+    return ids
+
+
+def material_composed(mat, prefix):
+    """Prefix of the family whose law the model of family ``prefix`` of the material composes
+    (``MaterialSolver.composes``), or ``None``: ``material_composed(Material('a',
+    'closest_point_time', 'linear', 'vonmises', 'swift', vp='jc'), 'vp')`` -> ``'hard'`` (``None``
+    with ``vp='rk'``)."""
+    target = MATERIAL_SOLVERS[mat.solver].composes.get(prefix)
+    if target is None or not model_composed(prefix, getattr(mat, MATERIAL_FIELDS[prefix])):
+        return None
+    return target
+
+
+def material_families(mat):
+    """Model families of the material (prefixes, in the order of the components of its type): the
+    solver families, each composer followed by the family it composes when its model composes one;
+    ``elas`` is replaced by the family that writes it at each point (``MATERIAL_ELAS_PER_POINT``)."""
+    res = []
+    for p in MATERIAL_SOLVERS[mat.solver].families:
+        if p == 'elas' and material_visco(mat) is not None:
+            res.append(material_visco(mat))
+            continue
+        res.append(p)
+        composed = material_composed(mat, p)
+        if composed is not None:
+            res.append(composed)
+    if mat.kin is not None:
+        res.append('kin')
+    return res
+
+
+def material_components(mat):
+    """Components of the material type, ``[(prefix, model)]`` (``material_families``):
+    ``material_components(Material('a', 'closest_point', 'linear', 'vonmises', 'swift'))`` ->
+    ``[('elas', 'linear'), ('yield', 'vonmises'), ('hard', 'swift')]``. The component of family
+    ``prefix`` is named ``prefix`` and has the parameter type ``model_type(prefix, model, k)``."""
+    return [(p, getattr(mat, MATERIAL_FIELDS[p])) for p in material_families(mat)]
+
+
+def material_comp_args(mat, prefix, func, ep, obj='mat'):
+    """Trailing arguments of a call of the family function ``<prefix>_<func>`` of the material:
+    the values of the composed law at ``ep`` (Fortran expression) that the function receives
+    (``ModelFunc.comp``, D-017.6b), evaluated from the component of the composed family of ``obj``,
+    or ``''`` if the model composes nothing: ``material_comp_args(m, 'vp', 'dstress_dep', 'ep')`` ->
+    ``', hard_stress(mat%hard, ep), hard_dstress_dep(mat%hard, ep)'`` for Johnson-Cook."""
+    composed = material_composed(mat, prefix)
+    if composed is None:
+        return ''
+    return ''.join(f', {composed}_{v.func}({obj}%{composed}, {ep})' for v in model_comp_values(prefix, func))
+
+
+def _article(word):
+    """Indefinite article of a word in a message: ``_article('os')`` -> ``'an'``."""
+    return 'an' if word[:1] in 'aeiou' else 'a'
+
+
+def _validate_material_model(mat, prefix, used):
+    """Checks the model of family ``prefix`` of a material (``validate_material``): required, registered
+    and supported by the solver if the material uses the family, ``None`` otherwise."""
+    solver = MATERIAL_SOLVERS[mat.solver]
+    field = MATERIAL_FIELDS[prefix]
+    model = getattr(mat, field)
+    if not used:
+        if model is not None:
+            composer = [p for p, c in solver.composes.items() if c == prefix]
+            why = (f' (its {composer[0]!r} model {getattr(mat, MATERIAL_FIELDS[composer[0]])!r} composes none)'
+                   if composer else '')
+            raise ValueError(f'material {mat.name!r}: solver {mat.solver!r} does not use {_article(prefix)} '
+                             f'{prefix!r} model ({field}={model!r}){why}')
+        return
+    if model is None:
+        raise ValueError(f'material {mat.name!r}: solver {mat.solver!r} needs {_article(prefix)} {prefix!r} model '
+                         f'({field}=...)')
+    if model not in MODEL_FAMILIES[prefix].models:
+        raise ValueError(f'material {mat.name!r}: {model!r} is not a registered {prefix!r} model '
+                         f'(registered: {", ".join(MODEL_FAMILIES[prefix].models)})')
+    if model in solver.unsupported.get(prefix, ()):
+        raise ValueError(f'material {mat.name!r}: the {prefix!r} model {model!r} is not supported yet '
+                         f'by solver {mat.solver!r}')
+
+
+def validate_material(mat):
+    """Checks one ``Material`` against the solver and model family registries; raises
+    ``ValueError`` with the reason. Returns ``mat``."""
+    if not isinstance(mat, Material):
+        raise ValueError(f'{mat!r} is not a muscle_meta.Material')
+    if not isinstance(mat.name, str) or not re.fullmatch(_MATERIAL_NAME_RE, mat.name):
+        raise ValueError(f'material name {mat.name!r}: a lower case Fortran identifier is required')
+    longest = max(material_identifiers(mat.name), key=len)
+    if len(longest) > FORTRAN_NAME_MAX:
+        raise ValueError(f'material {mat.name!r}: name too long, {longest!r} has {len(longest)} > '
+                         f'{FORTRAN_NAME_MAX} characters')
+    if not isinstance(mat.doc, str) or len(mat.doc) > MATERIAL_DOC_MAX:
+        raise ValueError(f'material {mat.name!r}: doc must be a string of at most {MATERIAL_DOC_MAX} characters')
+    if mat.solver not in MATERIAL_SOLVERS:
+        raise ValueError(f'material {mat.name!r}: unknown solver {mat.solver!r} (known: '
+                         f'{", ".join(MATERIAL_SOLVERS)})')
+    solver = MATERIAL_SOLVERS[mat.solver]
+    # The solver families first: whether a composed family is used depends on their models
+    for prefix in solver.families:
+        _validate_material_model(mat, prefix, True)
+    families = material_families(mat)
+    for prefix in MATERIAL_FIELDS:
+        if prefix not in solver.families:
+            _validate_material_model(mat, prefix, prefix in families)
+    nb = mat.visco_branches
+    if material_visco(mat) is None:
+        if nb != 0:
+            raise ValueError(f'material {mat.name!r}: visco_branches={nb!r} without a viscoelastic elasticity')
+    elif not isinstance(nb, int) or isinstance(nb, bool) or not 0 <= nb <= MAX_VISCO_BRANCHES:
+        raise ValueError(f'material {mat.name!r}: visco_branches must be an integer in [0, {MAX_VISCO_BRANCHES}] '
+                         f'(got {nb!r})')
+    if mat.tangent_rate not in MATERIAL_TANGENT_RATES:
+        raise ValueError(f'material {mat.name!r}: tangent_rate must be one of {", ".join(MATERIAL_TANGENT_RATES)} '
+                         f'(got {mat.tangent_rate!r})')
+    if mat.kin is None and mat.tangent_rate != 'none':
+        raise ValueError(f'material {mat.name!r}: tangent_rate={mat.tangent_rate!r} without a kinematics (kin=...)')
+    if mat.kin is not None and material_visco(mat) is not None:
+        raise ValueError(f'material {mat.name!r}: a kinematics with a viscoelastic elasticity is not supported yet')
+    if mat.kin is not None and mat.solver == 'cutting_plane':
+        raise ValueError(f'material {mat.name!r}: a kinematics needs the consistent tangent of the return mapping '
+                         f'(cutting_plane returns the continuum tangent)')
+    if material_rotated(mat) and mat.elas not in ELASTICITY_ISOTROPIC:
+        raise ValueError(f'material {mat.name!r}: a spatial strain measure with an anisotropic yield criterion '
+                         f'needs an isotropic elasticity ({", ".join(ELASTICITY_ISOTROPIC)})')
+    material_props(mat)
+    return mat
+
+
+def validate_materials(materials):
+    """Checks a registry (sequence of ``Material``, unique names, at least one) and returns it as a
+    tuple."""
+    materials = tuple(materials)
+    if not materials:
+        raise ValueError('the material registry is empty')
+    seen = set()
+    for m in materials:
+        validate_material(m)
+        if m.name in seen:
+            raise ValueError(f'material {m.name!r} declared twice')
+        seen.add(m.name)
+    return materials
+
+
+def load_python_file(path, name=None, base=None):
+    """Executes the Python file ``path`` as a module and returns it (data files of the templates: the
+    material registry, the parameter sets of the material tests). A relative ``path`` is relative to
+    the directory of the file ``base`` (e.g. fypp's ``_THIS_FILE_``) or, without it, to the current
+    directory; ``name``: module name (default ``_muscle_data_<file stem>``)."""
+    if base is not None and not os.path.isabs(path):
+        path = os.path.join(os.path.dirname(os.path.abspath(base)), path)
+    if name is None:
+        name = '_muscle_data_' + os.path.splitext(os.path.basename(path))[0]
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None:
+        raise ValueError(f'cannot load the Python file {path!r}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_materials(path=None):
+    """The validated material registry: the ``MATERIALS`` of the Python file ``path``
+    (``-DMUSCLE_MATERIALS=<path>``), or of ``tools/fypp/muscle_materials.py`` (the test registry)
+    if ``path`` is empty or ``None``. The file builds its entries with ``muscle_meta.Material``."""
+    if not path:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'muscle_materials.py')
+    module = load_python_file(path, '_muscle_material_registry')
+    if not hasattr(module, 'MATERIALS'):
+        raise ValueError(f'material registry {path!r} defines no MATERIALS')
+    return validate_materials(module.MATERIALS)
+
+
+def material(name, path=None):
+    """The ``Material`` ``name`` of the registry ``path`` (see ``load_materials``)."""
+    for m in load_materials(path):
+        if m.name == name:
+            return m
+    raise ValueError(f'material {name!r} is not in the registry {path or "muscle_materials.py"!r}')
+
+
+#: Parameter of the flat parameter array of a material (``material_props``, D-018.17a, e): ``index``
+#: (1-based position in ``props``), ``component`` (prefix of the material component, ``None`` for a
+#: setting of the solver), ``name`` (the input of the model or the component of the material, as in
+#: Fortran), ``branch`` (branch of an input with one value per viscoelastic branch, else 0), ``type``
+#: (``'real'``, or ``'integer'``: given as a real and rounded with ``nint``), ``doc`` and ``domain`` (the
+#: ``ModelInput.domain`` checked by ``mat_init_<name>``, or ``None``).
+MaterialProp = namedtuple('MaterialProp', 'index component name branch type doc domain')
+
+#: Settings of the solver at the end of the parameter array of every material (components of the material
+#: type), both > 0 (D-018.17e; the defaults are ``NEWTON_TOL_<k>`` and ``MaterialSolver.iter_nw``).
+MATERIAL_SOLVER_PROPS = (
+    ModelInput('tol', 'real', '', r'Relative tolerance of the Newton iterations (> 0; default of the type: '
+               r'`NEWTON_TOL_<k>`).', '{x} > 0.0_{k}'),
+    ModelInput('iter_nw', 'integer', '', r'Maximum number of iterations (> 0).', '{x} > 0'))
+
+
+def material_nprops(name):
+    """Constant with the size of the parameter array of a material: ``material_nprops('cp_vm_swift')`` ->
+    ``MAT_CP_VM_SWIFT_NPROPS``."""
+    return f'MAT_{name.upper()}_NPROPS'
+
+
+def material_props(mat):
+    """Parameter array of a material (``MaterialProp``, D-018.17e): the inputs of the model of each
+    component (``model_inputs``, components in the order of ``material_components``) and then
+    ``MATERIAL_SOLVER_PROPS``. An input with one value per branch (``'(:)'``) takes ``visco_branches``
+    values, interleaved by branch with the other such inputs of the model (Maxwell: bulk, shear_inf,
+    shear_1, tau_1, shear_2, tau_2, ...). Only real and integer inputs (an integer is rounded with
+    ``nint``): ``[p.name for p in material_props(Material('a', 'closest_point', 'linear', 'vonmises',
+    'bilinear'))]`` -> ``['young', 'poisson', 'y0', 'K', 'tol', 'iter_nw']``."""
+    res = []
+
+    def add(component, inp, branch=0):
+        if inp.type not in ('real', 'integer'):
+            raise ValueError(f'material {mat.name!r}: input {inp.name!r} of {component!r} has type {inp.type!r}: '
+                             f'only real and integer inputs can be given in a parameter array')
+        res.append(MaterialProp(len(res) + 1, component, inp.name, branch, inp.type, inp.doc, inp.domain))
+
+    for p, m in material_components(mat):
+        inputs = model_inputs(p, m)
+        for inp in inputs:
+            if inp.shape == '':
+                add(p, inp)
+            elif inp.shape != '(:)':
+                raise ValueError(f'material {mat.name!r}: input {inp.name!r} of {p!r} has the fixed shape '
+                                 f'{inp.shape!r}: not supported in a parameter array')
+        for b in range(1, mat.visco_branches + 1):
+            for inp in inputs:
+                if inp.shape == '(:)':
+                    add(p, inp, b)
+    for inp in MATERIAL_SOLVER_PROPS:
+        add(None, inp)
+    return tuple(res)
+
+
+def material_prop_value(prop, props='props'):
+    """Fortran value of a parameter of the array: ``props(i)``, or ``nint(props(i))`` for an integer."""
+    ref = f'{props}({prop.index})'
+    return f'nint({ref})' if prop.type == 'integer' else ref
+
+
+def material_prop_check(prop, kind, props='props'):
+    """Fortran condition that the value of a parameter of the array is valid (``MaterialProp.domain``), or
+    ``None``: ``material_prop_check(MaterialProp(5, None, 'iter_nw', 0, 'integer', '', '{x} > 0'), 'dp')``
+    -> ``'nint(props(5)) > 0'``."""
+    if prop.domain is None:
+        return None
+    return prop.domain.format(x=material_prop_value(prop, props), k=kind)
+
+
+#: Conditions on several inputs of a model that ``mat_init_<name>`` checks (D-018.19c),
+#: ``MODEL_DOMAINS[(prefix, model)]``: ``(condition, doc)`` pairs, the condition a Fortran logical expression
+#: with each input as ``{name}`` and literals of kind ``{k}``, ``doc`` its FORD text;
+#: ``STATUS_INVALID_PARAMETER`` otherwise (as ``ModelInput.domain``: the model initializer and the kernel
+#: do not check them). Johnson-Cook: the rate factor \( 1 + C\ln x \) stays positive on the rate floor
+#: \( x = \dot\epsilon_{min}/\dot\epsilon_{p0} \) (else a negative flow stress there).
+MODEL_DOMAINS = MappingProxyType({
+    ('vp', 'jc'): (('{C}*abs(log({epmin}/{epdmax})) < 1.0_{k}',
+                    r'\( C\,|\ln(\dot\epsilon_{min}/\dot\epsilon_{p0})| < 1 \) (positive flow stress on the rate '
+                    r'floor)'),),
+})
+
+
+def material_domain_checks(mat, kind, props='props'):
+    """``(condition, doc)`` of every ``MODEL_DOMAINS`` entry of the components of a material, the condition
+    with the values of the parameter array (``material_prop_value``):
+    ``[c for c, _ in material_domain_checks(Material('a', 'closest_point_time', 'linear', 'vonmises',
+    'swift', vp='jc'), 'dp')]`` -> ``['props(3)*abs(log(props(5)/props(4))) < 1.0_dp']``."""
+    res = []
+    for p, m in material_components(mat):
+        mine = {q.name: q for q in material_props(mat) if q.component == p}
+        for cond, doc in MODEL_DOMAINS.get((p, m), ()):
+            names = re.findall(r'\{(\w+)\}', cond)
+            missing = [n for n in names if n != 'k' and n not in mine]
+            if missing:
+                raise ValueError(f'MODEL_DOMAINS of {p} {m}: {missing} are not inputs of the model')
+            values = {n: material_prop_value(q, props) for n, q in mine.items()}
+            res.append((cond.format(k=kind, **values), doc))
+    return res
+
+
+def material_init_call(mat, prefix, kind, obj='mat', props='props', indent=8, width=120):
+    """Call of the initializer of the model of component ``prefix`` (``MODEL_INITS``) with keyword
+    arguments from the parameter array: an input per branch as a strided section (``shear=props(3:5:2)``),
+    then ``status=status`` if the initializer has one; continued with ``&`` before ``width`` columns."""
+    model = getattr(mat, MATERIAL_FIELDS[prefix])
+    init = model_init(prefix, model)
+    mine = [q for q in material_props(mat) if q.component == prefix]
+    args = []
+    for inp in init.inputs:
+        qs = [q for q in mine if q.name == inp.name]
+        if inp.shape == '(:)':
+            step = len([i for i in init.inputs if i.shape == '(:)'])
+            first = qs[0].index if qs else 1
+            last = qs[-1].index if qs else 0
+            args.append(f'{inp.name}={props}({first}:{last}:{step})')
+        else:
+            args.append(f'{inp.name}={material_prop_value(qs[0], props)}')
+    if init.status:
+        args.append('status=status')
+    head = ' ' * indent + f'call {prefix}_{model}_init({obj}%{prefix}, '
+    lines, cur = [], head
+    for n, a in enumerate(args):
+        piece = a + (', ' if n < len(args) - 1 else ')')
+        if len(cur) + len(piece.rstrip()) + 2 > width:
+            lines.append(cur.rstrip() + ' &')
+            cur = ' ' * (indent + 4) + piece
+        else:
+            cur += piece
+    lines.append(cur.rstrip())
+    return '\n'.join(lines)
+
+
+def material_props_table(mat):
+    """Markdown table of the parameter array of a material (``material_props``): position, component
+    (model), parameter and description; printed by ``muscle_meta.py props <name> [PATH]``."""
+    models = dict(material_components(mat))
+    rows = [f'Parameters of material `{mat.name}` (`{material_nprops(mat.name)}` = {len(material_props(mat))}, '
+            f'`mat_init_{mat.name}`):', '',
+            '| # | Component | Parameter | Description |', '|---|-----------|-----------|-------------|']
+    for q in material_props(mat):
+        comp = f'{q.component} ({model_label(q.component, models[q.component])})' if q.component else 'solver'
+        name = q.name + (f'({q.branch})' if q.branch else '')
+        doc = q.doc.replace('|', r'\|') + (' Integer, given as a real.' if q.type == 'integer' else '')
+        rows.append(f'| {q.index} | {comp} | `{name}` | {doc} |')
+    for _, doc in material_domain_checks(mat, 'dp'):
+        rows += ['', f'`mat_init_{mat.name}` also requires {doc} (D-018.19c).']
+    return '\n'.join(rows)
+
+
+def _main(argv):
+    """Command line used by CMake: ``muscle_meta.py materials [PATH]`` prints the names of the
+    validated material registry separated by ``;`` (a CMake list); ``muscle_meta.py props NAME [PATH]``
+    prints the Markdown table of the parameter array of a material (``material_props_table``, for the
+    documentation of an FE adapter); ``muscle_meta.py solver-bodies`` prints the body of each solver
+    (``material_solver_body``, a CMake list). Run as a script this file is
+    ``__main__``: the registry is loaded through the module ``muscle_meta`` (the one whose
+    ``Material`` the registry files import)."""
+    import muscle_meta
+    if len(argv) in (1, 2) and argv[0] == 'materials':
+        print(';'.join(m.name for m in muscle_meta.load_materials(argv[1] if len(argv) == 2 else None)))
+        return 0
+    if argv == ['solver-bodies']:
+        print(';'.join(muscle_meta.material_solver_body(s) for s in muscle_meta.MATERIAL_SOLVERS))
+        return 0
+    if len(argv) in (2, 3) and argv[0] == 'props':
+        print(muscle_meta.material_props_table(muscle_meta.material(argv[1], argv[2] if len(argv) == 3 else None)))
+        return 0
+    print('usage: muscle_meta.py materials [PATH] | props NAME [PATH] | solver-bodies', file=sys.stderr)
+    return 2
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(_main(sys.argv[1:]))
+    except ValueError as err:
+        print(f'muscle_meta: {err}', file=sys.stderr)
+        sys.exit(1)

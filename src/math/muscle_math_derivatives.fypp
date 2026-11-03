@@ -11,22 +11,16 @@
 #:assert set(DSQUARE) <= {c.name for c in layout('4O3sym', '3D').comps}
 
 module muscle_math_derivatives
-    !! Derivatives of tensor functions.
-    !!
-    !! - `dsquare`: analytical derivative of the square of a symmetric tensor, for each real kind
-    !!   (`dsquare_sp`, `dsquare_dp`); kernel routine.
-    !! - `derivative`, `derivative2O`: central finite differences of a function passed as a
-    !!   `procedure(...)` argument (single and double precision, host-only), re-exported from
-    !!   `muscle_math_derivatives_host` (D-016). Kernels use the macros of
-    !!   `include/muscle_fd.fypp` instead, which call the function directly.
+    !! Derivatives of tensor functions: `dsquare`, the analytical derivative of the square of a
+    !! symmetric tensor, for each real kind (`dsquare_sp`, `dsquare_dp`); kernel routine.
+    !! Numerical derivatives are the finite-difference macros of `include/muscle_fd.fypp`
+    !! (`FD_DERIV`, `FD_GRAD`, `FD_JAC`, `FD_HESS`), which call the function directly (D-018.18b).
     use muscle_kinds, only : sp, dp
     use muscle_tensor_2osym, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$
     use muscle_tensor_4o3sym, only : ${', '.join(tname('3D4O3sym', k) for k in REAL_KINDS)}$
-    use muscle_math_derivatives_host, only : derivative, derivative2O
     implicit none
     private
 
-    public :: derivative, derivative2O
     public :: dsquare
 #:for k in REAL_KINDS
     public :: dsquare_${k}$

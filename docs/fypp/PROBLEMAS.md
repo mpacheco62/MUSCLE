@@ -88,11 +88,31 @@ Estados:
 | ν = 0.5: división por cero en `set_parameters` (λ = +Inf, tensión NaN, tangente Inf); ν no se valida | `Elasticity_linear` | Documentado (exige ν < 0.5) | D-017.12b |
 | Rutas `_transient` y `stress_and_update_3D` ignoran `dstrain`, `dtime` e `internal`; faltan `stress_and_update_2D` y `dstress_dstrain_dev` 2D | `Base_elasticity`/`Elasticity_linear` | Documentado | D-017.12b |
 
-## Solvers (pendiente de la Fase 7)
+## Solvers (Fase 7)
+
+Nota: las entradas de las Fases 5–6 que citan la API OO (`_transient`, `unpack_from_fea`,
+`update_incremental`, `Elasticity_frozen`, `Base_*`) describen código retirado en la Fase 7 (D-018.18);
+se conservan como historia.
 
 | Problema | Dónde | Estado | Ref. |
 |---|---|---|---|
-| Tangente numérico con deformación nula: el paso debe ligarse al material (en sp √ε ≈ 3.5e-4 puede acercarse a la fluencia) | `closest_point`, `_time`, `_perzyna` | Pendiente (Fase 7: paso explícito o tangente analítico) | D-016.4 |
+| Tangente numérico con deformación nula: el paso debe ligarse al material (en sp √ε ≈ 3.5e-4 puede acercarse a la fluencia) | `closest_point`, `_time`, `_perzyna` | Resuelto: los kernels usan tangente analítico; DF sólo en tests (D-018.6) | D-016.4, D-018.6 |
+| Al agotar iteraciones `iters` vale `iter_nw+1` (perzyna usa `min`) | `closest_point` | Corregido (`min(iters, iter_nw)`) | D-018.10a |
+| `strain_p` sin inicializar en el tangente del caso elástico | `closest_point_time` | Documentado (se porta tal cual) | D-018.2 |
+| Chequeo elástico con epd = 0 y sin guarda: σ_flujo(ep, 0) = 0 da 0/0 = NaN y deformación nula entra al Newton (jcfull: 200 iteraciones sin converger en pasos elásticos/descarga) | `closest_point_time` | Corregido (OO y kernel) | D-018.10b, D-018.12d |
+| `strain_p` no recibe omega (a diferencia de `closest_point`); `init` no reinicia omega | `closest_point_time` | Documentado | D-018.2 |
+| Sin convergencia devuelve tensión 0 (`data%stress` no se escribe) y tangente numérico 0 | `closest_point_time`, `closest_point_2` | Documentado (status ≠ OK) | D-017.14f |
+| jcfull en sp: paso 1 sin converger, después ep difiere ~6e-4 de dp y el tangente por DF da NaN (flujo 0 a tasa nula) | material `time` + JC completo | Documentado (sólo dp se comprueba) | D-018.12b, D-017.7 |
+| Perzyna en sp no converge con incrementos de ~40 deformaciones de fluencia (4e-2), aun con el piso de redondeo | `perzyna` sp (material `kin_ul_pz_*`) | Documentado; el test usa incrementos ≤ 3e-2 | D-018.12a |
+| cp2 con endurecimiento blando converge (status OK) a otra solución (5 % de diferencia) en el chequeo F→I | `cp2` + cinemática | Documentado (sin dγ ≥ 0) | D-018.10c |
+| Incrementos de ~1000 deformaciones de fluencia (cpb06) y exponentes extremos de Perzyna no convergen en sp | `closest_point`, `perzyna` sp | Documentado; las pruebas físicas corren sólo en dp | D-018.18g |
+| dp: cinemáticas logarítmicas (kin_ml_*, kin_sl_*) con F = I + 1e-6 dan σ vs ddsdde:ε con error relativo 0.67 (6e-5 con 1e-5). Causa: con brechas < ~3e-6 la forma cerrada toma las raíces como repetidas (P = I/3) y ln C pierde la parte desviadora; σ está mal, no el tangente | log material/espacial dp | Corregido (Jacobi en la franja [1e-12, 1e-2)) | D-018.19a |
+| `kin_tl_tm_vm_jc` no converge (200 iteraciones) con 1e-4 de deformación, σ ≈ 21 < y0 = 200, en ambos kinds | material TL + time + JC (también sin cinemática) | Corregido: era plástico (flujo a tasa mínima 15.8 MPa) y el Newton se estancaba porque la derivada de tasa es 0 en el piso; el solver usa la derivada por la derecha | D-018.19b |
+| `tm_nnl_vm` con deformación ×40 no converge (200 iteraciones en dp, 177 en sp) | `time` + NNL | Pendiente (Fase 9); excluido del chequeo de status del smoke test | D-018.19 |
+| MRK: NaN desde el primer paso plástico (probable epd > epdmax de la ley, ver viscoplásticas) | `closest_point_time` | Documentado | D-018.2 |
+| Tangente analítico vs numérico: RK ~8 %, NNL 3.5e-4 (pasos convergidos) | `closest_point_time` | Documentado | D-018.10d |
+| Sin restricción dγ ≥ 0: incremento grande bilineal + von Mises converge a ep < 0 (−1.84e-2; cp da +2.00e-2); no converge con cpb06/cpb06ex2 (incremento grande) ni yld2004-2 (NaN) | `closest_point_2` | Documentado | D-018.10c |
+| Chaboche n=0.5 + Swift + DP en compresión: 4/6 pasos plásticos sin converger; tangentes con diferencias 1.4–1.6e-5 (Perzyna n=0.5 Hill48, n=5 DP) | `closest_point_perzyna` | Pendiente (Fase 9); con D-018.12a persiste en el caso 6 (tangente DF vs analítico 0.24) | Fase 7 golden |
 
 ## Viscoelasticidad (Fase 6)
 
@@ -128,7 +148,7 @@ Estados:
 |---|---|---|---|
 | gfortran: `associate` con resultados de función de tipo derivado falla | código de tensores | Temporales tipados | — |
 | gfortran 15: reasignar un `class(...), allocatable` ya asignado con otro tipo dinámico no realoca y desborda el heap | p.ej. `law%hard_law = otra_ley` | Desasignar antes de reasignar | D-017.7 |
-| gfortran < 16.3: salida formateada (UDTIO) y tests OpenMP fallan juntos | `MUSCLE_UDTIO=ON` | UDTIO opcional; `check.sh` corre ahí sólo los tests de tensores | D-011 |
+| gfortran < 16.3: salida formateada (UDTIO) y tests OpenMP fallan juntos. Mecanismo (2026-11-02): si un ámbito ve `write(formatted)` de un tipo, gfortran da almacenamiento estático a las variables locales de ese tipo, incluso en `pure`. Como `muscle_tensors` lo reexporta, los locales de los kernels se comparten entre hilos (carrera). Con `MUSCLE_UDTIO=ON` forzado fallan `kin_kinds`, `math_kernels_target` y `mat_batch`; viene de antes de la Fase 7 | `MUSCLE_UDTIO=ON` | Mitigado: `AUTO` lo desactiva con GNU < 16.3 (`src/CMakeLists.txt`) y `check.sh` sólo corre ahí los tests de tensores. La versión 16.3 como corrección no está verificada | D-011 |
 | ifx 2026.2: se pierde el `-` unario al fusionar `operator(-)` de familias y de operadores en un módulo | `muscle_tensors` | Módulo `muscle_tensor_minus` que fusiona sólo `operator(-)` | gpu-static-dispatch.md |
 | ifx: tipos derivados en `private(...)` de una región `target` dan error interno | kernels GPU | Declararlos como locales de un procedimiento `declare target` | gpu-static-dispatch.md |
 | IGC (Intel GPU): constructor de estructura con sección de un argumento de forma asumida → recursión infinita del JIT (26 GB) | kernels GPU | Asignar el componente (`t%vals = x(1:6)`); ejecutar siempre con límite de memoria | gpu-static-dispatch.md, testing.md |

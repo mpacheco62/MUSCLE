@@ -399,16 +399,93 @@ Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yi
 - [x] Maxwell: ramas en array fijo (ya era `MAX_VISCO_BRANCHES = 10`, sin allocatables; D-017.13c).
 
 ### Fase 7 — Materiales declarados y API por lotes (D-008)
-- [ ] Cuerpos de solver (`closest_point`, `perzyna`, `time`) escritos una vez contra nombres
-      genéricos (`yield_f`, `sigy`, ...) e instanciados por material vía `use` con renombre.
-- [ ] Generador de materiales: registro `MATERIALS` (`-DMUSCLE_MATERIALS=...`), un módulo por
-      material, `NSTATE` en compilación, registro de prueba que cubre cada modelo.
-- [ ] API por lotes `muscle_update_<mat>` con arrays SoA y `map(present: ...)`; multifase
-      por listas de índices.
-- [ ] Estados (`Closest_point_2_data`, history) como arrays SoA de tamaño fijo por material.
-- [ ] Adaptadores UMAT generados por material.
-- [ ] (Opcional, posterior) uniones etiquetadas con `select case` generado si se necesita
-      elegir el modelo en tiempo de ejecución.
+Diseño y alcance: D-018. Pasos (cada uno un commit con el ciclo completo):
+1. Golden dp de los cinco solvers OO (`tests/reference/solvers/`): tensión, ep, `strain_p`, status,
+   `iters` y tangentes analítico y numérico; carga, descarga, incremento grande y primer incremento.
+2. Registro `tools/fypp/muscle_materials.py` + validador + tests Python; CMake genera N módulos.
+3. Códigos de status de solver en `muscle_status` y tolerancias del Newton por kind (relativas, D-018.3).
+4. Cuerpo `closest_point` + plantilla de material + kernel de punto sp/dp (tangente analítico).
+5. `perzyna`, `time`, `closest_point_2` (LU propio) y `cutting_plane`.
+6. Materiales con elasticidad visco congelada y con cinemáticas finitas.
+7. API por lotes SoA + `idx` + OpenMP CPU (lote == bucle de puntos).
+8. API genérica de integración con programas FE (D-018.17): init desde array, API de punto plana,
+   rotación del hsv y ejemplos en la documentación.
+9. Migración de los tests de solvers, retiro del OO (D-018.8) y cierre.
+   Etapas del paso 9 (D-018.18), un commit cada una:
+   - E1: separar `solvers_golden_common` (helpers neutros / fábricas OO), ~15 materiales nuevos,
+     pruebas físicas de solvers en kernel y benchmark con la API nueva.
+   - E2: goldens de solver generados desde el kernel; borrar los tests OO y los 5 solvers OO.
+   - E3: una familia por commit: vp+os → hard → yield → visco (+`Viscoelastic_history`) → elas →
+     kin (+fachada) → `Plastic_material_history`.
+   - E4: borrar math `*_host`; goldens de derivadas con las macros.
+   - E5: quitar las macros OO y los helpers `oo_*` de `muscle_meta`; endurecer `check.sh`.
+   - E6: docs (README, `pages/`, `my_project.md`, `benchmarks/README`, `.claude/rules`, tabla de
+     equivalencias) y cierre de la fase.
+- [x] Paso 1 (2026-11-01): golden dp de los cinco solvers (1533 registros, mutaciones de 1 ulp).
+- [x] Pasos 2–4, piloto `closest_point` (2026-11-02):
+      - registro `muscle_materials.py` (6 materiales: todos los criterios y endurecimientos, elasticidad
+        lineal) y generación CMake de `muscle_mat_<name>`;
+      - `STATUS_NOT_CONVERGED` y `NEWTON_TOL_<k>`/`TOL_ELASTIC_<k>`;
+      - cuerpo `muscle_closest_point_body.fypp` y kernel de punto sp/dp con tangente analítico;
+      - hsv de 7 reales; dp bit a bit con el golden actualizado (217 registros, D-018.3/10a/11).
+- [x] Paso 5a, `perzyna` y `time` (2026-11-02):
+      - cuerpos `muscle_closest_point_{perzyna,time}_body.fypp`, con hsv común y firma uniforme con `dt`;
+      - registro con 7 materiales perzyna y 12 time, que cubren todas las leyes os/vp;
+      - goldens actualizados según D-018.3/10b/12;
+      - `vp_laws_dp.txt`: 18 registros jcfull con `dstress_dep` analítico.
+- [x] Paso 5b, `closest_point_2` y `cutting_plane` (2026-11-02):
+      - cuerpos propios;
+      - `cp2` con `LU7SOLVE`, sin LAPACK (D-018.13);
+      - 8 materiales cp2 y 7 cut en el registro.
+      Los casos con elasticidad Maxwell (caso 7 de cada uno) pasan al paso 6.
+- [x] Paso 6a, elasticidad visco congelada (2026-11-02):
+      - los cinco solvers con Maxwell/Kelvin, todos los casos del golden bit a bit;
+      - `mat_step` una vez por paso;
+      - hsv 13 + 6·`visco_branches`;
+      - tests de los caminos de error (D-018.14).
+- [x] Paso 6b, cinemáticas finitas (D-018.15) (2026-11-02):
+      - `kin_geometric_tangent` y tangentes espaciales corregidos (105 registros kin);
+      - sp robusto (Jacobi y polar de Higham);
+      - rotación ΔR de `strain_p` y marco rotado para la anisotropía;
+      - corrotacional rotada por el FE;
+      - 13 materiales kin con closest_point, perzyna, time y cp2;
+      - oráculos físicos y golden de regresión (260 registros).
+- [x] Paso 7, API por lotes (2026-11-02):
+      - `muscle_update_<name>` SoA y macro `BATCH_LOOP` (CPU OpenMP / `target` con `map(present, alloc)`);
+      - tests de lote == bucle de kernels de punto (12 materiales, 1 y 4 hilos) y OpenMP;
+      - la ruta GPU compila pero no se ejecutó (Fase 8) (D-018.16).
+- [x] Paso 8, API genérica de integración con programas FE (D-018.17) (2026-11-02):
+      - `muscle_point_<name>`, `mat_rotate_hsv_<name>` y `mat_init_<name>` + `MAT_<NAME>_NPROPS`;
+      - parámetros con fuente única en `muscle_meta`, más tabla `muscle_meta.py props`;
+      - esqueletos Abaqus/ANSYS/LS-DYNA en `pages/integration.md`. Las notas de VUMAT y LS-DYNA están
+        sin verificar contra esos programas.
+- [x] Paso 9, retiro del OO (D-018.18), etapas E1–E6 (2026-11-03):
+      - E1 697db87; E2 f854819;
+      - E3: vp 2803e87, hard cbe2850, yield 4ff2e2f, visco 93863bc, elas 206cec0, kin 90fab26,
+        plastic history f080c4d;
+      - E4 ce6af37; E5 755d984; E6 9e946b1.
+- [x] Revisión final de la fase (2026-11-03): 115/115 en sp;dp y en sólo dp; el registro de usuario
+      con `-DMUSCLE_MATERIALS` compila; correcciones menores aplicadas. **Fase 7 cerrada.**
+  - Las tareas de la lista original quedaron así:
+    - el cuerpo único con renombre en `use` quedó enmendado por D-018.5 (genéricos + tipos);
+    - los adaptadores UMAT generados se reemplazaron por la API genérica (D-018.17);
+    - los estados SoA de tamaño fijo se resolvieron con hsv por material (D-018.7/14).
+  - Pasan a la Fase 8:
+    - camino `is_device_ptr` (memoria de dispositivo pura, cuFFT);
+    - verificar el modificador `present` en nvhpc; OpenMP 6 depreca `alloc` en favor de `storage`
+      (D-018.16f);
+    - achicar `visco_state h(6, MAX_VISCO_BRANCHES)` por punto (D-018.14f);
+    - ejecutar `BATCH_LOOP` con `target` en hardware real y medir registros/spills de los kernels de
+      material;
+    - variante TL/UL sin la descomposición polar.
+  - Pasan a la Fase 9 o después:
+    - materiales 2D (D-018.11g);
+    - validar los esqueletos Abaqus/ANSYS/LS-DYNA contra los programas reales (D-018.17d/g, los
+      `ustatev` de ANSYS);
+    - composición múltiple en `ModelFamily` (endurecimiento cinemático);
+    - unificar el status de los `*_init`;
+    - unión etiquetada opcional para elegir el modelo en tiempo de ejecución (D-008.4);
+    - convergencia de Chaboche n=0.5 + DP en compresión (PROBLEMAS).
 
 ### Fase 8 — Build GPU
 - [ ] Opción CMake `MUSCLE_GPU={OFF,NVPTX,AMDGCN,SPIR64}` → flags de offload de gfortran
@@ -451,8 +528,8 @@ Orden sugerido (de menos a más dependencias): hardening → viscoplastic → yi
       docstrings antiguos que FORD leía como metadatos corregidos. Entorno conda `ford`
       (`environment.yml`, sin `gfortran` para no tapar el compilador del sistema): FORD 7.0.13, fypp
       3.3 y Graphviz → grafos de dependencias, 0 warnings, ~40 s.
-- [ ] Actualizar `README.md`, `pages/tensors.md`, `pages/contributing.md` (cómo añadir un modelo al registro).
-- [ ] Reescribir los usuarios externos de la API OO contra la nueva API.
+- [ ] Actualizar `pages/tensors.md` (README, `pages/contributing.md` y `pages/migration.md` se actualizaron en la Fase 7, E6).
+- [ ] Reescribir los usuarios externos de la API OO contra la nueva API (guía: `pages/migration.md`).
 
 ## 5. Riesgos
 

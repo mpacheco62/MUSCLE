@@ -5,8 +5,6 @@
 #! Kernel state of plasticity (muscle_plastic_state) in every kind:
 #! - defaults (zero state) and the FE history array layout of plastic_state_pack/unpack
 #!   (roundtrip exact: only copies);
-#! - dp: plastic_state_dp is the historical Plastic_state, and the kernel pack/unpack give the same
-#!   bits as Plastic_material_history%pack_to_fea/unpack_from_fea;
 #! - sp: unpacking the sp-rounded array gives exactly the sp-rounded dp state;
 #! - a `pure`, `@:DEVICE()` point procedure (unpack, candidate update, pack) against the same steps
 #!   written in the test, bit for bit.
@@ -49,11 +47,9 @@ end module test_plastic_state_point
 
 
 program test_plastic_state_kinds
-    use, intrinsic :: iso_fortran_env, only : int64
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_plastic_state, only : PLASTIC_STATE_SIZE, plastic_state_pack, plastic_state_unpack, &
         ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
-    use muscle_plastic_history, only : Plastic_state, Plastic_material_history
     use muscle_test_utils, only : check_true
     use test_plastic_state_point
     implicit none
@@ -67,7 +63,6 @@ program test_plastic_state_kinds
 #:for k in REAL_KINDS
     call test_${k}$()
 #:endfor
-    call test_dp_vs_history()
 
     if (.not. passed) stop 1
     print '(a)', ' test_plastic_state_kinds: PASSED'
@@ -94,28 +89,5 @@ contains
             out(13) == hsv(13) + 0.25_${k}$)
     end subroutine test_${k}$
 #:endfor
-
-    subroutine test_dp_vs_history()
-        !! The kernel type is the historical Plastic_state and gives the bits of the OO container.
-        type(Plastic_material_history) :: h
-        type(Plastic_state) :: s
-        type(plastic_state_dp) :: ks
-        real(dp) :: out_oo(PLASTIC_STATE_SIZE + 2), out_k(PLASTIC_STATE_SIZE)
-
-        call h%unpack_from_fea([ref, 5.0_dp, -5.0_dp])
-        call plastic_state_unpack(ref, ks)
-        s = ks
-        call check_true(passed, 'dp unpack vs unpack_from_fea', &
-            all(transfer([h%state_n%stress%vals, h%state_n%strain_p%vals, h%state_n%strain_pf], 1_int64, 13) == &
-                transfer([s%stress%vals, s%strain_p%vals, s%strain_pf], 1_int64, 13)))
-        h%state_np1%strain_pf = 0.125_dp
-        ks = h%state_np1
-        out_oo = 9.0_dp
-        call h%pack_to_fea(out_oo)
-        call plastic_state_pack(ks, out_k)
-        call check_true(passed, 'dp pack vs pack_to_fea (extra components untouched)', &
-            all(transfer(out_oo(1:PLASTIC_STATE_SIZE), 1_int64, 13) == transfer(out_k, 1_int64, 13)) .and. &
-            all(out_oo(PLASTIC_STATE_SIZE + 1:) == 9.0_dp))
-    end subroutine test_dp_vs_history
 
 end program test_plastic_state_kinds

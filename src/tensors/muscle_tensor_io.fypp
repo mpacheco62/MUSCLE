@@ -71,7 +71,7 @@ contains
         !! Formatted output of a `${T}$`: list mode prints the ${n}$ stored components
         !! (${', '.join(c.name for c in lay.comps)}$), matrix mode the ${m}$x${m}$ matrix.
 #:endif
-        class(${T}$), intent(in) :: dtv
+        class(${T}$), intent(in) :: dtv  ! lint: allow(oop) the standard requires class in UDTIO
             !! Tensor to print.
         integer, intent(in) :: unit
             !! Output unit.
@@ -136,7 +136,7 @@ contains
     subroutine ${P}$(dtv, unit, iotype, v_list, iostat, iomsg)
         !! Formatted output of a `${T}$`: list mode prints the factor, matrix mode the ${m}$x${m}$
         !! ${'matrix' if m == 3 else 'Voigt matrix'}$ of the identity.
-        class(${T}$), intent(in) :: dtv
+        class(${T}$), intent(in) :: dtv  ! lint: allow(oop) the standard requires class in UDTIO
             !! Identity to print.
         integer, intent(in) :: unit
             !! Output unit.

@@ -1,0 +1,79 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "mat_golden_common.fypp"
+#! Materials of the test registry (tools/fypp/muscle_materials.py) solved by closest_point_2: each one needs
+#! at least one entry in CASES, with golden names of golden_params.py.
+#:set SOLVER = 'closest_point_2'
+#:set MATS = solver_materials(SOLVER)
+
+program test_mat_closest_point_2
+    !! Declared materials with the monolithic closest point return mapping (Phase 7, D-018): the point
+    !! kernel `mat_update` of the materials of the test registry against every golden record of the OO
+    !! solver (tests/reference/solvers/closest_point_2_dp.txt, D-018.1/D-018.3 applied: own LU, relative
+    !! tolerance), with the checks of mat_golden_common.fypp. The OO solver has no tangent (no golden
+    !! tangent records): the kernel tangent is checked against finite differences only. The OO stress
+    !! of a step that does not converge is zero (D-017.14f). Rate independent: the time step of the
+    !! cases is 0 (not used).
+    $:MAT_TEST_USES(MATS)
+    use muscle_mat_cp2_vm_swift, only : muscle_point_cp2_vm_swift
+    implicit none
+
+    $:MAT_TEST_DECLS()
+    ! Tolerances relative to the largest component (measured maxima of the cases in brackets,
+    ! gfortran 15.2 Debug; margin 3-20x)
+    real(sp), parameter :: TOL_SP_STRESS = 5.0e-5_sp
+        !! sp vs dp, stress [8.1e-6]: the sp Newton tolerance (1e-5 sigma_y).
+    real(sp), parameter :: TOL_SP_STRAIN_P = 1.0e-4_sp
+        !! sp vs dp, plastic strain [2.5e-5]: the rounding of a difference of strains near the yield strain.
+    real(sp), parameter :: TOL_SP_EP = 1.0e-4_sp
+        !! sp vs dp, equivalent plastic strain [2.5e-5].
+    real(sp), parameter :: TOL_SP_TANGENT = 2.0e-5_sp
+        !! sp vs dp, analytic tangent [5.2e-6].
+    real(sp), parameter :: TOL_SP_FD = 5.0e-4_sp
+        !! sp analytic tangent vs finite differences [1.2e-4]: truncation of the sp step and the Newton
+        !! tolerance of the perturbed solutions.
+    real(dp), parameter :: TOL_DP_FD = 1.0e-6_dp
+        !! dp analytic tangent vs finite differences [4.4e-8].
+    type(golden_case), parameter :: CASES(*) = [ &
+        golden_case(1, 'cp2_vm_swift', 'lin1000', '', 'swift_small', 'vonmises', 200, 0.0_dp, 3.80e-2_dp), &
+        golden_case(2, 'cp2_vm_bilinear', 'steel', '', 'bilinear', 'vonmises', 200, 0.0_dp, 9.09e-4_dp), &
+        golden_case(3, 'cp2_hill48_swift', 'steel', '', 'swift', 'hill48-2', 200, 0.0_dp, 5.68e-4_dp), &
+        golden_case(4, 'cp2_cpb06_vocemod', 'steel', '', 'vocemod', 'cpb06-2', 200, 0.0_dp, 1.23e-3_dp), &
+        golden_case(5, 'cp2_dp_ludwik', 'steel', '', 'ludwik', 'dp-1', 200, 0.0_dp, 9.05e-4_dp), &
+        golden_case(6, 'cp2_yld2004_swift', 'steel', '', 'swift', 'yld2004-2', 200, 0.0_dp, 5.63e-4_dp), &
+        golden_case(7, 'cp2_maxwell_vm_bilinear', 'maxwell', '', 'bilinear', 'vonmises', 200, 0.1_dp, 1.56e-2_dp), &
+        golden_case(8, 'cp2_cpb06_ludwik', 'steel', '', 'ludwik', 'cpb06-4', 2, 0.0_dp, 9.16e-4_dp), &
+        golden_case(9, 'cp2_cpb06ex2_swift', 'steel', '', 'swift', 'cpb06ex2-1', 200, 0.0_dp, 5.61e-4_dp)]
+        !! Golden cases of test_cp2_golden (case number, material, golden names, Newton limit, time
+        !! step, A_Y).
+
+    $:MAT_TEST_MAIN('test_mat_closest_point_2', 'solvers/closest_point_2_dp.txt', MATS, 'bilinear', extra='run_wrapper')
+
+contains
+    $:MAT_TEST_PROCS(SOLVER, MATS, 'closest_point_2', golden_tangent=None, zero_stress=True)
+
+    subroutine run_wrapper()
+        !! Records `closest_point2 | ...`: the sequence of case 1 through the flat point API (the
+        !! equivalent of the historical free wrapper `closest_point2`, whose error flag is recorded as
+        !! the status, 1 if not converged, and 0 iterations), the history array from step to step.
+        type(${muscle_meta.material_type('cp2_vm_swift', 'dp')}$) :: mat
+        real(dp) :: hsv_n(${muscle_meta.material_nstate('cp2_vm_swift')}$), hsv(size(hsv_n)), stress(6)
+        type(${tname('3D2Osym', 'dp')}$) :: strain, sig, strain_p
+        integer :: is, status, iters
+
+        call make_cp2_vm_swift_dp(CASES(1), mat)
+        hsv_n = 0.0_dp
+        do is = 0, NSTEP - 1
+            strain = seq_strain(is, CASES(1)%a_y)
+            call muscle_point_cp2_vm_swift(mat, strain%vals, 0.0_dp, hsv_n, hsv, stress, status, iters)
+            sig%vals = merge(stress, 0.0_dp, status == STATUS_OK)
+            strain_p%vals = hsv(1:6)
+            call record_result(step_key('closest_point2 | closest_point_2 | 1 lin1000 swift_small vonmises', is), &
+                strain, sig, hsv(7), strain_p, merge(1, 0, status /= STATUS_OK), 0)
+            hsv_n = hsv
+        end do
+    end subroutine run_wrapper
+
+end program test_mat_closest_point_2

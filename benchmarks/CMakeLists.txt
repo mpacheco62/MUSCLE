@@ -22,4 +22,8 @@ function(add_muscle_benchmark NAME)
     add_dependencies(build_all_benchmarks ${EXE_NAME})
 endfunction()
 
-add_muscle_benchmark(closest_point_scalability solvers/bench_closest_point_scalability.f90)
+# Batch API of materials of the test registry (tools/fypp/muscle_materials.py): not built with a user
+# registry (-DMUSCLE_MATERIALS)
+if(NOT MUSCLE_MATERIALS)
+    add_muscle_benchmark(closest_point_scalability solvers/bench_closest_point_scalability.f90)
+endif()

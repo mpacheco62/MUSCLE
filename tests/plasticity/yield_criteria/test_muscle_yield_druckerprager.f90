@@ -40,10 +40,12 @@ subroutine test_dp_tension_uniaxial(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_tensors
     use muscle_yield_druckerprager
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     logical, intent(out) :: passed
 
-    type(DruckerPrager) :: dp
+    type(yield_druckerprager_dp) :: dp
     type(ten_3D2Osym) :: stress
     real(real64) :: res, expected, beta, K_ratio
     real(real64), parameter :: EPS = 1.0D-7
@@ -52,11 +54,11 @@ subroutine test_dp_tension_uniaxial(passed)
     K_ratio = 0.8D0   ! (0.778 <= K <= 1.0)
     expected = 150.0D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
 
     call stress%init(xx=expected, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected) < EPS
     if (.not. passed) then
@@ -74,10 +76,12 @@ subroutine test_dp_compression_uniaxial(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_tensors
     use muscle_yield_druckerprager
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     logical, intent(out) :: passed
 
-    type(DruckerPrager) :: dp
+    type(yield_druckerprager_dp) :: dp
     type(ten_3D2Osym) :: stress
     real(real64) :: res, applied_stress, expected, beta, K_ratio
     real(real64), parameter :: EPS = 1.0D-7
@@ -87,11 +91,11 @@ subroutine test_dp_compression_uniaxial(passed)
     applied_stress = -150.0D0
     expected = 150.0D0 
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
 
     call stress%init(xx=applied_stress, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected) < EPS
     if (.not. passed) then
@@ -109,10 +113,12 @@ subroutine test_dp_shear_calibration(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_tensors
     use muscle_yield_druckerprager
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     logical, intent(out) :: passed
 
-    type(DruckerPrager) :: dp
+    type(yield_druckerprager_dp) :: dp
     type(ten_3D2Osym) :: stress
     real(real64) :: res, expected, beta, K_ratio, tau, q_val
     real(real64), parameter :: EPS = 1.0D-7
@@ -121,14 +127,14 @@ subroutine test_dp_shear_calibration(passed)
     K_ratio = 0.8D0
     tau = 80.0D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
 
     call stress%init(xx=0.0D0, yy=0.0D0, zz=0.0D0, xy=tau, yz=0.0D0, xz=0.0D0)
 
     q_val = sqrt(3.0D0) * tau
     expected = 0.5D0 * q_val * (1.0D0 + 1.0D0 / K_ratio)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected) < EPS
     if (.not. passed) then
@@ -146,10 +152,12 @@ subroutine test_dp_pure_hydrostatic(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_tensors
     use muscle_yield_druckerprager
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
     logical, intent(out) :: passed
 
-    type(DruckerPrager) :: dp
+    type(yield_druckerprager_dp) :: dp
     type(ten_3D2Osym) :: stress
     real(real64) :: res, expected, beta, K_ratio, p_hydro, tanbeta, PI
     real(real64), parameter :: EPS = 1.0D-7
@@ -159,14 +167,14 @@ subroutine test_dp_pure_hydrostatic(passed)
     K_ratio = 1.0D0
     p_hydro = 100.0D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
 
     call stress%init(xx=p_hydro, yy=p_hydro, zz=p_hydro, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     tanbeta = tan(beta * PI / 180.0D0)
     expected = (tanbeta * (1.0D0 + tanbeta / 3.0D0)**(-1)) * p_hydro
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected) < EPS
     if (.not. passed) then
@@ -183,29 +191,31 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_tensors
     use muscle_yield_druckerprager
-    use muscle_hard_bilinear
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_hard_laws, only : hard_stress, hard_bilinear_dp
     implicit none
     logical, intent(out) :: passed
 
-    type(DruckerPrager) :: dp
+    type(yield_druckerprager_dp) :: dp
     type(ten_3D2Osym) :: stress, tangent
-    type(Bilinear_hardening) :: bilinear
+    type(hard_bilinear_dp) :: bilinear
     real(real64) :: res, expected, expected_tan, beta, K_ratio
     real(real64), parameter :: EPS = 1.0D-3
 
     ! ---------------------------------------------------
     ! --------  Tensile type  ---------------------------
     ! ---------------------------------------------------
-    bilinear = Bilinear_hardening(y0=300D0, k=1000D0)
+    bilinear = hard_bilinear_dp(y0=300D0, k=1000D0)
     beta = 16.0D0
     K_ratio = 0.85D0   ! (0.778 <= K <= 1.0)
-    expected = bilinear%stress(0.09344D0)
+    expected = hard_stress(bilinear, 0.09344D0)
     expected_tan = -2.581929D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
     call stress%init(xx=393.4D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected)/expected < EPS
     if (.not. passed) then
@@ -218,7 +228,7 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
         print *, "PASS: Uniaxial Tension Test (TENSIONDEF)"
     end if
     
-    tangent = dp%dstressEq_dstress(stress)
+    tangent = yield_dstress_eq(dp, stress)
     res = tangent%xx()/tangent%yy()
     passed = abs(res - expected_tan) < EPS
     if (.not. passed) then
@@ -234,16 +244,16 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
     ! ---------------------------------------------------
     ! --------  Compression type  -----------------------
     ! ---------------------------------------------------
-    bilinear = Bilinear_hardening(y0=300D0, k=1000D0)
+    bilinear = hard_bilinear_dp(y0=300D0, k=1000D0)
     beta = 16.0D0
     K_ratio = 0.85D0   ! (0.778 <= K <= 1.0)
-    expected = bilinear%stress(0.06688D0)
+    expected = hard_stress(bilinear, 0.06688D0)
     expected_tan = -2.58221D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
     call stress%init(xx=260.8D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected)/expected < EPS
     if (.not. passed) then
@@ -256,7 +266,7 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
         print *, "PASS: Uniaxial Tension Test (COMPRESSIONDEF)"
     end if
 
-    tangent = dp%dstressEq_dstress(stress)
+    tangent = yield_dstress_eq(dp, stress)
     res = tangent%xx()/tangent%yy()
     passed = abs(res - expected_tan) < EPS
     if (.not. passed) then
@@ -272,16 +282,16 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
     ! ---------------------------------------------------
     ! --------  Shear type  -----------------------------
     ! ---------------------------------------------------
-    bilinear = Bilinear_hardening(y0=300D0, k=1000D0)
+    bilinear = hard_bilinear_dp(y0=300D0, k=1000D0)
     beta = 16.0D0
     K_ratio = 0.85D0   ! (0.778 <= K <= 1.0)
-    expected = bilinear%stress(0.08032D0)
+    expected = hard_stress(bilinear, 0.08032D0)
     expected_tan = -2.58221D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
     call stress%init(xx=299.0D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected)/expected < EPS
     if (.not. passed) then
@@ -294,7 +304,7 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
         print *, "PASS: Uniaxial Tension Test (SHEARDEF)"
     end if
 
-    tangent = dp%dstressEq_dstress(stress)
+    tangent = yield_dstress_eq(dp, stress)
     res = tangent%xx()/tangent%yy()
     passed = abs(res - expected_tan) < EPS
     if (.not. passed) then
@@ -312,29 +322,31 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_tensors
     use muscle_yield_druckerprager
-    use muscle_hard_bilinear
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_hard_laws, only : hard_stress, hard_bilinear_dp
     implicit none
     logical, intent(out) :: passed
 
-    type(DruckerPrager) :: dp
+    type(yield_druckerprager_dp) :: dp
     type(ten_3D2Osym) :: stress, tangent
-    type(Bilinear_hardening) :: bilinear
+    type(hard_bilinear_dp) :: bilinear
     real(real64) :: res, expected, expected_tan, beta, K_ratio
     real(real64), parameter :: EPS = 1.0D-3
 
-    bilinear = Bilinear_hardening(y0=300D0, k=1000D0)
+    bilinear = hard_bilinear_dp(y0=300D0, k=1000D0)
     beta = 16.0D0
     K_ratio = 0.85D0   ! (0.778 <= K <= 1.0)
     ! ---------------------------------------------------
     ! --------  Tensile type  ---------------------------
     ! ---------------------------------------------------
-    expected = bilinear%stress(0.0112D0)
+    expected = hard_stress(bilinear, 0.0112D0)
     expected_tan = -1.5180952
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
     call stress%init(xx=-437.7D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected)/expected < EPS
     if (.not. passed) then
@@ -347,7 +359,7 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
         print *, "PASS: Uniaxial Compression Test (TENSIONDEF)"
     end if
     
-    tangent = dp%dstressEq_dstress(stress)
+    tangent = yield_dstress_eq(dp, stress)
     res = tangent%xx()/tangent%yy()
     passed = abs(res - expected_tan) < EPS
     if (.not. passed) then
@@ -363,13 +375,13 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
     ! ---------------------------------------------------
     ! --------  Compression type  -----------------------
     ! ---------------------------------------------------
-    expected = bilinear%stress(0.00858D0)
+    expected = hard_stress(bilinear, 0.00858D0)
     expected_tan = -1.518584D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
     call stress%init(xx=-308.58D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected)/expected < EPS
     if (.not. passed) then
@@ -382,7 +394,7 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
         print *, "PASS: Uniaxial Compression Test (COMPRESSIONDEF)"
     end if
 
-    tangent = dp%dstressEq_dstress(stress)
+    tangent = yield_dstress_eq(dp, stress)
     res = tangent%xx()/tangent%yy()
     passed = abs(res - expected_tan) < EPS
     if (.not. passed) then
@@ -398,13 +410,13 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
     ! ---------------------------------------------------
     ! --------  Shear type  -----------------------------
     ! ---------------------------------------------------
-    expected = bilinear%stress(0.01013D0)
+    expected = hard_stress(bilinear, 0.01013D0)
     expected_tan = -1.5198555
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
     call stress%init(xx=-342.9D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected)/expected < EPS
     if (.not. passed) then
@@ -417,7 +429,7 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
         print *, "PASS: Uniaxial Compression Test (SHEARDEF)"
     end if
 
-    tangent = dp%dstressEq_dstress(stress)
+    tangent = yield_dstress_eq(dp, stress)
     res = tangent%xx()/tangent%yy()
     passed = abs(res - expected_tan) < EPS*1.5 ! Falta de decimales
     if (.not. passed) then
@@ -445,33 +457,35 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_tensors
     use muscle_yield_druckerprager
-    use muscle_hard_bilinear
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_hard_laws, only : hard_stress, hard_bilinear_dp
     implicit none
     logical, intent(out) :: passed
 
-    type(DruckerPrager) :: dp
+    type(yield_druckerprager_dp) :: dp
     type(ten_3D2Osym) :: stress, tangent
-    type(Bilinear_hardening) :: bilinear
+    type(hard_bilinear_dp) :: bilinear
     real(real64) :: res, expected, expected_tan1, expected_tan2, beta, K_ratio
     real(real64), parameter :: EPS = 1.0D-4
     real(real64), parameter :: EPS_TAN2 = 3.0D-2
         ! TODO(DP-Tangent2): temporary relaxed tolerance for tangent_xx/tangent_zz (see header).
 
-    bilinear = Bilinear_hardening(y0=300D0, k=1000D0)
+    bilinear = hard_bilinear_dp(y0=300D0, k=1000D0)
     beta = 16.0D0
     K_ratio = 0.85D0   ! (0.778 <= K <= 1.0)
 
     ! ---------------------------------------------------
     ! --------  Tensile type  ---------------------------
     ! ---------------------------------------------------
-    expected = bilinear%stress(0.03497D0)
+    expected = hard_stress(bilinear, 0.03497D0)
     expected_tan1 = -0.471306D0
     expected_tan2 = 0.55486D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
     call stress%init(xx=-994.63D0, yy=-1711.35D0, zz=-901.47D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected)/expected < EPS
     if (.not. passed) then
@@ -484,7 +498,7 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
         print *, "PASS: Biaxial Test (TENSIONDEF)"
     end if
     
-    tangent = dp%dstressEq_dstress(stress)
+    tangent = yield_dstress_eq(dp, stress)
     res = tangent%xx()/tangent%yy()
     passed = abs(res - expected_tan1)/expected_tan1 < EPS
     if (.not. passed) then
@@ -516,14 +530,14 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
     ! ---------------------------------------------------
     ! --------  Compression type  -----------------------
     ! ---------------------------------------------------
-    expected = bilinear%stress(0.02531D0)
+    expected = hard_stress(bilinear, 0.02531D0)
     expected_tan1 = -0.472822D0
     expected_tan2 = 0.55775577D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
     call stress%init(xx=-1048.47D0, yy=-1647.97D0, zz=-970.69D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected)/expected < EPS
     if (.not. passed) then
@@ -536,7 +550,7 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
         print *, "PASS: Biaxial Test (COMPRESSIONDEF)"
     end if
     
-    tangent = dp%dstressEq_dstress(stress)
+    tangent = yield_dstress_eq(dp, stress)
     res = tangent%xx()/tangent%yy()
     passed = abs(res - expected_tan1)/expected_tan1 < EPS
     if (.not. passed) then
@@ -568,14 +582,14 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
     ! ! ---------------------------------------------------
     ! ! --------  Shear type  -----------------------------
     ! ! ---------------------------------------------------
-    expected = bilinear%stress(0.03031D0)
+    expected = hard_stress(bilinear, 0.03031D0)
     expected_tan1 = -0.4724789D0
     expected_tan2 = 0.55682D0
 
-    call dp%init(beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
     call stress%init(xx=-1033.74D0, yy=-1665.32D0, zz=-951.75D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
-    res = dp%stress_eq(stress)
+    res = yield_stress_eq(dp, stress)
 
     passed = abs(res - expected)/expected < EPS
     if (.not. passed) then
@@ -588,7 +602,7 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
         print *, "PASS: Biaxial Test (SHEARDEF)"
     end if
     
-    tangent = dp%dstressEq_dstress(stress)
+    tangent = yield_dstress_eq(dp, stress)
     res = tangent%xx()/tangent%yy()
     passed = abs(res - expected_tan1)/expected_tan1 < EPS
     if (.not. passed) then
@@ -620,20 +634,22 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
 end subroutine test_dp_biaxial_comp_abaqus
 
 subroutine test_DruckerPrager_hessian_vs_numeric(passed)
-    ! Hessian against the finite-difference Hessian of the base class, with K < 1 (third-invariant
+    ! Hessian against the finite-difference Hessian (yield_test_numeric), with K < 1 (third-invariant
     ! term active) in the three calibrations, in states with normal and shear components together
     ! Called by program test_muscle_yield_dp (STOP 8)
     use, intrinsic :: iso_fortran_env, only : real64
     use muscle_tensors
     use muscle_yield_druckerprager
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
 
-    ! Central second differences of the base class: truncation and rounding, largest with the
+    ! Central second differences (yield_test_numeric): truncation and rounding, largest with the
     ! large hydrostatic part. Measured: 5.5e-7 or less (compression case; 1.1e-7 the others)
     real(real64), parameter :: TOL = 1.0D-6
-    type(DruckerPrager) :: dp
+    type(yield_druckerprager_dp) :: dp
     type(ten_3D2Osym) :: stress
     type(ten_3D4O3sym) :: hess, hess_num
 
@@ -641,27 +657,27 @@ subroutine test_DruckerPrager_hessian_vs_numeric(passed)
 
     ! K = 0.78 (lower bound) makes the third-invariant term largest; tension-like Lode angle
     ! (r^3 > 0)
-    call dp%init(beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_TENSION)
     call stress%init(xx=300.0D0, yy=40.0D0, zz=-20.0D0, xy=45.0D0, yz=-30.0D0, xz=55.0D0)
-    hess = dp%ddstressEq_ddstress(stress)
-    hess_num = dp%ddstressEq_ddstress_numeric(stress)
+    hess = yield_ddstress_eq(dp, stress)
+    hess_num = num_ddstress_eq(dp, stress)
     call check_approx(passed, "DP Hessian vs numeric: tension calibration, K = 0.78", &
                       hess, hess_num, tol=TOL)
 
     ! Compression-like Lode angle (r^3 < 0) on top of a large hydrostatic part, as in the
     ! biaxial case, with shears added
-    call dp%init(beta_deg=16.0D0, K=0.85D0, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=0.85D0, hardening_mode=DP_HARDENING_COMPRESSION)
     call stress%init(xx=-1048.47D0, yy=-1647.97D0, zz=-970.69D0, xy=-120.0D0, yz=85.0D0, xz=40.0D0)
-    hess = dp%ddstressEq_ddstress(stress)
-    hess_num = dp%ddstressEq_ddstress_numeric(stress)
+    hess = yield_ddstress_eq(dp, stress)
+    hess_num = num_ddstress_eq(dp, stress)
     call check_approx(passed, "DP Hessian vs numeric: compression calibration, K = 0.85", &
                       hess, hess_num, tol=TOL)
 
     ! Shear calibration with K < 1: the third-invariant term that the K = 1 check of STOP 9 misses
-    call dp%init(beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_SHEAR)
     call stress%init(xx=300.0D0, yy=40.0D0, zz=-20.0D0, xy=45.0D0, yz=-30.0D0, xz=55.0D0)
-    hess = dp%ddstressEq_ddstress(stress)
-    hess_num = dp%ddstressEq_ddstress_numeric(stress)
+    hess = yield_ddstress_eq(dp, stress)
+    hess_num = num_ddstress_eq(dp, stress)
     call check_approx(passed, "DP Hessian vs numeric: shear calibration, K = 0.78", &
                       hess, hess_num, tol=TOL)
 end subroutine test_DruckerPrager_hessian_vs_numeric
@@ -674,14 +690,16 @@ subroutine test_DruckerPrager_hessian_analytical(passed)
     use muscle_tensors
     use muscle_yield_druckerprager
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
 
     ! Exact reference: round-off only. Measured: identical to Von Mises (difference 0)
     real(real64), parameter :: TOL = 1.0D-12
-    type(DruckerPrager) :: dp
-    type(VonMises) :: vm
+    type(yield_druckerprager_dp) :: dp
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: stress
     type(ten_3D4O3sym) :: hess
 
@@ -689,15 +707,15 @@ subroutine test_DruckerPrager_hessian_analytical(passed)
 
     ! K = 1 removes the third-invariant term and the shear calibration gives f = 1, so the
     ! Hessian must equal the Von Mises one; normal and shear components together
-    call dp%init(beta_deg=16.0D0, K=1.0D0, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=1.0D0, hardening_mode=DP_HARDENING_SHEAR)
     call stress%init(xx=210.0D0, yy=-45.0D0, zz=80.0D0, xy=60.0D0, yz=-35.0D0, xz=25.0D0)
     call check_approx(passed, "DP Hessian vs Von Mises: K = 1, shear calibration", &
-                      dp%ddstressEq_ddstress(stress), vm%ddstressEq_ddstress(stress), tol=TOL)
+                      yield_ddstress_eq(dp, stress), yield_ddstress_eq(vm, stress), tol=TOL)
 
     ! Pure hydrostatic stress (q = 0): the gradient is constant there, so the Hessian is
     ! exactly zero and must not be NaN (the return mapping reaches this state in tension)
     call stress%init(xx=500.0D0, yy=500.0D0, zz=500.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
-    hess = dp%ddstressEq_ddstress(stress)
+    hess = yield_ddstress_eq(dp, stress)
     call check_true(passed, "DP Hessian is exactly zero on the hydrostatic axis", &
                     all(abs(hess%vals) < tiny(1.0D0)))
 end subroutine test_DruckerPrager_hessian_analytical

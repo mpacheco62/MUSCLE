@@ -20,16 +20,15 @@ module muscle_visco_types
     !! - `visco_state_init(state, n_branches, status[, strain_e])`: a zero history.
     !!
     !! The kernel procedures of the models never modify the converged state: `visco_update` reads
-    !! `state_n` and writes `state_np1` (separate arguments). The transactional container of the
-    !! historical OO API (`Viscoelastic_history`, host only) is in muscle_visco_state; its states
-    !! are `visco_state_dp` (historical name `Viscoelastic_state`).
+    !! `state_n` and writes `state_np1` (separate arguments): the caller keeps the converged state
+    !! (the FE program, in its history array).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(T2(k) for k in REAL_KINDS)}$
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER
     implicit none
     private
 
-    integer, parameter, public :: MAX_VISCO_BRANCHES = 10
+    integer, parameter, public :: MAX_VISCO_BRANCHES = ${muscle_meta.MAX_VISCO_BRANCHES}$
         !! Maximum number of branches (history tensors) of a viscoelastic state
 
     public :: visco_state_init

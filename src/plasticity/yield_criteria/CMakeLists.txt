@@ -1,8 +1,3 @@
-# Polymorphic base of the historical OO API (host only, removed in Phase 7, D-017.1)
-target_sources(muscle PRIVATE
-                 muscle_yield_base.f90
-                 )
-
 # Criteria written with the model contract macros (include/muscle_models_common.fypp) and the
 # family module with the generics yield_* (D-017); muscle_anisotropic_yield: linear transformations
 # and principal-value terms shared by the anisotropic criteria

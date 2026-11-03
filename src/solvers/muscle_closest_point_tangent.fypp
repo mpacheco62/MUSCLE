@@ -1,0 +1,62 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! Consistent algorithmic tangent of the closest point return mappings with linear(ized) elasticity,
+#! a yield criterion and a hardening law: the `TANGENT` procedure of the material, shared by the bodies
+#! of `closest_point` (src/solvers/muscle_closest_point_body.fypp) and `closest_point_2`
+#! (muscle_closest_point_2_body.fypp), which solve the same residual equations (plastic strain flow
+#! rule and consistency) by different Newton schemes: at a converged state both have this tangent
+#! (the Schur complement of the 7x7 Newton Jacobian of `closest_point_2` on the plastic multiplier).
+#! Included with the variables of src/materials/muscle_material.fypp set (`k`, `MAT`, `MAT_T`, `ELAS_T`,
+#! `TANGENT`, `S2`, `C4`, `T4`); the material type has the components `yield` and `hard`, the
+#! elasticity of the step is the argument `elas` (muscle_closest_point_body.fypp).
+#! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
+#:if defined('MAT')
+    pure subroutine ${TANGENT}$(mat, elas, strain, state_n, state_np1, tangent)
+        !! Consistent algorithmic tangent of the closest point return mapping of material
+        !! `${MAT.name}$` at the state `state_np1`, `real(${k}$)`:
+        !! \( \mathbb{C}^{ep} = \mathbb{H} - (\mathbb{H}:\mathbf{n})\otimes(\mathbf{n}:\mathbb{H})
+        !! /(\mathbf{n}:\mathbb{H}:\mathbf{n} + d\sigma_y/d\epsilon_p) \), \( \mathbb{H} = [\mathbb{C}^{-1} +
+        !! \Delta\gamma\,\partial^2 f/\partial\boldsymbol\sigma^2]^{-1} \); the elastic tangent when
+        !! \( |\Delta\gamma| \le 10^{-12} \) (`closest_point` keeps \( \Delta\gamma \ge 0 \); `closest_point_2`
+        !! may converge to \( \Delta\gamma < 0 \), D-018.10c, and gets the consistent tangent of that state).
+        use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
+            operator(.inv.), operator(.tdotsym.), assignment(=)
+        use muscle_elasticity_laws, only : elas_dstress_dstrain
+        use muscle_yield_criteria, only : yield_dstress_eq, yield_ddstress_eq
+        use muscle_hard_laws, only : hard_dstress_dep
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material.
+        type(${ELAS_T}$), intent(in) :: elas
+            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
+        type(${S2}$), intent(in) :: strain
+            !! Total strain at \( t_{n+1} \).
+        type(plastic_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(plastic_state_${k}$), intent(in) :: state_np1
+            !! State at \( t_{n+1} \).
+        type(${T4}$), intent(out) :: tangent
+            !! Consistent tangent.
+
+        real(${k}$), parameter :: DGAMMA_MIN = 1.0e-12_${k}$
+            ! Elastic step threshold of the plastic multiplier increment (historical value, both kinds)
+        type(${S2}$) :: df
+        type(${C4}$) :: elas_tan, hess, ddf
+        real(${k}$) :: dhard, dgamma
+
+        dgamma = state_np1%strain_pf - state_n%strain_pf
+        elas_tan = elas_dstress_dstrain(elas, strain - state_np1%strain_p)
+        if (abs(dgamma) <= DGAMMA_MIN) then
+            tangent = elas_tan
+            return
+        end if
+
+        dhard = hard_dstress_dep(mat%hard, state_np1%strain_pf)
+        df = yield_dstress_eq(mat%yield, state_np1%stress)
+        ddf = yield_ddstress_eq(mat%yield, state_np1%stress)
+
+        hess = .inv. ((.inv. elas_tan) + dgamma*ddf)
+        tangent = hess - (.tdotsym. (df .ddot. hess))/((df .ddot. hess .ddot. df) + dhard)
+    end subroutine ${TANGENT}$
+#:endif

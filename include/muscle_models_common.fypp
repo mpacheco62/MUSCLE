@@ -14,6 +14,10 @@
 #!
 #!   $:MODEL_PUBLIC(fam, model)                    public statements of the kernel API (every kind)
 #!   $:MODEL_PARAMS_TYPE(fam, model, k, params[, d])   parameter type `<fam>_<model>_<k>`
+#!                                                 (`params`: `model_param_list(fam, model)`, the
+#!                                                 single source in MODEL_PARAMS of muscle_meta)
+#!   $:MODEL_INIT(fam, model, k)                    header of the initializer of a model built from
+#!                                                 inputs other than its parameters (MODEL_INITS)
 #!   $:MODEL_FUNCTION(fam, model, func, k[, d, uses, doc])
 #!                                                 header of a function, up to the declarations of
 #!                                                 its arguments; the author writes the body and
@@ -30,7 +34,7 @@
 #!                                                 levels up, to avoid nested differences). In a
 #!                                                 `2Osym` argument (yield criteria): FD_GRAD of a
 #!                                                 scalar function, and with `second=True` FD_HESS
-#!                                                 (the formulas of derivative/derivative2O)
+#!                                                 (the historical finite-difference steps)
 #!   $:MODEL_DEFAULT(fam, model, func, k[, d])      whole function computed from the other functions
 #!                                                 of the model with the family formula
 #!                                                 (`ModelFunc.default`, e.g. the total derivative
@@ -47,8 +51,6 @@
 #!                                                 by the author, or flag and the default
 #!                                                 subroutine (the functions in turn; an optional
 #!                                                 output only if present)
-#!   $:OO_ADAPTER_TYPE(...), $:OO_ADAPTER_PROCS(...)   historical OO type (host only, Phase 7)
-#!   $:OO_COPY_PARAMS(dst, src, params)            copy of the parameter components
 #!   $:FAMILY_USES(fam), $:FAMILY_EXPORTS(fam)      family module: generics over the registry
 #!
 #! Names (D-007, D-011.4, D-017.5b), for a family prefix `<fam>` (e.g. `hard`):
@@ -61,8 +63,8 @@
 #!   physical name such as a pressure `p`), the other arguments and the result as in the family
 #!   metadata (`ep`, `res`). The bodies may not use other names starting with `fd_`.
 #!
-#! Parameters of a model (`params`, one tuple per component, storage order = order of the
-#! positional structure constructor): `(name, type, shape, doc, default)` with
+#! Parameters of a model (`params`, MODEL_PARAMS of muscle_meta, one tuple per component, storage
+#! order = order of the positional structure constructor): `(name, type, shape, doc, default)` with
 #! - type: 'real' (kind of the instance), 'integer', 'logical', or a tensor family ('2Osym', ...:
 #!   the type of dimension `d` and kind `k`, needs `d`);
 #! - shape: '' (scalar) or a fixed shape, e.g. '(3)' (no allocatable components: kernels, GPU);
@@ -80,11 +82,11 @@
 #! with a hardening law) receives the values already evaluated (sigma_y and its derivatives) as
 #! ordinary arguments of its functions (ModelArg), not the other law. Only the models registered
 #! as composed (`ModelFamily.composed`) take them, each function the ones it needs
-#! (`ModelFunc.comp`), after the family and `extra` arguments (`model_args`). The OO adapter of a
-#! composed model keeps the polymorphic component of the other law (`ModelComposition`) and
-#! evaluates the values in host before calling the free function. A finite difference in the
-#! argument the values depend on (`ModelComposition.arg`) is refused for a composed model: with the
-#! values frozen it would miss their variation.
+#! (`ModelFunc.comp`), after the family and `extra` arguments (`model_args`); the caller (the
+#! material, D-017.13d) evaluates them with the functions of the composed family
+#! (`ModelComposition`). A finite difference in the argument the values depend on
+#! (`ModelComposition.arg`) is refused for a composed model: with the values frozen it would miss
+#! their variation.
 #!
 #! Line markers: everything the author writes keeps its own `#line` markers; the lines emitted by a
 #! macro point to the line of the `$:` call.
@@ -106,9 +108,7 @@
 #:set model_default = muscle_meta.model_default
 #:set model_call = muscle_meta.model_call
 #:set model_args = muscle_meta.model_args
-#:set model_oo_args = muscle_meta.model_oo_args
 #:set model_composed = muscle_meta.model_composed
-#:set model_oo_extra = muscle_meta.model_oo_extra
 #:set model_comp_values = muscle_meta.model_comp_values
 #:set model_default_expr = muscle_meta.model_default_expr
 #:set model_dims = muscle_meta.model_dims
@@ -118,12 +118,11 @@
 #:set model_specifics = muscle_meta.model_specifics
 #:set model_joint = muscle_meta.model_joint
 #:set model_joint_outs = muscle_meta.model_joint_outs
+#:set model_param_list = muscle_meta.model_param_list
+#:set model_init = muscle_meta.model_init
+#:set model_init_signature = muscle_meta.model_init_signature
 #! Components of an isotropic 4O3sym tensor from its three distinct values (elastic models)
 #:set isotropic_4o3sym = muscle_meta.isotropic_4o3sym
-#! Dimension of the historical OO API (adapters of a family with tensor arguments)
-#:set OO_DIM = muscle_meta.OO_DIM
-#! Dimension of the OO adapter of a family: OO_DIM if the family has dimensions, else None
-#:set oo_dim = lambda fam: OO_DIM if model_family(fam).dims else None
 
 #! Declaration `type, attrs :: name shape`
 #:set model_var = lambda a, k, d=None, attrs='': '{}{} :: {}{}'.format(model_decl(a.type, a.shape, k, d), attrs, a.name, a.shape)
@@ -153,6 +152,30 @@
             !! ${p.doc}$
 #:endfor
     end type ${model_type(fam, model, k)}$
+#:enddef
+
+#! Header of the initializer `<fam>_<model>_init_<k>` of a model (MODEL_INITS of muscle_meta, D-018.17e):
+#! statement, docs and declarations of the parameters, the inputs and the status; the author writes
+#! the body and `end subroutine`
+#:def MODEL_INIT(fam, model, k)
+#:set init = model_init(fam, model)
+#:assert init is not None, 'no initializer registered for ' + fam + ' ' + model
+${model_init_signature(fam, model, k)}$
+#:for line in init.doc
+        !! ${line.replace('{k}', k)}$
+#:endfor
+        implicit none
+        @:DEVICE()
+        type(${model_type(fam, model, k)}$), intent(${init.prm_intent}$) :: ${model_family(fam).par}$
+            !! ${init.prm_doc}$
+#:for a in init.inputs
+        ${'real(' + k + ')' if a.type == 'real' else a.type}$, intent(in) :: ${a.name}$${a.shape}$
+            !! ${a.doc}$
+#:endfor
+#:if init.status
+        integer, intent(out) :: status
+            !! ${init.status}$
+#:endif
 #:enddef
 
 #! Function statement, docs, `use`s and argument declarations of a family function
@@ -358,189 +381,6 @@ $:_MODEL_JOINT_HEADER(fam, model, k, d, None, None, True)
 #:def YIELD_SCALE_EXPONENT(e, m, k)
         ${e}$ = 0
         if (${m}$ > 0.0_${k}$) ${e}$ = exponent(${m}$)
-#:enddef
-
-#! Bindings of the OO adapter: list of (binding, family function, OO dummy names or None[,
-#! dimension]); by default every function of `ModelFamily.oo_funcs` under its own name with the
-#! family argument names (`ModelFamily.oo_bindings` when the historical names differ). The dimension
-#! of the tensor arguments of a binding defaults to OO_DIM.
-#:set oo_bindings = muscle_meta.model_oo_bindings
-#! Declaration of an argument of an OO adapter procedure: polymorphic (class) for a tensor argument in a
-#! family whose historical base declares it so (`ModelFamily.oo_class`)
-#:set oo_var = lambda fam, a, d, attrs: '{}{} :: {}{}'.format(muscle_meta.model_oo_decl(fam, a, 'dp', d), attrs, a.name, a.shape)
-
-#! Historical OO type extending `base_type` (host only, removed in Phase 7, D-017.1/6): same
-#! components (kind dp) and structure constructor; type-bound procedures `<binding>_tbp` that call
-#! the dp kernel functions. `validate`: optional name of a host subroutine `validate(self)`
-#! (`type(oo_type), intent(inout)`) written by the author; the constructor `oo_type(...)` then
-#! becomes a function (same keywords; optional for parameters with a default) that calls it.
-#! A composed model (D-017.6b) keeps, as its first component, the polymorphic component of the
-#! composed law (`ModelComposition`), evaluated by the type-bound procedures before calling the
-#! free functions.
-#! In a family with a joint evaluation (`ModelFamily.joint`), a model that writes its own
-#! (`ModelJoint.models`) also overrides the joint bindings of the base (`oo_name`, `oo_flag`, the
-#! latter `nopass`); the others inherit the defaults of the base. `extra_bindings`: list of
-#! `(binding, procedure, doc)` written by the author after OO_ADAPTER_PROCS (host procedures such as
-#! an `init` that computes derived parameters; name them `*_tbp`). `joint`: for a model not
-#! registered in the family (test-only), whether it writes its own joint evaluation (MODEL_JOINT).
-#! The historical joint binding keeps all its outputs (none optional). Private parameters are public
-#! components of the OO type (historical API), unless `oo_private` (a historical type whose
-#! components were all private, e.g. DruckerPrager): then every component is private.
-#! `oo_extra`: OO-only components, tuples as `params` (`model_oo_extra`), declared after the
-#! parameters and never copied to the kernel type (historical state such as cached results, kept
-#! and used by author-written bindings: pass `bindings` without the ones they override).
-#! Tensor arguments of the OO API are of dimension OO_DIM, or of the dimension of each binding (a
-#! historical API with one binding per dimension, e.g. `stress_3D`, `stress_2D`).
-#! The author writes `use <base module>, only : <base_type>` (and the base type of the composed law).
-#:def OO_ADAPTER_TYPE(fam, model, oo_type, base_type, params, bindings=None, validate=None, extra_bindings=None, joint=None, &
-    & oo_private=False, oo_extra=None)
-#:set F = model_family(fam)
-#:set ps = model_params(params)
-#:set xs = model_oo_extra(params, oo_extra)
-#:assert not (validate and model_composed(fam, model)), 'validate of a composed model: not implemented'
-#:assert not (validate and xs), 'validate with OO-only components: not implemented'
-
-    ! Historical OO interface (host only, D-017.1): removed in Phase 7 with ${base_type}$.
-    type, extends(${base_type}$) :: ${oo_type}$
-        !! The ${model_label(fam, model)}$ model through the polymorphic `${base_type}$` interface (historical API,
-        !! double precision, host only). Kernels use `${model_type(fam, model, 'dp')}$` and the
-        !! free functions.
-#:if oo_private
-        private
-#:endif
-#:if model_composed(fam, model)
-        class(${F.composition.base_type}$), allocatable :: ${F.composition.component}$  ! lint: allow(alloc) lint: allow(oop)
-            !! Composed law (evaluated in host by the type-bound procedures, D-017.6b).
-#:endif
-#:for p in list(ps) + list(xs)
-        ${model_var(p, 'dp')}$${model_default(p, 'dp')}$
-            !! ${p.doc}$
-#:endfor
-    contains
-#:for b, func, _, _ in oo_bindings(fam, bindings, model)
-        procedure :: ${b}$ => ${b}$_tbp
-            !! ${model_func(fam, func).doc}$.
-#:endfor
-#:if model_joint(fam, model, joint)
-        procedure :: ${F.joint.oo_name}$ => ${F.joint.oo_name}$_tbp
-            !! ${F.joint.doc}$.
-        procedure, nopass :: ${F.joint.oo_flag}$ => ${F.joint.oo_flag}$_tbp
-            !! ${F.joint.flag_doc}$ (true).
-#:endif
-#:for b, proc, doc in (extra_bindings or [])
-        procedure :: ${b}$ => ${proc}$
-            !! ${doc}$
-#:endfor
-    end type ${oo_type}$
-#:if validate
-
-    interface ${oo_type}$
-        !! Constructor of `${oo_type}$` (same keywords as the structure constructor) that validates
-        !! the parameters with `${validate}$`.
-        module procedure new_${oo_type}$
-    end interface ${oo_type}$
-#:endif
-#:enddef
-
-#! Copies the parameter components `params` from `src` to `dst` (e.g. from the OO object `self` to
-#! the parameter type of the free functions, or back in an author-written `init`)
-#:def OO_COPY_PARAMS(dst, src, params)
-#:for p in model_params(params)
-        ${dst}$%${p.name}$ = ${src}$%${p.name}$
-#:endfor
-#:enddef
-
-#:def OO_ADAPTER_PROCS(fam, model, oo_type, params, bindings=None, validate=None, joint=None)
-#:set F = model_family(fam)
-#:set ps = model_params(params)
-#:set od = oo_dim(fam)
-#:for b, func, names, bd in oo_bindings(fam, bindings, model)
-#:set f = model_func(fam, func)
-#:set oargs = model_oo_args(fam, func)
-#:set onames = list(names) if names is not None else [a.name for a in oargs]
-#:assert len(onames) == len(oargs)
-#:set cvals = model_comp_values(fam, func) if model_composed(fam, model) else []
-#:assert not set(v.arg.name for v in cvals) & set(onames + [F.par])
-
-    pure function ${b}$_tbp(self, ${', '.join(onames)}$) result(${f.result.name}$)
-        !! ${f.doc}$${'' if bd is None else ' (' + bd + ')'}$ (type-bound, historical API; host only).
-        !! Calls `${model_specific(fam, func, model, 'dp', bd)}$`.
-        implicit none
-        class(${oo_type}$), intent(in) :: self
-            !! Model.
-#:for a, n in zip(oargs, onames)
-        ${oo_var(fam, a._replace(name=n), bd, ', intent(in)')}$
-            !! ${a.doc}$
-#:endfor
-        ${model_var(f.result, 'dp', bd)}$
-            !! ${f.result.doc}$
-        type(${model_type(fam, model, 'dp')}$) :: ${F.par}$
-#:for v in cvals
-        ${model_var(v.arg, 'dp')}$
-#:endfor
-
-$:OO_COPY_PARAMS(F.par, 'self', params)
-#:for v in cvals
-        ${v.arg.name}$ = self%${F.composition.component}$%${v.binding}$(${onames[[a.name for a in oargs].index(F.composition.arg)]}$)
-#:endfor
-        ${f.result.name}$ = ${model_specific(fam, func, model, 'dp', bd)}$(${', '.join([F.par] + list(onames) + [v.arg.name for v in cvals])}$)
-    end function ${b}$_tbp
-#:endfor
-#:if model_joint(fam, model, joint)
-#:set J = F.joint
-#:set outs = model_joint_outs(fam)
-#:assert len(J.oo_args) == len(F.args)
-
-    pure subroutine ${J.oo_name}$_tbp(self, ${', '.join(list(J.oo_args) + [o.name for o in outs])}$)
-        !! ${J.doc}$ (type-bound, historical API; host only).
-        !! Calls `${model_specific(fam, J.name, model, 'dp', od)}$`.
-        implicit none
-        class(${oo_type}$), intent(in) :: self
-            !! Model.
-#:for a, n in zip(F.args, J.oo_args)
-        ${oo_var(fam, a._replace(name=n), od, ', intent(in)')}$
-            !! ${a.doc}$
-#:endfor
-#:for o in outs
-        ${model_var(o, 'dp', od, ', intent(out)')}$
-            !! ${o.doc}$
-#:endfor
-        type(${model_type(fam, model, 'dp')}$) :: ${F.par}$
-
-$:OO_COPY_PARAMS(F.par, 'self', params)
-        call ${model_specific(fam, J.name, model, 'dp', od)}$(${', '.join([F.par] + list(J.oo_args) + [o.name for o in outs])}$)
-    end subroutine ${J.oo_name}$_tbp
-
-    pure function ${J.oo_flag}$_tbp() result(res)
-        !! ${J.flag_doc}$: true (type-bound, `nopass`, historical API; host only).
-        implicit none
-        logical :: res
-            !! `.true.`
-
-        res = .true.
-    end function ${J.oo_flag}$_tbp
-#:endif
-#:if validate
-
-    function new_${oo_type}$(${', '.join(p.name for p in ps)}$) result(self)
-        !! Builds a `${oo_type}$` from its parameters and validates it with `${validate}$`.
-#:for p in ps
-        ${model_var(p, 'dp', None, ', intent(in)' + (', optional' if p.default is not None else ''))}$
-            !! ${p.doc}$
-#:endfor
-        type(${oo_type}$) :: self
-            !! New model.
-
-#:for p in ps
-#:if p.default is not None
-        if (present(${p.name}$)) self%${p.name}$ = ${p.name}$
-#:else
-        self%${p.name}$ = ${p.name}$
-#:endif
-#:endfor
-        call ${validate}$(self)
-    end function new_${oo_type}$
-#:endif
 #:enddef
 
 #! Family module: `use` of every registered model (before `implicit none`)

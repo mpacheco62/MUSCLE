@@ -2,17 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = [('sig_a', 'real', '', r'Athermal stress coefficient \( \sigma_a \).', None), &
-    &          ('n1', 'real', '', r'Athermal hardening exponent \( n_1 \).', None), &
-    &          ('sig_0', 'real', '', r'Thermal stress coefficient \( \sigma_0 \).', None), &
-    &          ('KG0', 'real', '', r'Normalized activation coefficient \( k T/G_0 \).', None), &
-    &          ('epd0', 'real', '', r'Reference strain rate \( \dot\epsilon_0 \).', None), &
-    &          ('at', 'real', '', r'Microstructure evolution coefficient \( a \).', None), &
-    &          ('n0', 'real', '', r'Microstructure evolution exponent \( n_0 \).', None), &
-    &          ('q', 'real', '', r'Barrier profile exponent \( q \).', None), &
-    &          ('p', 'real', '', r'Barrier profile exponent \( p \).', None), &
-    &          ('eps_log', 'real', '', r'Floor of the logarithm arguments and of the rate.', '1.0e-12'), &
-    &          ('eps_base', 'real', '', r'Floor of \( 1 - X^{1/q} \).', '1.0e-12')]
+#:set PARAMS = model_param_list('vp', 'nnl')
 
 module muscle_vp_nnl
     !! Nemat-Nasser-Li (NNL) viscoplastic law (self-contained: it does not compose a hardening law),
@@ -37,19 +27,15 @@ module muscle_vp_nnl
     !! Kernel API: parameter types `vp_nnl_<k>` and `pure` functions `vp_flow_stress_nnl_<k>(prm, ep,
     !! epd)`, `vp_dflow_dep_nnl_<k>`, `vp_dflow_depd_nnl_<k>(prm, ep, epd)` and
     !! `vp_dstress_dep_nnl_<k>(prm, ep, epd, dt)` for each real kind, also through the generics `vp_*`
-    !! of `muscle_vp_laws`. `NNL_viscoplastic` is the historical OO type (host only, removed in
-    !! Phase 7).
+    !! of `muscle_vp_laws`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_vp_base, only : Base_viscoplastic_law
     implicit none
     private
 
     $:MODEL_PUBLIC('vp', 'nnl')
-    public :: NNL_viscoplastic
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('vp', 'nnl', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('vp', 'nnl', 'NNL_viscoplastic', 'Base_viscoplastic_law', PARAMS)
 
 contains
 #:for k in REAL_KINDS
@@ -143,6 +129,5 @@ contains
         res = dep + depd/dt
     end function vp_dstress_dep_nnl_${k}$
 #:endfor
-    $:OO_ADAPTER_PROCS('vp', 'nnl', 'NNL_viscoplastic', PARAMS)
 
 end module muscle_vp_nnl

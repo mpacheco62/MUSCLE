@@ -10,3 +10,19 @@ add_test(NAME tools-muscle_meta
 add_test(NAME tools-ops_golden_coverage
          COMMAND ${Python3_EXECUTABLE} -B -m unittest -v test_ops_golden_coverage
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Registry of declared materials (tools/fypp/muscle_materials.py) and its validation in muscle_meta
+add_test(NAME tools-muscle_materials
+         COMMAND ${Python3_EXECUTABLE} -B -m unittest -v test_muscle_materials
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Parameters and initializers of the registered models (MODEL_PARAMS, MODEL_INITS of muscle_meta,
+# D-018.17e)
+add_test(NAME tools-muscle_model_params
+         COMMAND ${Python3_EXECUTABLE} -B -m unittest -v test_muscle_model_params
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Parameter array of the declared materials (material_props, `muscle_meta.py props NAME`, D-018.17a)
+add_test(NAME tools-muscle_material_props
+         COMMAND ${Python3_EXECUTABLE} -B -m unittest -v test_muscle_material_props
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})

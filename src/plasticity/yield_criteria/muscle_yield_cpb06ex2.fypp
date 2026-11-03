@@ -2,17 +2,9 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the yield family (D-017.6): include/muscle_models_common.fypp
-#! L, Lp and B are derived from C, Cp, k, kp and a by the initializer (`yield_cpb06ex2_init`, OO
-#! `init`): private in the kernel type (D-017.10b). Components in the historical order (OO type)
-#:set PARAMS = [('L', 'real', '(3,3)', r'Normal block of \( \mathbf{L} = \mathbf{C} \mathbb{P}_{dev} \), which maps the normal stresses to those of \( \boldsymbol\Sigma \) (Plunkett et al., 2008, Eq. 9).', None, True), &
-    &          ('Lp', 'real', '(3,3)', r'Normal block of \( \mathbf{L}^\prime = \mathbf{C}^\prime \mathbb{P}_{dev} \), for \( \boldsymbol\Sigma^\prime \) (Eq. 9; suffix p = primed in the paper).', None, True), &
-    &          ('c_shear', 'real', '(3)', r'Shear factors of \( \mathbf{C} \) on the tensorial shears (xy, yz, xz).', None), &
-    &          ('cp_shear', 'real', '(3)', r'Shear factors of \( \mathbf{C}^\prime \) on the tensorial shears (xy, yz, xz).', None), &
-    &          ('k', 'real', '', r'Strength differential parameter \( k \) of \( \boldsymbol\Sigma \) (Eq. 8).', None), &
-    &          ('kp', 'real', '', r'Strength differential parameter \( k^\prime \) of \( \boldsymbol\Sigma^\prime \) (Eq. 8).', None), &
-    &          ('a', 'real', '', r'Degree of homogeneity \( a \) (Eq. 8).', None), &
-    &          ('B', 'real', '', r'Normalization: \( \sigma_{eq} = s \) in uniaxial tension \( s \) along RD (Eq. 11 with \( \theta = 0 \)).', None, True)]
-#:set OO_EXTRA = [('init', 'init_tbp', 'Sets C, Cp, k, kp and a and computes L, Lp and B.')]
+#! L, Lp and B are derived from C, Cp, k, kp and a by the initializer (`yield_cpb06ex2_init`):
+#! private in the kernel type (D-017.10b). Components in the historical order (of the retired OO type)
+#:set PARAMS = model_param_list('yield', 'cpb06ex2')
 
 module muscle_yield_cpb06ex2
     !! CPB06ex2 criterion, with two transformations of the stress deviator (Plunkett et al., 2008,
@@ -45,7 +37,6 @@ module muscle_yield_cpb06ex2
     !! `yield_ddstress_eq_cpb06ex2_3D_<k>(prm, sigma)` and the joint evaluation
     !! `yield_stress_eq_and_derivatives_cpb06ex2_3D_<k>(prm, sigma, f, df[, ddf])` (the three in turn)
     !! for each real kind, also through the generics `yield_*` of `muscle_yield_criteria`.
-    !! `CPB06ex2` is the historical OO type (host only, removed in Phase 7).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
         & operator(.tdotsym.), operator(*), operator(+), assignment(=)
@@ -53,17 +44,14 @@ module muscle_yield_cpb06ex2
     use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian
     use muscle_anisotropic_yield, only : yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, &
         & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian
-    use muscle_yield_base, only : Base_yield_critera
     implicit none
     private
 
     $:MODEL_PUBLIC('yield', 'cpb06ex2')
     public :: yield_cpb06ex2_init, ${', '.join('yield_cpb06ex2_init_' + k for k in REAL_KINDS)}$
-    public :: CPB06ex2
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('yield', 'cpb06ex2', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('yield', 'cpb06ex2', 'CPB06ex2', 'Base_yield_critera', PARAMS, extra_bindings=OO_EXTRA)
 
     interface yield_cpb06ex2_init
         !! Parameters of the CPB06ex2 model from the components of C and Cp, k, kp and a (computes L,
@@ -74,30 +62,8 @@ module muscle_yield_cpb06ex2
 contains
 #:for k in REAL_KINDS
 
-    pure subroutine yield_cpb06ex2_init_${k}$(prm, c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k, &
-                                         cp11, cp12, cp13, cp21, cp22, cp23, cp31, cp32, cp33, cp44, cp55, cp66, kp, a)
-        !! Parameters of the CPB06ex2 model in `real(${k}$)`: the maps of Plunkett et al. (2008),
-        !! Eqs. (9)-(10), and the normalization B of Eq. (8) to unit uniaxial tension in RD, as in
-        !! Eq. (11), so that they are not computed in every call.
-        implicit none
-        @:DEVICE()
-        type(yield_cpb06ex2_${k}$), intent(out) :: prm
-            !! Parameters.
-        real(${k}$), intent(in) :: c11, c12, c13, c21, c22, c23, c31, c32, c33
-            !! Normal block of C.
-        real(${k}$), intent(in) :: c44, c55, c66
-            !! Shear factors of C (xy, yz, xz).
-        real(${k}$), intent(in) :: k
-            !! Strength differential parameter of Sigma.
-        real(${k}$), intent(in) :: cp11, cp12, cp13, cp21, cp22, cp23, cp31, cp32, cp33
-            !! Normal block of Cp.
-        real(${k}$), intent(in) :: cp44, cp55, cp66
-            !! Shear factors of Cp (xy, yz, xz).
-        real(${k}$), intent(in) :: kp
-            !! Strength differential parameter of Sigmap.
-        real(${k}$), intent(in) :: a
-            !! Degree of homogeneity.
-        type(${tname(OO_DIM + '2Osym', k)}$) :: rd
+    $:MODEL_INIT('yield', 'cpb06ex2', k)
+        type(${tname('3D2Osym', k)}$) :: rd
 
         prm%L = yield_lin_dev_block(reshape([c11, c21, c31, c12, c22, c32, c13, c23, c33], [3, 3]))
         prm%Lp = yield_lin_dev_block(reshape([cp11, cp21, cp31, cp12, cp22, cp32, cp13, cp23, cp33], [3, 3]))
@@ -109,7 +75,7 @@ contains
         rd%vals = 0.0_${k}$
         rd%vals(1) = 1.0_${k}$
         prm%B = 1.0_${k}$
-        prm%B = 1.0_${k}$/yield_stress_eq_cpb06ex2_${OO_DIM}$_${k}$(prm, rd)
+        prm%B = 1.0_${k}$/yield_stress_eq_cpb06ex2_3D_${k}$(prm, rd)
     end subroutine yield_cpb06ex2_init_${k}$
 
     pure subroutine yield_cpb06ex2_principal_${k}$(prm, lam, lamp, phi, df, dfp, d2f, d2fp, cross)
@@ -232,27 +198,5 @@ contains
     $:MODEL_JOINT_DEFAULT('yield', 'cpb06ex2', k, d)
 #:endfor
 #:endfor
-    $:OO_ADAPTER_PROCS('yield', 'cpb06ex2', 'CPB06ex2', PARAMS)
-
-    subroutine init_tbp(self, c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k, &
-                        cp11, cp12, cp13, cp21, cp22, cp23, cp31, cp32, cp33, cp44, cp55, cp66, kp, a)
-        !! `%init(...)`: stores the maps of Plunkett et al. (2008), Eqs. (9)-(10), and normalizes
-        !! Eq. (8) to unit uniaxial tension in RD, as in Eq. (11) (type-bound, historical API; host
-        !! only). Calls `yield_cpb06ex2_init_dp`.
-        implicit none
-        class(CPB06ex2), intent(inout) :: self
-            !! Model.
-        real(dp), intent(in) :: c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k
-            !! C (normal block, shear factors xy, yz, xz) and k.
-        real(dp), intent(in) :: cp11, cp12, cp13, cp21, cp22, cp23, cp31, cp32, cp33, cp44, cp55, cp66, kp
-            !! Cp (normal block, shear factors xy, yz, xz) and kp.
-        real(dp), intent(in) :: a
-            !! Degree of homogeneity.
-        type(yield_cpb06ex2_dp) :: prm
-
-        call yield_cpb06ex2_init_dp(prm, c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k, &
-                                    cp11, cp12, cp13, cp21, cp22, cp23, cp31, cp32, cp33, cp44, cp55, cp66, kp, a)
-$:OO_COPY_PARAMS('self', 'prm', PARAMS)
-    end subroutine init_tbp
 
 end module muscle_yield_cpb06ex2

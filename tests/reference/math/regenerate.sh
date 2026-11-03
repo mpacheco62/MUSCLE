@@ -3,7 +3,8 @@
 # Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #
 # Regenerates the golden values of the math modules (tests/reference/math/math_<module>_dp.txt)
-# by running the golden tests tests/math/test_math_golden_<module>.f90 with `--write FILE`.
+# by running the golden tests tests/math/test_math_golden_<module>.{f90,fypp} with `--write FILE`
+# (tests/reference/write_golden.sh: the header of the existing file and its matching records are kept).
 #
 # ONLY run it on code whose behaviour IS the reference: these files were captured from the
 # original (pre-FYPP) modules src/math/muscle_math_{derivatives,operations,spectral_derivs,
@@ -36,15 +37,8 @@ if [[ -n "$lapack" ]]; then
 fi
 
 for module in derivatives operations spectral_derivs linsolvers; do
-    exe="$build_dir/tests/math/test_math_golden_$module"
-    out="$ref_dir/math_${module}_dp.txt"
-    tmp=$(mktemp)
-    "$exe" --write "$tmp"
-    {
-        echo "# Captured from commit $commit$dirty, $version, CMAKE_BUILD_TYPE=$build_type$lapack,"
-        echo "# by tests/reference/math/regenerate.sh (test_math_golden_$module --write)."
-        cat "$tmp"
-    } > "$out"
-    rm -f "$tmp"
-    echo "wrote $out ($(grep -vc '^#' "$out") records)"
+    "$ref_dir/../write_golden.sh" "$build_dir/tests/math/test_math_golden_$module" \
+        "$ref_dir/math_${module}_dp.txt" \
+        "commit $commit$dirty, $version, CMAKE_BUILD_TYPE=$build_type$lapack" \
+        "tests/reference/math/regenerate.sh (test_math_golden_$module --write)"
 done

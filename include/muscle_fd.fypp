@@ -7,8 +7,8 @@
 #! a `block ... end block` construct that calls the given function DIRECTLY (no `procedure(...)`
 #! argument, no type-bound call, nothing allocatable), so it can be used inside a `pure`
 #! procedure marked `@:DEVICE()`. Include with `#:include "muscle_fd.fypp"` (after
-#! "muscle_common.fypp"). The host-only API `derivative`/`derivative2O`
-#! (muscle_math_derivatives_host) is built on the same macros.
+#! "muscle_common.fypp"). They replace the former `procedure(...)` API `derivative`/`derivative2O`
+#! (removed, D-018.18b) and keep its dp bits with the same compile options (D-016.9).
 #!
 #! Common arguments:
 #!   res:    variable that receives the derivative (`real(k)` or the tensor type of the result).
@@ -17,7 +17,7 @@
 #!           `stress_eq_vonmises_dp(y, {x})`. It is called on a perturbed copy of `x`.
 #!   x:      variable (or designator) where the derivative is taken; it is not modified.
 #!   k:      real kind ('sp', 'dp'); d: dimension of the tensors ('3D', '2D').
-#!   step:   optional step expression (e.g. the `eps` of the host API). By default (D-016.4)
+#!   step:   optional step expression (the former `eps` argument). By default (D-016.4)
 #!           h = max(|x| rel, min), the historical rule, and at |x| = 0 (where the historical
 #!           minimum made f(+-h) round to f(0)) h = FD_STEP_ZERO_<k> = sqrt(eps) for the first
 #!           derivatives (FD_DERIV, FD_GRAD, FD_JAC: rounding error ~ sqrt(eps) and a step far below

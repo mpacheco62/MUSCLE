@@ -1,0 +1,141 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+
+#:set HARD = ['bilinear', 'ludwik', 'swift', 'vocemod']
+module hard_golden_cases
+    !! Cases of the golden test of the hardening laws: every function of the family (`hard_stress`,
+    !! `hard_dstress_dep`, `hard_ddstress_ddep`) of every law through the kernel API, over an `ep`
+    !! sweep from 0 to 10.
+    use muscle_kinds, only : dp
+    use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_ddstress_ddep, &
+        ${', '.join('hard_' + m + '_dp' for m in HARD)}$
+    use muscle_test_golden, only : golden_check
+    implicit none
+    private
+
+    public :: EP_SWEEP, sweep
+
+    real(dp), parameter :: EP_SWEEP(21) = [0.0_dp, 1.0e-12_dp, 1.0e-10_dp, 1.0e-9_dp, 1.0e-6_dp, &
+        1.0e-5_dp, 1.0e-4_dp, 1.0e-3_dp, 2.0e-3_dp, 5.0e-3_dp, 1.0e-2_dp, 2.0e-2_dp, 5.0e-2_dp, &
+        0.1_dp, 0.2_dp, 0.3_dp, 0.5_dp, 1.0_dp, 2.0_dp, 5.0_dp, 10.0_dp]
+        !! Common equivalent plastic strain sweep: zero, around the 1e-10 offset of Ludwik's
+        !! derivatives, small (1e-6..1e-3), intermediate and large (>= 1) strains.
+
+    interface sweep
+        !! Golden records of a law (every registered law).
+        module procedure ${', '.join('sweep_' + m for m in HARD)}$
+    end interface sweep
+
+contains
+#:for m in HARD
+
+    subroutine sweep_${m}$(key, h, ep)
+        !! Golden records of the input strains and of `stress`, `dstress_dep` and `ddstress_ddep`
+        !! of the ${m}$ law at every strain.
+        character(len=*), intent(in) :: key
+            !! Key prefix (law and parameter set).
+        type(hard_${m}$_dp), intent(in) :: h
+            !! Hardening law.
+        real(dp), intent(in) :: ep(:)
+            !! Equivalent plastic strains.
+        real(dp) :: s(size(ep)), ds(size(ep)), dds(size(ep))
+        integer :: i
+        do i = 1, size(ep)
+            s(i) = hard_stress(h, ep(i))
+            ds(i) = hard_dstress_dep(h, ep(i))
+            dds(i) = hard_ddstress_ddep(h, ep(i))
+        end do
+        call golden_check(key // ' | ep', ep)
+        call golden_check(key // ' | stress', s)
+        call golden_check(key // ' | dstress_dep', ds)
+        call golden_check(key // ' | ddstress_ddep', dds)
+    end subroutine sweep_${m}$
+#:endfor
+
+end module hard_golden_cases
+
+program test_hard_golden
+    !! Golden (characterization) test of the hardening laws in double precision, bit for bit
+    !! against tests/reference/plasticity/hardening_laws/hard_laws_dp.txt, captured from the
+    !! original OO code (regenerate.sh there) and reproduced by the kernel API (D-018.18f): the
+    !! parameter types and the family generics of `muscle_hard_laws`.
+    !!
+    !! Exit codes: 1-4 from `golden_finish` (muscle_test_golden).
+    use muscle_kinds, only : dp
+    use muscle_hard_laws, only : ${', '.join('hard_' + m + '_dp' for m in HARD)}$
+    use muscle_test_golden, only : golden_init, golden_check, golden_finish
+    use hard_golden_cases, only : EP_SWEEP, sweep
+    implicit none
+
+    ! Parameter sets (realistic metal values, MPa): one row per set.
+    real(dp), parameter :: BIL(2, 4) = reshape([ &
+        250.0_dp, 1000.0_dp, &   ! mild steel, linear hardening
+        355.0_dp, 0.0_dp, &      ! perfect plasticity
+        70.0_dp, 690.0_dp, &     ! aluminium
+        480.0_dp, -150.0_dp], [2, 4])  ! softening
+        !! Bilinear: y0, K.
+    real(dp), parameter :: LUD(3, 4) = reshape([ &
+        250.0_dp, 500.0_dp, 0.2_dp, &
+        300.0_dp, 800.0_dp, 0.5_dp, &
+        200.0_dp, 1000.0_dp, 1.0_dp, &   ! n = 1: linear
+        100.0_dp, 300.0_dp, 1.5_dp], [3, 4])  ! n > 1: d2 > 0
+        !! Ludwik: sigma0, k, n.
+    real(dp), parameter :: SWI(3, 4) = reshape([ &
+        500.0_dp, 1.0e-3_dp, 0.2_dp, &
+        800.0_dp, 1.0e-2_dp, 0.15_dp, &
+        1200.0_dp, 2.0e-3_dp, 0.3_dp, &
+        600.0_dp, 0.0_dp, 0.25_dp], [3, 4])   ! e0 = 0 (Hollomon): derivatives are Inf at ep = 0
+        !! Swift: k, e0, n.
+    real(dp), parameter :: VOC(4, 4) = reshape([ &
+        250.0_dp, 100.0_dp, 150.0_dp, 20.0_dp, &
+        300.0_dp, 0.0_dp, 200.0_dp, 10.0_dp, &   ! pure Voce (k = 0)
+        200.0_dp, 500.0_dp, 100.0_dp, 50.0_dp, &
+        180.0_dp, 50.0_dp, 400.0_dp, 2.0_dp], [4, 4])
+        !! Modified Voce: Sy, k, q, n.
+
+    type(hard_bilinear_dp) :: bil_law
+    type(hard_ludwik_dp) :: lud_law
+    type(hard_swift_dp) :: swi_law
+    type(hard_vocemod_dp) :: voc_law
+    real(dp), allocatable :: ep(:)
+    character(len=32) :: key
+    integer :: i
+
+    call golden_init('plasticity/hardening_laws/hard_laws_dp.txt')
+
+    do i = 1, size(BIL, 2)
+        write(key, '(a, i0)') 'bilinear | set ', i
+        bil_law = hard_bilinear_dp(y0=BIL(1, i), K=BIL(2, i))
+        call golden_check(trim(key) // ' | constructor', [bil_law%y0, bil_law%K])
+        call sweep(trim(key), bil_law, EP_SWEEP)
+    end do
+
+    do i = 1, size(LUD, 2)
+        write(key, '(a, i0)') 'ludwik | set ', i
+        lud_law = hard_ludwik_dp(sigma0=LUD(1, i), k=LUD(2, i), n=LUD(3, i))
+        call golden_check(trim(key) // ' | constructor', [lud_law%sigma0, lud_law%k, lud_law%n])
+        ! Extra points on both sides of the 1e-10 offset of the derivatives.
+        ep = [EP_SWEEP, 5.0e-11_dp, 2.0e-10_dp, 1.0e-8_dp]
+        call sweep(trim(key), lud_law, ep)
+    end do
+
+    do i = 1, size(SWI, 2)
+        write(key, '(a, i0)') 'swift | set ', i
+        swi_law = hard_swift_dp(k=SWI(1, i), e0=SWI(2, i), n=SWI(3, i))
+        call golden_check(trim(key) // ' | constructor', [swi_law%k, swi_law%e0, swi_law%n])
+        ! Extra points around the offset e0.
+        ep = [EP_SWEEP, 0.5_dp*SWI(2, i), SWI(2, i), 2.0_dp*SWI(2, i)]
+        call sweep(trim(key), swi_law, ep)
+    end do
+
+    do i = 1, size(VOC, 2)
+        write(key, '(a, i0)') 'vocemod | set ', i
+        voc_law = hard_vocemod_dp(Sy=VOC(1, i), k=VOC(2, i), q=VOC(3, i), n=VOC(4, i))
+        call golden_check(trim(key) // ' | constructor', [voc_law%Sy, voc_law%k, voc_law%q, voc_law%n])
+        ! Saturation: ep = 1/n, 5/n, 40/n (exp ~ 4e-18) and 800/n (exp underflows to 0).
+        ep = [EP_SWEEP, 1.0_dp/VOC(4, i), 5.0_dp/VOC(4, i), 40.0_dp/VOC(4, i), 800.0_dp/VOC(4, i)]
+        call sweep(trim(key), voc_law, ep)
+    end do
+
+    call golden_finish()
+end program test_hard_golden

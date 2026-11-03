@@ -10,9 +10,11 @@ module muscle_test_golden
     !! and finally `golden_finish()`, which stops with the first failure code:
     !!
     !! - `stop 1`: a result differs from its reference (every differing component is printed with
-    !!   its relative error; <= 1e-14 is reported as approvable, testing.md, but still fails);
+    !!   its relative error; <= 1e-14 is reported as approvable, testing.md, but still fails). Bit
+    !!   for bit, except that a NaN matches any NaN (sign and payload are not results);
     !! - `stop 2`: a result has no reference record;
-    !! - `stop 3`: a reference record was not produced by the test;
+    !! - `stop 3`: a reference record was not produced by the test (with `golden_finish(partial=.true.,
+    !!   expected=n)`: fewer or more than `n` distinct records matched);
     !! - `stop 4`: the reference cannot be read (run the test through ctest, which sets
     !!   `MUSCLE_TEST_REFERENCE_DIR`).
     !!
@@ -21,6 +23,7 @@ module muscle_test_golden
     !!
     !! Record format (one per line): `<key> | <n> | <IEEE-754 bits of each value, hex>`.
     use, intrinsic :: iso_fortran_env, only : int64, output_unit
+    use, intrinsic :: ieee_arithmetic, only : ieee_is_nan
     use muscle_kinds, only : dp
     implicit none
     private
@@ -135,6 +138,7 @@ contains
         integer(int64) :: bits(size(x))
         integer :: i, j
         real(dp) :: expected(size(x)), scale, rel, maxrel
+        logical :: same(size(x))
 
         if (len_trim(key) > KEYLEN .or. size(x) > MAXV .or. size(x) < 1) then
             print '(a)', ' FAIL: key too long or bad record size: ' // trim(key)
@@ -173,15 +177,18 @@ contains
             n_bad = n_bad + 1
             return
         end if
-        if (all(bits == ref_bits(1:size(x), j))) return
-
         expected = transfer(ref_bits(1:size(x), j), expected)
+        ! A NaN matches any NaN: its sign and payload are not a result (they depend on the order of
+        ! the operands the compiler emits)
+        same = bits == ref_bits(1:size(x), j) .or. (ieee_is_nan(x) .and. ieee_is_nan(expected))
+        if (all(same)) return
+
         scale = max(maxval(abs(expected)), tiny(1.0_dp))
         maxrel = 0.0_dp
         print '(a)', ' FAIL: ' // trim(key) // ' differs from the golden value (bit-for-bit check)'
         print '(a)', '   comp   got                        expected                   |diff|/max|expected|'
         do i = 1, size(x)
-            if (bits(i) == ref_bits(i, j)) cycle
+            if (same(i)) cycle
             rel = abs(x(i) - expected(i))/scale
             maxrel = max(maxrel, rel)
             print '(3x, i4, 2x, es25.17, 2x, es25.17, 2x, es9.2)', i, x(i), expected(i), rel
@@ -197,15 +204,32 @@ contains
         n_bad = n_bad + 1
     end subroutine golden_check
 
-    subroutine golden_finish()
+    subroutine golden_finish(partial, expected)
         !! Checks that every reference record was produced and stops with the first failure code.
+        logical, intent(in), optional :: partial
+            !! The test checks only a subset of the reference (e.g. a new API against the records of
+            !! the cases it supports): reference records not produced are not a failure.
+        integer, intent(in), optional :: expected
+            !! With `partial`: number of distinct reference records the test must have matched (a
+            !! skipped case is then a failure, code 3).
         integer :: i
+        logical :: subset
+        subset = .false.
+        if (present(partial)) subset = partial
+        if (.not. writing .and. subset .and. present(expected)) then
+            if (count(ref_used(1:nref)) /= expected) then
+                print '(a, i0, a, i0)', ' FAIL: reference records matched: ', count(ref_used(1:nref)), &
+                    ', expected ', expected
+                if (code == 0) code = 3
+                n_bad = n_bad + 1
+            end if
+        end if
         if (writing) then
             close(wunit)
             return
         end if
         do i = 1, nref
-            if (.not. ref_used(i)) then
+            if (.not. ref_used(i) .and. .not. subset) then
                 print '(a)', ' FAIL: reference record not produced by the test: ' // trim(ref_key(i))
                 if (code == 0) code = 3
                 n_bad = n_bad + 1

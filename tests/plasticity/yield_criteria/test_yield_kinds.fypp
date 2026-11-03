@@ -22,12 +22,9 @@
 #!   (true only for Yld2004) and the generics = specifics;
 #! - the finite-difference derivatives of the contract (MODEL_FD with a `2Osym` argument: FD_GRAD
 #!   and FD_HESS) on a test-only criterion (Hill48 written with stress_eq only, with its own joint
-#!   evaluation by MODEL_JOINT), against the analytical Hill48 derivatives and, in dp, against the
-#!   numeric procedures of the OO base Base_yield_critera, which the golden test fixes;
-#! - the historical OO types (VonMises, Hill48, DruckerPrager, CPB06, CPB06ex2, Yld2004 and their
-#!   `init`) against the dp free functions (bit for bit; Yld2004 overrides the joint bindings); the
-#!   kernel types with derived parameters are built only with their initializers (private components,
-#!   D-017.10b; the compile-fail checks are the ctests *_private_params);
+#!   evaluation by MODEL_JOINT), against the analytical Hill48 derivatives; the kernel types with
+#!   derived parameters are built only with their initializers (private components, D-017.10b; the
+#!   compile-fail checks are the ctests *_private_params);
 #! - `pure`, `@:DEVICE()` point procedures that call the generics.
 #! Tolerances (relative to the largest component; scalars relative to max(1, |f|)), measured
 #! maximum x ~10:
@@ -44,27 +41,24 @@
 #:set TOL_K = {'sp': {'f': '3.0e-6', 'df': '1.0e-5', 'ddf': '1.0e-5'}, 'dp': {'f': '0.0', 'df': '0.0', 'ddf': '0.0'}}
 #:set FD_TOL = {'sp': {'d1': '1.0e-3', 'd2': '5.0e-2'}, 'dp': {'d1': '1.0e-9', 'd2': '1.0e-6'}}
 #:set FD_REF = '2.0e-8'
-#! Test-only criterion: Hill48 with stress_eq only (derivatives by MODEL_FD), with an OO adapter
+#! Test-only criterion: Hill48 with stress_eq only (derivatives by MODEL_FD)
 #:set HILLP = [('f', 'real', '', 'F.', None), ('g', 'real', '', 'G.', None), ('h', 'real', '', 'H.', None), &
     & ('l', 'real', '', 'L.', None), ('m', 'real', '', 'M.', None), ('n', 'real', '', 'N.', None)]
 #:set LAY4 = layout('4O3sym', '3D')
 
 module muscle_yield_fdhill
     !! Test criterion: Hill48 equivalent stress only, derivatives by finite differences, and its own
-    !! joint evaluation (MODEL_JOINT on a model not registered in the family, OO adapter with
-    !! `joint=True`): the three functions, the second derivative only when requested.
+    !! joint evaluation (MODEL_JOINT on a model not registered in the family): the three functions,
+    !! the second derivative only when requested.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
-    use muscle_yield_base, only : Base_yield_critera
     implicit none
     private
 
     $:MODEL_PUBLIC('yield', 'fdhill')
-    public :: FDHill_test
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('yield', 'fdhill', k, HILLP)
 #:endfor
-    $:OO_ADAPTER_TYPE('yield', 'fdhill', 'FDHill_test', 'Base_yield_critera', HILLP, joint=True)
 
 contains
 #:for k in REAL_KINDS
@@ -87,7 +81,6 @@ contains
     end subroutine yield_stress_eq_and_derivatives_fdhill_${d}$_${k}$
 #:endfor
 #:endfor
-    $:OO_ADAPTER_PROCS('yield', 'fdhill', 'FDHill_test', HILLP, joint=True)
 
 end module muscle_yield_fdhill
 
@@ -378,8 +371,6 @@ contains
 #:endfor
         call record(test_formulas(), 91, 'closed forms and homogeneity (dp)', code)
         call record(test_fd_reference(), 92, 'analytical derivatives against central differences (dp)', code)
-        call record(test_oo_adapters(), 93, 'historical OO adapters = dp free functions', code)
-        call record(test_fd_vs_base(), 94, 'MODEL_FD = numeric procedures of Base_yield_critera (dp)', code)
     end subroutine run_all
 
     subroutine make_states()
@@ -974,166 +965,6 @@ contains
             call check_approx(passed, name // ' Hessian vs central differences', r(8:28), fdh, ${FD_REF}$_dp)
         end subroutine check_fd
     end function test_fd_reference
-
-    function test_oo_adapters() result(passed)
-        !! The historical types through the polymorphic base give the bits of the dp free functions,
-        !! including the joint evaluation (inherited, or Yld2004's own); CPB06%init = yield_cpb06_init
-        !! (components); the `init` of DruckerPrager, CPB06ex2 and Yld2004 = their kernel initializers
-        !! (through the results; CPB06ex2 and Yld2004 also the public components).
-        use muscle_yield_base, only : Base_yield_critera
-        use muscle_yield_vonmises, only : VonMises
-        use muscle_yield_hill48, only : Hill48
-        use muscle_yield_cpb06, only : CPB06
-        use muscle_yield_druckerprager, only : DruckerPrager
-        use muscle_yield_cpb06ex2, only : CPB06ex2
-        use muscle_yield_yld2004, only : Yld2004
-        logical :: passed
-        type(VonMises) :: ov
-        type(Hill48) :: oh
-        type(CPB06) :: oc
-        type(DruckerPrager) :: op, op0
-        type(CPB06ex2) :: ox
-        type(Yld2004) :: oy
-        type(yield_druckerprager_dp) :: p0
-        type(yield_cpb06ex2_dp) :: xk
-        type(yield_yld2004_dp) :: yk
-        type(yield_vonmises_dp) :: v
-        type(yield_cpb06_dp) :: c
-        type(ten_3D2Osym_dp) :: s
-        real(dp) :: x(14), c27(27)
-        integer :: i, j
-
-        passed = .true.
-        do i = 1, size(DPV, 2)
-            call op%init(beta_deg=DPV(1, i), K=DPV(2, i), hardening_mode=DPMODE(i))
-            do j = 0, NS
-                s = stress_dp(j)
-                call check_oo('DruckerPrager', op, ev(dpr_dp(i), s), .false.)
-            end do
-        end do
-        ! An unknown hardening mode keeps the previous calibration factor (as the original init):
-        ! set 1, then beta = 30 deg with mode 99 gives I1 = tan(30 deg) f_1, f_1 of set 1
-        call op%init(beta_deg=DPV(1, 1), K=DPV(2, 1), hardening_mode=DPMODE(1))
-        call op%init(beta_deg=30.0_dp, K=0.9_dp, hardening_mode=99)
-        p0 = dpr_dp(1)
-        call yield_druckerprager_init(p0, beta_deg=30.0_dp, K=0.9_dp, hardening_mode=99)
-        s%vals = 0.0_dp
-        s%vals(1:3) = 1.0_dp
-        call check_approx(passed, 'DruckerPrager%init unknown mode keeps f', [op%stress_eq(s)], &
-                          [tan(30.0_dp*acos(-1.0_dp)/180.0_dp)*dp_i1_dp(1)/tan(DPV(1, 1)*acos(-1.0_dp)/180.0_dp)], &
-                          1.0e-14_dp)
-        do j = 0, NS
-            s = stress_dp(j)
-            call check_oo('DruckerPrager unknown mode', op, ev(p0, s), .false.)
-        end do
-        p0 = yield_druckerprager_dp()
-        ! Defaults without init (K = 0, D-017.9): only the zero and hydrostatic states are finite
-        do j = 0, size(PRESSURES)
-            s%vals = 0.0_dp
-            if (j > 0) s%vals(1:3) = PRESSURES(j)
-            call check_oo('DruckerPrager defaults', op0, ev(p0, s), .false.)
-        end do
-        do i = 1, size(EX2V, 2)
-            c27 = EX2V(:, i)
-            call ox%init(c27(1), c27(2), c27(3), c27(4), c27(5), c27(6), c27(7), c27(8), c27(9), c27(10), c27(11), &
-                         c27(12), c27(13), c27(14), c27(15), c27(16), c27(17), c27(18), c27(19), c27(20), c27(21), &
-                         c27(22), c27(23), c27(24), c27(25), c27(26), c27(27))
-            xk = ex2_dp(i)
-            call check_approx(passed, 'CPB06ex2%init public components', [ox%c_shear, ox%cp_shear, ox%k, ox%kp, ox%a], &
-                              [xk%c_shear, xk%cp_shear, xk%k, xk%kp, xk%a], 0.0_dp)
-            do j = 0, NS
-                s = stress_dp(j)
-                call check_oo('CPB06ex2', ox, ev(ex2_dp(i), s), .false.)
-            end do
-        end do
-        do i = 1, size(YLDV, 2)
-            c27(1:19) = YLDV(:, i)
-            call oy%init(cp12=c27(1), cp13=c27(2), cp21=c27(3), cp23=c27(4), cp31=c27(5), cp32=c27(6), &
-                         cp44=c27(7), cp55=c27(8), cp66=c27(9), cpp12=c27(10), cpp13=c27(11), cpp21=c27(12), &
-                         cpp23=c27(13), cpp31=c27(14), cpp32=c27(15), cpp44=c27(16), cpp55=c27(17), &
-                         cpp66=c27(18), a=c27(19))
-            yk = yld_dp(i)
-            call check_approx(passed, 'Yld2004%init public components', [oy%cp_shear, oy%cpp_shear, oy%a], &
-                              [yk%cp_shear, yk%cpp_shear, yk%a], 0.0_dp)
-            do j = 0, NS
-                s = stress_dp(j)
-                call check_oo('Yld2004', oy, ev(yld_dp(i), s), .true.)
-            end do
-        end do
-        do i = 1, size(CPBV, 2)
-            x = CPBV(:, i)
-            call oc%init(c11=x(1), c12=x(2), c13=x(3), c21=x(4), c22=x(5), c23=x(6), c31=x(7), c32=x(8), &
-                         c33=x(9), c44=x(10), c55=x(11), c66=x(12), k=x(13), a=x(14))
-            c = cpb_dp(i)
-            ! B and L are private in the kernel type (D-017.10b): compared through the results
-            call check_approx(passed, 'CPB06%init = yield_cpb06_init', &
-                [reshape(oc%C1, [9]), oc%C2, oc%k, oc%a], [reshape(c%C1, [9]), c%C2, c%k, c%a], 0.0_dp)
-            do j = 0, NS
-                s = stress_dp(j)
-                call check_oo('CPB06', oc, ev(c, s), .false.)
-            end do
-        end do
-        do i = 1, size(HILLV, 2)
-            oh = Hill48(f=HILLV(1, i), g=HILLV(2, i), h=HILLV(3, i), l=HILLV(4, i), m=HILLV(5, i), n=HILLV(6, i))
-            do j = 0, NS
-                s = stress_dp(j)
-                call check_oo('Hill48', oh, ev(hill_dp(i), s), .false.)
-            end do
-        end do
-        do j = 0, NS
-            s = stress_dp(j)
-            call check_oo('VonMises', ov, ev(v, s), .false.)
-        end do
-    contains
-        subroutine check_oo(name, y, r, joint)
-            character(len=*), intent(in) :: name
-            class(Base_yield_critera), intent(in) :: y
-            real(dp), intent(in) :: r(28)
-            logical, intent(in) :: joint
-            type(ten_3D2Osym_dp) :: df
-            type(ten_3D4O3sym_dp) :: ddf
-            real(dp) :: f
-            df = y%dstressEq_dstress(s)
-            ddf = y%ddstressEq_ddstress(s)
-            call check_approx(passed, name // ' OO = free functions', [y%stress_eq(s), df%vals, ddf%vals], r, 0.0_dp)
-            call y%stressEq_and_derivatives(s, f, df, ddf)
-            call check_approx(passed, name // ' OO joint = free functions', [f, df%vals, ddf%vals], r, 0.0_dp)
-            call check_true(passed, name // ' OO joint_evaluation flag', y%joint_evaluation() .eqv. joint)
-        end subroutine check_oo
-    end function test_oo_adapters
-
-    function test_fd_vs_base() result(passed)
-        !! The MODEL_FD derivatives of the contract (FD_GRAD, FD_HESS) reproduce the numeric
-        !! procedures of Base_yield_critera bit for bit (same formulas and steps; D-016.9: only with
-        !! the same compiler options, so a different build could need a tolerance), also at the zero
-        !! tensor; the OO adapter binds them and overrides the joint bindings (MODEL_JOINT).
-        use muscle_yield_fdhill, only : FDHill_test
-        logical :: passed
-        type(FDHill_test) :: o
-        type(ten_3D2Osym_dp) :: s, nd, od
-        type(ten_3D4O3sym_dp) :: ndd, odd
-        real(dp) :: r(28), f
-        integer :: i, j
-
-        passed = .true.
-        call check_true(passed, 'FDHill_test OO joint_evaluation true', o%joint_evaluation())
-        do i = 1, size(HILLV, 2)
-            o = FDHill_test(f=HILLV(1, i), g=HILLV(2, i), h=HILLV(3, i), l=HILLV(4, i), m=HILLV(5, i), n=HILLV(6, i))
-            do j = 0, NS
-                s = stress_dp(j)
-                r = ev(fdhill_dp(i), s)
-                nd = o%dstressEq_dstress_numeric(s)
-                ndd = o%ddstressEq_ddstress_numeric(s)
-                call check_approx(passed, 'MODEL_FD gradient = base numeric', r(2:7), nd%vals, 0.0_dp)
-                call check_approx(passed, 'MODEL_FD Hessian = base numeric', r(8:28), ndd%vals, 0.0_dp)
-                od = o%dstressEq_dstress(s)
-                odd = o%ddstressEq_ddstress(s)
-                call check_approx(passed, 'FDHill_test OO = free functions', [o%stress_eq(s), od%vals, odd%vals], r, 0.0_dp)
-                call o%stressEq_and_derivatives(s, f, od, odd)
-                call check_approx(passed, 'FDHill_test OO joint = free functions', [f, od%vals, odd%vals], r, 0.0_dp)
-            end do
-        end do
-    end function test_fd_vs_base
 
 end module test_yield_cases
 

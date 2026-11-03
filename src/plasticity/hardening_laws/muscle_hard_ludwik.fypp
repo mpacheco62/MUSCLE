@@ -2,9 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the hardening family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = [('sigma0', 'real', '', r'Initial yield stress \( \sigma_0 \).', None), &
-    &          ('k', 'real', '', r'Strength coefficient \( K \).', None), &
-    &          ('n', 'real', '', r'Hardening exponent \( n \).', None)]
+#:set PARAMS = model_param_list('hard', 'ludwik')
 
 module muscle_hard_ludwik
     !! Ludwik isotropic hardening law:
@@ -28,14 +26,11 @@ module muscle_hard_ludwik
     !! `hard_stress_ludwik_<k>(prm, ep)`, `hard_dstress_dep_ludwik_<k>(prm, ep)` and
     !! `hard_ddstress_ddep_ludwik_<k>(prm, ep)` for each real kind, also through the generics
     !! `hard_stress`, `hard_dstress_dep` and `hard_ddstress_ddep` of `muscle_hard_laws`.
-    !! `ludwik_hardening` is the historical OO type (host only, removed in Phase 7).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_hard_base, only : Base_hardening_laws
     implicit none
     private
 
     $:MODEL_PUBLIC('hard', 'ludwik')
-    public :: ludwik_hardening
 #:for k in REAL_KINDS
     public :: LUDWIK_EP_OFFSET_${k}$
 
@@ -46,7 +41,6 @@ module muscle_hard_ludwik
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('hard', 'ludwik', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('hard', 'ludwik', 'ludwik_hardening', 'Base_hardening_laws', PARAMS)
 
 contains
 #:for k in REAL_KINDS
@@ -62,6 +56,5 @@ contains
         res = prm%k*prm%n*(prm%n - 1.0_${k}$)*(ep + LUDWIK_EP_OFFSET_${k}$)**(prm%n - 2.0_${k}$)
     end function hard_ddstress_ddep_ludwik_${k}$
 #:endfor
-    $:OO_ADAPTER_PROCS('hard', 'ludwik', 'ludwik_hardening', PARAMS)
 
 end module muscle_hard_ludwik

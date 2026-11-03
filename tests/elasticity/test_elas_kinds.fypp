@@ -12,8 +12,7 @@
 #!   component equals the 3D component of the same indices, and C2 : p2 embedded = C3 : p3;
 #! - nu = 1/2 (D-017.12b): the full stress and the tangent are not finite (lambda = +Inf), the
 #!   deviatoric stress and tangent are finite and analytic (D-017.12a/c), in every kind;
-#! - the historical OO type `Elasticity_linear` (every binding, the transient deviatoric overloads,
-#!   the cache flags: cached and assembled tangents) against the dp free functions, bit for bit;
+#! - the family generics against the dp specific functions, bit for bit;
 #! - `pure`, `@:DEVICE()` point procedures that call the generics (stress and tangent).
 #! Tolerances, relative to the largest component of the stress (or of the tangent) of the same case:
 #! dp TOL_APPROX_dp (rounding of the formulas, measured ~1e-16), sp TOL_APPROX_sp (sp rounding of
@@ -67,19 +66,14 @@ module test_elas_cases
         operator(.ddot.), operator(*)
     use muscle_elasticity_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev, &
         ${', '.join('elas_linear_' + k for k in REAL_KINDS)}$
-    use muscle_elasticity_linear, only : elas_linear_init, Elasticity_linear, &
+    use muscle_elasticity_linear, only : elas_linear_init, &
         ${', '.join(model_specific('elas', f.name, 'linear', 'dp', d) for f in model_family('elas').funcs for d in DIMS)}$
-    use muscle_elasticity_base, only : Base_internal_elasticity_variables
     use test_elas_point, only : ${', '.join('point_{}_{}'.format(d, k) for k in REAL_KINDS for d in DIMS)}$
     use muscle_test_utils, only : check_true, check_scaled
     implicit none
     private
 
     public :: run_all
-
-    type, extends(Base_internal_elasticity_variables) :: no_internal
-        !! Internal variables of the transient overloads (not used by the elastic models).
-    end type no_internal
 
     integer, parameter :: NSTRAIN = 4
         !! Strain states per dimension.
@@ -331,69 +325,49 @@ contains
     end subroutine test_incompressible_${k}$
 #:endfor
 
-    subroutine test_oo(passed)
-        !! Historical OO type against the dp free functions, bit for bit (every binding, generic and
-        !! specific, transient deviatoric overloads, cache flags).
+    subroutine test_generics(passed)
+        !! The family generics give the bits of the dp specific functions.
         logical, intent(inout) :: passed
         real(dp), parameter :: YOUNG(${len(ELAS_PRM)}$) = [${', '.join(p[0] + '_dp' for p in ELAS_PRM)}$]
         real(dp), parameter :: NU(${len(ELAS_PRM)}$) = [${', '.join(p[1] + '_dp' for p in ELAS_PRM)}$]
-        type(Elasticity_linear) :: o
         type(elas_linear_dp) :: prm
-        type(no_internal) :: internal
-        type(${tname('3D2Osym', 'dp')}$) :: e3, a3, b3, r3
-        type(${tname('2D2Osym', 'dp')}$) :: e2, a2, b2, r2
+        type(${tname('3D2Osym', 'dp')}$) :: e3, a3, r3
+        type(${tname('2D2Osym', 'dp')}$) :: e2, a2, r2
         type(${tname('3D4O3sym', 'dp')}$) :: c3, d3
         type(${tname('2D4O3sym', 'dp')}$) :: c2, d2
         character(len=64) :: lab
-        integer :: ip, n, iflag
-        logical :: f3, f2
+        integer :: ip, n
 
         do ip = 1, size(YOUNG)
-            do iflag = 0, 3
-                f3 = btest(iflag, 0)
-                f2 = btest(iflag, 1)
-                call o%set_parameters(young=YOUNG(ip), poisson=NU(ip), calc_tan_3D=f3, calc_tan_2D=f2)
-                call elas_linear_init(prm, YOUNG(ip), NU(ip))
-                do n = 1, NSTRAIN
-                    write(lab, '(a, i0, a, i0, a, i0)') 'OO E,nu #', ip, ' flags ', iflag, ' strain ', n
-                    e3%vals = strain_vals(n, 6)
-                    e2%vals = strain_vals(n, 4)
-                    r3 = elas_stress_linear_3D_dp(prm, e3)
-                    a3 = o%stress(e3)
-                    b3 = o%stress_3D(e3)
-                    call check_true(passed, trim(lab) // ' stress 3D', same_bits(a3%vals, r3%vals) .and. &
-                        same_bits(b3%vals, r3%vals))
-                    r2 = elas_stress_linear_2D_dp(prm, e2)
-                    a2 = o%stress(e2)
-                    b2 = o%stress_2D(e2)
-                    call check_true(passed, trim(lab) // ' stress 2D', same_bits(a2%vals, r2%vals) .and. &
-                        same_bits(b2%vals, r2%vals))
-                    r3 = elas_stress_dev_linear_3D_dp(prm, e3)
-                    a3 = o%stress_dev(e3)
-                    b3 = o%stress_dev(e3, 0.1_dp*e3, 1.0e-3_dp, internal)
-                    call check_true(passed, trim(lab) // ' stress_dev 3D (and transient)', &
-                        same_bits(a3%vals, r3%vals) .and. same_bits(b3%vals, r3%vals))
-                    r2 = elas_stress_dev_linear_2D_dp(prm, e2)
-                    a2 = o%stress_dev(e2)
-                    b2 = o%stress_dev(e2, 0.1_dp*e2, 1.0e-3_dp, internal)
-                    call check_true(passed, trim(lab) // ' stress_dev 2D (and transient)', &
-                        same_bits(a2%vals, r2%vals) .and. same_bits(b2%vals, r2%vals))
-                    c3 = o%dstress_dstrain(e3)
-                    d3 = elas_dstress_dstrain_linear_3D_dp(prm, e3)
-                    call check_true(passed, trim(lab) // ' dstress_dstrain 3D', same_bits(c3%vals, d3%vals))
-                    c2 = o%dstress_dstrain(e2)
-                    d2 = elas_dstress_dstrain_linear_2D_dp(prm, e2)
-                    call check_true(passed, trim(lab) // ' dstress_dstrain 2D', same_bits(c2%vals, d2%vals))
-                    c3 = o%dstress_dstrain_dev(e3)
-                    d3 = elas_dstress_dstrain_dev_linear_3D_dp(prm, e3)
-                    call check_true(passed, trim(lab) // ' dstress_dstrain_dev 3D', same_bits(c3%vals, d3%vals))
-                    c3 = o%dstress_dstrain_dev(e3, 0.1_dp*e3, 1.0e-3_dp, internal)
-                    call check_true(passed, trim(lab) // ' dstress_dstrain_dev 3D transient (D-017.12c)', &
-                        same_bits(c3%vals, d3%vals))
-                end do
+            call elas_linear_init(prm, YOUNG(ip), NU(ip))
+            do n = 1, NSTRAIN
+                write(lab, '(a, i0, a, i0)') 'generic = specific, E,nu #', ip, ' strain ', n
+                e3%vals = strain_vals(n, 6)
+                e2%vals = strain_vals(n, 4)
+                r3 = elas_stress_linear_3D_dp(prm, e3)
+                a3 = elas_stress(prm, e3)
+                call check_true(passed, trim(lab) // ' stress 3D', same_bits(a3%vals, r3%vals))
+                r2 = elas_stress_linear_2D_dp(prm, e2)
+                a2 = elas_stress(prm, e2)
+                call check_true(passed, trim(lab) // ' stress 2D', same_bits(a2%vals, r2%vals))
+                r3 = elas_stress_dev_linear_3D_dp(prm, e3)
+                a3 = elas_stress_dev(prm, e3)
+                call check_true(passed, trim(lab) // ' stress_dev 3D', same_bits(a3%vals, r3%vals))
+                r2 = elas_stress_dev_linear_2D_dp(prm, e2)
+                a2 = elas_stress_dev(prm, e2)
+                call check_true(passed, trim(lab) // ' stress_dev 2D', same_bits(a2%vals, r2%vals))
+                c3 = elas_dstress_dstrain(prm, e3)
+                d3 = elas_dstress_dstrain_linear_3D_dp(prm, e3)
+                call check_true(passed, trim(lab) // ' dstress_dstrain 3D', same_bits(c3%vals, d3%vals))
+                c2 = elas_dstress_dstrain(prm, e2)
+                d2 = elas_dstress_dstrain_linear_2D_dp(prm, e2)
+                call check_true(passed, trim(lab) // ' dstress_dstrain 2D', same_bits(c2%vals, d2%vals))
+                c3 = elas_dstress_dstrain_dev(prm, e3)
+                d3 = elas_dstress_dstrain_dev_linear_3D_dp(prm, e3)
+                call check_true(passed, trim(lab) // ' dstress_dstrain_dev 3D', same_bits(c3%vals, d3%vals))
             end do
         end do
-    end subroutine test_oo
+    end subroutine test_generics
 
     subroutine run_all(code)
         integer, intent(out) :: code
@@ -407,7 +381,7 @@ contains
         call test_embedding_${k}$(passed)
         call test_incompressible_${k}$(passed)
 #:endfor
-        call test_oo(passed)
+        call test_generics(passed)
         code = merge(0, 1, passed)
     end subroutine run_all
 

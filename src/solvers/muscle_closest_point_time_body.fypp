@@ -1,0 +1,234 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! Body of the rate-dependent (consistency-type) closest point return mapping of a declared material
+#! (D-018.5), written once against the family generics `elas_*`, `yield_*`, `vp_*` and, for a
+#! viscoplastic law that composes a hardening law (Johnson-Cook), `hard_*` (Phase 6): they resolve at
+#! compile time by the parameter types of the components of the material. Port of the historical OO
+#! solver (muscle_solver_closest_point_time, removed in Phase 7 step 9) operation by operation, so
+#! that both give the same bits in double precision (D-018.2), with the relative Newton tolerance
+#! (D-018.3) and the elastic check without a division (D-018.10b) in both. Known issues kept
+#! (D-018.2, PROBLEMAS.md): the plastic strain does not take the relaxation factor; the elastic check
+#! evaluates the flow stress at a zero plastic strain rate.
+#!
+#! Included by src/materials/muscle_material.fypp inside its `#:for k` loop (contained procedures of
+#! the material module), with these variables set: `k` (kind), `MAT` (the `muscle_meta.Material`),
+#! `MAT_T`, `ELAS_T`, `SOLVE` / `ITER` / `TANGENT` (specific procedure names) and `S2` / `C4` / `T4`
+#! (see muscle_closest_point_body.fypp, also for the argument `elas`). 3D only. The material type has
+#! the components `yield`, `vp` and, if the viscoplastic law composes one, `hard`
+#! (MATERIAL_SOLVERS['closest_point_time']), `iter_nw` and `tol`.
+#! The dummy arguments of `SOLVE` are the macro `SOLVE_DUMMIES` of the material template.
+#! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
+#:if defined('MAT')
+#! Values of the composed hardening law (if any) the viscoplastic function `f` receives at `ep` (D-017.6b)
+#:set HARD = lambda f, ep: muscle_meta.material_comp_args(MAT, 'vp', f, ep)
+#:set COMPOSED = muscle_meta.material_composed(MAT, 'vp') is not None
+#! Derivative of the flow stress for the Newton direction: the right-hand rate derivative on the rate
+#! floor of a law with one (VISCOPLASTIC_FLOOR, D-018.19b), else dstress_dep (also in the tangent)
+#:set NEWTON_DH = 'vp_newton_dstress_dep' if 'newton_dstress_dep' in muscle_meta.model_procs('vp', MAT.vp) else 'vp_dstress_dep'
+
+    pure subroutine ${SOLVE}$(mat, elas, strain, dt, state_n, state_np1, stress, tangent, status, iters)
+        !! Rate-dependent closest point return mapping of material `${MAT.name}$` at one point,
+        !! `real(${k}$)`: the state at \( t_{n+1} \), the stress and the consistent (analytic) tangent for
+        !! the total strain `strain` after the time step `dt` (\( \dot\epsilon_p = \Delta\epsilon_p/\Delta t
+        !! \)) from the converged state `state_n`.
+        !!
+        !! Elastic step when \( f_{trial} = \sigma_{eq} - \sigma(\epsilon_{p,n}, 0) \le \)
+        !! `TOL_ELASTIC_${k}$` \( \max(\sigma, 10^{-10}) \) (D-018.10b); otherwise Newton iterations on
+        !! \( \Delta\lambda \) with under-relaxation (factor 0.75 when \( \Delta\lambda \) is clipped at 0
+        !! and after iterations 10, 20, 30, 40) until \( |f| < tol\,\max(\sigma, 10^{-10}) \) and the
+        !! plastic strain residual is below `tol` (D-018.3). An elastic and a converged plastic step
+        !! return `STATUS_OK` (`iters` = 0 in an elastic step); with `STATUS_NOT_CONVERGED` the outputs
+        !! hold the last iterate and must not be used (D-017.14f).
+        use muscle_kinds, only : TOL_ELASTIC_${k}$, SY_MIN_${k}$
+        use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
+        use muscle_tensors, only : operator(-), assignment(=)
+        use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_criteria, only : yield_stress_eq
+        use muscle_vp_laws, only : vp_flow_stress
+#:if COMPOSED
+        use muscle_hard_laws, only : hard_stress
+#:endif
+        implicit none
+        @:DEVICE()
+@:SOLVE_DUMMIES()
+
+        type(${S2}$) :: stress_trial
+        real(${k}$) :: hard, f, dlambda, omega
+        logical :: converged
+        integer :: i
+
+        ! Elastic trial check, flow stress at a zero plastic strain rate
+        stress_trial = elas_stress(elas, strain - state_n%strain_p)
+        hard = vp_flow_stress(mat%vp, state_n%strain_pf, 0.0_${k}$${HARD('flow_stress', 'state_n%strain_pf')}$)
+        f = yield_stress_eq(mat%yield, stress_trial) - hard
+
+        if (f <= TOL_ELASTIC_${k}$*max(hard, SY_MIN_${k}$)) then
+            state_np1%stress = stress_trial
+            state_np1%strain_p = state_n%strain_p
+            state_np1%strain_pf = state_n%strain_pf
+            stress = stress_trial
+            tangent = elas_dstress_dstrain(elas, strain - state_n%strain_p)
+            status = STATUS_OK
+            iters = 0
+            return
+        end if
+
+        ! Newton-Raphson loop with adaptive relaxation from the converged state
+        state_np1 = state_n
+        dlambda = 0.0_${k}$
+        omega = 1.0_${k}$
+        status = STATUS_NOT_CONVERGED
+        do i = 1, mat%iter_nw
+            call ${ITER}$(mat, elas, strain, dt, state_n, i, state_np1, dlambda, omega, converged)
+            if (converged) then
+                status = STATUS_OK
+                exit
+            end if
+        end do
+        iters = min(i, mat%iter_nw)
+
+        stress = state_np1%stress
+        call ${TANGENT}$(mat, elas, strain, dt, state_n, state_np1, dlambda, tangent)
+    end subroutine ${SOLVE}$
+
+    pure subroutine ${ITER}$(mat, elas, strain, dt, state_n, iter, state, dlambda, omega, converged)
+        !! One Newton-Raphson iteration of the rate-dependent closest point return mapping of material
+        !! `${MAT.name}$`, `real(${k}$)`, with under-relaxation `omega` of \( \Delta\lambda \) (not of the
+        !! plastic strain, D-018.2).
+        use muscle_kinds, only : SY_MIN_${k}$
+        use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
+            operator(.inv.)
+        use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq
+        use muscle_vp_laws, only : vp_flow_stress, ${NEWTON_DH}$
+#:if COMPOSED
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep
+#:endif
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material.
+        type(${ELAS_T}$), intent(in) :: elas
+            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
+        type(${S2}$), intent(in) :: strain
+            !! Total strain at \( t_{n+1} \).
+        real(${k}$), intent(in) :: dt
+            !! Time step.
+        type(plastic_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        integer, intent(in) :: iter
+            !! Number of this iteration (1, 2, ...).
+        type(plastic_state_${k}$), intent(inout) :: state
+            !! Candidate state at \( t_{n+1} \): iterate k in, k+1 out (unchanged plastic variables when
+            !! converged); its stress is that of iterate k.
+        real(${k}$), intent(inout) :: dlambda
+            !! Plastic multiplier increment \( \Delta\lambda \) of the iterate.
+        real(${k}$), intent(inout) :: omega
+            !! Relaxation factor, \( 0 < \omega \le 1 \).
+        logical, intent(out) :: converged
+            !! Iterate k meets the tolerance.
+
+        type(${S2}$) :: strain_p, df, residual1, dstrain_p, stress
+        type(${C4}$) :: elas_tan, elas_inv, hess, ddf
+        real(${k}$) :: strain_pf, strain_pf_dot, hard, dhard, f, norm_res, ddlambda
+        real(${k}$) :: residual(6)
+
+        strain_p = state%strain_p
+        strain_pf = state%strain_pf
+        strain_pf_dot = (strain_pf - state_n%strain_pf)/dt
+
+        elas_tan = elas_dstress_dstrain(elas, strain - strain_p)
+        stress = elas_stress(elas, strain - strain_p)
+        hard = vp_flow_stress(mat%vp, strain_pf, strain_pf_dot${HARD('flow_stress', 'strain_pf')}$)
+        f = yield_stress_eq(mat%yield, stress) - hard
+
+        dhard = ${NEWTON_DH}$(mat%vp, strain_pf, strain_pf_dot, dt${HARD('dstress_dep', 'strain_pf')}$)
+        df = yield_dstress_eq(mat%yield, stress)
+
+        ! Plastic strain residual (its norm as in the historical solver: the square root as a power)
+        residual1 = state_n%strain_p - strain_p + (dlambda*df)
+        residual = residual1%vals**2
+        norm_res = (residual(1) + residual(2) + residual(3) + residual(4) + residual(5) + residual(6))**0.5_${k}$
+
+        ! Convergence: |f| relative to the current flow stress (D-018.3); the plastic strain residual
+        ! (dimensionless) against the same tolerance
+        state%stress = stress
+        if (abs(f) < mat%tol*max(hard, SY_MIN_${k}$) .and. norm_res < mat%tol) then
+            converged = .true.
+            return
+        end if
+        converged = .false.
+
+        ddf = yield_ddstress_eq(mat%yield, stress)
+        elas_inv = .inv. elas_tan
+        hess = .inv. (elas_inv + dlambda*ddf)
+
+        ddlambda = (f - (df .ddot. hess .ddot. residual1))/((df .ddot. hess .ddot. df) + dhard)
+        dlambda = dlambda + ddlambda*omega
+        if (dlambda < 0.0_${k}$) then
+            ! Non-negative plastic multiplier; smaller steps after hitting the bound
+            dlambda = 0.0_${k}$
+            omega = omega*0.75_${k}$
+        end if
+        ! Stagnation protection
+        if (iter == 10 .or. iter == 20 .or. iter == 30 .or. iter == 40) then
+            omega = omega*0.75_${k}$
+        end if
+
+        dstrain_p = (elas_inv .ddot. hess) .ddot. (residual1 + ddlambda*df)
+        state%strain_p = strain_p + dstrain_p
+        state%strain_pf = state_n%strain_pf + dlambda
+    end subroutine ${ITER}$
+
+    pure subroutine ${TANGENT}$(mat, elas, strain, dt, state_n, state_np1, dlambda, tangent)
+        !! Consistent algorithmic tangent of the rate-dependent closest point return mapping of material
+        !! `${MAT.name}$` at the plastic state `state_np1`, `real(${k}$)`:
+        !! \( \mathbb{C}^{ep} = \mathbb{H} - (\mathbb{H}:\mathbf{n})\otimes(\mathbf{n}:\mathbb{H})
+        !! /(\mathbf{n}:\mathbb{H}:\mathbf{n} + d\sigma/d\Delta\epsilon_p) \), \( \mathbb{H} = [\mathbb{C}^{-1}
+        !! + \Delta\lambda\,\partial^2 f/\partial\boldsymbol\sigma^2]^{-1} \).
+        use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
+            operator(.inv.), operator(.tdotsym.), assignment(=)
+        use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_criteria, only : yield_dstress_eq, yield_ddstress_eq
+        use muscle_vp_laws, only : vp_dstress_dep
+#:if COMPOSED
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep
+#:endif
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material.
+        type(${ELAS_T}$), intent(in) :: elas
+            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
+        type(${S2}$), intent(in) :: strain
+            !! Total strain at \( t_{n+1} \).
+        real(${k}$), intent(in) :: dt
+            !! Time step.
+        type(plastic_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(plastic_state_${k}$), intent(in) :: state_np1
+            !! Plastic state at \( t_{n+1} \).
+        real(${k}$), intent(in) :: dlambda
+            !! Plastic multiplier increment of `state_np1`.
+        type(${T4}$), intent(out) :: tangent
+            !! Consistent tangent.
+
+        type(${S2}$) :: df, stress
+        type(${C4}$) :: elas_tan, hess, ddf
+        real(${k}$) :: strain_pf, strain_pf_dot, dhard
+
+        strain_pf = state_np1%strain_pf
+        strain_pf_dot = (strain_pf - state_n%strain_pf)/dt
+        elas_tan = elas_dstress_dstrain(elas, strain - state_np1%strain_p)
+        ! The stress of the plastic strain of state_np1 (not the stress of state_np1, which is that of
+        ! the previous iterate when the iterations did not converge)
+        stress = elas_stress(elas, strain - state_np1%strain_p)
+
+        dhard = vp_dstress_dep(mat%vp, strain_pf, strain_pf_dot, dt${HARD('dstress_dep', 'strain_pf')}$)
+        df = yield_dstress_eq(mat%yield, stress)
+        ddf = yield_ddstress_eq(mat%yield, stress)
+        hess = .inv. ((.inv. elas_tan) + dlambda*ddf)
+
+        tangent = hess - (.tdotsym. (df .ddot. hess))/((df .ddot. hess .ddot. df) + dhard)
+    end subroutine ${TANGENT}$
+#:endif

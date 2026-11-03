@@ -104,7 +104,7 @@ module muscle_tensors
     !! - `iden_4O4T`:        Symmetric fourth-order identity (type 4), every kind (from
     !!                      [[muscle_tensor_iden]]).
     !! - `iden_4O4TS`:       Scaled type 4 identity, alias of [[iden_4O4TS_dp]] (also `iden_4O4TS_sp`).
-    !!   A scalar times an unscaled identity gives the scaled one of the scalar's kind
+    !!   A scalar times an unscaled identity gives the scaled one of the kind of the scalar
     !!   (`2.0_sp * iden_2O()` is an `iden_2OS_sp`); `I + I`, `I - I`, `-I` give `iden_2OS_dp`.
     !!
     !! ### Operators:

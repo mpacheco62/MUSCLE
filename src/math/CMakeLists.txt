@@ -5,9 +5,7 @@ muscle_add_fypp_sources(muscle
                  )
 
 muscle_add_fypp_sources(muscle
-                 muscle_math_operations_host.fypp
                  muscle_math_operations.fypp
-                 muscle_math_derivatives_host.fypp
                  muscle_math_derivatives.fypp
                  muscle_math_spectral_derivs.fypp
                  muscle_math_linsolvers.fypp

@@ -19,50 +19,23 @@ module muscle_kin_small_strain
     !! procedures `kin_update_small_strain_<k>(prm, F, state, status)` (the state keeps the reference
     !! configuration, \( \mathbf{F} = \mathbf{I} \), \( J = 1 \), and only its strain changes, so that
     !! the functions of muscle_kin_finite are the identity on it; no validation: `STATUS_OK`),
-    !! `kin_to_cauchy_small_strain_<k>`, `kin_to_spatial_tangent_small_strain_<k>` (the identity) and
+    !! `kin_to_cauchy_small_strain_<k>`, `kin_to_spatial_tangent_small_strain_<k>` (the identity),
+    !! `kin_geometric_tangent_small_strain_<k>` (zero, D-018.15f) and
     !! `kin_is_finite_strain_small_strain_<k>` (false), also through the generics `kin_*` of
     !! muscle_kin_laws.
-    !!
-    !! `Small_strain_kinematics` is the historical OO type (host only, removed in Phase 7),
-    !! extending `Base_kinematics`: `update(F)` calls the dp kernel procedure, `update(strain)` sets
-    !! the strain, and the stress and tangent transformations are the identity.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
     use muscle_tensors, only : ${', '.join(T2(k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$, &
         transpose, operator(+), operator(*)
     use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$
-    use muscle_kinematics_base, only : Base_kinematics
     implicit none
     private
 
     $:MODEL_PUBLIC('kin', 'small_strain')
-    public :: Small_strain_kinematics
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('kin', 'small_strain', k, [])
+    $:MODEL_PARAMS_TYPE('kin', 'small_strain', k, model_param_list('kin', 'small_strain'))
 #:endfor
 
-    ! Historical OO interface (host only, D-017.1): removed in Phase 7 with Base_kinematics.
-    type, extends(Base_kinematics) :: Small_strain_kinematics
-        !! The small strain kinematics through the polymorphic `Base_kinematics` interface
-        !! (historical API, double precision, host only). Kernels use `kin_small_strain_dp`,
-        !! `kin_state_dp` and the free procedures.
-        type(${S2('dp')}$) :: strain !! Current infinitesimal strain tensor
-    contains
-    ! Specific update procedures for small strain
-        procedure :: update_F      => update_F_tbp
-        procedure :: update_strain => update_strain_tbp
-        generic   :: update        => update_F, update_strain
-
-        procedure :: jacobian           => jacobian_tbp
-        procedure :: is_finite_strain   => is_finite_strain_tbp
-        procedure :: get_strain         => get_strain_tbp
-        procedure :: push_forward_stress => push_stress_tbp
-        procedure :: pull_back_stress    => pull_stress_tbp
-        procedure :: push_forward_tangent=> push_tangent_tbp
-        procedure :: pull_back_tangent  => pull_tangent_tbp
-        procedure :: to_Cauchy => to_Cauchy_tbp
-        procedure :: to_spatial_tangent => to_spatial_tangent_tbp
-    end type Small_strain_kinematics
 
 contains
 #:for k in REAL_KINDS
@@ -86,96 +59,15 @@ contains
         res = tangent
     end function kin_to_spatial_tangent_small_strain_${k}$
 
+    $:MODEL_FUNCTION('kin', 'small_strain', 'geometric_tangent', k, doc=r'Zero: the configurations are not distinguished.')
+
+        res%vals = 0.0_${k}$
+    end function kin_geometric_tangent_small_strain_${k}$
+
     $:MODEL_FUNCTION('kin', 'small_strain', 'is_finite_strain', k)
 
         res = .false.
     end function kin_is_finite_strain_small_strain_${k}$
 #:endfor
-
-    pure subroutine update_F_tbp(self, F)
-        !! Strain of F (type-bound, historical API; host only). Calls `kin_update_small_strain_dp`.
-        class(Small_strain_kinematics), intent(inout) :: self
-        type(${T2('dp')}$), intent(in)                 :: F
-        type(kin_small_strain_dp) :: prm
-        type(kin_state_dp) :: state
-        integer :: status
-
-        call kin_update_small_strain_dp(prm, F, state, status)
-        self%strain = state%strain
-    end subroutine update_F_tbp
-
-    pure subroutine update_strain_tbp(self, strain)
-        class(Small_strain_kinematics), intent(inout) :: self
-        type(${S2('dp')}$), intent(in)                 :: strain
-        self%strain = strain
-    end subroutine update_strain_tbp
-
-    pure function jacobian_tbp(self) result(J)
-        class(Small_strain_kinematics), intent(in) :: self
-        real(dp)                                   :: J
-        J = 1.0_dp
-    end function jacobian_tbp
-
-    pure function is_finite_strain_tbp(self) result(res)
-        class(Small_strain_kinematics), intent(in) :: self
-        logical                                    :: res
-        type(kin_small_strain_dp) :: prm
-        res = kin_is_finite_strain_small_strain_dp(prm)
-    end function is_finite_strain_tbp
-
-    pure function get_strain_tbp(self) result(strain)
-        class(Small_strain_kinematics), intent(in) :: self
-        type(${S2('dp')}$)                          :: strain
-        strain = self%strain
-    end function get_strain_tbp
-
-    pure function push_stress_tbp(self, S_material) result(sigma_spatial)
-        class(Small_strain_kinematics), intent(in) :: self
-        type(${S2('dp')}$), intent(in)              :: S_material
-        type(${S2('dp')}$)                          :: sigma_spatial
-        sigma_spatial = S_material
-    end function push_stress_tbp
-
-    pure function pull_stress_tbp(self, sigma_spatial) result(S_material)
-        class(Small_strain_kinematics), intent(in) :: self
-        type(${S2('dp')}$), intent(in)              :: sigma_spatial
-        type(${S2('dp')}$)                          :: S_material
-        S_material = sigma_spatial
-    end function pull_stress_tbp
-
-    pure function push_tangent_tbp(self, C_material, stress_spatial) result(c_spatial)
-        class(Small_strain_kinematics), intent(in) :: self
-        type(${C4('dp')}$), intent(in)             :: C_material
-        type(${S2('dp')}$), intent(in), optional    :: stress_spatial
-        type(${C4('dp')}$)                         :: c_spatial
-        c_spatial = C_material
-    end function push_tangent_tbp
-
-    pure function pull_tangent_tbp(self, c_spatial, stress_material) result(C_material)
-        class(Small_strain_kinematics), intent(in) :: self
-        type(${C4('dp')}$), intent(in)             :: c_spatial
-        type(${S2('dp')}$), intent(in), optional    :: stress_material
-        type(${C4('dp')}$)                         :: C_material
-        C_material = c_spatial
-    end function pull_tangent_tbp
-
-    pure function to_Cauchy_tbp(self, constitutive_stress) result(sigma_cauchy)
-        class(Small_strain_kinematics), intent(in) :: self
-        type(${S2('dp')}$), intent(in)              :: constitutive_stress
-        type(${S2('dp')}$)                          :: sigma_cauchy
-        type(kin_small_strain_dp) :: prm
-        type(kin_state_dp) :: state
-        sigma_cauchy = kin_to_cauchy_small_strain_dp(prm, state, constitutive_stress)
-    end function to_Cauchy_tbp
-
-    pure function to_spatial_tangent_tbp(self, C_constitutive, stress_spatial) result(c_spatial)
-        class(Small_strain_kinematics), intent(in) :: self
-        type(${C4('dp')}$), intent(in)             :: C_constitutive
-        type(${S2('dp')}$), intent(in), optional    :: stress_spatial
-        type(${C4('dp')}$)                         :: c_spatial
-        type(kin_small_strain_dp) :: prm
-        type(kin_state_dp) :: state
-        c_spatial = kin_to_spatial_tangent_small_strain_dp(prm, state, C_constitutive)
-    end function to_spatial_tangent_tbp
 
 end module muscle_kin_small_strain

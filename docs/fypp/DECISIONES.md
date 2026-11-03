@@ -651,3 +651,329 @@ solvers de return mapping se reescriben en la Fase 7 (materiales declarados, D-0
         deben usarse (pueden quedar calculadas o en sus valores por defecto, según convenga a cada
         familia para conservar bits; visco las deja por defecto y kin calculadas). El solver de la
         Fase 7 comprueba siempre el status. Documentado en `muscle_status`.
+
+## D-018 — Fase 7: alcance y diseño de los materiales declarados
+**Estado:** Aceptada (2026-11-01, decisiones del usuario)
+**Contexto:** plan de la Fase 7 (D-008). Hay cinco solvers OO, sólo 3D y sólo dp, y ninguno tiene golden
+(`closest_point`, `closest_point_perzyna`, `closest_point_time`, `closest_point_2`, `cutting_plane`).
+**Decisión:**
+1. **Se portan los cinco solvers.**
+   - `closest_point_2` lleva LU propio en vez de LAPACK (D-016).
+   - `cutting_plane` se porta como algoritmo explícito.
+   - Ambos se limpian de `print`/`write` (no hay salida en el kernel).
+2. **`closest_point_time` se porta tal cual,** con los mismos bits en dp. Sus bugs se documentan en
+   PROBLEMAS.md: `strain_p` sin inicializar en el tangente elástico, chequeo elástico con epd = 0 y
+   `strain_p` sin omega.
+3. **Tolerancia del Newton relativa en ambos kinds** (|f| < tol·σ_y), con valor por defecto por kind y
+   configurable en el material. Valores por defecto: `sp` 1e-5 (≈ 84 ε) y `dp` 1e-10 (hoy 1e-5
+   absoluto ≈ 3e-8 relativo con σ_y ≈ 300 MPa). El solver OO `closest_point` recibe el mismo
+   criterio, para que OO y kernel den los mismos bits hasta el retiro.
+   - Es un cambio aprobado en dp: cambian iteraciones y bits.
+   - El golden se captura antes con el código original y después se actualizan sólo los registros
+     afectados («Updated (D-018.3, approved)»).
+4. **Alcance:** todos los modelos, incluidas las cinemáticas finitas (TL/UL/logarítmicas/corrotacional)
+   y la elasticidad visco congelada.
+5. **Cuerpo único de solver:**
+   - Llama a los genéricos de familia `<fam>_<func>` de la Fase 6, que se resuelven en compilación por
+     el tipo de parámetros.
+   - Por material sólo cambian los tipos de los componentes.
+   - **Enmienda D-008.1:** no hay renombre en `use`.
+   - El cuerpo es un `.fypp` incluido por la plantilla de material con `k` fijado (D-009, D-017.6).
+6. **Tangente:** analítico en el kernel. Las diferencias finitas quedan para tests/host, como
+   verificación y sin closures.
+7. **API por lotes en SoA:** `eps(npts,6)`, `sig(npts,6)` y `hsv(npts,NSTATE)`.
+   - La tensión va en `sig`, no en el estado.
+   - Para el multifase se pasa la lista de índices `idx(:)`.
+8. **Retiro del OO:** los `Base_*`, adaptadores OO, la API `procedure(...)`, `*_host` de closures y
+   `Plastic_material_history` se retiran al final de la Fase 7, cuando todos los tests de solvers usen
+   la API nueva contra el golden.
+9. **Registro de materiales:** archivo separado `tools/fypp/muscle_materials.py`.
+   - Trae por defecto un registro de prueba que cubre cada modelo.
+   - `-DMUSCLE_MATERIALS=<ruta>` lo reemplaza.
+   - Lo valida `muscle_meta`.
+10. **Anomalías del golden de solvers (2026-11-01):**
+    - (a) `closest_point`: con iteraciones agotadas reporta `min(iters, iter_nw)`, como perzyna (cambio
+      aprobado en los registros no convergidos).
+    - (b) `closest_point_time`: el chequeo elástico pasa a f = q − σ_flujo ≤ tol, sin división. Hoy
+      σ_flujo(ep, 0) = 0 da NaN. Es un cambio aprobado que afecta sólo a los registros hoy NaN o no
+      convergidos; el resto de `time` queda tal cual (D-018.2).
+    - (c) `closest_point_2` sin dγ ≥ 0 (ep negativo con incremento grande): documentado, port fiel.
+    - (d) `closest_point_time` + RK: el tangente analítico difiere ~8 % del numérico (NNL 3.5e-4):
+      documentado, sin investigar.
+    - Las salidas en pasos no convergidos (tensión 0 en `time`/`cp2`) quedan cubiertas por D-017.14f.
+11. **Piloto `closest_point` (2026-11-02):**
+    - (a) El residuo de deformación plástica del Newton usa la misma tolerancia por kind (adimensional),
+      en vez de 1e-5 absoluto. Es un cambio aprobado en dp, incluido en los registros
+      «Updated (D-018.3/D-018.10a)».
+    - (b) El denominador de |f|/σ_y es `max(σ_y, SY_MIN)`, para que un ablandamiento hasta cero no
+      bloquee la convergencia.
+    - (c) `TOL_ELASTIC` por kind en `muscle_kinds`: `dp` 1e-8 (histórico) y `sp` 1e-5. Se mantiene
+      «iters = 0 ⇔ elástico».
+    - (d) El hsv del material no lleva la tensión: `MAT_<NAME>_NSTATE = 7` (strain_p 6 + ep 1), con
+      pack/unpack propio del material (D-018.7). Con elasticidad visco congelada son
+      7 + 6 + 6·`visco_branches` (D-018.14).
+    - (e) Los tests históricos OO (hill48, cpb06, cpb06ex2, yld2004) pasan a `iters ≤ 7` por D-018.3.
+    - (f) Nuevo status `STATUS_NOT_CONVERGED = 104`. Hay un genérico `mat_update` común a todos los
+      módulos de material (los específicos difieren en el tipo). `golden_finish(partial)` sirve para
+      tests que comparan un subconjunto de un golden.
+    - (g) Materiales sólo 3D: la familia yield es sólo 3D. El 2D queda fuera de la Fase 7.
+12. **`perzyna` y `time` (2026-11-02):**
+    - (a) Los residuos de Perzyna se escalan a tensión: C:R_εp y R_λ/(Δt·∂g/∂σ_eq) (error de
+      sobretensión, independiente de η) se comparan con tol·max(σ_y, SY_MIN). R_λ·n:C:n se descartó:
+      con η chico el redondeo de σ/σ_y − 1 se amplifica por dt/η·n:C:n y no converge.
+      C:R_εp tiene un piso de redondeo: max(tol·max(σ_y, SY_MIN), 8·ε_k·max|C_ij|·|εp|)
+      (`RES_FLOOR_ROUNDINGS`). Así sp converge con incrementos grandes (ep ≈ 20× la deformación de
+      fluencia). En dp no cambia ningún registro. Así se corrige la precisión de sp
+      (con residuos en deformación y tol 1e-5 el error llegaba a 5e-3). Cambio aprobado en dp, aplicado
+      también al OO.
+    - (b) `jcfull`: el OO usa el `dstress_dep` analítico del kernel en lugar del de diferencias finitas
+      (D-017.8), con los mismos bits OO/kernel. Se actualizan los registros jcfull del golden de
+      `time` y sus `dstress_dep` en `vp_laws_dp.txt` (18 registros). En sp no se comprueba jcfull: el
+      paso 1 no converge y después difiere ~6e-4, porque el flujo es 0 a tasa nula (D-017.7).
+    - (c) Firma uniforme: todos los `mat_update` reciben `dt` después de `strain`, y `closest_point`
+      lo ignora.
+    - (d) El chequeo elástico de `time` (D-018.10b) usa `TOL_ELASTIC·max(σ_flujo, SY_MIN)`.
+      `SY_MIN_<k>` se define por kind en `muscle_kinds`.
+    - (e) El pack/unpack de hsv es común (`muscle_plastic_state_hsv.fypp`, hoy `src/materials/muscle_material_kernel.fypp`). `MaterialSolver` declara
+      las familias compuestas (`composes`) y si el solver usa `dt`.
+    - (f) Los goldens comparan NaN = NaN sin mirar signo ni payload. El signo del NaN depende del
+      orden de operandos que elige el compilador.
+13. **`closest_point_2` y `cutting_plane` (2026-11-02):**
+    - (a) `cp2`, en OO y en kernel, resuelve el 7x7 con `LU7SOLVE` en lugar de LAPACK `dgesv` (D-018.1,
+      D-016.10). Con LU singular deja el iterado sin cambiar y devuelve `STATUS_NOT_CONVERGED`.
+    - (b) `cp2` usa la tolerancia relativa por kind, tanto en f como en el residuo de deformación
+      plástica (como D-018.11a). Su chequeo elástico pasa del histórico −1e-16 a
+      `TOL_ELASTIC_k·max(σ_y, SY_MIN_k)`, igual que `closest_point`. Cambio aprobado en dp.
+    - (c) El tangente de `cp2` es el tangente consistente de `closest_point` (complemento de Schur
+      compartido en `muscle_closest_point_tangent.fypp`). La guarda es `|dγ| ≤ 1e-12`, para que el
+      estado con dγ < 0 (D-018.10c) reciba el tangente consistente. En `closest_point` no cambia nada,
+      porque allí dγ ≥ 0.
+    - (d) `cutting_plane` devuelve el tangente continuo elastoplástico C − (C:n⊗n:C)/(n:C:n + h')
+      (el original no tenía tangente), verificado contra diferencias finitas con la tolerancia que
+      corresponde a la diferencia entre continuo y algorítmico. Esa diferencia llega a 0.38 de la
+      componente mayor, así que el chequeo por diferencias finitas (tol 1.2) sólo detecta errores
+      groseros. Sólo el kernel tiene tangente: el `cutting_plane` OO no tiene salida de tangente.
+    - (e) `MaterialSolver.iter_nw` es el límite de iteraciones por solver: 200 por defecto, 100 en
+      `cutting_plane` (valor histórico).
+14. **Materiales con elasticidad visco congelada (2026-11-02):**
+    - (a) El registro tiene `elas='frozen'`, `visco='maxwell'|'kelvin'` y `visco_branches` (máximo de
+      ramas por material, ≤ `MAX_VISCO_BRANCHES`, que ahora vive en `muscle_meta.py`).
+    - (b) El hsv es 7 + 6 (strain_e) + 6·`visco_branches`. El estado es `visco_plastic_state_<k>`
+      (composición de `plastic` + `visco`). Al hacer unpack, `n_branches = visco_branches`; los
+      kernels usan `prm%n`.
+    - (c) Los cuerpos de solver reciben `elas` como argumento (`SOLVE(mat, elas, ...)`), sin copiar
+      el material por punto.
+    - (d) `visco_step_coefficients` se calcula **una vez por lote/paso** (D-017.13d), no por punto,
+      y el kernel de punto recibe los coeficientes. Ahí se comprueban también el número de ramas
+      (`STATUS_INVALID_PARAMETER`) y dt.
+    - (e) Orden por punto: `visco_freeze` → `SOLVE` → `visco_update(strain − strain_p)`, igual que
+      el golden. `visco_update` se llama también si no converge (D-017.14f).
+    - (f) Queda pendiente para la Fase 8, después de perfilar: el kernel sigue usando
+      `visco_state` con `h(6, MAX_VISCO_BRANCHES)`; `visco_branches` sólo reduce el hsv.
+15. **Materiales con cinemáticas finitas (2026-11-02):**
+    - (a) El kernel recibe F_n y F_{n+1} (DFGRD0/1). La firma de pequeñas deformaciones no cambia.
+      El cuerpo del solver trabaja igual sobre `ks%strain` (E, e, ½ln C o ½ln b), y `strain_p`/ep se
+      guardan en esa medida.
+    - (b) El término geométrico/de tasa se agrega ahora: función de familia
+      `kin_geometric_tangent` y campo del material `tangent_rate = 'none'|'jaumann'`, verificado
+      contra diferencias finitas de σ(F).
+    - (c) Se corrige el tangente espacial logarítmico material para incluir la derivada de ln C.
+      Cambio aprobado: se actualizan los registros de kin afectados y el adaptador OO da los mismos
+      bits.
+    - (d) Corrotacional: R_n se guarda en el hsv (+9 reales sólo en esos materiales).
+    - (e) Referencias: no hay composición histórica de solver con cinemática, así que se usan
+      oráculos físicos y un golden dp del kernel nuevo como regresión:
+      - con F → I coincide con pequeñas deformaciones;
+      - es invariante ante rotación rígida;
+      - tracción uniaxial log + von Mises contra la solución analítica;
+      - tangente contra diferencias finitas.
+    - (f) **Enmiendas tras el análisis con diferencias finitas (2026-11-02):**
+      - Se corrigen los tangentes espaciales de **todas** las cinemáticas, como cambio aprobado igual
+        que (c):
+        - UL: le faltaban ∂e/∂ε y σ⊗I (34 % de error);
+        - log espacial: le faltaba d ln b/db;
+        - log material: le faltaban la derivada de ln C y el giro de R.
+      - `kin_geometric_tangent` = (1/J)∂τ/∂ε a tensión constitutiva fija:
+        - TL: el término de σ;
+        - UL: σ⊗I;
+        - log espacial y pequeñas deformaciones: 0;
+        - log material: el término de dR.
+      - `tangent_rate='jaumann'` = `to_spatial_tangent` + `kin_geometric_tangent` = (1/J)∂(Jσ)/∂ε con
+        δF = sym(δε)·F (tasa de Jaumann de Kirchhoff, Abaqus/ANSYS). `'none'` = `to_spatial_tangent`.
+      - ~~Corrotacional: medida total ln U de la polar de F_{n+1}.~~ Reemplazado por la «Corrotacional
+        rotada por el FE» (más abajo). **Se descarta (d):** no se guarda R_n.
+      - Medidas espaciales (UL, log espacial): `strain_p` se rota con ΔR = R_{n+1}·R_nᵀ en cada paso
+        (formulación objetiva). R_n sale de la polar de F_n, que llega como argumento, así que no hay
+        hsv extra. El oráculo de rotación rígida se aplica a todas las medidas.
+      - Criterios anisótropos con medidas espaciales (UL, log espacial): la anisotropía se evalúa en
+        el marco rotado, f(Rᵀσ R), con R de la polar de F_{n+1}, y el gradiente y la hessiana se
+        llevan de vuelta con R. Así la formulación es objetiva con cualquier criterio. Los criterios
+        isótropos (von Mises, Drucker-Prager) no rotan, para conservar los bits. Exige elasticidad
+        isótropa, y el validador lo comprueba. En el registro de
+        `kin_geometric_tangent` de UL, σ⊗I va en el término geométrico; `to_spatial_tangent` sólo
+        lleva ∂e/∂ε.
+      - **Cinemáticas en sp (2026-11-02):** la polar y el logaritmo espectrales fallan en sp con
+        deformaciones chicas: R no es ortogonal (|RᵀR − I| = 7e-4 con 4e-4 de deformación) y ln C pierde
+        la parte desviadora cuando las brechas entre autovalores son ≲ 1e-2. Se usan algoritmos
+        robustos **sólo en sp**, y dp conserva sus bits:
+        - R por iteración de Newton/Higham con un número fijo de iteraciones;
+        - ln C / ln b y sus derivadas con una descomposición espectral de Jacobi (6 barridos fijos);
+          la serie (`log_ratio`) sólo se usa en el tangente cuando los autovalores están cerca.
+      - **Corrotacional rotada por el FE (2026-11-02, reemplaza «medida total ln U»):** como en
+        Abaqus y ANSYS, el FE entrega la tensión y la deformación ya rotadas al marco corrotacional.
+        - El material corrotacional es el kernel de pequeñas deformaciones alimentado con la
+          deformación rotada, más el tangente de Jaumann.
+        - `strain_p` del hsv la rota el adaptador UMAT con `DROT` (paso 8): Abaqus no rota `STATEV`.
+          Falta confirmar cómo trata ANSYS sus `ustatev`.
+        - Se elimina el ln U total calculado con la polar de F en el kernel.
+      - Cobertura de solvers con cinemáticas: `closest_point`, `perzyna`, `time` y `cp2`. El validador
+        rechaza las cinemáticas con `cutting_plane`, porque su tangente continuo no es consistente
+        (D-018.13d), y también con elasticidad visco.
+16. **API por lotes (2026-11-02):**
+    - (a) La API es `muscle_update_<name>(mat, eps | F_n, F_np1, dt, hsv_n, hsv_np1, sig, status, iters
+      [, ddsdde][, idx])`, en SoA, con arrays `contiguous` y `npts = size(sig,1)`.
+      - F va por filas en el orden `ten_3D2O%vals`, column-major, igual que `reshape(DFGRD,[9])`.
+      - `ddsdde(p,i,j) = ∂σ_i/∂γ_j`, con corte ingenieril en j = 4..6, igual que DDSDDE de UMAT.
+      - Corrotacional recibe `eps`.
+      - Con `idx`, el resto de las filas no se toca, y `idx` no puede tener índices repetidos.
+    - (b) Los opcionales (`ddsdde`, `idx`) se resuelven en el host, con 4 bucles privados por kind
+      generados desde una sola fuente. `iters` es obligatorio. Ningún opcional entra en la región de
+      dispositivo (decisión del usuario).
+    - (c) Macro `BATCH_LOOP`:
+      - en CPU expande a `!$omp parallel do`;
+      - con `MUSCLE_GPU` expande a `!$omp target teams distribute parallel do map(present, alloc: mat,
+        arrays...)`, más `map(to: coefs)` en los materiales visco.
+      - `mat` también tiene que estar presente: quien llama la mapea una vez (decisión del usuario,
+        coherente con D-008.2).
+      - gfortran 15 rechaza `map(present: x)`; la forma OpenMP 5.1 `present, alloc` funciona.
+    - (d) Visco: si `mat_step` falla, cada punto a calcular recibe ese status con iters = 0 y no se
+      escribe nada más. Se hace dentro del bucle porque status/iters viven en el dispositivo.
+    - (e) No hay chequeos de tamaño en tiempo de ejecución: el contrato de extensiones, rango de `idx`
+      y contigüidad queda documentado en la API.
+    - (f) Pendiente para la Fase 8:
+      - camino `is_device_ptr` para memoria de dispositivo pura (`omp_target_alloc`, cuFFT), que no
+        está en la tabla `present`;
+      - verificar el modificador `present` en nvhpc. OpenMP 6.0 depreca `alloc` en favor de `storage`.
+17. **API genérica para integración con programas FE (2026-11-02; reemplaza D-008.3 «adaptadores
+    UMAT generados por material»):** la librería no trae adaptadores. Cada usuario escribe el suyo
+    para cualquier programa FE, con estas piezas generadas por material:
+    - (a) `mat_init_<name>(mat, props(:), status)`: el orden de parámetros se genera por material,
+      con `MAT_<NAME>_NPROPS` y una tabla del orden en la documentación. Llama a los `*_init`.
+    - (b) Una API de punto con arrays planos, `muscle_point_<name>(mat, strain(6) | F_n(9), F_np1(9),
+      dt, hsv_n, hsv_np1, stress(6), status, iters[, ddsdde(6,6)])`, sin tipos derivados de tensores.
+      Usa las mismas convenciones que el lote (D-018.16a).
+    - (c) Un helper para rotar las partes tensoriales del hsv con una rotación incremental (DROT u
+      otra), para los FE que no rotan sus variables de estado (D-018.15f, corrotacional).
+    - (d) Ejemplos en `pages/integration.md`: esqueletos de UMAT (Abaqus), USERMAT (ANSYS) y umat41
+      (LS-DYNA), sin compilar ni probar contra el FE. La duda de los `ustatev` de ANSYS queda
+      anotada en el ejemplo.
+    - (e) Parámetros (decisión del usuario, 2026-11-02):
+      - `muscle_meta` es la **fuente única**: los `PARAMS` de cada modelo y, cuando difieren, las
+        entradas de su init. Las plantillas los leen de ahí, con los mismos bits.
+      - Orden de props:
+        - Maxwell: bulk, shear_inf y luego `visco_branches` pares (shear, tau);
+        - `hardening_mode` va como real redondeado con `nint`;
+        - `T_current` de jcfull cuenta como prop;
+        - `tol` e `iter_nw` van al final.
+    - (f) `mat_rotate_hsv_<name>` sólo se genera para materiales con entrada de deformación (pequeñas
+      deformaciones y corrotacional). Los que reciben F ya son objetivos (ΔR).
+    - (g) La API de punto de los materiales visco recibe `coefs` de `mat_step`, igual que `mat_update`.
+      Las notas de LS-DYNA en los ejemplos (`IHYPER`, `IBULK`/`IG`, sin rotación en `umat41`) están
+      sin verificar.
+    - (h) `mat_init_<name>` (2026-11-02):
+      - Con menos props que `MAT_<NAME>_NPROPS` devuelve `STATUS_INVALID_PARAMETER`; los sobrantes se
+        ignoran.
+      - `tol` ≤ 0 o `iter_nw` ≤ 0 también son error, sin valor por defecto (decisión del usuario).
+      - Valida además lo que puede comprobar barato: el `hardening_mode` de DP fuera de 1..3, ν fuera
+        de (−1, 0.5) y E ≤ 0. Los init de los modelos y el OO no cambian.
+      - Para los materiales visco congelados, los componentes van en el orden del tipo del material:
+        el modelo visco ocupa el lugar de elas.
+18. **Retiro del OO (paso 9, 2026-11-02; detalla D-018.8):**
+    - (a) Los casos del golden de solvers sin material en el registro (cp 12/22, perzyna 7/16) se
+      cubren añadiendo unos 15 materiales al registro de prueba. No se borra ningún registro de
+      solver.
+    - (b) Se borra la API de math con `procedure(...)` (`derivative*`, módulos `*_host`) y quedan las
+      macros de `include/muscle_fd.fypp`. Se quitan las exenciones host-only del lint que ya no
+      hagan falta. Los goldens de derivadas se generan con las macros, y si el compilador integra la
+      función y cambian bits se documenta una tolerancia (D-016.9).
+    - (c) No hay capa host de conveniencia. Se publica en `pages/` una tabla de equivalencias de API
+      vieja a nueva, con lo que se pierde:
+      - commit/rollback transaccional (el FE guarda `hsv_n`);
+      - elegir el modelo en tiempo de ejecución (queda la unión etiquetada opcional);
+      - modelos propios por extensión de clase;
+      - `set_parameters`/`to_string`.
+    - (d) Se borra la fachada `muscle_kinematics`.
+    - (e) Se mantienen `muscle_tensors`, `muscle_tensor_functions`, los `*_tbp` de tensores y
+      `muscle_tensor_io` (UDTIO).
+    - (f) Goldens: se conservan los `.txt`, y cada generador pasa a la API kernel con las mismas
+      claves. Sólo se borran los registros sin equivalente en kernel, con una línea
+      «Removed (D-018.8)»:
+      - elas: `to_string`, flags de caché y defaults de `Base`;
+      - yield: `base numeric`;
+      - vp: defaults de diferencias finitas de las bases;
+      - visco: commit/rollback.
+      `plastic_history_dp.txt` se retira entero, porque `pack/unpack` ya se compara en
+      `plastic_state_kinds`. En cada commit de migración `regenerate.sh` tiene que dejar los `.txt`
+      sin diferencias, salvo las bajas declaradas.
+    - (g) Las pruebas físicas que sólo existen en OO se portan al kernel antes de borrar:
+      - valores r y cortante de los criterios anisótropos;
+      - incremento grande;
+      - relajación exacta y η→0 en Perzyna;
+      - radial cerrado;
+      - relajación analítica y `time_step_limits` en visco;
+      - roundtrips de cinemáticas;
+      - Chaboche.
+      La prueba `joint` (extensión de clase) se borra.
+    - (h) Golden de `time`: el tangente numérico del OO volvía a resolver arrancando en caliente desde la
+      iteración convergida (dλ, ω), y el kernel no lo hace. Los registros `tangent_num` pasan a
+      diferencias finitas desde t_n; cambian 80 de 136, ≤ 1.5e-7 relativo salvo el caso 14, que no
+      converge. Cambio aprobado: «Updated (D-018.18h, approved)».
+    - (i) Antes de borrar los solvers OO se portan a materiales los tests de acople que los usaban:
+      visco Maxwell/Kelvin + closest_point y el tangente mixto de Chaboche.
+    - (j) Golden de yield: se borran los 15 registros `constructor` de cpb06 (6), cpb06ex2 (5) y
+      yld2004 (4), porque leen parámetros derivados que en el kernel son privados (D-017.10b). Ya pasaba
+      lo mismo con Drucker-Prager, y los registros analíticos siguen detectando un init erróneo.
+    - (k) Golden de elas: además de lo listado en (f), se borran los 413 registros de las sobrecargas
+      transient y de `stress_and_update`, porque el kernel no tiene API equivalente y los registros
+      no transient que quedan ya cubren esos valores. En total se quitan 962 de 1311.
+    - (l) Golden de cinemáticas: se borran los ~247 registros de comportamiento sólo OO:
+      - push/pull identidad de pequeñas deformaciones;
+      - corrotacional «sin R» y copia polimórfica;
+      - `update_F_base`;
+      - defaults.
+      Además se quita `has_rotation` de los 20 registros de estado corrotacional. El resto sale del
+      kernel, bit a bit.
+    - (m) Math (E4): se borran los 20 registros de diferencias hacia adelante de matrices 3x3
+      (`derivative_escalar_tensor3x3`, `_3x3sym2`) de `math_operations_dp.txt`, porque no hay macro
+      equivalente y ningún kernel las usa. También se borra `FD_STEP_FWD_<k>`, que queda sin usos.
+      Los goldens de derivadas se reproducen bit a bit con las macros (`-fno-inline`, D-016.9).
+19. **Bugs del smoke test (2026-11-03):**
+    - (a) **dp, logarítmicas cerca de F = I.** La forma cerrada (autovalores + proyectores de
+      Cayley-Hamilton) toma las raíces como repetidas cuando |D_a| ≤ 1e-11·λmax². Con brechas
+      < ~3e-6 queda P = I/3 y ln C pierde la parte desviadora (σ = 0 en corte puro).
+      - Corrección **híbrida** (decisión del usuario): en dp se usa Jacobi sólo cuando la brecha
+        relativa mínima entre autovalores cae en una franja intermedia; fuera de ella sigue la forma
+        cerrada. La franja propuesta es [~1e-12, ~1e-3); se mide y se fija como constante en
+        `muscle_kinds`.
+      - Las brechas de redondeo (~1e-16, casos rotados casi repetidos) quedan en la forma cerrada,
+        donde I/3 es exacto.
+      - sp sigue siempre con Jacobi.
+      - Los registros afectados se actualizan como cambio aprobado.
+    - (b) **Newton de `time` en el piso de tasa de JC.** `vp_jc_rate` da derivada 0 en el piso, el
+      primer paso se pasa y el recorte con ω deja una convergencia lineal (124–200 iteraciones). En
+      el piso se usa la **derivada por la derecha**. Cambian sólo los registros de `time` cuya
+      historia tocaba el recorte, más sus tangentes.
+    - (c) **JC con flujo negativo en el piso:** `mat_init_<name>` devuelve `STATUS_INVALID_PARAMETER`
+      si C·|ln(epmin/epdmax)| ≥ 1 (regla de dominio en `muscle_meta`). Los init de modelo no cambian.
+    - (d) Aplicación (2026-11-03):
+      - Franja de Jacobi en dp: `KIN_JACOBI_GAP_LO/HI_dp` = [1e-12, 1e-2), medida contra una
+        referencia en cuádruple precisión.
+        - Con la forma cerrada, el error de ln C es ≈ eps/gap², y por debajo de ~1.8e-6 pierde todo
+          el desviador.
+        - Jacobi da error ≈ eps/gap y RᵀR − I ≤ 1.4e-15.
+        - Saltos en los bordes: σ ≤ 1.1e-11 y tangente ≤ 2.6e-11 relativos.
+        - sp: [0, huge), es decir, siempre Jacobi.
+      - JC: la ley pública conserva su derivada verdadera, 0 en la región plana. El solver `time`
+        usa la derivada por la derecha sólo para la dirección de Newton (decisión del usuario).
+        - Iteraciones: jc1 124–129 → 7–8, jc3 130–178 → 7.
+        - jc2 sube de 4–9 a 6–11 iteraciones; aceptado.

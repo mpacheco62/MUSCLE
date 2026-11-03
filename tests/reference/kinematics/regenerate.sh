@@ -4,11 +4,13 @@
 #
 # Regenerates the golden values of the kinematics family
 # (tests/reference/kinematics/kinematics_dp.txt) by running the golden test
-# tests/kinematics/test_kin_golden.f90 with `--write FILE`.
+# tests/kinematics/test_kin_golden.fypp (kernel API, D-018.18f) with `--write FILE`
+# (tests/reference/write_golden.sh: the header of the existing file and its matching records are kept).
 #
 # ONLY run it on code whose behaviour IS the reference: this file was captured from the original
-# (pre-FYPP, OO) modules src/kinematics/*.f90 (HEAD 62b7c18), and the test exists
-# to detect any change against them. Regenerating after a change would hide it. The test run by ctest never writes this file.
+# (pre-FYPP, OO) modules src/kinematics/*.f90 (HEAD 62b7c18), with the approved updates of the header;
+# the kernel API reproduces it bit for bit, and the test exists to detect any change against them.
+# Regenerating after a change would hide it. The test run by ctest never writes this file.
 #
 # Usage: tests/reference/kinematics/regenerate.sh BUILD_DIR
 #   BUILD_DIR: a Debug build (no -ffast-math) with `cmake --build BUILD_DIR --target build_all_tests` done.
@@ -32,12 +34,5 @@ build_type=$(grep -m1 '^CMAKE_BUILD_TYPE:' "$build_dir/CMakeCache.txt" | cut -d=
 
 exe="$build_dir/tests/kinematics/test_kin_golden"
 out="$ref_dir/kinematics_dp.txt"
-tmp=$(mktemp)
-"$exe" --write "$tmp"
-{
-    echo "# Captured from commit $commit$dirty, $version, CMAKE_BUILD_TYPE=$build_type,"
-    echo "# by tests/reference/kinematics/regenerate.sh (test_kin_golden --write)."
-    cat "$tmp"
-} > "$out"
-rm -f "$tmp"
-echo "wrote $out ($(grep -vc '^#' "$out") records)"
+"$ref_dir/../write_golden.sh" "$exe" "$out" "commit $commit$dirty, $version, CMAKE_BUILD_TYPE=$build_type" \
+    "tests/reference/kinematics/regenerate.sh (test_kin_golden --write)"

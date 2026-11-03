@@ -1,0 +1,129 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#!
+#! Physical checks of the Chaboche overstress law through the kernel API (dp), with the values of the
+#! composed hardening law evaluated by hard_stress/hard_dstress_dep (D-017.6b).
+
+program test_muscle_vp_chaboche
+    implicit none
+    logical :: passed
+    call test_chaboche_voce_value(passed)
+    if (.not. passed) STOP 1
+    call test_chaboche_derivatives(passed)
+    if (.not. passed) STOP 2
+    call test_chaboche_perzyna_equivalence(passed)
+    if (.not. passed) STOP 3
+    call test_chaboche_inactive_threshold(passed)
+    if (.not. passed) STOP 4
+    print *, "Passed!", passed
+end program test_muscle_vp_chaboche
+
+subroutine test_chaboche_voce_value(passed)
+    ! Nonlinear C11000 hardening distinguishes viscous K from the current yield stress.
+    ! Voce parameters: Navarrete et al. (2025), Table 2.
+    use muscle_kinds, only : dp
+    use muscle_hard_laws, only : hard_stress, hard_vocemod_dp
+    use muscle_vp_overstress_laws, only : os_flow_rate, os_chaboche_dp
+    use muscle_test_utils, only : check_approx
+    implicit none
+    logical, intent(out) :: passed
+    type(os_chaboche_dp) :: law
+    type(hard_vocemod_dp) :: h
+    real(dp), parameter :: ep = 0.002_dp
+    ! Scalar reference evaluated independently with 60-digit decimal arithmetic.
+    real(dp), parameter :: TOL = 1.0e-13_dp ! Round-off; Measured: 3.8e-16 relative.
+    passed = .true.
+    h = hard_vocemod_dp(Sy=154.6_dp, k=345.8_dp, q=122.1_dp, n=620.7_dp)
+    law = os_chaboche_dp(k=80.0_dp, n=2.3_dp)
+    call check_approx(passed, "Voce flow", os_flow_rate(law, 400.0_dp, ep, hard_stress(h, ep)), &
+                      4.776681187143114305_dp, tol=TOL)
+end subroutine test_chaboche_voce_value
+
+subroutine test_chaboche_derivatives(passed)
+    ! Fractional exponent and steep hardening; states near (1.05 Y) and far (2 Y)
+    ! from the threshold test the chain rule against central differences (default step of the
+    ! finite-difference macros, the one of the historical `derivative`).
+    use muscle_kinds, only : dp
+    use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_vocemod_dp
+    use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp
+    use muscle_test_utils, only : check_approx
+    implicit none
+    logical, intent(out) :: passed
+    type(os_chaboche_dp) :: law
+    type(hard_vocemod_dp) :: h
+    real(dp) :: sigma, y, ep, num_sigma, num_ep
+    real(dp), parameter :: TOL = 1.0e-8_dp ! Central differences; Measured: 1.8e-9 relative or less.
+    real(dp), parameter :: factors(2) = [1.05_dp, 2.0_dp]
+    integer :: i
+    passed = .true.
+    h = hard_vocemod_dp(Sy=154.6_dp, k=345.8_dp, q=122.1_dp, n=620.7_dp)
+    law = os_chaboche_dp(k=80.0_dp, n=2.3_dp)
+    ep = 0.002_dp
+    y = hard_stress(h, ep)
+    do i = 1, 2
+        sigma = factors(i)*y
+        @:FD_DERIV(num_sigma, os_flow_rate(law, {x}, ep, y), sigma, dp)
+        @:FD_DERIV(num_ep, os_flow_rate(law, sigma, {x}, hard_stress(h, {x})), ep, dp)
+        call check_approx(passed, "dsigma", os_dflow_dsigma(law, sigma, ep, y)/num_sigma, 1.0_dp, tol=TOL)
+        call check_approx(passed, "dep", os_dflow_dep(law, sigma, ep, y, hard_dstress_dep(h, ep))/num_ep, 1.0_dp, &
+                          tol=TOL)
+    end do
+end subroutine test_chaboche_derivatives
+
+subroutine test_chaboche_perzyna_equivalence(passed)
+    ! K = Y(ep) and eta = 1 give the Perzyna flow and stress slope at an active state
+    ! with g /= 1. With hardening, the strain slopes differ by Y/sigma_eq because K stays
+    ! fixed while Y moves; Perzyna divides by the current Y.
+    use muscle_kinds, only : dp
+    use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_bilinear_dp
+    use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp, &
+        os_perzyna_dp
+    use muscle_test_utils, only : check_approx
+    implicit none
+    logical, intent(out) :: passed
+    type(os_chaboche_dp) :: law
+    type(os_perzyna_dp) :: ref
+    type(hard_bilinear_dp) :: h
+    real(dp), parameter :: sigma = 200.0_dp, ep = 0.002_dp
+    real(dp), parameter :: TOL = 1.0e-13_dp ! Algebraic equivalence; Measured: 3.5e-16 relative.
+    real(dp) :: y, dy
+    passed = .true.
+    h = hard_bilinear_dp(y0=80.0_dp, K=100.0_dp)
+    y = hard_stress(h, ep)
+    dy = hard_dstress_dep(h, ep)
+    law = os_chaboche_dp(k=y, n=2.3_dp)
+    ref = os_perzyna_dp(eta=1.0_dp, n=law%n)
+    call check_approx(passed, "Perzyna flow", os_flow_rate(law, sigma, ep, y), os_flow_rate(ref, sigma, ep, y), tol=TOL)
+    call check_approx(passed, "Perzyna dsigma", os_dflow_dsigma(law, sigma, ep, y), os_dflow_dsigma(ref, sigma, ep, y), &
+                      tol=TOL)
+    call check_approx(passed, "Perzyna dep", os_dflow_dep(law, sigma, ep, y, dy), &
+                      os_dflow_dep(ref, sigma, ep, y, dy)*y/sigma, tol=TOL)
+end subroutine test_chaboche_perzyna_equivalence
+
+subroutine test_chaboche_inactive_threshold(passed)
+    ! Fractional n<1 exposes accidental powers of negative/zero overstress in derivatives.
+    use muscle_kinds, only : dp
+    use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_bilinear_dp
+    use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp
+    use muscle_test_utils, only : check_approx
+    implicit none
+    logical, intent(out) :: passed
+    type(os_chaboche_dp) :: law
+    type(hard_bilinear_dp) :: h
+    real(dp), parameter :: ep = 0.2_dp
+    real(dp) :: y, dy
+    passed = .true.
+    h = hard_bilinear_dp(y0=80.0_dp, K=100.0_dp)
+    y = hard_stress(h, ep)
+    dy = hard_dstress_dep(h, ep)
+    law = os_chaboche_dp(k=30.0_dp, n=0.5_dp)
+    ! Inactive scalar identities are exact; Measured: 0.
+    call check_approx(passed, "below flow", os_flow_rate(law, 70.0_dp, ep, y), 0.0_dp, tol=0.0_dp)
+    call check_approx(passed, "below dsigma", os_dflow_dsigma(law, 70.0_dp, ep, y), 0.0_dp, tol=0.0_dp)
+    call check_approx(passed, "below dep", os_dflow_dep(law, 70.0_dp, ep, y, dy), 0.0_dp, tol=0.0_dp)
+    call check_approx(passed, "threshold flow", os_flow_rate(law, 100.0_dp, ep, y), 0.0_dp, tol=0.0_dp)
+    call check_approx(passed, "threshold dsigma", os_dflow_dsigma(law, 100.0_dp, ep, y), 0.0_dp, tol=0.0_dp)
+    call check_approx(passed, "threshold dep", os_dflow_dep(law, 100.0_dp, ep, y, dy), 0.0_dp, tol=0.0_dp)
+end subroutine test_chaboche_inactive_threshold

@@ -15,7 +15,10 @@
 # Opt-outs:
 # - `! lint: allow(<rule>)` at the end of a line skips that rule on that line.
 # - `! lint: host-only` anywhere in a template exempts the whole file from the GPU kernel
-#   rules (oop, device, alloc, procarg, io): use it for host code such as dispatchers or drivers.
+#   rules device, alloc and io: use it for host code such as drivers (LAPACK, UDTIO). The rules
+#   oop and procarg (no dynamic dispatch, no procedure arguments, D-018.18b) apply to every library
+#   source (src/, include/), host-only or not; `class(...)` only in the type-bound wrappers of
+#   the tensor types (`*_tbp`, historical API kept by D-018.18e).
 # Exit status != 0 on any failure.
 
 set -u
@@ -77,6 +80,8 @@ mapfile -t py_files < <(listed 'tools/fypp/*.py')
 # Library templates subject to the GPU kernel rules
 mapfile -t kernel_files < <(printf '%s\n' "${fypp_files[@]}" | grep -E '^(src|include)/' \
                             | xargs -r grep -L '! lint: host-only')
+# Every library source (templates and plain Fortran, host-only included): no dynamic dispatch
+mapfile -t library_files < <(printf '%s\n' "${fortran_files[@]}" | grep -E '^(src|include)/')
 
 echo "== lint: ${#fypp_files[@]} templates (${#kernel_files[@]} kernel), ${#fortran_files[@]} Fortran sources"
 
@@ -92,6 +97,27 @@ done
 report cpp "cpp directive in a template, use #:if defined(...)" \
     "$(grep -nP '^\s*#\s*(if|ifdef|ifndef|elif|else|endif|define|undef|include)\b' \
        "${fypp_files[@]}" 2>/dev/null)"
+
+# The library is compiled with -cpp, which reads every line, comments included: an odd number of
+# apostrophes (or double quotes) in a comment is an unterminated character literal for cpp and
+# gives a "missing terminating ' character" warning in every module that includes the line. Rewrite
+# the comment without them (no possessive 's, no lone primes).
+if (( ${#library_files[@]} > 0 )); then
+    report quote "odd number of ' or \" in a comment of a library source (cpp warning)" "$(perl -ne '
+        # fypp directives and their continuation lines are Python, not Fortran
+        my $directive = /^\s*(#|[\$\@]:)/ || ($cont && /^\s*&/);
+        $cont = $directive && /&\s*$/;
+        next if $directive || /lint:\s*allow\(quote\)/;
+        chomp(my $l = $_);
+        $l =~ s/\$\{.*?\}\$/FYPP/g;
+        # comment: the text after the first ! outside a character literal
+        $l =~ /^((?:\x27[^\x27]*\x27|"[^"]*"|[^\x27"!])*)!(.*)$/ or next;
+        my $comment = $2;
+        my $sq = () = $comment =~ /\x27/g;
+        my $dq = () = $comment =~ /"/g;
+        print "$ARGV:$.: $_" if $sq % 2 || $dq % 2;
+    } continue { if (eof) { close ARGV; $cont = 0 } }' "${library_files[@]}")"
+fi
 
 # Kinds and literals (precision-kinds.md)
 rule kind "hard-coded or default real kind, use real(\${k}\$) or real(dp)" \
@@ -109,18 +135,24 @@ rule literal "real literal without kind (default real is single precision)" \
     '(?i)(?<![\w.])(\d+\.\d*|\.\d+)(e[+-]?\d+)?(?![\w.])|(?<![\w.])\d+e[+-]?\d+(?![\w.])' \
     "${fypp_files[@]}"
 
-# GPU kernel rules (gpu-static-dispatch.md)
+# Static dispatch in the whole library (gpu-static-dispatch.md, D-018.18b): no abstract types,
+# deferred bindings, select type or procedure arguments/pointers, host-only code included
 rule oop "dynamic dispatch (abstract/deferred/select type)" \
-    '(?i)\babstract\b(?!\s+interface)|\bdeferred\b|\bselect\s+type\b' "${kernel_files[@]}"
-
-# Per-procedure kernel rules (D-011): a `class(...)` dummy only in the type-bound wrappers
-# (`*_tbp`, historical API), and every other pure/elemental procedure marked @:DEVICE().
-if (( ${#kernel_files[@]} > 0 )); then
-    report oop "class(...) outside a type-bound wrapper (*_tbp)" "$(perl -ne '
+    '(?i)\babstract\b(?!\s+interface)|\bdeferred\b|\bselect\s+type\b' "${library_files[@]}"
+rule procarg "procedure arguments/pointers" '(?i)\bprocedure\s*\(' "${library_files[@]}"
+# A `class(...)` dummy only in the type-bound wrappers of the tensor types (`*_tbp`, D-011,
+# D-018.18e): src/tensors/ and their common macros (include/muscle_tensor_common.fypp)
+if (( ${#library_files[@]} > 0 )); then
+    report oop "class(...) outside a type-bound wrapper of a tensor type (*_tbp)" "$(perl -ne '
         if (/^\s*(?:pure\s+|elemental\s+|recursive\s+)*(?:function|subroutine)\s+([\w\$\{\}.]+)/i) { $p = $1 }
         $p = "" if /^\s*end\s+(function|subroutine)\b/i;
-        print "$ARGV:$.: $_" if /\bclass\s*\(/i && !/^\s*!/ && $p !~ /_tbp$/ && !/lint:\s*allow\(oop\)/;
-    } continue { close ARGV if eof' "${kernel_files[@]}")"
+        $tbp = $p =~ /_tbp$/ && $ARGV =~ m{^(src/tensors/|include/muscle_tensor_)};
+        print "$ARGV:$.: $_" if /\bclass\s*\(/i && !/^\s*!/ && !$tbp && !/lint:\s*allow\(oop\)/;
+    } continue { close ARGV if eof' "${library_files[@]}")"
+fi
+
+# Per-procedure kernel rule (D-011): every pure/elemental procedure marked @:DEVICE().
+if (( ${#kernel_files[@]} > 0 )); then
     report device "pure/elemental kernel procedure without @:DEVICE()" "$(perl -ne '
         if (/^\s*((?:pure|elemental)\s+(?:\w+\s+)*?(?:function|subroutine))\s+([\w\$\{\}.]+)/i) {
             ($name, $line, $dev) = ($2, $., 0);
@@ -133,7 +165,6 @@ if (( ${#kernel_files[@]} > 0 )); then
     } continue { close ARGV if eof' "${kernel_files[@]}")"
 fi
 rule alloc "allocatable/pointer" '(?i)\b(allocatable|pointer)\b' "${kernel_files[@]}"
-rule procarg "procedure arguments/pointers" '(?i)\bprocedure\s*\(' "${kernel_files[@]}"
 rule io "I/O or stop in kernel code" \
     '(?i)^\s*(\d+\s+)?(if\s*\(.*\)\s*)?(print\b|write\s*\(|read\s*\(|stop\b|error\s+stop\b)' \
     "${kernel_files[@]}"

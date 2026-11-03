@@ -8,25 +8,16 @@
 
 module muscle_math_operations
     !! Eigenvalues of symmetric second-order tensors (`eigenvals`, kernel routines for each real kind:
-    !! `eigenvals_3D2Osym_sp`, `eigenvals_3D2Osym_dp`) and, re-exported from the host-only
-    !! `muscle_math_operations_host`, the finite-difference derivatives `derivative`,
-    !! `derivative_escalar_tensor3x3`, `derivative_escalar_tensor3x3sym` and
-    !! `derivative_escalar_tensor3x3sym2` (sp/dp, they take the function as a `procedure(...)`
-    !! argument, D-016).
+    !! `eigenvals_3D2Osym_sp`, `eigenvals_3D2Osym_dp`).
     use muscle_kinds, only : sp, dp
     use muscle_tensors
     use muscle_tensor_2osym, only : square
-    use muscle_math_operations_host
     implicit none
     private
 
     public :: eigenvals
-    public :: derivative, derivative_escalar_tensor3x3, derivative_escalar_tensor3x3sym, &
-              derivative_escalar_tensor3x3sym2
 #:for k in REAL_KINDS
     public :: eigenvals_3D2Osym_${k}$
-    public :: derivative_escalar_tensor3x3_${k}$, derivative_escalar_tensor3x3sym_${k}$, &
-              derivative_escalar_tensor3x3sym2_${k}$
 #:endfor
 
     interface eigenvals

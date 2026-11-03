@@ -35,26 +35,28 @@ subroutine test_CPB06ex2_reduces_to_CPB06(passed)
     use muscle_tensors
     use muscle_yield_cpb06ex2
     use muscle_yield_cpb06
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
     ! Same eigenvalues and powers in both models: round-off only. Measured: 1.6e-16
     real(real64), parameter :: TOL = 1D-12
-    type(CPB06ex2) :: yld
-    type(CPB06) :: cpb
+    type(yield_cpb06ex2_dp) :: yld
+    type(yield_cpb06_dp) :: cpb
     type(ten_3D2Osym) :: s
     passed = .true.
-    call cpb%init(1D0,-0.2D0,0.3D0,0.15D0,0.8D0,-0.4D0,-0.1D0,0.2D0,1.2D0, &
+    call yield_cpb06_init_dp(cpb, 1D0,-0.2D0,0.3D0,0.15D0,0.8D0,-0.4D0,-0.1D0,0.2D0,1.2D0, &
                   1.3D0,0.7D0,1.1D0,0.25D0,4D0)
-    call yld%init(1D0,-0.2D0,0.3D0,0.15D0,0.8D0,-0.4D0,-0.1D0,0.2D0,1.2D0, &
+    call yield_cpb06ex2_init_dp(yld, 1D0,-0.2D0,0.3D0,0.15D0,0.8D0,-0.4D0,-0.1D0,0.2D0,1.2D0, &
                   1.3D0,0.7D0,1.1D0,0.25D0, &
                   1D0,-0.2D0,0.3D0,0.15D0,0.8D0,-0.4D0,-0.1D0,0.2D0,1.2D0, &
                   1.3D0,0.7D0,1.1D0,0.25D0,4D0)
     call s%init((/120.5D0,-35.25D0,60.75D0,42.5D0,-28D0,33.25D0/))
-    call check_approx(passed, 'CPB06 reduction coupled', yld%stress_eq(s), cpb%stress_eq(s), &
+    call check_approx(passed, 'CPB06 reduction coupled', yield_stress_eq(yld, s), yield_stress_eq(cpb, s), &
                       tol=TOL)
     s = -s
-    call check_approx(passed, 'CPB06 reduction compression', yld%stress_eq(s), cpb%stress_eq(s), &
+    call check_approx(passed, 'CPB06 reduction compression', yield_stress_eq(yld, s), yield_stress_eq(cpb, s), &
                       tol=TOL)
 end subroutine test_CPB06ex2_reduces_to_CPB06
 
@@ -65,19 +67,21 @@ subroutine test_CPB06ex2_isotropic_vonmises(passed)
     use muscle_tensors
     use muscle_yield_cpb06ex2
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
     ! Closed form against eigenvalues: round-off only. Measured: 1.7e-16
     real(real64), parameter :: TOL = 1D-12
-    type(CPB06ex2) :: yld
-    type(VonMises) :: vm
+    type(yield_cpb06ex2_dp) :: yld
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: s
     passed = .true.
-    call yld%init(1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0, &
+    call yield_cpb06ex2_init_dp(yld, 1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0, &
                   1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0,2D0)
     call s%init((/120.5D0,-35.25D0,60.75D0,42.5D0,-28D0,33.25D0/))
-    call check_approx(passed, 'VonMises coupled', yld%stress_eq(s), vm%stress_eq(s), tol=TOL)
+    call check_approx(passed, 'VonMises coupled', yield_stress_eq(yld, s), yield_stress_eq(vm, s), tol=TOL)
 end subroutine test_CPB06ex2_isotropic_vonmises
 
 subroutine CPB06ex2_test_materials(yld)
@@ -87,19 +91,21 @@ subroutine CPB06ex2_test_materials(yld)
     ! Called by test_CPB06ex2_paper_tables, test_CPB06ex2_tension_compression_asymmetry,
     ! test_CPB06ex2_pressure_insensitive and the gradient and Hessian tests
     use muscle_yield_cpb06ex2
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     implicit none
-    type(CPB06ex2), intent(out) :: yld(3)
-    call yld(1)%init(1.283D0,0.208D0,-0.421D0,0.208D0,0.535D0,-0.791D0,-0.421D0,-0.791D0,0.746D0, &
+    type(yield_cpb06ex2_dp), intent(out) :: yld(3)
+    call yield_cpb06ex2_init_dp(yld(1), 1.283D0,0.208D0,-0.421D0,0.208D0,0.535D0,-0.791D0,-0.421D0,-0.791D0,0.746D0, &
                      1.156D0,1.418D0,1.329D0,0.030D0, &
                      1.283D0,0.380D0,-0.001D0,0.380D0,2.145D0,0.792D0,-0.001D0,0.792D0,0.218D0, &
                      1.721D0,1.418D0,1.329D0,-0.027D0,5D0)
-    call yld(2)%init(0.250D0,-1.399D0,-0.971D0,-1.399D0,-0.375D0,-2.254D0, &
+    call yield_cpb06ex2_init_dp(yld(2), 0.250D0,-1.399D0,-0.971D0,-1.399D0,-0.375D0,-2.254D0, &
                      -0.971D0,-2.254D0,-0.831D0, &
                      1.316D0,1.403D0,1.101D0,0D0, &
                      0.250D0,-0.840D0,-1.330D0,-0.840D0,0.780D0,-0.565D0, &
                      -1.330D0,-0.565D0,0.479D0, &
                      1.413D0,1.094D0,1.448D0,0D0,12D0)
-    call yld(3)%init(0.771D0,-0.914D0,-1.312D0,-0.914D0,0.654D0,-1.209D0, &
+    call yield_cpb06ex2_init_dp(yld(3), 0.771D0,-0.914D0,-1.312D0,-0.914D0,0.654D0,-1.209D0, &
                      -1.312D0,-1.209D0,-0.293D0, &
                      1.617D0,1D0,1D0,0.295D0, &
                      0.771D0,0.337D0,-0.764D0,0.337D0,0.646D0,-0.401D0,-0.764D0,-0.401D0,-0.022D0, &
@@ -111,38 +117,40 @@ subroutine test_CPB06ex2_paper_tables(passed)
     ! Called by program test_muscle_yield_cpb06ex2 (STOP 3)
     use muscle_tensors
     use muscle_yield_cpb06ex2
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
-    type(CPB06ex2) :: yld(3)
+    type(yield_cpb06ex2_dp) :: yld(3)
     type(ten_3D2Osym) :: s
     passed = .true.
     call CPB06ex2_test_materials(yld)
     ! Table 2 has three-digit parameters: 2e-3 allows their rounding, not solver error.
     ! Measured: 9.7e-4 or less (Y_C)
     call s%init((/1D0,0D0,0D0,0D0,0D0,0D0/))
-    call check_approx(passed, 'steel Table 3 X_T', 1D0/yld(1)%stress_eq(s), 1D0, tol=2D-3)
+    call check_approx(passed, 'steel Table 3 X_T', 1D0/yield_stress_eq(yld(1), s), 1D0, tol=2D-3)
     call s%init((/0D0,1D0,0D0,0D0,0D0,0D0/))
-    call check_approx(passed, 'steel Table 3 Y_T', 1D0/yld(1)%stress_eq(s), 0.914D0, tol=2D-3)
+    call check_approx(passed, 'steel Table 3 Y_T', 1D0/yield_stress_eq(yld(1), s), 0.914D0, tol=2D-3)
     call s%init((/-1D0,0D0,0D0,0D0,0D0,0D0/))
-    call check_approx(passed, 'steel Table 3 X_C', 1D0/yld(1)%stress_eq(s), 0.963D0, tol=2D-3)
+    call check_approx(passed, 'steel Table 3 X_C', 1D0/yield_stress_eq(yld(1), s), 0.963D0, tol=2D-3)
     call s%init((/0D0,-1D0,0D0,0D0,0D0,0D0/))
-    call check_approx(passed, 'steel Table 3 Y_C', 1D0/yld(1)%stress_eq(s), 0.960D0, tol=2D-3)
+    call check_approx(passed, 'steel Table 3 Y_C', 1D0/yield_stress_eq(yld(1), s), 0.960D0, tol=2D-3)
     call s%init((/0D0,0D0,-1D0,0D0,0D0,0D0/))
-    call check_approx(passed, 'steel Table 3 Z_C', 1D0/yld(1)%stress_eq(s), 0.958D0, tol=2D-3)
+    call check_approx(passed, 'steel Table 3 Z_C', 1D0/yield_stress_eq(yld(1), s), 0.958D0, tol=2D-3)
     ! Table 9 has two decimals: half a last digit plus rounding of Table 8. Measured: 2.6e-4 or less
     call s%init((/0D0,0.5D0,0.5D0,0D0,0.5D0,0D0/))
-    call check_approx(passed, '6111 Table 9 YZ 45', 1D0/yld(2)%stress_eq(s), 1.07D0, tol=6D-3)
+    call check_approx(passed, '6111 Table 9 YZ 45', 1D0/yield_stress_eq(yld(2), s), 1.07D0, tol=6D-3)
     call s%init((/0.5D0,0D0,0.5D0,0D0,0D0,0.5D0/))
-    call check_approx(passed, '6111 Table 9 ZX 45', 1D0/yld(2)%stress_eq(s), 1.04D0, tol=6D-3)
+    call check_approx(passed, '6111 Table 9 ZX 45', 1D0/yield_stress_eq(yld(2), s), 1.04D0, tol=6D-3)
     call s%init((/0D0,0D0,0D0,0D0,1D0,0D0/))
-    call check_approx(passed, '6111 Table 9 YZ shear', 1D0/yld(2)%stress_eq(s), 0.67D0, tol=6D-3)
+    call check_approx(passed, '6111 Table 9 YZ shear', 1D0/yield_stress_eq(yld(2), s), 0.67D0, tol=6D-3)
     call s%init((/0D0,0D0,0D0,0D0,0D0,1D0/))
-    call check_approx(passed, '6111 Table 9 ZX shear', 1D0/yld(2)%stress_eq(s), 0.65D0, tol=6D-3)
+    call check_approx(passed, '6111 Table 9 ZX shear', 1D0/yield_stress_eq(yld(2), s), 0.65D0, tol=6D-3)
     ! Independent 90-digit trace-of-powers reference, all normal and shear components coupled.
     ! Measured: 1.7e-16
     call s%init((/120.5D0,-35.25D0,60.75D0,42.5D0,-28D0,33.25D0/))
-    call check_approx(passed, '6111 independent scalar', yld(2)%stress_eq(s), &
+    call check_approx(passed, '6111 independent scalar', yield_stress_eq(yld(2), s), &
                       170.33623760110963846252D0, tol=1D-12)
 end subroutine test_CPB06ex2_paper_tables
 
@@ -152,17 +160,19 @@ subroutine test_CPB06ex2_tension_compression_asymmetry(passed)
     ! Called by program test_muscle_yield_cpb06ex2 (STOP 4)
     use muscle_tensors
     use muscle_yield_cpb06ex2
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
-    type(CPB06ex2) :: yld(3)
+    type(yield_cpb06ex2_dp) :: yld(3)
     type(ten_3D2Osym) :: s
     passed = .true.
     call CPB06ex2_test_materials(yld)
     call s%init((/1D0,0D0,0D0,0D0,0D0,0D0/))
-    call check_approx(passed, 'AZ31 RD normalization', yld(3)%stress_eq(s), 1D0, tol=1D-12)
+    call check_approx(passed, 'AZ31 RD normalization', yield_stress_eq(yld(3), s), 1D0, tol=1D-12)
     call check_true(passed, 'AZ31 tension compression asymmetry', &
-                    yld(3)%stress_eq(-s) > 1.5D0*yld(3)%stress_eq(s))
+                    yield_stress_eq(yld(3), -s) > 1.5D0*yield_stress_eq(yld(3), s))
 end subroutine test_CPB06ex2_tension_compression_asymmetry
 
 subroutine test_CPB06ex2_pressure_insensitive(passed)
@@ -172,6 +182,8 @@ subroutine test_CPB06ex2_pressure_insensitive(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_cpb06ex2
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
@@ -179,49 +191,51 @@ subroutine test_CPB06ex2_pressure_insensitive(passed)
     ! maps to an exact zero and the shifted state differs only by the rounding of the
     ! differences. Measured: exact (0) in both checks
     real(real64), parameter :: TOL = 1D-12
-    type(CPB06ex2) :: yld(3)
+    type(yield_cpb06ex2_dp) :: yld(3)
     type(ten_3D2Osym) :: s, p
     passed = .true.
     call CPB06ex2_test_materials(yld)
     call p%init((/250D0,250D0,250D0,0D0,0D0,0D0/))
-    call check_approx(passed, 'AZ31 hydrostatic stress = 0', yld(3)%stress_eq(p), 0D0, tol=TOL)
+    call check_approx(passed, 'AZ31 hydrostatic stress = 0', yield_stress_eq(yld(3), p), 0D0, tol=TOL)
     call s%init((/120.5D0,-35.25D0,60.75D0,42.5D0,-28D0,33.25D0/))
-    call check_approx(passed, 'AZ31 coupled state plus pressure 250', yld(3)%stress_eq(s + p), &
-                      yld(3)%stress_eq(s), tol=TOL)
+    call check_approx(passed, 'AZ31 coupled state plus pressure 250', yield_stress_eq(yld(3), s + p), &
+                      yield_stress_eq(yld(3), s), tol=TOL)
 end subroutine test_CPB06ex2_pressure_insensitive
 
 subroutine test_CPB06ex2_gradient_vs_numeric(passed)
-    ! Gradient against the finite-difference gradient of the base class, for the three
+    ! Gradient against the finite-difference gradient (yield_test_numeric), for the three
     ! materials in a state with normal and shear components together, and for 6111-T4 in a
     ! rotated state where two principal values of Sigma differ by about 1e-8 relatively
     ! Called by program test_muscle_yield_cpb06ex2 (STOP 6)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_cpb06ex2
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
-    ! Central differences of the base class: truncation and the rounding of eigenvals.
+    ! Central differences (yield_test_numeric): truncation and the rounding of eigenvals.
     ! Measured: 1.2e-10 or less
     real(real64), parameter :: TOL = 1D-8
-    type(CPB06ex2) :: yld(3)
+    type(yield_cpb06ex2_dp) :: yld(3)
     type(ten_3D2Osym) :: s
     passed = .true.
     call CPB06ex2_test_materials(yld)
     call s%init((/120.5D0,-35.25D0,60.75D0,42.5D0,-28D0,33.25D0/))
     ! Steel: k and kp of opposite sign, a = 5
-    call check_approx(passed, 'gradient vs numeric: steel', yld(1)%dstressEq_dstress(s), &
-                      yld(1)%dstressEq_dstress_numeric(s), tol=TOL)
+    call check_approx(passed, 'gradient vs numeric: steel', yield_dstress_eq(yld(1), s), &
+                      num_dstress_eq(yld(1), s), tol=TOL)
     ! 6111-T4: a = 12, the largest powers of the three
-    call check_approx(passed, 'gradient vs numeric: 6111-T4', yld(2)%dstressEq_dstress(s), &
-                      yld(2)%dstressEq_dstress_numeric(s), tol=TOL)
+    call check_approx(passed, 'gradient vs numeric: 6111-T4', yield_dstress_eq(yld(2), s), &
+                      num_dstress_eq(yld(2), s), tol=TOL)
     ! AZ31B: kp = 0.9, the second transformation almost one-sided
-    call check_approx(passed, 'gradient vs numeric: AZ31B', yld(3)%dstressEq_dstress(s), &
-                      yld(3)%dstressEq_dstress_numeric(s), tol=TOL)
+    call check_approx(passed, 'gradient vs numeric: AZ31B', yield_dstress_eq(yld(3), s), &
+                      num_dstress_eq(yld(3), s), tol=TOL)
     call s%init((/197.95561360136386D0,-58.04950942270237D0,-139.90610417866154D0, &
                   -50.24571382486021D0,11.771438358965758D0,-51.20999705196427D0/))
     call check_approx(passed, 'gradient vs numeric: 6111-T4, close pair', &
-                      yld(2)%dstressEq_dstress(s), yld(2)%dstressEq_dstress_numeric(s), tol=TOL)
+                      yield_dstress_eq(yld(2), s), num_dstress_eq(yld(2), s), tol=TOL)
 end subroutine test_CPB06ex2_gradient_vs_numeric
 
 subroutine test_CPB06ex2_gradient_analytical(passed)
@@ -232,53 +246,57 @@ subroutine test_CPB06ex2_gradient_analytical(passed)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_cpb06ex2
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
     ! Exact references: round-off only. Measured: 2.8e-16 or less
     real(real64), parameter :: TOL = 1D-12
-    type(CPB06ex2) :: yld(3)
+    type(yield_cpb06ex2_dp) :: yld(3)
     type(ten_3D2Osym) :: s, expected
     passed = .true.
     call CPB06ex2_test_materials(yld)
     call s%init((/120.5D0,-35.25D0,60.75D0,42.5D0,-28D0,33.25D0/))
     call check_approx(passed, 'gradient Euler identity: 6111-T4', &
-                      yld(2)%dstressEq_dstress(s) .ddot. s, yld(2)%stress_eq(s), tol=TOL)
+                      yield_dstress_eq(yld(2), s) .ddot. s, yield_stress_eq(yld(2), s), tol=TOL)
     call expected%init((/0.63491427307714846058430D0, -0.8014554330786033866660D0, &
                          0.16654116000145492608174D0, 0.29454772703368041095476D0, &
                          -0.2025437658446382337026D0, 0.28693805299310551585208D0/))
-    call check_approx(passed, 'gradient vs reference: 6111-T4', yld(2)%dstressEq_dstress(s), &
+    call check_approx(passed, 'gradient vs reference: 6111-T4', yield_dstress_eq(yld(2), s), &
                       expected, tol=TOL)
 end subroutine test_CPB06ex2_gradient_analytical
 
 subroutine test_CPB06ex2_hessian_vs_numeric(passed)
-    ! Hessian against the finite-difference Hessian of the base class, for the three
+    ! Hessian against the finite-difference Hessian (yield_test_numeric), for the three
     ! materials in a state with normal and shear components together (it fills the
     ! normal-shear entries and the mixed block between Sigma and Sigmap)
     ! Called by program test_muscle_yield_cpb06ex2 (STOP 8)
     use, intrinsic :: iso_fortran_env
     use muscle_tensors
     use muscle_yield_cpb06ex2
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
-    ! Central second differences of the base class: rounding of eps*f/h**2 and a truncation
+    ! Central second differences (yield_test_numeric): rounding of eps*f/h**2 and a truncation
     ! O(h**2) that grows with a. Measured: 2.3e-7 or less
     real(real64), parameter :: TOL = 1D-6
-    type(CPB06ex2) :: yld(3)
+    type(yield_cpb06ex2_dp) :: yld(3)
     type(ten_3D2Osym) :: s
     passed = .true.
     call CPB06ex2_test_materials(yld)
     call s%init((/120.5D0,-35.25D0,60.75D0,42.5D0,-28D0,33.25D0/))
     ! Steel: k and kp of opposite sign, a = 5
-    call check_approx(passed, 'Hessian vs numeric: steel', yld(1)%ddstressEq_ddstress(s), &
-                      yld(1)%ddstressEq_ddstress_numeric(s), tol=TOL)
+    call check_approx(passed, 'Hessian vs numeric: steel', yield_ddstress_eq(yld(1), s), &
+                      num_ddstress_eq(yld(1), s), tol=TOL)
     ! 6111-T4: a = 12, the largest powers of the three
-    call check_approx(passed, 'Hessian vs numeric: 6111-T4', yld(2)%ddstressEq_ddstress(s), &
-                      yld(2)%ddstressEq_ddstress_numeric(s), tol=TOL)
+    call check_approx(passed, 'Hessian vs numeric: 6111-T4', yield_ddstress_eq(yld(2), s), &
+                      num_ddstress_eq(yld(2), s), tol=TOL)
     ! AZ31B: kp = 0.9, the second transformation almost one-sided
-    call check_approx(passed, 'Hessian vs numeric: AZ31B', yld(3)%ddstressEq_ddstress(s), &
-                      yld(3)%ddstressEq_ddstress_numeric(s), tol=TOL)
+    call check_approx(passed, 'Hessian vs numeric: AZ31B', yield_ddstress_eq(yld(3), s), &
+                      num_ddstress_eq(yld(3), s), tol=TOL)
 end subroutine test_CPB06ex2_hessian_vs_numeric
 
 subroutine test_CPB06ex2_hessian_analytical(passed)
@@ -290,13 +308,15 @@ subroutine test_CPB06ex2_hessian_analytical(passed)
     use muscle_tensors
     use muscle_yield_cpb06ex2
     use muscle_yield_vonmises
+    use muscle_yield_criteria
+    use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
     implicit none
     logical, intent(out) :: passed
     ! Exact references: round-off only. Measured: 8.8e-16 or less
     real(real64), parameter :: TOL = 1D-12
-    type(CPB06ex2) :: yld(3), iso, az
-    type(VonMises) :: vm
+    type(yield_cpb06ex2_dp) :: yld(3), iso, az
+    type(yield_vonmises_dp) :: vm
     type(ten_3D2Osym) :: s
     type(ten_3D4O3sym) :: expected
     passed = .true.
@@ -315,20 +335,20 @@ subroutine test_CPB06ex2_hessian_analytical(passed)
                          -1.203204133117417298D-03, -1.562479102753076962D-03, &
                          1.593231315479766300D-03, 7.834179435264228015D-04, &
                          7.790611592266542687D-04/))
-    call check_approx(passed, 'Hessian vs reference: 6111-T4', yld(2)%ddstressEq_ddstress(s), &
+    call check_approx(passed, 'Hessian vs reference: 6111-T4', yield_ddstress_eq(yld(2), s), &
                       expected, tol=TOL)
     ! Isotropic limit with a = 2, pure shear xy: one principal value is exactly zero, where
     ! the curvature has a finite limit
-    call iso%init(1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0, &
+    call yield_cpb06ex2_init_dp(iso, 1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0, &
                   1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0,2D0)
     call s%init((/0D0,0D0,0D0,50D0,0D0,0D0/))
     call check_approx(passed, 'Hessian vs von Mises: isotropic, zero principal value', &
-                      iso%ddstressEq_ddstress(s), vm%ddstressEq_ddstress(s), tol=TOL)
+                      yield_ddstress_eq(iso, s), yield_ddstress_eq(vm, s), tol=TOL)
     ! AZ31B maps with a = 2 under pure shear xy: with k, kp /= 0 the zero principal value has
     ! no classical Hessian, and curvature takes the mean of the one-sided values. Reference:
     ! symmetric second differences of Eq. (8) in 90-digit arithmetic, which give that mean
     ! independently of the spectral formula
-    call az%init(0.771D0,-0.914D0,-1.312D0,-0.914D0,0.654D0,-1.209D0, &
+    call yield_cpb06ex2_init_dp(az, 0.771D0,-0.914D0,-1.312D0,-0.914D0,0.654D0,-1.209D0, &
                  -1.312D0,-1.209D0,-0.293D0, &
                  1.617D0,1D0,1D0,0.295D0, &
                  0.771D0,0.337D0,-0.764D0,0.337D0,0.646D0,-0.401D0,-0.764D0,-0.401D0,-0.022D0, &
@@ -341,5 +361,5 @@ subroutine test_CPB06ex2_hessian_analytical(passed)
                          -6.913000751205860530D-03, -1.078399642214253829D-02, &
                          0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     call check_approx(passed, 'Hessian vs reference: AZ31B maps, a = 2, zero principal value', &
-                      az%ddstressEq_ddstress(s), expected, tol=TOL)
+                      yield_ddstress_eq(az, s), expected, tol=TOL)
 end subroutine test_CPB06ex2_hessian_analytical

@@ -2,14 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = [('C', 'real', '', r'Strain rate sensitivity \( C \).', '0.0'), &
-    &          ('epdmax', 'real', '', r'Reference equivalent plastic strain rate \( \dot\epsilon_{p0} \).', '1.0'), &
-    &          ('m', 'real', '', r'Thermal softening exponent \( m \) (0: no softening).', '0.0'), &
-    &          ('Troom', 'real', '', r'Reference (room) temperature \( T_{room} \) (K).', '293.15'), &
-    &          ('Tmelt', 'real', '', r'Melting temperature \( T_{melt} \) (K).', '1.0e3'), &
-    &          ('T_current', 'real', '', r'Current temperature \( T \) (K), set by the caller.', '0.0')]
-#! The OO adapter keeps the inherited numeric dstress_dep of Base_viscoplastic_law (D-017.8)
-#:set OO_BINDINGS = [('flow_stress', 'flow_stress', None)]
+#:set PARAMS = model_param_list('vp', 'jcfull')
 
 module muscle_vp_jcfull
     !! Full Johnson-Cook viscoplastic law (strain rate and thermal softening terms): the static yield
@@ -36,23 +29,15 @@ module muscle_vp_jcfull
     !! Kernel API: parameter types `vp_jcfull_<k>` and `pure` functions `vp_flow_stress_jcfull_<k>`,
     !! `vp_dflow_dep_jcfull_<k>`, `vp_dflow_depd_jcfull_<k>` and `vp_dstress_dep_jcfull_<k>` for each
     !! real kind, also through the generics `vp_*` of `muscle_vp_laws`.
-    !! `JohnsonCook_full_visco_hardening` is the historical OO type (host only, removed in Phase 7),
-    !! with the composed law in its polymorphic component `hard_law`; it binds only `flow_stress`, so
-    !! its `dstress_dep` is still the inherited finite difference of `Base_viscoplastic_law` (same
-    !! results as the original code, D-017.8). For \( \dot\epsilon_p \le 0 \) the adapter evaluates
-    !! `hard_law` (the original code did not): same result, but `hard_law` must be allocated.
+    !! `dstress_dep` is analytic (D-018.12b; the original OO code used a finite difference, D-017.8).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_vp_base, only : Base_viscoplastic_law
-    use muscle_hard_base, only : Base_hardening_laws
     implicit none
     private
 
     $:MODEL_PUBLIC('vp', 'jcfull')
-    public :: JohnsonCook_full_visco_hardening
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('vp', 'jcfull', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('vp', 'jcfull', 'JohnsonCook_full_visco_hardening', 'Base_viscoplastic_law', PARAMS, bindings=OO_BINDINGS)
 
 contains
 #:for k in REAL_KINDS
@@ -108,6 +93,5 @@ contains
 
     $:MODEL_DEFAULT('vp', 'jcfull', 'dstress_dep', k)
 #:endfor
-    $:OO_ADAPTER_PROCS('vp', 'jcfull', 'JohnsonCook_full_visco_hardening', PARAMS, bindings=OO_BINDINGS)
 
 end module muscle_vp_jcfull

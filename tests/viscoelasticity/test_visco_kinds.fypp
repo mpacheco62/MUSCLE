@@ -5,18 +5,15 @@
 #! Kernel API of the viscoelastic family (D-017.13) in every kind, through the generics of
 #! muscle_visco_laws (step coefficients, freeze, update with explicit states) and muscle_elasticity_laws
 #! (the frozen elasticity):
-#! - load histories of Maxwell and Kelvin-Voigt parameter sets: the dp kernel against the
-#!   historical OO types (coefficients, freeze, stress of the frozen elasticity, update and commit
-#!   of Viscoelastic_history), bit for bit; sp against dp (sp inputs converted to dp);
+#! - load histories of Maxwell and Kelvin-Voigt parameter sets: sp against dp (sp inputs converted to
+#!   dp; the dp values are fixed by the golden test);
 #! - status (D-017.13b): dt < 0 is an error in both models, dt = 0 valid in Maxwell (G_alg = G_0)
 #!   and an error in Kelvin-Voigt; invalid parameters in the initializers and in visco_state_init;
 #! - frozen elasticity 2D vs 3D (dims-2d-3d.md, with a history stress without 23/13 components),
-#!   and its kernel 2D deviatoric stress against the one inherited by Elasticity_frozen;
-#! - the historical OO types and the kernel generics imported in the same scope (test_visco_cases:
-#!   Visco_coefficients of muscle_visco_base with visco_step_coefficients of muscle_visco_laws);
+#!   and its kernel 2D deviatoric stress against `.dev.` of its 2D stress (the historical path);
 #! - a `pure`, `@:DEVICE()` procedure that advances several steps of Maxwell at a point, against
 #!   the same steps written in the test (bit for bit).
-#! Tolerances: dp vs OO exact (same code); 2D vs 3D TOL_APPROX_<k> relative to the largest
+#! Tolerances: 2D vs 3D TOL_APPROX_<k> relative to the largest
 #! component; sp vs dp relative to the largest value of each group (coefficient, stress, state) over
 #! the history: TOL_APPROX_sp (measured 6.0e-7; the error of gamma in sp is at most 3.0e-6 by design,
 #! D-017.13a).
@@ -92,15 +89,10 @@ module test_visco_cases
         ${', '.join('visco_{0}_{1}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$, &
         ${', '.join('visco_state_{0}, visco_coefs_{0}, elas_frozen_{0}'.format(k) for k in REAL_KINDS)}$
     use muscle_visco_maxwell, only : visco_maxwell_init, visco_maxwell_init_normalized, &
-        visco_maxwell_shear_instantaneous, Generalized_maxwell
-    use muscle_visco_kelvin, only : visco_kelvin_init, Kelvin_voigt
+        visco_maxwell_shear_instantaneous
+    use muscle_visco_kelvin, only : visco_kelvin_init
     use muscle_elasticity_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev
-    ! The historical type Visco_coefficients (= visco_coefs_dp) and the kernel generics in the same
-    ! scope: the family procedure is `step_coefficients` because Fortran names are case insensitive
-    ! (a generic visco_coefficients clashed with the type)
-    use muscle_visco_base, only : Base_viscoelasticity, Visco_coefficients
-    use muscle_visco_state, only : Viscoelastic_history
-    use muscle_visco_frozen, only : Elasticity_frozen
+    use muscle_tensors, only : operator(.dev.)
     use test_visco_point, only : NSTEPS, ${', '.join('maxwell_steps_' + k for k in REAL_KINDS)}$
     use muscle_test_utils, only : check_true, check_scaled
     implicit none
@@ -209,73 +201,30 @@ contains
 #:endfor
 #:endfor
 
-    subroutine history_oo(vm, iset, rec)
-        !! The same load history through the historical OO API (dp).
-        class(Base_viscoelasticity), intent(in) :: vm
-        integer, intent(in) :: iset
-        real(dp), intent(out) :: rec(NREC, NSTEPS)
-        type(Viscoelastic_history) :: hist
-        type(Visco_coefficients) :: coefs
-        type(Elasticity_frozen) :: elas
-        type(ten_3D2Osym_dp) :: strain, s
-        integer :: i
-
-        call vm%init_history(hist)
-        do i = 1, NSTEPS
-            coefs = vm%coefficients(dt_of(iset, i))
-            elas = vm%freeze(coefs, hist)
-            strain%vals = strain_at(i)
-            s = elas%stress(strain)
-            call vm%update(coefs, strain, hist)
-            rec(:, i) = [coefs%dt, coefs%k_alg, coefs%g_alg, coefs%decay, coefs%weight, real(STATUS_OK, dp), &
-                s%vals, hist%state_np1%strain_e%vals, reshape(hist%state_np1%h, [6*MAX_VISCO_BRANCHES]), &
-                real(hist%state_np1%n_branches, dp)]
-            call hist%commit()
-        end do
-    end subroutine history_oo
-
     subroutine test_histories(passed)
-        !! Kernel dp vs OO (bit for bit) and sp vs dp of every parameter set.
+        !! sp vs dp of every parameter set.
         logical, intent(inout) :: passed
-        real(dp) :: rd(NREC, NSTEPS), roo(NREC, NSTEPS)
+        real(dp) :: rd(NREC, NSTEPS)
 #:if 'sp' in REAL_KINDS
         real(dp) :: rs(NREC, NSTEPS), sc
         integer :: j
 #:endif
-        type(Generalized_maxwell) :: gm
-        type(Kelvin_voigt) :: kv
         character(len=48) :: lab
         integer :: iset
 
         do iset = 1, NSETS
             write(lab, '(a, i0)') 'visco history, parameter set ', iset
-            select case (iset)
-            case (1)
-                call gm%set_parameters(2000.0_dp, 100.0_dp, [200.0_dp, 300.0_dp], [0.1_dp, 1.0_dp])
-            case (2)
-                call gm%set_parameters(2000.0_dp, 0.0_dp, [100.0_dp, 1000.0_dp, 10.0_dp], [1.0e-3_dp, 1.0_dp, 1.0e3_dp])
-            case (3)
-                call gm%set_parameters_normalized(1000.0_dp, 0.3_dp, [0.3_dp, 0.5_dp], [0.2_dp, 5.0_dp])
-            case (4)
-                call kv%set_parameters(2000.0_dp, 100.0_dp, 50.0_dp, 20.0_dp)
-            case default
-                call kv%set_parameters(0.0_dp, 0.0_dp, 30.0_dp, 5.0_dp)
-            end select
             if (iset <= 3) then
                 call history_maxwell_dp(iset, rd)
-                call history_oo(gm, iset, roo)
 #:if 'sp' in REAL_KINDS
                 call history_maxwell_sp(iset, rs)
 #:endif
             else
                 call history_kelvin_dp(iset, rd)
-                call history_oo(kv, iset, roo)
 #:if 'sp' in REAL_KINDS
                 call history_kelvin_sp(iset, rs)
 #:endif
             end if
-            call check_true(passed, trim(lab) // ': dp kernel == OO (bits)', &
-                same_bits(reshape(rd, [size(rd)]), reshape(roo, [size(roo)])))
 #:if 'sp' in REAL_KINDS
             ! sp vs dp: each group of values (coefficients, stress, state) with its own scale
             do j = 1, NREC
@@ -426,27 +375,26 @@ contains
     end subroutine test_point_${k}$
 #:endfor
 
-    subroutine test_frozen_oo_dev_2d(passed)
-        !! Kernel 2D deviatoric stress of the frozen elasticity (analytic) against the one that
-        !! Elasticity_frozen inherits from Base_elasticity (`.dev.` of stress_2D): same up to rounding.
+    subroutine test_frozen_dev_2d(passed)
+        !! Kernel 2D deviatoric stress of the frozen elasticity (analytic) against `.dev.` of its 2D
+        !! stress (the path of the retired OO type, inherited from Base_elasticity, which the golden
+        !! test fixes): same up to rounding.
         logical, intent(inout) :: passed
-        type(Elasticity_frozen) :: oo
         type(elas_frozen_dp) :: el
         type(ten_3D2Osym_dp) :: h
         type(ten_2D2Osym_dp) :: e2, a, b
         integer :: i
 
         h%vals = [10.0_dp, -20.0_dp, 30.0_dp, -4.0_dp, 5.0_dp, -6.0_dp]
-        call oo%set(1500.0_dp, 250.0_dp, h)
         el = elas_frozen_dp(k_alg=1500.0_dp, g_alg=250.0_dp, stress_hist=h)
         e2%vals = [1.0e-3_dp, -4.0e-4_dp, 2.0e-4_dp, 6.0e-4_dp]
-        a = oo%stress_dev(e2)
+        a = .dev. elas_stress(el, e2)
         b = elas_stress_dev(el, e2)
         do i = 1, 4
-            call check_scaled(passed, 'frozen 2D stress_dev kernel vs OO', b%vals(i), a%vals(i), &
+            call check_scaled(passed, 'frozen 2D stress_dev kernel vs .dev. stress', b%vals(i), a%vals(i), &
                 maxval(abs(a%vals)), TOL_APPROX_dp)
         end do
-    end subroutine test_frozen_oo_dev_2d
+    end subroutine test_frozen_dev_2d
 
     subroutine run_all(code)
         !! Runs every test; `code` is the number of the first failed group (0: all passed).
@@ -469,7 +417,7 @@ contains
         if (.not. passed .and. code == 0) code = 4
 #:endfor
         passed = .true.
-        call test_frozen_oo_dev_2d(passed)
+        call test_frozen_dev_2d(passed)
         if (.not. passed .and. code == 0) code = 5
     end subroutine run_all
 

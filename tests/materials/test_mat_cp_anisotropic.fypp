@@ -1,0 +1,199 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "mat_golden_common.fypp"
+#:set ANISO = muscle_meta.load_python_file('anisotropic_cases.py', base=_THIS_FILE_)
+#! Materials of the single steps (anisotropic_cases.py); cp_cpb06_swift also runs the large increments
+#:set MATS = sorted({c['material'] for c in ANISO.CASES})
+#! dp array constructor of a tuple of literals without kind
+#:set dp_vec = lambda xs: '[' + ', '.join(x + '_dp' for x in xs) + ']'
+
+program test_mat_cp_anisotropic
+    !! Physical checks of the anisotropic yield criteria with the closest point kernel (D-018.18g),
+    !! ported from the historical OO tests test_muscle_solver_closest_point_{hill48,cpb06,cpb06ex2,
+    !! yld2004,large_increment}.f90, in every kind:
+    !!
+    !! - single plastic steps from the virgin state (anisotropic_cases.py): stress, plastic strain and
+    !!   equivalent plastic strain (0.05) against the mpmath values, the Lankford coefficient of the
+    !!   tension cases, the tension/compression ratio of the compression cases, at most 7 Newton
+    !!   iterations (D-018.11e) and the analytic tangent against finite differences of the kernel;
+    !! - single increments of 100 to 1000 yield strains of CPB06 (Ti-6Al-4V, Tuninetti et al. 2013,
+    !!   Wp = 48.66; E = 70000, nu = 0.33, Swift k = 500, e0 = 0.01, n = 0.2) along six directions:
+    !!   every converged state is admissible (yield consistency, elastic law, associated flow,
+    !!   plastic incompressibility), quantities independent of the iterations.
+    $:MAT_TEST_USES(MATS)
+    use muscle_tensors, only : operator(-)
+    use muscle_elasticity_laws, only : elas_stress
+    use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq
+    use muscle_hard_laws, only : hard_stress
+    use muscle_test_utils, only : check_scaled
+    implicit none
+
+    $:MAT_TEST_DECLS()
+    ! Single steps. dp: the tolerances of the OO tests (relative to the largest component; scalars
+    ! absolute below 1). sp: measured maxima in brackets (gfortran 15.2 Debug), margin 5-10x.
+    real(dp), parameter :: TOL_STRESS_dp = 1.0e-5_dp
+        !! Stress and plastic strain against the mpmath values (OO: at the historical Newton
+        !! tolerance 1e-5; measured <= 4e-6).
+    real(sp), parameter :: TOL_STRESS_sp = 1.0e-4_sp
+        !! Stress and plastic strain, sp [1.9e-5].
+    real(dp), parameter :: TOL_PF_dp = 1.0e-7_dp
+        !! Equivalent plastic strain (absolute).
+    real(sp), parameter :: TOL_PF_sp = 2.0e-6_sp
+        !! Equivalent plastic strain (absolute), sp [3.4e-7].
+    real(dp), parameter :: TOL_R_dp = 1.0e-6_dp
+        !! Lankford coefficient and tension/compression ratio.
+    real(sp), parameter :: TOL_R_sp = 5.0e-5_sp
+        !! Lankford coefficient [6.6e-6] and tension/compression ratio [6.8e-8], sp.
+    real(sp), parameter :: TOL_TAN_sp = 2.0e-4_sp
+        !! Analytic tangent against finite differences, sp [3.5e-5] (dp: `tol_tan` of each case).
+    integer, parameter :: MAX_ITERS_dp = 7, MAX_ITERS_sp = 7
+        !! Newton iterations from the virgin state (D-018.11e).
+    ! Large increments (OO tolerances in dp)
+    real(dp), parameter :: TOL_YIELD_dp = 1.0e-6_dp
+        !! |sigma_eq - sigma_y|/sigma_y0.
+    real(sp), parameter :: TOL_YIELD_sp = 1.0e-4_sp
+        !! |sigma_eq - sigma_y|/sigma_y0, sp [1.8e-5] (dp: measured 3.1e-10).
+    real(dp), parameter :: TOL_LAW_dp = 1.0e-10_dp
+        !! Stress against the elastic law of the elastic strain (relative).
+    real(sp), parameter :: TOL_LAW_sp = 1.0e-6_sp
+        !! Elastic law, sp [0: the kernel stress is the elastic law of the elastic strain].
+    real(dp), parameter :: TOL_FLOW_dp = 1.0e-5_dp
+        !! Plastic strain against ep times the gradient of the criterion (relative).
+    real(sp), parameter :: TOL_FLOW_sp = 2.0e-5_sp
+        !! Associated flow, sp [3.2e-6].
+    real(dp), parameter :: TOL_TRACE_dp = 1.0e-8_dp
+        !! |tr(strain_p)|/|strain_p|.
+    real(sp), parameter :: TOL_TRACE_sp = 5.0e-7_sp
+        !! Plastic incompressibility, sp [8.7e-8] (dp: measured 0).
+
+    passed = .true.
+#:for k in REAL_KINDS
+#:for c in ANISO.CASES
+    call step_${c['material']}$_${k}$('${c['name']}$', '${c['yld']}$', &
+        ${dp_vec(c['strain'])}$, &
+        ${dp_vec(c['stress'])}$, &
+        ${dp_vec(c['strain_p'])}$, &
+        ${dp_vec(c.get('width', ('0.0',) * 6))}$, ${c.get('r', '0.0')}$_dp, &
+        ${dp_vec(c.get('ratio', ('0.0', '0.0')))}$, ${c.get('tol_tan', '0.0')}$_dp)
+#:endfor
+    call large_increments_${k}$()
+#:endfor
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_mat_cp_anisotropic'
+        stop 1
+    end if
+
+contains
+$:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in ANISO.CASES if 'tol_tan' in c])
+#:for k in REAL_KINDS
+#:for m in MATS
+
+    subroutine step_${m}$_${k}$(label, yld, strain_in, stress_ex, strain_p_ex, width, r_ex, ratio, tol_tan)
+        !! Single plastic step of `${m}$` from the virgin state (parameter set `yld`), `real(${k}$)`.
+        character(len=*), intent(in) :: label
+            !! Name of the case.
+        character(len=*), intent(in) :: yld
+            !! Parameter set of the yield criterion (golden_params.py).
+        real(dp), intent(in) :: strain_in(6), stress_ex(6), strain_p_ex(6)
+            !! Total strain, expected stress and plastic strain.
+        real(dp), intent(in) :: width(6), r_ex
+            !! Width projection and expected Lankford coefficient (no check if `width` is zero).
+        real(dp), intent(in) :: ratio(2)
+            !! Stress of the tension case and expected tension/compression ratio (no check if zero).
+        real(dp), intent(in) :: tol_tan
+            !! dp tolerance of the tangent against finite differences (no check if zero).
+        type(${muscle_meta.material_type(m, k)}$) :: mat
+        type(${state_t(m, k)}$) :: sn, snp1
+        type(${tname('3D2Osym', k)}$) :: strain, stress
+        type(${tname('3D4O2sym', k)}$) :: tangent
+        real(${k}$) :: ep(6), w(6), r
+        integer :: status, iters
+
+        call make_${m}$_${k}$(golden_case(0, '${m}$', 'lin1000', '', 'swift_small', yld, 200, 0.0_dp, 0.0_dp), mat)
+        sn = ${state_t(m, k)}$()
+        strain%vals = real(strain_in, ${k}$)
+        call mat_update(mat, strain, 0.0_${k}$, sn, snp1, stress, tangent, status, iters)
+        ep = snp1%strain_p%vals
+        call check_true(passed, label // ' converged (${k}$)', status == STATUS_OK)
+        call check_approx(passed, label // ' stress (${k}$)', stress%vals, real(stress_ex, ${k}$), TOL_STRESS_${k}$)
+        call check_approx(passed, label // ' equivalent plastic strain (${k}$)', snp1%strain_pf, 0.05_${k}$, &
+            TOL_PF_${k}$)
+        call check_approx(passed, label // ' plastic strain (${k}$)', ep, real(strain_p_ex, ${k}$), TOL_STRESS_${k}$)
+        call check_true(passed, label // ' iterations (${k}$)', iters >= 1 .and. iters <= MAX_ITERS_${k}$)
+        if (any(width /= 0.0_dp)) then
+            ! t (x) t : strain_p with tensorial shears (the factor 2 of the contraction)
+            w = real(width, ${k}$)
+            r = (sum(w(1:3)*ep(1:3)) + 2.0_${k}$*sum(w(4:6)*ep(4:6)))/ep(3)
+            call check_approx(passed, label // ' Lankford coefficient (${k}$)', r, real(r_ex, ${k}$), TOL_R_${k}$)
+        end if
+        if (ratio(1) /= 0.0_dp) then
+            call check_approx(passed, label // ' tension/compression ratio (${k}$)', &
+                real(ratio(1), ${k}$)/abs(stress%vals(1)), real(ratio(2), ${k}$), TOL_R_${k}$)
+        end if
+        if (tol_tan > 0.0_dp) then
+#:if k == 'dp'
+            call fd_check_${m}$_${k}$(label, mat, strain, 0.0_${k}$, sn, tangent, tol_tan)
+#:else
+            call fd_check_${m}$_${k}$(label, mat, strain, 0.0_${k}$, sn, tangent, TOL_TAN_${k}$)
+#:endif
+        end if
+    end subroutine step_${m}$_${k}$
+#:endfor
+
+    subroutine large_increments_${k}$()
+        !! Increments of 100, 300 and 1000 yield strains of CPB06 from the virgin state along six
+        !! directions (uniaxial RD and TD, equibiaxial, plane strain RD, shear xy, general), scaled to
+        !! a largest component of lambda times the yield strain, `real(${k}$)` (sp: 100 and 300).
+        real(${k}$), parameter :: YOUNG = 70000.0_${k}$, LAMBDAS(3) = [100.0_${k}$, 300.0_${k}$, 1000.0_${k}$]
+#:if k == 'dp'
+        integer, parameter :: NLAMBDA = 3
+#:else
+        integer, parameter :: NLAMBDA = 2
+            !! 1000 yield strains do not converge in sp along four of the directions (the Newton
+            !! tolerance 1e-5 sigma_y is near the rounding of the stress of such an increment).
+#:endif
+        real(${k}$), parameter :: D(6, 6) = reshape([ &
+            1.0_${k}$, -0.5_${k}$, -0.5_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            -0.5_${k}$, 1.0_${k}$, -0.5_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            1.0_${k}$, 1.0_${k}$, -2.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            1.0_${k}$, 0.0_${k}$, -1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            0.8_${k}$, -0.3_${k}$, -0.5_${k}$, 0.4_${k}$, -0.2_${k}$, 0.3_${k}$], [6, 6])
+        type(${muscle_meta.material_type('cp_cpb06_swift', k)}$) :: mat
+        type(${state_t('cp_cpb06_swift', k)}$) :: sn, snp1
+        type(${tname('3D2Osym', k)}$) :: strain, stress, law, flow
+        type(${tname('3D4O2sym', k)}$) :: tangent
+        real(${k}$) :: sigma_y0, eps_y, ep(6)
+        character(len=64) :: label
+        integer :: i, j, status, iters
+
+        call make_cp_cpb06_swift_${k}$(golden_case(0, 'cp_cpb06_swift', 'lin1000', '', 'swift_li', 'cpb06-li', 200, &
+            0.0_dp, 0.0_dp), mat)
+        call elas_linear_init(mat%elas, young=YOUNG, poisson=0.33_${k}$)
+        sigma_y0 = hard_stress(mat%hard, 0.0_${k}$)
+        eps_y = sigma_y0/YOUNG
+        sn = ${state_t('cp_cpb06_swift', k)}$()
+        do j = 1, 6
+            do i = 1, NLAMBDA
+                write(label, '(a, i0, a, f6.0)') 'cpb06 large increment, direction ', j, ', lambda ', LAMBDAS(i)
+                strain%vals = (LAMBDAS(i)*eps_y/maxval(abs(D(:, j))))*D(:, j)
+                call mat_update(mat, strain, 0.0_${k}$, sn, snp1, stress, tangent, status, iters)
+                call check_true(passed, trim(label) // ' converged (${k}$)', status == STATUS_OK)
+                ep = snp1%strain_p%vals
+                call check_scaled(passed, trim(label) // ' yield consistency (${k}$)', yield_stress_eq(mat%yield, stress), &
+                    hard_stress(mat%hard, snp1%strain_pf), sigma_y0, TOL_YIELD_${k}$)
+                law = elas_stress(mat%elas, strain - snp1%strain_p)
+                call check_approx(passed, trim(label) // ' elastic law (${k}$)', stress%vals, law%vals, TOL_LAW_${k}$)
+                flow = yield_dstress_eq(mat%yield, stress)
+                call check_approx(passed, trim(label) // ' associated flow (${k}$)', ep, &
+                    snp1%strain_pf*flow%vals, TOL_FLOW_${k}$)
+                call check_scaled(passed, trim(label) // ' incompressibility (${k}$)', sum(ep(1:3)), 0.0_${k}$, &
+                    sqrt(sum(ep(1:3)**2) + 2.0_${k}$*sum(ep(4:6)**2)), TOL_TRACE_${k}$)
+            end do
+        end do
+    end subroutine large_increments_${k}$
+#:endfor
+
+end program test_mat_cp_anisotropic

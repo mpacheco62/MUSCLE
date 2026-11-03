@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the yield family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = []
+#:set PARAMS = model_param_list('yield', 'vonmises')
 
 module muscle_yield_vonmises
     !! Von Mises yield criterion (no parameters):
@@ -20,21 +20,17 @@ module muscle_yield_vonmises
     !! `yield_ddstress_eq_vonmises_3D_<k>(prm, sigma)` and the joint evaluation
     !! `yield_stress_eq_and_derivatives_vonmises_3D_<k>(prm, sigma, f, df[, ddf])` (the three in turn)
     !! for each real kind, also through the generics `yield_*` of `muscle_yield_criteria`.
-    !! `VonMises` is the historical OO type (host only, removed in Phase 7).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
         & iden_4O4T, iden_4O3T, operator(.dev.), operator(.ddot.), operator(.tdotsym.), operator(*), &
         & operator(/), operator(-), assignment(=)
-    use muscle_yield_base, only : Base_yield_critera
     implicit none
     private
 
     $:MODEL_PUBLIC('yield', 'vonmises')
-    public :: VonMises
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('yield', 'vonmises', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('yield', 'vonmises', 'VonMises', 'Base_yield_critera', PARAMS)
 
 contains
 #:for k in REAL_KINDS
@@ -74,6 +70,5 @@ contains
     $:MODEL_JOINT_DEFAULT('yield', 'vonmises', k, d)
 #:endfor
 #:endfor
-    $:OO_ADAPTER_PROCS('yield', 'vonmises', 'VonMises', PARAMS)
 
 end module muscle_yield_vonmises

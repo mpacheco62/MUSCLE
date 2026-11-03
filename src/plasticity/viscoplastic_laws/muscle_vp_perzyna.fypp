@@ -2,8 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the overstress family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = [('eta', 'real', '', r'Viscosity (relaxation time) \( \eta \).', '1.0'), &
-    &          ('n', 'real', '', r'Rate sensitivity exponent \( N \).', '1.0')]
+#:set PARAMS = model_param_list('os', 'perzyna')
 
 module muscle_vp_perzyna
     !! Perzyna overstress law:
@@ -23,21 +22,15 @@ module muscle_vp_perzyna
     !! Kernel API: parameter types `os_perzyna_<k>` and `pure` functions
     !! `os_flow_rate_perzyna_<k>(prm, sigma_eq, ep, sy)`, `os_dflow_dsigma_perzyna_<k>(prm, sigma_eq,
     !! ep, sy)` and `os_dflow_dep_perzyna_<k>(prm, sigma_eq, ep, sy, dsy_dep)` for each real kind,
-    !! also through the generics `os_*` of `muscle_vp_overstress_laws`. `Perzyna_overstress` is the
-    !! historical OO type (host only, removed in Phase 7), with the composed law in its polymorphic
-    !! component `hard_law`.
+    !! also through the generics `os_*` of `muscle_vp_overstress_laws`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_vp_overstress_base, only : Base_overstress_law
-    use muscle_hard_base, only : Base_hardening_laws
     implicit none
     private
 
     $:MODEL_PUBLIC('os', 'perzyna')
-    public :: Perzyna_overstress
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('os', 'perzyna', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('os', 'perzyna', 'Perzyna_overstress', 'Base_overstress_law', PARAMS)
 
 contains
 #:for k in REAL_KINDS
@@ -78,6 +71,5 @@ contains
         res = -os_perzyna_dpsi_${k}$(prm, sigma_eq/sy - 1.0_${k}$)*sigma_eq*dsy_dep/sy**2
     end function os_dflow_dep_perzyna_${k}$
 #:endfor
-    $:OO_ADAPTER_PROCS('os', 'perzyna', 'Perzyna_overstress', PARAMS)
 
 end module muscle_vp_perzyna

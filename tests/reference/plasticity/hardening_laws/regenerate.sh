@@ -4,12 +4,14 @@
 #
 # Regenerates the golden values of the hardening laws
 # (tests/reference/plasticity/hardening_laws/hard_laws_dp.txt) by running the golden test
-# tests/plasticity/hardening_laws/test_hard_golden.f90 with `--write FILE`.
+# tests/plasticity/hardening_laws/test_hard_golden.fypp (kernel API, D-018.18f) with `--write FILE`.
+# The comment header of the existing file is kept, and so is every record that the new one matches for
+# the golden comparison (NaN = NaN; tests/reference/merge_golden.py); the other records are rewritten.
 #
 # ONLY run it on code whose behaviour IS the reference: this file was captured from the original
 # (pre-FYPP, OO) modules src/plasticity/hardening_laws/muscle_hard_{base,bilinear,ludwik,swift,
-# vocemod}.f90, and the test exists to detect any change against them. Regenerating after a
-# change would hide it. The test run by ctest never writes this file.
+# vocemod}.f90, the kernel API reproduces it bit for bit, and the test exists to detect any change
+# against them. Regenerating after a change would hide it. The test run by ctest never writes this file.
 #
 # Usage: tests/reference/plasticity/hardening_laws/regenerate.sh BUILD_DIR
 #   BUILD_DIR: a Debug build (no -ffast-math) with `cmake --build BUILD_DIR --target build_all_tests` done.
@@ -33,12 +35,5 @@ build_type=$(grep -m1 '^CMAKE_BUILD_TYPE:' "$build_dir/CMakeCache.txt" | cut -d=
 
 exe="$build_dir/tests/plasticity/hardening_laws/test_hard_golden"
 out="$ref_dir/hard_laws_dp.txt"
-tmp=$(mktemp)
-"$exe" --write "$tmp"
-{
-    echo "# Captured from commit $commit$dirty, $version, CMAKE_BUILD_TYPE=$build_type,"
-    echo "# by tests/reference/plasticity/hardening_laws/regenerate.sh (test_hard_golden --write)."
-    cat "$tmp"
-} > "$out"
-rm -f "$tmp"
-echo "wrote $out ($(grep -vc '^#' "$out") records)"
+"$ref_dir/../../write_golden.sh" "$exe" "$out" "commit $commit$dirty, $version, CMAKE_BUILD_TYPE=$build_type" \
+    "tests/reference/plasticity/hardening_laws/regenerate.sh (test_hard_golden --write)"

@@ -7,7 +7,8 @@
     &          'kin_pk2_to_kirchhoff', 'kin_kirchhoff_to_pk2', 'kin_cauchy_to_kirchhoff', 'kin_kirchhoff_to_cauchy', &
     &          'kin_pk2_to_pk1', 'kin_pk1_to_pk2', 'kin_cauchy_to_pk1', 'kin_pk1_to_cauchy', &
     &          'kin_push_forward_tangent', 'kin_pull_back_tangent', 'kin_rotate_to_corotational', &
-    &          'kin_rotate_from_corotational'] + ['kin_state_' + k for k in REAL_KINDS] + &
+    &          'kin_rotate_from_corotational', 'kin_jaumann_tangent', 'kin_volumetric_tangent', 'kin_spin_tangent', &
+    &          'kin_log_tangent', 'kin_spatial_log_tangent', 'kin_almansi_tangent'] + ['kin_state_' + k for k in REAL_KINDS] + &
     &         ['KIN_EIG_MIN_' + k for k in REAL_KINDS]
 
 module muscle_kin_laws
@@ -28,7 +29,11 @@ module muscle_kin_laws
     !! - `sig = kin_to_cauchy(prm, state, stress)`: Cauchy stress from the constitutive stress (work
     !!   conjugate of `state%strain`);
     !! - `c = kin_to_spatial_tangent(prm, state, tangent)`: spatial tangent from the constitutive
-    !!   one (no geometric term, D-017.14b);
+    !!   one, with the derivative of the strain measure (D-018.15f);
+    !! - `g = kin_geometric_tangent(prm, state, sigma)`: its geometric term at a fixed constitutive
+    !!   stress (Cauchy `sigma`); `c + g` is the tangent of the Jaumann rate of the Kirchhoff stress
+    !!   over J for \( \delta\mathbf{F} = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (Abaqus UMAT,
+    !!   ANSYS USERMAT; D-018.15f);
     !! - `kin_is_finite_strain(prm)`;
     !! - with a status other than `STATUS_OK` the outputs must not be used (D-017.14f): the state
     !!   is still computed (same bits as the historical OO kinematics);

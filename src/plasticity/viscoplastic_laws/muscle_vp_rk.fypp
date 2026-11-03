@@ -2,18 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_models_common.fypp"
 #! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = [('B0', 'real', '', r'Modulus of plasticity \( B_0 \).', None), &
-    &          ('ep0', 'real', '', r'Strain offset \( \epsilon_0 \).', None), &
-    &          ('n0', 'real', '', r'Hardening exponent at the reference rate \( n_0 \).', None), &
-    &          ('D2', 'real', '', r'Rate sensitivity of the hardening exponent \( D_2 \).', None), &
-    &          ('D1', 'real', '', r'Rate sensitivity of the effective stress \( D_1 \).', None), &
-    &          ('nu', 'real', '', r'Rate sensitivity of the modulus \( \nu \).', None), &
-    &          ('epdmin', 'real', '', r'Lower limit rate \( \dot\epsilon_{min} \).', None), &
-    &          ('epdmax', 'real', '', r'Upper limit rate \( \dot\epsilon_{max} \).', None), &
-    &          ('sig0', 'real', '', r'Effective stress at 0 K \( \sigma_0^* \).', None), &
-    &          ('m', 'real', '', r'Exponent of the effective stress \( m \).', None), &
-    &          ('epmin', 'real', '', r'Floor of the rate in the derivatives.', '1.0e-6'), &
-    &          ('epmax', 'real', '', r'Unused (historical component).', '10000.0')]
+#:set PARAMS = model_param_list('vp', 'rk')
 
 module muscle_vp_rk
     !! Rusinek-Klepaczko viscoplastic law (self-contained: it does not compose a hardening law):
@@ -43,18 +32,14 @@ module muscle_vp_rk
     !! `vp_dstress_dep_rk_<k>(prm, ep, epd, dt)` for each real kind, also through the generics `vp_*`
     !! of `muscle_vp_laws`. `dstress_dep` is computed with the time step inside (as the original
     !! code, same bits in dp), so it equals `dflow_dep + dflow_depd/dt` only up to rounding.
-    !! `RK_viscoplastic` is the historical OO type (host only, removed in Phase 7).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_vp_base, only : Base_viscoplastic_law
     implicit none
     private
 
     $:MODEL_PUBLIC('vp', 'rk')
-    public :: RK_viscoplastic
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('vp', 'rk', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('vp', 'rk', 'RK_viscoplastic', 'Base_viscoplastic_law', PARAMS)
 
 contains
 #:for k in REAL_KINDS
@@ -150,6 +135,5 @@ contains
         res = term1_deriv + term2_deriv
     end function vp_rk_drate_${k}$
 #:endfor
-    $:OO_ADAPTER_PROCS('vp', 'rk', 'RK_viscoplastic', PARAMS)
 
 end module muscle_vp_rk

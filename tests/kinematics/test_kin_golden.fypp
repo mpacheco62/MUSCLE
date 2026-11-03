@@ -1,0 +1,426 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_models_common.fypp"
+#:set KIN = model_family('kin').models
+#:set KIN_F = ['total_lagrangian', 'updated_lagrangian', 'material_logarithmic', 'spatial_logarithmic']
+
+module kin_golden_cases
+    !! Cases of the golden test of the kinematics family through the kernel API (D-018.18f): the state
+    !! of `kin_update`/`kin_corot_update`, the family functions (`kin_to_cauchy`,
+    !! `kin_to_spatial_tangent`, `kin_is_finite_strain`) and the functions of muscle_kin_finite (strain
+    !! measures, the ten stress conversions, push-forward and pull-back of tangents, rotation to and
+    !! from the corotational frame) of the six kinematics, on deterministic deformation gradients
+    !! (identity, rotations up to 180 degrees, stretches with repeated and distinct eigenvalues of C,
+    !! simple shear, strong compression, nearly singular F, det F < 0) and incremental sequences
+    !! (F_n, F_{n+1}) with small and large rotations. The kinematics family is 3D only.
+    !!
+    !! Removed with the OO layer (D-018.8, D-018.18l): the push-forward/pull-back records of the small
+    !! strain kinematics (identity bindings), the corotational records without a rotation and of the
+    !! polymorphic copy (the `has_rotation` flag of the OO type), the `update_F_base` records and the
+    !! defaults of the OO objects; `has_rotation` is no longer part of the corotational state record.
+    use muscle_kinds, only : dp
+    use muscle_tensors, only : ten_3D2O, ten_3D2Osym, ten_3D4O2sym
+    use muscle_kin_laws, only : kin_to_cauchy, kin_to_spatial_tangent, kin_is_finite_strain, kin_state_dp, &
+        ${', '.join('kin_' + m + '_dp' for m in KIN)}$
+    use muscle_kin_finite, only : kin_green_lagrange, kin_euler_almansi, kin_material_log, kin_spatial_log, &
+        kin_pk2_to_cauchy, kin_cauchy_to_pk2, kin_pk2_to_kirchhoff, kin_kirchhoff_to_pk2, kin_cauchy_to_kirchhoff, &
+        kin_kirchhoff_to_cauchy, kin_pk2_to_pk1, kin_pk1_to_pk2, kin_cauchy_to_pk1, kin_pk1_to_cauchy, &
+        kin_push_forward_tangent, kin_pull_back_tangent, kin_rotate_to_corotational, kin_rotate_from_corotational
+    use muscle_test_golden, only : golden_check
+    implicit none
+    private
+
+    public :: NCASES, case_name, case_F, rotation, record_base, record_finite, input_S, input_C, kin_name, NFINITE
+
+    interface record_base
+        !! Golden records of the family functions of a kinematics (every registered kinematics).
+        module procedure ${', '.join('record_base_' + m for m in KIN)}$
+    end interface record_base
+
+    interface record_finite
+        !! Golden records of the state and of the functions of muscle_kin_finite, then record_base.
+        module procedure ${', '.join('record_finite_' + m for m in KIN_F)}$
+    end interface record_finite
+
+    integer, parameter :: NCASES = 20
+        !! Number of deformation gradients.
+    integer, parameter :: NFINITE = 4
+        !! Number of concrete F-driven kinematics.
+    real(dp), parameter :: PI = 3.14159265358979323846264338327950288_dp
+
+
+contains
+
+    function kin_name(ik) result(name)
+        !! Name of the F-driven kinematics `ik`.
+        integer, intent(in) :: ik
+        character(len=:), allocatable :: name
+        select case (ik)
+        case (1); name = 'total_lagrangian'
+        case (2); name = 'updated_lagrangian'
+        case (3); name = 'material_logarithmic'
+        case default; name = 'spatial_logarithmic'
+        end select
+    end function kin_name
+
+    function rotation(axis, deg) result(Q)
+        !! Rotation of `deg` degrees about `axis` (Rodrigues), column-major 3x3 values.
+        real(dp), intent(in) :: axis(3), deg
+        real(dp) :: Q(9)
+        real(dp) :: n(3), c, s, t, m(3, 3)
+        n = axis/sqrt(sum(axis**2))
+        c = cos(deg*PI/180.0_dp)
+        s = sin(deg*PI/180.0_dp)
+        t = 1.0_dp - c
+        m(1, :) = [t*n(1)*n(1) + c, t*n(1)*n(2) - s*n(3), t*n(1)*n(3) + s*n(2)]
+        m(2, :) = [t*n(1)*n(2) + s*n(3), t*n(2)*n(2) + c, t*n(2)*n(3) - s*n(1)]
+        m(3, :) = [t*n(1)*n(3) - s*n(2), t*n(2)*n(3) + s*n(1), t*n(3)*n(3) + c]
+        Q = reshape(m, [9])
+    end function rotation
+
+    function matmul9(a, b) result(c)
+        !! Product of two column-major 3x3 value arrays.
+        real(dp), intent(in) :: a(9), b(9)
+        real(dp) :: c(9)
+        c = reshape(matmul(reshape(a, [3, 3]), reshape(b, [3, 3])), [9])
+    end function matmul9
+
+    function diag9(d) result(m)
+        real(dp), intent(in) :: d(3)
+        real(dp) :: m(9)
+        m = 0.0_dp
+        m([1, 5, 9]) = d
+    end function diag9
+
+    function case_name(ic) result(name)
+        !! Name of the deformation gradient `ic`.
+        integer, intent(in) :: ic
+        character(len=:), allocatable :: name
+        select case (ic)
+        case (1); name = 'identity'
+        case (2); name = 'rotation z 30'
+        case (3); name = 'rotation 111 120'
+        case (4); name = 'rotation x 180'
+        case (5); name = 'rotation 122 180'
+        case (6); name = 'rotation y 1e-6 deg'
+        case (7); name = 'rotation z 90'
+        case (8); name = 'uniaxial 1.5'
+        case (9); name = 'biaxial 1.2 1.2 0.7'
+        case (10); name = 'simple shear 0.5'
+        case (11); name = 'hydrostatic compression 0.5'
+        case (12); name = 'strong compression 0.05'
+        case (13); name = 'general distinct'
+        case (14); name = 'rotated uniaxial'
+        case (15); name = 'general large stretch rotated'
+        case (16); name = 'nearly singular diagonal 1e-9'
+        case (17); name = 'nearly singular general'
+        case (18); name = 'small strain'
+        case (19); name = 'reflection det < 0'
+        case default; name = 'rotated biaxial 180'
+        end select
+    end function case_name
+
+    function case_F(ic) result(F)
+        !! Deformation gradient `ic` (column-major values F11, F21, F31, F12, ...).
+        integer, intent(in) :: ic
+        real(dp) :: F(9)
+        select case (ic)
+        case (1); F = diag9([1.0_dp, 1.0_dp, 1.0_dp])
+        case (2); F = rotation([0.0_dp, 0.0_dp, 1.0_dp], 30.0_dp)
+        case (3); F = rotation([1.0_dp, 1.0_dp, 1.0_dp], 120.0_dp)
+        case (4); F = rotation([1.0_dp, 0.0_dp, 0.0_dp], 180.0_dp)
+        case (5); F = rotation([1.0_dp, 2.0_dp, 2.0_dp], 180.0_dp)
+        case (6); F = rotation([0.0_dp, 1.0_dp, 0.0_dp], 1.0e-6_dp)
+        case (7); F = rotation([0.0_dp, 0.0_dp, 1.0_dp], 90.0_dp)
+        case (8); F = diag9([1.5_dp, 1.0_dp, 1.0_dp])
+        case (9); F = diag9([1.2_dp, 1.2_dp, 0.7_dp])
+        case (10)
+            F = diag9([1.0_dp, 1.0_dp, 1.0_dp])
+            F(4) = 0.5_dp ! F12
+        case (11); F = diag9([0.5_dp, 0.5_dp, 0.5_dp])
+        case (12); F = diag9([0.05_dp, 1.1_dp, 1.05_dp])
+        case (13); F = [1.1_dp, 0.05_dp, 0.15_dp, 0.2_dp, 0.9_dp, -0.2_dp, -0.1_dp, 0.3_dp, 1.2_dp]
+        case (14)
+            F = matmul9(rotation([1.0_dp, -1.0_dp, 0.5_dp], 75.0_dp), diag9([1.3_dp, 0.9_dp, 0.9_dp]))
+        case (15)
+            F = matmul9(rotation([0.3_dp, 0.4_dp, -1.0_dp], 140.0_dp), &
+                [3.0_dp, 0.4_dp, -0.2_dp, 0.4_dp, 0.5_dp, 0.1_dp, -0.2_dp, 0.1_dp, 0.8_dp])
+        case (16); F = diag9([1.0_dp, 1.0_dp, 1.0e-9_dp])
+        case (17)
+            ! Third column = first + second columns + 1e-8 e3: det = 1e-8
+            F = [1.0_dp, 0.2_dp, 0.3_dp, 0.1_dp, 0.9_dp, -0.4_dp, 1.1_dp, 1.1_dp, -0.1_dp + 1.0e-8_dp]
+        case (18); F = [1.002_dp, 0.0_dp, 0.0_dp, 0.004_dp, 0.997_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.001_dp]
+        case (19); F = diag9([-1.0_dp, 1.2_dp, 0.9_dp])
+        case default
+            F = matmul9(rotation([0.0_dp, 1.0_dp, 1.0_dp], 180.0_dp), diag9([1.2_dp, 1.2_dp, 0.7_dp]))
+        end select
+    end function case_F
+
+    function input_S() result(S)
+        !! Symmetric stress applied to every transformation.
+        type(ten_3D2Osym) :: S
+        call S%init(xx=120.0_dp, yy=-35.0_dp, zz=60.0_dp, xy=25.0_dp, yz=-12.0_dp, xz=8.0_dp)
+    end function input_S
+
+    function input_P() result(P)
+        !! Non-symmetric first Piola-Kirchhoff-like stress.
+        type(ten_3D2O) :: P
+        P%vals = [90.0_dp, -14.0_dp, 22.0_dp, 31.0_dp, -48.0_dp, 6.0_dp, -17.0_dp, 9.0_dp, 55.0_dp]
+    end function input_P
+
+    function input_C() result(C)
+        !! 6x6 tangent with minor symmetries and no major symmetry.
+        type(ten_3D4O2sym) :: C
+        integer :: i, j
+        do j = 1, 6
+            do i = 1, 6
+                C%vals(i, j) = real(7*i - 3*j, dp) + 0.25_dp*real(i*j, dp)
+            end do
+            C%vals(j, j) = C%vals(j, j) + 1000.0_dp
+        end do
+    end function input_C
+
+    function input_R() result(R)
+        !! Rotation passed to rotate_to/from_corotational.
+        type(ten_3D2O) :: R
+        R%vals = rotation([2.0_dp, -1.0_dp, 0.5_dp], 50.0_dp)
+    end function input_R
+
+#:for m in KIN
+
+    subroutine record_base_${m}$(key, prm, state)
+        !! Golden records of the family functions of the ${m}$ kinematics at `state`.
+        character(len=*), intent(in) :: key
+        type(kin_${m}$_dp), intent(in) :: prm
+        type(kin_state_dp), intent(in) :: state
+        type(ten_3D2Osym) :: s, t
+        type(ten_3D4O2sym) :: c
+        real(dp) :: lfin
+
+        lfin = merge(1.0_dp, 0.0_dp, kin_is_finite_strain(prm))
+        call golden_check(key // ' | jacobian, is_finite_strain, get_strain', [state%J, lfin, state%strain%vals])
+#:if m == 'corotational'
+        s = kin_to_cauchy(prm, state, input_S())
+        t = kin_rotate_to_corotational(input_S(), state%R)
+        call golden_check(key // ' | push_forward_stress, pull_back_stress', [s%vals, t%vals])
+#:elif m != 'small_strain'
+        s = kin_pk2_to_cauchy(state, input_S())
+        t = kin_cauchy_to_pk2(state, input_S())
+        call golden_check(key // ' | push_forward_stress, pull_back_stress', [s%vals, t%vals])
+#:endif
+        s = kin_to_cauchy(prm, state, input_S())
+        call golden_check(key // ' | to_Cauchy', s%vals)
+#:if m == 'corotational'
+        c = kin_to_spatial_tangent(prm, state, input_C())
+        call golden_check(key // ' | push_forward_tangent', reshape(c%vals, [36]))
+        c = kin_rotate_to_corotational(input_C(), state%R)
+        call golden_check(key // ' | pull_back_tangent', reshape(c%vals, [36]))
+#:elif m != 'small_strain'
+        c = kin_push_forward_tangent(state, input_C())
+        call golden_check(key // ' | push_forward_tangent', reshape(c%vals, [36]))
+        c = kin_pull_back_tangent(state, input_C())
+        call golden_check(key // ' | pull_back_tangent', reshape(c%vals, [36]))
+#:endif
+        c = kin_to_spatial_tangent(prm, state, input_C())
+        call golden_check(key // ' | to_spatial_tangent', reshape(c%vals, [36]))
+        s = kin_rotate_to_corotational(input_S(), input_R())
+        t = kin_rotate_from_corotational(input_S(), input_R())
+        call golden_check(key // ' | rotate_to/from_corotational', [s%vals, t%vals])
+    end subroutine record_base_${m}$
+#:endfor
+#:for m in KIN_F
+
+    subroutine record_finite_${m}$(key, prm, state, full)
+        !! State, strain measures and conversions of muscle_kin_finite (if `full`) of the ${m}$
+        !! kinematics, then `record_base`.
+        character(len=*), intent(in) :: key
+        type(kin_${m}$_dp), intent(in) :: prm
+        type(kin_state_dp), intent(in) :: state
+        logical, intent(in) :: full
+        type(ten_3D2Osym) :: a, b, c, d, e, f
+        type(ten_3D2O) :: P, Q
+
+        call golden_check(key // ' | state F, F_inv, R_rot, J, C_mat, b_spat, b_inv', [state%F%vals, &
+            state%F_inv%vals, state%R%vals, state%J, state%C%vals, state%b%vals, state%b_inv%vals])
+        if (full) then
+            c = kin_green_lagrange(state)
+            d = kin_euler_almansi(state)
+            e = kin_material_log(state)
+            f = kin_spatial_log(state)
+            call golden_check(key // ' | getters C, b_inv, E_GL, e_EA, H_mat, h_spat, R', [state%C%vals, &
+                state%b_inv%vals, c%vals, d%vals, e%vals, f%vals, state%R%vals])
+            a = kin_pk2_to_cauchy(state, input_S())
+            b = kin_cauchy_to_pk2(state, input_S())
+            c = kin_pk2_to_kirchhoff(state, input_S())
+            d = kin_kirchhoff_to_pk2(state, input_S())
+            e = kin_cauchy_to_kirchhoff(state, input_S())
+            f = kin_kirchhoff_to_cauchy(state, input_S())
+            call golden_check(key // ' | convert PK2>Cauchy, Cauchy>PK2, PK2>Kirchhoff, Kirchhoff>PK2,' // &
+                ' Cauchy>Kirchhoff, Kirchhoff>Cauchy', [a%vals, b%vals, c%vals, d%vals, e%vals, f%vals])
+            P = kin_pk2_to_pk1(state, input_S())
+            a = kin_pk1_to_pk2(state, input_P())
+            Q = kin_cauchy_to_pk1(state, input_S())
+            b = kin_pk1_to_cauchy(state, input_P())
+            call golden_check(key // ' | convert PK2>PK1, PK1>PK2, Cauchy>PK1, PK1>Cauchy', [P%vals, a%vals, &
+                Q%vals, b%vals])
+        end if
+        call record_base(key, prm, state)
+    end subroutine record_finite_${m}$
+#:endfor
+
+end module kin_golden_cases
+
+
+program test_kin_golden
+    !! Golden (characterization) test of the kinematics family, double precision, bit for bit against
+    !! tests/reference/kinematics/kinematics_dp.txt (captured from the original OO code; see
+    !! regenerate.sh there), reproduced by the kernel API (D-018.18f). Exit codes: those of
+    !! `golden_finish` (1-4); 5 if a kernel status is not STATUS_OK.
+    use muscle_kinds, only : dp
+    use muscle_status, only : STATUS_OK
+    use muscle_tensors, only : ten_3D2O, ten_3D2Osym, operator(+), operator(*)
+    use muscle_kin_laws, only : kin_update, kin_corot_update, kin_state_dp, &
+        ${', '.join('kin_' + m + '_dp' for m in KIN)}$
+    use muscle_test_golden, only : golden_init, golden_check, golden_finish
+    use kin_golden_cases
+    implicit none
+
+    type(kin_small_strain_dp) :: ss
+    type(kin_corotational_dp) :: cr
+    type(kin_material_logarithmic_dp) :: ml
+    type(kin_state_dp) :: state, st_ml
+    type(ten_3D2O) :: F
+    type(ten_3D2Osym) :: eps
+    integer :: ic, ik, status, n_bad
+    character(len=:), allocatable :: key
+
+    n_bad = 0
+    call golden_init('kinematics/kinematics_dp.txt')
+
+    ! --- Small strain: state of F, and a given strain ---
+    do ic = 1, NCASES
+        key = 'small_strain | ' // case_name(ic)
+        F%vals = case_F(ic)
+        call kin_update(ss, F, state, status)
+        call expect_ok(key, status)
+        call record_base(key, ss, state)
+    end do
+    call eps%init(xx=1.0e-3_dp, yy=-4.0e-4_dp, zz=2.0e-4_dp, xy=6.0e-4_dp, yz=-2.0e-4_dp, xz=1.0e-4_dp)
+    state = kin_state_dp()
+    state%strain = eps
+    call record_base('small_strain | update by strain', ss, state)
+
+    ! --- F-driven kinematics: state of F ---
+    do ik = 1, NFINITE
+        do ic = 1, NCASES
+            key = kin_name(ik) // ' | ' // case_name(ic)
+            F%vals = case_F(ic)
+            ! Only the first kinematics records the strain measures and conversions of muscle_kin_finite
+            ! (they do not depend on the kinematics; the state record checks the others share it).
+            select case (ik)
+#:for i, m in enumerate(KIN_F)
+            case (${i + 1}$)
+                block
+                    type(kin_${m}$_dp) :: prm
+                    call kin_update(prm, F, state, status)
+                    call record_finite(key, prm, state, ik == 1)
+                end block
+#:endfor
+            end select
+        end do
+    end do
+
+    ! --- Incremental updates F_{n+1} = (drot + dstrain) F_n ---
+    do ik = 1, NFINITE
+        call run_sequence(ik, 'small rotations', 1)
+        call run_sequence(ik, 'large rotations', 2)
+        call run_sequence(ik, 'pure rotations', 3)
+        call run_sequence(ik, 'from general F', 4)
+    end do
+
+    ! --- Corotational: strain and R of each F (H = ln U and R of the polar decomposition) ---
+    do ic = 1, NCASES
+        key = 'corotational | ' // case_name(ic)
+        F%vals = case_F(ic)
+        call kin_update(ml, F, st_ml, status)
+        call kin_corot_update(cr, st_ml%strain, state, status, st_ml%R)
+        call expect_ok(key, status)
+        call golden_check(key // ' | state strain, R_rot, J', [state%strain%vals, state%R%vals, state%J])
+        call record_base(key, cr, state)
+    end do
+
+    call golden_finish()
+    if (n_bad > 0) stop 5
+
+contains
+
+    subroutine expect_ok(what, status)
+        !! Counts a kernel status that is not STATUS_OK.
+        character(len=*), intent(in) :: what
+        integer, intent(in) :: status
+        if (status /= STATUS_OK) then
+            print '(a, i0)', ' FAIL: kernel status of ' // what // ': ', status
+            n_bad = n_bad + 1
+        end if
+    end subroutine expect_ok
+
+    subroutine run_sequence(ik, name, iseq)
+        !! Incremental sequence `iseq` on the F-driven kinematics `ik`: every step updates the state
+        !! with F_{n+1} = (drot + dstrain) F_n.
+        integer, intent(in) :: ik, iseq
+        character(len=*), intent(in) :: name
+        type(ten_3D2O) :: drot, F0
+        type(ten_3D2Osym) :: de
+        integer :: istep, nsteps
+        real(dp) :: ang
+        character(len=:), allocatable :: kk
+        character(len=16) :: buf
+
+        select case (iseq)
+        case (4); F0%vals = case_F(13)
+        case default; F0%vals = case_F(1)
+        end select
+        select case (ik)
+#:for i, m in enumerate(KIN_F)
+        case (${i + 1}$)
+            block
+                type(kin_${m}$_dp) :: prm
+                call kin_update(prm, F0, state, status)
+                nsteps = 5
+                do istep = 1, nsteps
+                    call step_data(iseq, istep, de, ang)
+                    drot%vals = rotation([1.0_dp, real(istep, dp), -0.5_dp], ang)
+                    call kin_update(prm, (drot + de)*state%F, state, status)
+                    write(buf, '(i0)') istep
+                    kk = kin_name(ik) // ' | incremental ' // name // ' step ' // trim(buf)
+                    call record_finite(kk, prm, state, .true.)
+                end do
+            end block
+#:endfor
+        end select
+    end subroutine run_sequence
+
+    subroutine step_data(iseq, istep, de, ang)
+        !! Strain increment and rotation angle of step `istep` of sequence `iseq`.
+        integer, intent(in) :: iseq, istep
+        type(ten_3D2Osym), intent(out) :: de
+        real(dp), intent(out) :: ang
+        real(dp), parameter :: ANG_LARGE(5) = [60.0_dp, 90.0_dp, 180.0_dp, 179.0_dp, 45.0_dp]
+        real(dp), parameter :: ANG_PURE(5) = [30.0_dp, 90.0_dp, 180.0_dp, 1.0e-6_dp, 120.0_dp]
+        select case (iseq)
+        case (1)
+            ang = 1.0_dp
+            call de%init(xx=1.0e-3_dp, yy=-3.0e-4_dp, zz=-3.0e-4_dp, xy=2.0e-4_dp, yz=0.0_dp, xz=-1.0e-4_dp)
+        case (2)
+            ang = ANG_LARGE(istep)
+            call de%init(xx=0.02_dp, yy=-0.01_dp, zz=0.005_dp, xy=0.01_dp, yz=-0.004_dp, xz=0.003_dp)
+        case (3)
+            ang = ANG_PURE(istep)
+            de%vals = 0.0_dp
+        case default
+            ang = 15.0_dp*real(istep, dp)
+            call de%init(xx=-0.03_dp, yy=0.02_dp, zz=0.01_dp, xy=-0.02_dp, yz=0.01_dp, xz=0.015_dp)
+        end select
+    end subroutine step_data
+
+end program test_kin_golden

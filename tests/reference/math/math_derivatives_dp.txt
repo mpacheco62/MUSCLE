@@ -6,6 +6,8 @@
 # default step is rel instead of the former absolute minimum 1e-40. No other record changed.
 # Updated (D-016.4, revised 2026-10-31): first derivatives at an exactly zero argument use the step
 # sqrt(eps) (FD_STEP_ZERO) instead of the relative step; only those records changed.
+# Since D-018.18b the records are written by the finite-difference macros FD_DERIV, FD_GRAD,
+# FD_JAC and FD_HESS (the `procedure(...)` API derivative/derivative2O is removed): same keys and bits.
 input scalar | case 1 | 1 | BFC2E749DF25CE94
 derivative(fss_1, x) | case 1 | 1 | BFF22AF36CDDD80A
 derivative(fss_1, x, eps) | case 1 | 1 | BFF22AF36CDCAB94

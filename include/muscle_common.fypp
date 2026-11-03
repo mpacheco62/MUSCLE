@@ -67,4 +67,23 @@ ${', '.join(fmt.format(name, k) for k in REAL_KINDS)}$
 #:endif
 #:enddef
 
+#! Parallel loop over the points of a batch (D-008.2): put it right before the `do`. On the CPU an
+#! OpenMP `parallel do`; with the define MUSCLE_GPU a `target teams distribute parallel do` on data
+#! already resident on the device: `present` lists the variables the caller must have mapped
+#! (`map(present, alloc: ...)`, OpenMP 5.1: never transferred), `to` the small host values of the
+#! call copied in (or None). Call it with `$:` (with `@:` the arguments arrive as text).
+#! Other scalars: firstprivate in the target region, shared in the CPU `parallel do` (only the loop
+#! index is private); either way the loop body must not need private variables (call a
+#! `@:DEVICE()` procedure per point: derived types in `private` break ifx).
+#:def BATCH_LOOP(present, to=None)
+#:if defined('MUSCLE_GPU')
+!$omp target teams distribute parallel do map(present, alloc: ${present}$)${' &' if to else ''}$
+#:if to
+!$omp& map(to: ${to}$)
+#:endif
+#:else
+!$omp parallel do
+#:endif
+#:enddef
+
 #:endmute

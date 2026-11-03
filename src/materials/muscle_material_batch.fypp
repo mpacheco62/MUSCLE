@@ -1,0 +1,247 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! Batch API of a declared material (D-008.2, D-018.7): `BATCH` (public generic `muscle_update_<name>`)
+#! runs the point kernel `UPDATE` on every point of a batch stored in SoA arrays (`eps(npts, 6)`), or
+#! on the points of an index list (multiphase). Included by src/materials/muscle_material.fypp after
+#! muscle_material_kernel.fypp with its variables set (`k`, `MAT`, `MAT_T`, `STATE_T`, `COEFS_T`,
+#! `VISCO`, `KIN`, `COROT`, `UPDATE`, `STEP`, `PACK`, `UNPACK`, `BATCH`, `NSTATE`, `S2`, `T4`, `G2`).
+#!
+#! Structure (no optional argument reaches a device region): `BATCH` (host) computes the coefficients of
+#! the step of a viscoelastic material (`STEP`, once per batch, D-018.14d) and calls one of four private
+#! loops, with or without tangent and with or without index list; each loop is a `BATCH_LOOP`
+#! (muscle_common.fypp: OpenMP `parallel do`, or `target teams distribute parallel do` over data
+#! already on the device with MUSCLE_GPU) whose body calls a point procedure (`@:DEVICE()`, the per
+#! point locals live there): load the point to local tensors, `UNPACK`, `UPDATE`, `PACK`, store.
+#! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
+#:if defined('MAT')
+#! Finite strain material: the deformation gradients at t_n and t_n+1 instead of the strain
+#:set FIN = KIN and not COROT
+#:set XS = ['F_n', 'F_np1'] if FIN else ['eps']
+#:set NX = 9 if FIN else 6
+#:set XARGS = ', '.join(XS)
+#:set VARGS = 'coefs, step_status, ' if VISCO else ''
+#:set OUTS = 'hsv_n, hsv_np1, sig, status, iters'
+#:for TAN in [False, True]
+#:set POINT = 'batch_point_tangent_' + k if TAN else 'batch_point_' + k
+
+    pure subroutine ${POINT}$(mat, ${VARGS}$p, npts, ${XARGS}$, dt, ${OUTS}$${', ddsdde' if TAN else ''}$)
+        !! Point `p` of a batch of material `${MAT.name}$`, `real(${k}$)`${' with the tangent' if TAN else ''}$: loads it
+        !! to local tensors, runs the point kernel and stores its stress, state${', tangent' if TAN else ''}$, status and
+        !! iterations (arguments as in `${BATCH}$`).
+#:if VISCO
+        use muscle_status, only : STATUS_OK
+#:endif
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material.
+#:if VISCO
+        type(${COEFS_T}$), intent(in) :: coefs
+            !! Coefficients of the time step (`mat_step`; not used if `step_status` is an error).
+        integer, intent(in) :: step_status
+            !! Status of `mat_step`: with an error it is the status of the point, which is not computed.
+#:endif
+        integer, intent(in) :: p
+            !! Point.
+        integer, intent(in) :: npts
+            !! Number of points of the arrays.
+#:for x in XS
+        real(${k}$), intent(in) :: ${x}$(npts, ${NX}$)
+            !! Input of the points.
+#:endfor
+        real(${k}$), intent(in) :: dt
+            !! Time step.
+        real(${k}$), intent(in) :: hsv_n(npts, ${NSTATE}$)
+            !! Converged states.
+        real(${k}$), intent(inout) :: hsv_np1(npts, ${NSTATE}$)
+            !! States at \( t_{n+1} \) (row `p` written).
+        real(${k}$), intent(inout) :: sig(npts, 6)
+            !! Stresses (row `p` written).
+        integer, intent(inout) :: status(npts)
+            !! Statuses (`p` written).
+        integer, intent(inout) :: iters(npts)
+            !! Iterations (`p` written).
+#:if TAN
+        real(${k}$), intent(inout) :: ddsdde(npts, 6, 6)
+            !! Tangents (`ddsdde(p, :, :)` written).
+#:endif
+
+#:for x in XS
+        type(${G2 if FIN else S2}$) :: ${x}$_p
+#:endfor
+        type(${STATE_T}$) :: state_n, state_np1
+        type(${S2}$) :: stress
+        type(${T4}$) :: tangent
+        real(${k}$) :: hsv(${NSTATE}$)
+
+#:if VISCO
+        if (step_status /= STATUS_OK) then
+            status(p) = step_status
+            iters(p) = 0
+            return
+        end if
+#:endif
+#:for x in XS
+        ${x}$_p%vals = ${x}$(p, :)
+#:endfor
+        hsv = hsv_n(p, :)
+        call ${UNPACK}$(hsv, state_n)
+#:if VISCO
+        call ${UPDATE}$(mat, eps_p, dt, coefs, state_n, state_np1, stress, tangent, status(p), iters(p))
+#:else
+        call ${UPDATE}$(mat, ${', '.join(x + '_p' for x in XS)}$, dt, state_n, state_np1, stress, tangent, status(p), iters(p))
+#:endif
+        call ${PACK}$(state_np1, hsv)
+        hsv_np1(p, :) = hsv
+        sig(p, :) = stress%vals
+#:if TAN
+        ddsdde(p, :, :) = tangent%vals
+#:endif
+    end subroutine ${POINT}$
+#:for IDX in [False, True]
+#:set LOOP = 'batch_loop' + ('_tangent' if TAN else '') + ('_idx' if IDX else '') + '_' + k
+#:set PRESENT = ', '.join(['mat'] + XS + [OUTS] + (['ddsdde'] if TAN else []) + (['idx'] if IDX else []))
+
+    subroutine ${LOOP}$(mat, ${VARGS}$npts, ${XARGS}$, dt, ${OUTS}$${', ddsdde' if TAN else ''}$${', n, idx' if IDX else ''}$)
+        !! Loop of `${BATCH}$` over ${'the points idx(1:n)' if IDX else 'every point'}$${', with the tangent' if TAN else ''}$ (host;
+        !! parallel loop of `BATCH_LOOP`).
+        implicit none
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material.
+#:if VISCO
+        type(${COEFS_T}$), intent(in) :: coefs
+            !! Coefficients of the time step.
+        integer, intent(in) :: step_status
+            !! Status of `mat_step`.
+#:endif
+        integer, intent(in) :: npts
+            !! Number of points of the arrays.
+#:for x in XS
+        real(${k}$), intent(in) :: ${x}$(npts, ${NX}$)
+            !! Input of the points.
+#:endfor
+        real(${k}$), intent(in) :: dt
+            !! Time step.
+        real(${k}$), intent(in) :: hsv_n(npts, ${NSTATE}$)
+            !! Converged states.
+        real(${k}$), intent(inout) :: hsv_np1(npts, ${NSTATE}$)
+            !! States at \( t_{n+1} \).
+        real(${k}$), intent(inout) :: sig(npts, 6)
+            !! Stresses.
+        integer, intent(inout) :: status(npts)
+            !! Statuses.
+        integer, intent(inout) :: iters(npts)
+            !! Iterations.
+#:if TAN
+        real(${k}$), intent(inout) :: ddsdde(npts, 6, 6)
+            !! Tangents.
+#:endif
+#:if IDX
+        integer, intent(in) :: n
+            !! Number of points of the index list.
+        integer, intent(in) :: idx(n)
+            !! Points to compute.
+#:endif
+
+        integer :: i
+
+        $:BATCH_LOOP(PRESENT, 'coefs' if VISCO else None)
+        do i = 1, ${'n' if IDX else 'npts'}$
+            call ${POINT}$(mat, ${VARGS}$${'idx(i)' if IDX else 'i'}$, npts, ${XARGS}$, dt, ${OUTS}$${', ddsdde' if TAN else ''}$)
+        end do
+    end subroutine ${LOOP}$
+#:endfor
+#:endfor
+
+    subroutine ${BATCH}$(mat, ${XARGS}$, dt, ${OUTS}$, ddsdde, idx)
+        !! Batch API of material `${MAT.name}$`, `real(${k}$)` (D-008.2, D-018.7): the point kernel
+        !! `mat_update` on every point `p` of the SoA arrays (first dimension: `npts = size(sig, 1)`), or
+        !! only on the points `idx(:)` (multiphase: the other rows are not touched). Bit for bit the same
+        !! as calling `mat_unpack_${MAT.name}$`, `mat_update` and `mat_pack_${MAT.name}$` point by point.
+#:if VISCO
+        !! The coefficients of the time step (`mat_step`) are computed once for the batch (D-018.14d); if
+        !! their status is an error, it is the status of every point to compute (iterations 0), and nothing
+        !! else is written.
+#:endif
+        !!
+        !! The point loop is an OpenMP `parallel do` (if the library is built with OpenMP). With the fypp
+        !! define MUSCLE_GPU it is a `target teams distribute parallel do` on data already on the device:
+        !! the caller maps `mat` (once) and every array argument beforehand (`map(present, alloc: ...)`,
+        !! the library never maps them${', only the coefficients of the step are copied in' if VISCO else ''}$).
+        !! The optional arguments are resolved on the host, before the device region.
+        !!
+        !! Caller contract (not checked at run time): every array has `npts` rows and the extents given
+        !! below (`hsv_n`, `hsv_np1`: `${NSTATE}$` columns; `ddsdde`: `(npts, 6, 6)`); the values of `idx`
+        !! are in `1 .. npts` and without duplicates (a repeated point is a data race); the actual
+        !! arguments are contiguous (a non-contiguous one is copied to a host temporary, which is not
+        !! present on the device: the target region aborts with MUSCLE_GPU).
+        !!
+        !! Storage of the rows (that of the tensor types, CLAUDE.md): strains and stresses in tensorial
+        !! Voigt order (xx, yy, zz, xy, yz, xz) without the factor 2 of the shears; tangent
+        !! `ddsdde(p, i, j)` = \( \partial\sigma_i/\partial\varepsilon_j \) for j = 1..3 and
+        !! \( \partial\sigma_i/\partial\gamma_j \) with the engineering shear \( \gamma_j = 2\varepsilon_j \) for
+        !! j = 4..6 (as the DDSDDE of a UMAT: `.ddot.` doubles the shear columns), in that order (the `vals(i, j)`
+#:if FIN
+        !! of `${T4}$`); deformation gradients in column-major order of \( F_{ij} \) (`vals` of
+        !! `${G2}$`): F11, F21, F31, F12, F22, F32, F13, F23, F33 (as `reshape(F, [9])` of a `F(3, 3)`
+        !! array, e.g. DFGRD0/DFGRD1 of a UMAT).
+#:else
+        !! of `${T4}$`).
+#:endif
+        !! History rows: the layout of `mat_pack_${MAT.name}$` (`${NSTATE}$` components).
+        implicit none
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material.
+#:if FIN
+        real(${k}$), intent(in), contiguous :: F_n(:, :)
+            !! Deformation gradients at \( t_n \), `(npts, 9)`.
+        real(${k}$), intent(in), contiguous :: F_np1(:, :)
+            !! Deformation gradients at \( t_{n+1} \), `(npts, 9)`.
+#:else
+        real(${k}$), intent(in), contiguous :: eps(:, :)
+            !! Total strains at \( t_{n+1} \)${' in the corotational frame' if COROT else ''}$, `(npts, 6)`.
+#:endif
+        real(${k}$), intent(in) :: dt
+            !! Time step (the same for every point).
+        real(${k}$), intent(in), contiguous :: hsv_n(:, :)
+            !! Converged states at \( t_n \), `(npts, ${NSTATE}$)`.
+        real(${k}$), intent(inout), contiguous :: hsv_np1(:, :)
+            !! States at \( t_{n+1} \), `(npts, ${NSTATE}$)`; may not alias `hsv_n`.
+        real(${k}$), intent(inout), contiguous :: sig(:, :)
+            !! Stresses at \( t_{n+1} \), `(npts, 6)`.
+        integer, intent(inout), contiguous :: status(:)
+            !! `STATUS_OK` or an error code of muscle_status per point (outputs of that point not to be
+            !! used, D-017.14f), `(npts)`.
+        integer, intent(inout), contiguous :: iters(:)
+            !! Iterations of the return mapping per point (0 in an elastic step), `(npts)`.
+        real(${k}$), intent(inout), contiguous, optional :: ddsdde(:, :, :)
+            !! Tangents at \( t_{n+1} \), `(npts, 6, 6)`; not computed if absent.
+        integer, intent(in), contiguous, optional :: idx(:)
+            !! Points to compute (indices in `1 .. npts`); every point if absent.
+
+        integer :: npts
+#:if VISCO
+        type(${COEFS_T}$) :: coefs
+        integer :: step_status
+#:endif
+#:set LARGS = 'mat, ' + VARGS + 'npts, ' + XARGS + ', dt, ' + OUTS
+
+        npts = size(sig, 1)
+#:if VISCO
+        call ${STEP}$(mat, dt, coefs, step_status)
+#:endif
+        if (present(ddsdde)) then
+            if (present(idx)) then
+                call batch_loop_tangent_idx_${k}$(${LARGS}$, ddsdde, size(idx), idx)
+            else
+                call batch_loop_tangent_${k}$(${LARGS}$, ddsdde)
+            end if
+        else
+            if (present(idx)) then
+                call batch_loop_idx_${k}$(${LARGS}$, size(idx), idx)
+            else
+                call batch_loop_${k}$(${LARGS}$)
+            end if
+        end if
+    end subroutine ${BATCH}$
+#:endif

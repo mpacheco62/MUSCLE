@@ -1,0 +1,228 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Every material of the registry the library was built with: the test registry, or the user registry
+#! of -DMUSCLE_MATERIALS (CMake passes its path as MUSCLE_MATERIALS_FILE, as to the material template)
+#:set MAT_REGISTRY = MUSCLE_MATERIALS_FILE if defined('MUSCLE_MATERIALS_FILE') else None
+#:set MATS = muscle_meta.load_materials(MAT_REGISTRY)
+#! Parameters of each model: the sample inputs of props_samples.py (per model, so any registry)
+#:set SAMPLES = muscle_meta.load_python_file('props_samples.py', base=_THIS_FILE_)
+#! Solver settings of the parameter array: the default tolerance of each kind (D-018.3)
+#:set SETTINGS = {'sp': {'tol': '1.0e-5', 'iter_nw': '200.0'}, 'dp': {'tol': '1.0e-10', 'iter_nw': '200.0'}}
+#! Elastic strain amplitude (stress ~ 2 MPa with the sample parameters) and tolerance of the elastic
+#! stress against the tangent of a finite strain material: first order in the amplitude (dp), and
+#! F = I + 1e-5 keeps only ~3 digits of the strain in sp (the logarithmic strains lose most) [measured
+#! dp 4.4e-5, total Lagrangian: 4.4 AMP, first order; sp 3.3e-2]
+#:set AMP = '1.0e-5'
+#:set TOL_KIN = {'sp': '5.0e-2', 'dp': '1.0e-4'}
+#! Viscoplastic laws whose flow stress vanishes at a zero plastic strain rate: no elastic domain in the
+#! elastic check of closest_point_time (docs/fypp/PROBLEMAS.md, D-018.12b), so no elastic step either
+#:set NO_ELASTIC_DOMAIN = ('jcfull', 'rk')
+#! Viscoplastic laws whose plastic points (x40, x150) do not all converge (the others must, D-018.19b):
+#! jcfull and rk (no elastic domain, above), mrk (x150: plastic strain rates above epdmax, NaN,
+#! D-018.2) and nnl (x40 in dp: 200 iterations; not covered by D-018.19, see docs/fypp/PROBLEMAS.md)
+#:set NOT_CONVERGED = NO_ELASTIC_DOMAIN + ('mrk', 'nnl')
+#! Near F = I (dp, D-018.19a): elastic steps of the finite strain materials at the strain amplitudes
+#! SMALL_AMP, |sigma - C:eps| <= SMALL_COEF amp |C:eps| with C the returned tangent [measured 6.3 amp,
+#! total Lagrangian at 1e-8; before D-018.19a the logarithmic strains lost their deviatoric part below ~3e-6]
+#:set SMALL_AMP = ['1.0e-8_dp', '1.0e-7_dp', '1.0e-6_dp']
+#:set SMALL_COEF = '25.0_dp'
+
+module test_mat_smoke_cases
+    !! Smoke test of every declared material of the registry the library was built with (also a user
+    !! registry, -DMUSCLE_MATERIALS, where the tests of tests/materials written for the test registry
+    !! are not built), in every kind:
+    !!
+    !! - `mat_init_<name>` with sample parameters returns `STATUS_OK`;
+    !! - an elastic step from the zero state: `STATUS_OK`, `iters` = 0 and \( \sigma = \mathbb{C}:\varepsilon \)
+    !!   with \( \mathbb{C} \) the returned tangent `ddsdde` (linear in the strain up to rounding; to first
+    !!   order in the strain amplitude for a finite strain material; not with a viscoplastic law without
+    !!   an elastic domain at a zero rate, `NO_ELASTIC_DOMAIN`);
+    !! - the plastic points of the batch (40 and 150 times the elastic strain) return `STATUS_OK`
+    !!   (except the laws of `NOT_CONVERGED`);
+    !! - near F = I (dp, finite strain materials): elastic steps at strains of 1e-8 to 1e-6 with
+    !!   \( \sigma = \mathbb{C}:\varepsilon \) to first order in the strain;
+    !! - `mat_unpack_<name>` followed by `mat_pack_<name>` gives back an arbitrary history array bit for bit;
+    !! - the point API without the tangent gives the same bits as the one with the tangent;
+    !! - the batch API `muscle_update_<name>` (with and without tangent) gives bit for bit the point API
+    !!   on every point of a batch with elastic and plastic points.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
+    use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
+    use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
+    use muscle_material_state, only : ${', '.join('visco_plastic_state_' + k for k in REAL_KINDS)}$
+#:for MAT in MATS
+    use ${muscle_meta.material_module(MAT.name)}$, only : mat_init_${MAT.name}$, &
+        ${muscle_meta.material_point(MAT.name)}$, ${muscle_meta.material_batch(MAT.name)}$, &
+        mat_pack_${MAT.name}$, mat_unpack_${MAT.name}$, ${muscle_meta.material_nprops(MAT.name)}$, &
+        ${muscle_meta.material_nstate(MAT.name)}$, ${'mat_step, ' if muscle_meta.material_visco(MAT) else ''}$&
+        ${', '.join(muscle_meta.material_type(MAT.name, k) for k in REAL_KINDS)}$
+#:endfor
+    use muscle_test_utils, only : check_true
+    implicit none
+    private
+    public :: run_all
+
+    logical, public :: passed = .true.
+        !! Accumulated result of every check.
+
+    integer, parameter :: NPTS = 3
+        !! Points of the batch: the elastic strain times 1, 40 and 150 (`SCALE`).
+
+contains
+
+    subroutine run_all()
+        !! Every material in every kind.
+#:for k in REAL_KINDS
+#:for MAT in MATS
+        call run_${MAT.name}$_${k}$()
+#:endfor
+#:endfor
+    end subroutine run_all
+#:for k in REAL_KINDS
+
+    elemental logical function same_${k}$(a, b)
+        !! Same value, or both NaN (the sign and payload of a NaN depend on the order of the operands).
+        real(${k}$), intent(in) :: a, b
+
+        same_${k}$ = a == b .or. (a /= a .and. b /= b)
+    end function same_${k}$
+#:for MAT in MATS
+#:set NP = muscle_meta.material_nprops(MAT.name)
+#:set NS = muscle_meta.material_nstate(MAT.name)
+#:set POINT = muscle_meta.material_point(MAT.name)
+#:set BATCH = muscle_meta.material_batch(MAT.name)
+#:set VISCO = muscle_meta.material_visco(MAT)
+#:set FIN = not muscle_meta.material_strain_input(MAT)
+#:set NX = 9 if FIN else 6
+#:set L = MAT.name + ' (' + k + ')'
+#:set CO = 'coefs, ' if VISCO else ''
+#:set DT = '0.01_' + k
+#! Point arguments of point p: the strain, or the gradients at t_n (identity) and t_n+1
+#:set XP = lambda p: 'xn(' + p + ', :), x(' + p + ', :)' if FIN else 'x(' + p + ', :)'
+
+    subroutine run_${MAT.name}$_${k}$()
+        !! Smoke test of `${MAT.name}$`, `real(${k}$)`.
+        type(${muscle_meta.material_type(MAT.name, k)}$) :: mat
+        real(${k}$) :: props(${NP}$)
+        real(${k}$) :: x(NPTS, ${NX}$), hn(NPTS, ${NS}$), hp(NPTS, ${NS}$), sp_(NPTS, 6), tp(NPTS, 6, 6)
+        real(${k}$) :: hb(NPTS, ${NS}$), sb(NPTS, 6), tb(NPTS, 6, 6)
+        real(${k}$) :: h1(${NS}$), s1(6), hsv(${NS}$), hsv2(${NS}$), eps(6), e(6)
+#:if MAT.vp not in NO_ELASTIC_DOMAIN
+        real(${k}$) :: gam(6), sig_c(6), tol
+#:endif
+#:if MAT.kin and k == 'dp' and MAT.vp not in NO_ELASTIC_DOMAIN
+        real(dp), parameter :: SMALL(${len(SMALL_AMP)}$) = [${', '.join(SMALL_AMP)}$]
+        real(dp) :: t1(6, 6), x1(${NX}$)
+#:if FIN
+        real(dp) :: xn1(9)
+#:endif
+#:endif
+        real(${k}$), parameter :: SCALE(NPTS) = [1.0_${k}$, 40.0_${k}$, 150.0_${k}$]
+        integer :: stp(NPTS), itp(NPTS), stb(NPTS), itb(NPTS), st, it1, i, p
+        type(${muscle_meta.material_state(MAT, k)[1]}$) :: state
+#:if FIN
+        real(${k}$) :: xn(NPTS, 9)
+#:endif
+#:if VISCO
+        type(visco_coefs_${k}$) :: coefs
+#:endif
+
+#:for q in muscle_meta.material_props(MAT)
+        props(${q.index}$) = ${SAMPLES.prop_literal(muscle_meta, MAT, q, k, SETTINGS[k])}$
+#:endfor
+        call mat_init_${MAT.name}$(mat, props, st)
+        call check_true(passed, '${L}$: init status', st == STATUS_OK)
+#:if VISCO
+        call mat_step(mat, ${DT}$, coefs, st)
+        call check_true(passed, '${L}$: mat_step status', st == STATUS_OK)
+#:endif
+
+        ! Strain of the elastic point (tensorial Voigt)
+        eps = ${AMP}$_${k}$*[1.0_${k}$, -0.3_${k}$, -0.3_${k}$, 0.2_${k}$, 0.05_${k}$, 0.1_${k}$]
+        do p = 1, NPTS
+            e = eps*SCALE(p)
+#:if FIN
+            ! Pure stretch F = I + e (symmetric, column-major), from F_n = I
+            xn(p, :) = [1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$]
+            x(p, :) = xn(p, :) + [e(1), e(4), e(6), e(4), e(2), e(5), e(6), e(5), e(3)]
+#:else
+            x(p, :) = e
+#:endif
+        end do
+        hn = 0.0_${k}$
+
+        ! Point API, with and without the tangent: the same bits
+        do p = 1, NPTS
+            call ${POINT}$(mat, ${XP('p')}$, ${DT}$, ${CO}$hn(p, :), hp(p, :), sp_(p, :), stp(p), itp(p), tp(p, :, :))
+            call ${POINT}$(mat, ${XP('p')}$, ${DT}$, ${CO}$hn(p, :), h1, s1, st, it1)
+            call check_true(passed, '${L}$: point API without tangent == with tangent', &
+                all(same_${k}$(h1, hp(p, :))) .and. all(same_${k}$(s1, sp_(p, :))) .and. st == stp(p) .and. it1 == itp(p))
+        end do
+
+#:if MAT.vp not in NO_ELASTIC_DOMAIN
+        ! Elastic step: sigma = C:eps with the returned tangent
+        call check_true(passed, '${L}$: elastic step status and iterations', stp(1) == STATUS_OK .and. itp(1) == 0)
+        gam = [eps(1:3), 2.0_${k}$*eps(4:6)]
+        sig_c = matmul(tp(1, :, :), gam)
+#:if MAT.kin
+        tol = ${TOL_KIN[k]}$_${k}$
+#:else
+        tol = 64.0_${k}$*epsilon(1.0_${k}$)
+#:endif
+        call check_true(passed, '${L}$: elastic stress = tangent : strain', &
+            maxval(abs(sp_(1, :) - sig_c)) <= tol*maxval(abs(sig_c)) .and. maxval(abs(sig_c)) > 0.0_${k}$)
+#:endif
+#:if MAT.vp not in NOT_CONVERGED
+        call check_true(passed, '${L}$: plastic points status', all(stp(2:NPTS) == STATUS_OK))
+#:endif
+#:if MAT.kin and k == 'dp' and MAT.vp not in NO_ELASTIC_DOMAIN
+        ! Near F = I: the same strain direction at small amplitudes
+        do i = 1, size(SMALL)
+            e = SMALL(i)*[1.0_dp, -0.3_dp, -0.3_dp, 0.2_dp, 0.05_dp, 0.1_dp]
+#:if FIN
+            xn1 = xn(1, :)
+            x1 = xn1 + [e(1), e(4), e(6), e(4), e(2), e(5), e(6), e(5), e(3)]
+            call ${POINT}$(mat, xn1, x1, ${DT}$, ${CO}$hn(1, :), h1, s1, st, it1, t1)
+#:else
+            x1 = e
+            call ${POINT}$(mat, x1, ${DT}$, ${CO}$hn(1, :), h1, s1, st, it1, t1)
+#:endif
+            gam = [e(1:3), 2.0_dp*e(4:6)]
+            sig_c = matmul(t1, gam)
+            call check_true(passed, '${L}$: near F = I, elastic stress = tangent : strain', st == STATUS_OK &
+                .and. it1 == 0 .and. maxval(abs(s1 - sig_c)) <= ${SMALL_COEF}$*SMALL(i)*maxval(abs(sig_c)))
+        end do
+#:endif
+
+        ! History array round trip through the state
+        hsv = [(0.001_${k}$*real(i, ${k}$) - 0.0137_${k}$, i = 1, ${NS}$)]
+        call mat_unpack_${MAT.name}$(hsv, state)
+        call mat_pack_${MAT.name}$(state, hsv2)
+        call check_true(passed, '${L}$: unpack + pack round trip', all(hsv2 == hsv))
+
+        ! Batch API == point API on every point, with and without tangent
+        call ${BATCH}$(mat, ${'xn, x' if FIN else 'x'}$, ${DT}$, hn, hb, sb, stb, itb, tb)
+        call check_true(passed, '${L}$: batch with tangent == point API', all(same_${k}$(hb, hp)) &
+            .and. all(same_${k}$(sb, sp_)) .and. all(same_${k}$(tb, tp)) .and. all(stb == stp) .and. all(itb == itp))
+        call ${BATCH}$(mat, ${'xn, x' if FIN else 'x'}$, ${DT}$, hn, hb, sb, stb, itb)
+        call check_true(passed, '${L}$: batch without tangent == point API', all(same_${k}$(hb, hp)) &
+            .and. all(same_${k}$(sb, sp_)) .and. all(stb == stp) .and. all(itb == itp))
+    end subroutine run_${MAT.name}$_${k}$
+#:endfor
+#:endfor
+
+end module test_mat_smoke_cases
+
+program test_mat_smoke
+    !! Smoke test of every material of the registry: see module `test_mat_smoke_cases`.
+    use test_mat_smoke_cases, only : run_all, passed
+    implicit none
+
+    call run_all()
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_mat_smoke'
+        stop 1
+    end if
+    print '(a)', ' PASS: test_mat_smoke'
+end program test_mat_smoke

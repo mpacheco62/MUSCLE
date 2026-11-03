@@ -3,14 +3,9 @@
 #:include "muscle_models_common.fypp"
 #! Model contract of the yield family (D-017.6): include/muscle_models_common.fypp
 #! f_factor and I1_factor are derived from beta, K and the hardening mode by the initializer
-#! (`yield_druckerprager_init`, OO `init`): private in the kernel type (D-017.10b). The historical OO
-#! type keeps all its components private (`oo_private`). Defaults as the historical type (an object
-#! without `init` has K = 0).
-#:set PARAMS = [('f_factor', 'real', '', r'Calibration factor \( f \) of the deviatoric term (hardening mode).', '0.0', True), &
-    &          ('I1_factor', 'real', '', r'Coefficient \( \tan\beta \, f \) of the pressure \( p \).', '0.0', True), &
-    &          ('K', 'real', '', r'Ratio \( K \) of the yield stresses in triaxial tension and compression (\( 0.778 \le K \le 1 \)).', '0.0'), &
-    &          ('hardening_mode', 'integer', '', r'Hardening calibration mode (`DP_HARDENING_TENSION`, `DP_HARDENING_COMPRESSION` or `DP_HARDENING_SHEAR`).', 'DP_HARDENING_TENSION')]
-#:set OO_EXTRA = [('init', 'init_tbp', 'Sets beta (degrees), K and the hardening mode and computes the calibration factors.')]
+#! (`yield_druckerprager_init`): private in the kernel type (D-017.10b). Defaults as the historical
+#! type (a type left at its defaults has K = 0).
+#:set PARAMS = model_param_list('yield', 'druckerprager')
 #! Thresholds of the zero stress (absolute, on |sigma|) and of the hydrostatic axis (relative, q/|sigma|)
 #! (D-017.11b). dp: the historical values. sp: relative 1e-5 (~100 eps_sp: a hydrostatic stress
 #! that is not exact in binary, q/|sigma| ~ 8e-8, is detected, and the zone where the gradient loses
@@ -50,9 +45,9 @@ module muscle_yield_druckerprager
     !! the equivalent stress is \( \tan(\beta) f p \) (0 at a zero
     !! stress), the gradient \( (\tan(\beta) f/3) \mathbf{I} \) and the Hessian 0. Known limits, kept
     !! with the same results as the original code (D-017.9): the apex is not differentiable, so there
-    !! the analytical gradient (a subgradient) and a numerical derivative differ; an object without
-    !! `init` (or the kernel type left at its defaults) has \( K = 0 \): the equivalent stress off the
-    !! hydrostatic axis and the numerical derivatives of the OO base give NaN or Inf. The equivalent
+    !! the analytical gradient (a subgradient) and a numerical derivative differ; the kernel type left at its
+    !! defaults (no `yield_druckerprager_init`) has \( K = 0 \): the equivalent stress off the
+    !! hydrostatic axis and its numerical derivatives give NaN or Inf. The equivalent
     !! stress and the gradient keep the original form with \( r^3/q^3 \): in sp they need
     !! \( 2 \cdot 10^{-13} \lesssim q \lesssim 7 \cdot 10^{12} \) (no under- or overflow of
     !! \( q^3 \) and \( \mathbf{S}^2 : \mathbf{S} \)).
@@ -63,15 +58,13 @@ module muscle_yield_druckerprager
     !! `yield_dstress_eq_druckerprager_3D_<k>(prm, sigma)`, `yield_ddstress_eq_druckerprager_3D_<k>(prm, sigma)`
     !! and the joint evaluation `yield_stress_eq_and_derivatives_druckerprager_3D_<k>(prm, sigma, f, df[, ddf])`
     !! (the three in turn) for each real kind, also through the generics `yield_*` of
-    !! `muscle_yield_criteria`. `DruckerPrager` is the historical OO type (host only, removed in
-    !! Phase 7; private components), with the calibration modes `DP_HARDENING_*`.
+    !! `muscle_yield_criteria`, with the calibration modes `DP_HARDENING_*`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
         & iden_2O, iden_4O4T, iden_4O3T, operator(.dev.), operator(.ddot.), operator(.tdotsym.), operator(*), &
         & operator(+), operator(-), operator(/), assignment(=)
     use muscle_tensor_functions, only : square
     use muscle_math_derivatives, only : dsquare
-    use muscle_yield_base, only : Base_yield_critera
     implicit none
     private
 
@@ -84,7 +77,6 @@ module muscle_yield_druckerprager
 
     $:MODEL_PUBLIC('yield', 'druckerprager')
     public :: yield_druckerprager_init, ${', '.join('yield_druckerprager_init_' + k for k in REAL_KINDS)}$
-    public :: DruckerPrager
 #:for k in REAL_KINDS
 
     real(${k}$), parameter :: DP_TOL_ABS_${k}$ = ${TOL_ABS[k]}$_${k}$
@@ -95,8 +87,6 @@ module muscle_yield_druckerprager
 #:for k in REAL_KINDS
     $:MODEL_PARAMS_TYPE('yield', 'druckerprager', k, PARAMS)
 #:endfor
-    $:OO_ADAPTER_TYPE('yield', 'druckerprager', 'DruckerPrager', 'Base_yield_critera', PARAMS, extra_bindings=OO_EXTRA, &
-        & oo_private=True)
 
     interface yield_druckerprager_init
         !! Parameters of the Drucker-Prager model from beta (degrees), K and the hardening mode.
@@ -106,21 +96,7 @@ module muscle_yield_druckerprager
 contains
 #:for k in REAL_KINDS
 
-    pure subroutine yield_druckerprager_init_${k}$(prm, beta_deg, K, hardening_mode)
-        !! Parameters of the Drucker-Prager model in `real(${k}$)` matching the Abaqus material
-        !! options: the calibration factor f of the hardening mode and the pressure coefficient
-        !! tan(beta) f. An unknown mode keeps the previous f (as the original `init`; 0 for a
-        !! default-initialized `prm`), so `prm` is `intent(inout)`.
-        implicit none
-        @:DEVICE()
-        type(yield_druckerprager_${k}$), intent(inout) :: prm
-            !! Parameters (defined on entry: default initialization or a previous `init`).
-        real(${k}$), intent(in) :: beta_deg
-            !! Friction angle beta in degrees.
-        real(${k}$), intent(in) :: K
-            !! Yield stress ratio K (0.778 <= K <= 1).
-        integer, intent(in) :: hardening_mode
-            !! Hardening calibration mode (`DP_HARDENING_*`).
+    $:MODEL_INIT('yield', 'druckerprager', k)
         real(${k}$), parameter :: PI = acos(-1.0_${k}$)
         real(${k}$) :: tanbeta
 
@@ -273,26 +249,5 @@ contains
     $:MODEL_JOINT_DEFAULT('yield', 'druckerprager', k, d)
 #:endfor
 #:endfor
-    $:OO_ADAPTER_PROCS('yield', 'druckerprager', 'DruckerPrager', PARAMS)
-
-    pure subroutine init_tbp(self, beta_deg, K, hardening_mode)
-        !! `%init(...)`: sets the Drucker-Prager parameters matching the Abaqus material options
-        !! (type-bound, historical API; host only). Calls `yield_druckerprager_init_dp`.
-        implicit none
-        class(DruckerPrager), intent(inout) :: self
-            !! Model.
-        real(dp), intent(in) :: beta_deg
-            !! Friction angle beta in degrees.
-        real(dp), intent(in) :: K
-            !! Yield stress ratio K (0.778 <= K <= 1).
-        integer, intent(in) :: hardening_mode
-            !! Hardening calibration mode (`DP_HARDENING_*`).
-        type(yield_druckerprager_dp) :: prm
-
-        ! From the current components, so that an unknown mode keeps the previous f_factor
-$:OO_COPY_PARAMS('prm', 'self', PARAMS)
-        call yield_druckerprager_init_dp(prm, beta_deg, K, hardening_mode)
-$:OO_COPY_PARAMS('self', 'prm', PARAMS)
-    end subroutine init_tbp
 
 end module muscle_yield_druckerprager
