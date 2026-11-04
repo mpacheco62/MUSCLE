@@ -152,6 +152,7 @@ se conservan como historia.
 | `pz_cha_yld2004_ludwik` no corre en la GPU ni en Release ni en Debug fuera del test target | benchmark GPU | Documentado | D-019.8 |
 | Un build de CPU con ifx del benchmark no enlaza (`omp_target_alloc` sin definir con `-fiopenmp` y sin target de offload) | benchmark | Documentado; las filas de CPU usan gfortran | D-019.8 |
 | La regla de lint `quote` nunca corría (error de sintaxis en perl) | `tools/check.sh` | Corregido | D-019.4 |
+| IGC (UHD 770): SIGSEGV intermitente dentro de libigc al compilar en el JIT `mat_kernels_target_pz_cha_yld2004_ludwik_sp` durante `check.sh` (con carga de CPU); pasa 3/3 al repetirlo solo. Código generado idéntico (Fase 9, E3) | tests target SPIR64 | Documentado: repetir el test; no es un cambio de código | D-020 |
 
 ## Tests
 

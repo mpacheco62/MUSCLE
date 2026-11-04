@@ -13,7 +13,7 @@
 module muscle_math_derivatives
     !! Derivatives of tensor functions: `dsquare`, the analytical derivative of the square of a
     !! symmetric tensor, for each real kind (`dsquare_sp`, `dsquare_dp`); kernel routine.
-    !! Numerical derivatives are the finite-difference macros of `include/muscle_fd.fypp`
+    !! Numerical derivatives are the finite-difference macros of `tests/common/muscle_fd.fypp`
     !! (`FD_DERIV`, `FD_GRAD`, `FD_JAC`, `FD_HESS`), which call the function directly (D-018.18b).
     use muscle_kinds, only : sp, dp
     use muscle_tensor_2osym, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$

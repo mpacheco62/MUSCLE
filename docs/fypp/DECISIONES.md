@@ -1160,3 +1160,45 @@ se escribe y se lee en un solo archivo.
      pueda verificar».
 - El alcance de la Fase 9 incluye tensores, operadores y math (decisión del usuario), con el criterio
   laxo: lo que sea texto fijo con sustitución de nombres se conserva.
+
+**Registro de la ejecución (2026-11-04, noche; el usuario delegó las decisiones menores):**
+- **Piloto aprobado por el usuario** (hard swift/bilinear + `muscle_hard_laws`): tipo, firmas, cuerpos y
+  cierres en Fortran, `#:for k in REAL_KINDS` por bloque (tipos, `public`, funciones), `@:DEVICE()` justo
+  después de `implicit none`, `use` e `interface` de la familia escritos a mano con un `#:for k`. Agregar
+  una ley = añadir su nombre a los `use` y a las interfaces de la familia (el compilador lo verifica).
+- **Red de seguridad** (`tools/gen_snapshot.sh`): el `.f90` generado, normalizado (sin `#line`,
+  comentarios, espacios, continuaciones; listas de nombres una por línea), debe ser igual antes y después
+  salvo el orden de las líneas (REORDERED, aceptado: el `public` queda agrupado por kind); la tabla de
+  símbolos `nm` idéntica. Más los goldens dp bit a bit y el `check.sh` completo.
+- **Hecho (un commit por unidad):** hard, elas, vp/os, visco, yield (incluida la evaluación conjunta a
+  mano), kin, y los cinco cuerpos de solver sin `SOLVE_DUMMIES` (firma de `SOLVE` escrita en cada cuerpo).
+  Poda: borradas `muscle_models_common.fypp`, todas las macros de contrato y 13 funciones de
+  `muscle_meta.py`; los modelos de prueba de los tests se reescribieron a mano. Cifras
+  (`tools/fypp_metrics.sh`): llamadas a macros prohibidas 207 → 0; `include/` 1190 → 769 líneas;
+  `muscle_meta.py` 2467 → 2287 líneas (111 → 98 funciones).
+- **Se conserva, por la regla laxa:** `muscle_meta.py` como datos (`MODEL_PARAMS`, `MODEL_INITS`,
+  registro de materiales, `MATERIAL_SOLVERS`, `material_*`, `model_*` de nombres) para generar el módulo y
+  la tabla de props de cada material; `ModelFamily`/`ModelFunc` los usan sólo `tests/gpu/target_cases.py`
+  y `test_family_target`. Los nombres de `MODEL_PARAMS` se comprueban contra el tipo escrito a mano
+  (`tests/tools/test_muscle_model_params.py`).
+- **Deuda anotada:** `MAX_VISCO_BRANCHES = 10` está como literal en `muscle_visco_types.fypp` y en
+  `muscle_meta` (lo usa `muscle_materials`); campos sin consumidor de `ModelFunc` (`deriv`, `default`) y
+  `ModelFamily` (`fd_scale`, `fd_lower`); `model_params` sólo la usan los tests.
+- **Corregido en el camino:** `muscle_yield_druckerprager` declaraba las tolerancias `sp` sin guarda de
+  kind (rompía el build `-DMUSCLE_REAL_KINDS=dp` en Release); lo detectó `check.sh`.
+- **Intermitente de IGC:** SIGSEGV del JIT de la Intel en un kernel de yld2004 una vez durante `check.sh`
+  (pasa 3/3 al repetirlo); en PROBLEMAS.md.
+- **Revisión final de la Fase 9 (migration-reviewer, 2026-11-04):** aprobada con cambios menores, sin
+  regresión numérica ni de build (181/181 en `sp;dp` y 149/149 con `-DMUSCLE_REAL_KINDS=dp`).
+  - **Materiales (E5): se quedan como están.** `src/materials/muscle_material*.fypp` y los helpers
+    `material_*` de `muscle_meta.py` generan un módulo por entrada del registro (tipo del material,
+    tabla de props, APIs de punto y lote): es la generación que la regla permite porque Fortran no puede
+    declarar un módulo por entrada. Los candidatos a mejorar (queda como deuda, a pedido del usuario):
+    `material_init_call`, `material_prop_check` y `material_domain_checks` arman sentencias Fortran en
+    Python.
+  - **Criterio laxo, deuda explícita (E6):** `TENSOR_COMMON_TBP` (arma resultado/forma de `vals` desde
+    listas y `layout()`), `OP_USES`/`OP_INTERFACES` y los `init2_*_tbp` (lista de argumentos desde
+    `layout()`). Las firmas de los seis módulos de operadores sí se escribieron a mano.
+  - Corregidos tras la revisión: include del tangente de closest point a un solo nivel, `muscle_fd` movido
+    a `tests/common` (sólo lo usan tests), y el test de `MODEL_PARAMS` ahora compara también tipo y
+    valor por defecto, las listas de las familias y `MAX_VISCO_BRANCHES`.

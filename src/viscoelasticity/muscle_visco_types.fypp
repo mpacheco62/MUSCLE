@@ -1,7 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
-#:set T2 = lambda k: tname('3D2Osym', k)
 
 module muscle_visco_types
     !! Module muscle_visco_types
@@ -23,28 +22,30 @@ module muscle_visco_types
     !! `state_n` and writes `state_np1` (separate arguments): the caller keeps the converged state
     !! (the FE program, in its history array).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_tensors, only : ${', '.join(T2(k) for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$
+#:endfor
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER
     implicit none
     private
 
-    integer, parameter, public :: MAX_VISCO_BRANCHES = ${muscle_meta.MAX_VISCO_BRANCHES}$
+    integer, parameter, public :: MAX_VISCO_BRANCHES = 10
         !! Maximum number of branches (history tensors) of a viscoelastic state
 
     public :: visco_state_init
 #:for k in REAL_KINDS
     public :: visco_state_${k}$, visco_coefs_${k}$, visco_state_init_${k}$
 #:endfor
-#:for k in REAL_KINDS
 
+#:for k in REAL_KINDS
     type :: visco_state_${k}$
         !! Viscoelastic state of a material point at an instant, `real(${k}$)`.
         integer :: n_branches = 0
             !! Number of active branches.
-        type(${T2(k)}$) :: strain_e = ${T2(k)}$([${', '.join(['0.0_' + k] * 6)}$])
+        type(ten_3D2Osym_${k}$) :: strain_e = ten_3D2Osym_${k}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
             !! Elastic strain.
         real(${k}$) :: h(6, MAX_VISCO_BRANCHES) = 0.0_${k}$
-            !! History tensors (Voigt order of `${T2(k)}$`); only `h(:, 1:n_branches)` is used.
+            !! History tensors (Voigt order of `ten_3D2Osym_${k}$`); only `h(:, 1:n_branches)` is used.
     end type visco_state_${k}$
 
     type :: visco_coefs_${k}$
@@ -61,16 +62,17 @@ module muscle_visco_types
         real(${k}$) :: weight(MAX_VISCO_BRANCHES) = 0.0_${k}$
             !! Per branch strain weight.
     end type visco_coefs_${k}$
-#:endfor
 
+#:endfor
     interface visco_state_init
         !! Zero history with a number of branches (every kind).
-        module procedure ${', '.join('visco_state_init_' + k for k in REAL_KINDS)}$
+        #:for k in REAL_KINDS
+        module procedure visco_state_init_${k}$
+#:endfor
     end interface visco_state_init
 
 contains
 #:for k in REAL_KINDS
-
     pure subroutine visco_state_init_${k}$(state, n_branches, status, strain_e)
         !! State with `n_branches` zero history tensors and the elastic strain `strain_e` (zero if
         !! absent), `real(${k}$)`. `status`: `STATUS_INVALID_PARAMETER` (and the default state) if
@@ -83,7 +85,7 @@ contains
             !! Number of branches of the model (`visco_n_branches`).
         integer, intent(out) :: status
             !! `STATUS_OK` or `STATUS_INVALID_PARAMETER`.
-        type(${T2(k)}$), intent(in), optional :: strain_e
+        type(ten_3D2Osym_${k}$), intent(in), optional :: strain_e
             !! Initial elastic strain.
 
         if (n_branches < 0 .or. n_branches > MAX_VISCO_BRANCHES) then
@@ -94,6 +96,7 @@ contains
         state%n_branches = n_branches
         if (present(strain_e)) state%strain_e = strain_e
     end subroutine visco_state_init_${k}$
+
 #:endfor
 
 end module muscle_visco_types

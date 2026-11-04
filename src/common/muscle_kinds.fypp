@@ -11,7 +11,7 @@
 #! uses the general sp tolerance.
 #:set TOL_APPROX_IDEN = {'sp': '1.0e-5', 'dp': '1.0e-10'}
 #! Finite-difference steps (D-016.2, D-016.4, D-016.7). dp keeps the values of each
-#! historical finite-difference routine (the macros of include/muscle_fd.fypp). sp: central first
+#! historical finite-difference routine (the macros of tests/common/muscle_fd.fypp). sp: central first
 #! derivatives ~epsilon**(1/3) ~ 5e-3; central second derivatives ~epsilon**(1/4) ~ 2e-2. The
 #! steps are relative to the size of the argument
 #! with the historical absolute minimum, h = max(|x| rel, min), and h = rel at a zero argument

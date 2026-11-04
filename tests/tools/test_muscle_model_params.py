@@ -30,6 +30,50 @@ def template(prefix, model):
     return found[0].read_text()
 
 
+def type_components(block):
+    """Components of a hand-written derived type: ``name``, ``type``, ``shape``, ``default`` (lower case,
+    without blanks; continuation lines joined)."""
+    text = re.sub(r"&\s*\n\s*&?", "", block)
+    out = []
+    for line in text.split('\n'):
+        found = re.match(r"\s*(real\(\$\{k\}\$\)|integer|type\([^)]*\))(?:\s*,\s*\w+)*\s*::\s*(\w+)"
+                         r"(\([^)]*\))?(?:\s*=\s*(.*?))?\s*$", line, re.I)
+        if found and not line.lstrip().startswith('!'):
+            typ, name, shape, default = found.groups()
+            out.append({'name': name.lower(), 'type': typ.replace(' ', ''),
+                        'shape': (shape or '').replace(' ', '').lower(),
+                        'default': None if default is None else default.replace(' ', '')})
+    return out
+
+
+def expected_type(q):
+    """Declared type of a ``ModelParam`` as written in the templates."""
+    if q.type == 'real':
+        return 'real(${k}$)'
+    if q.type == 'integer':
+        return 'integer'
+    return f'type(ten_{q.type}_${{k}}$)'
+
+
+def expected_default(q):
+    """Default value of a ``ModelParam`` as written in the templates (``None``: no default)."""
+    if q.default is None:
+        return None
+    if q.type == 'real':
+        return f'{q.default}_${{k}}$' if re.fullmatch(r'[\d.]+(e[-+]?\d+)?', q.default) else q.default
+    if q.type == 'integer':
+        return q.default
+    zero = f'{q.default}_${{k}}$'
+    return f'ten_{q.type}_${{k}}$([{",".join([zero] * 6)}])'
+
+
+def family_module_source(fam):
+    """Source of the module of a family (``muscle_hard_laws``...)."""
+    found = list((ROOT / 'src').rglob(fam.family_module + '.fypp'))
+    assert len(found) == 1, (fam.family_module, found)
+    return found[0].read_text()
+
+
 class TestModelParams(unittest.TestCase):
 
     def test_every_registered_model_has_parameters(self):
@@ -53,7 +97,36 @@ class TestModelParams(unittest.TestCase):
             src = template(p, m)
             with self.subTest(model=(p, m)):
                 self.assertNotRegex(src, r"#:set PARAMS = \[|MODEL_PARAMS_TYPE\([^)]*\[")
-                self.assertIn(f"model_param_list('{p}', '{m}')", src)
+                if f"model_param_list('{p}', '{m}')" in src:
+                    continue
+                # Rewritten by hand (D-020): the type is written in the template and the
+                # registered names must be its components, in the registered order.
+                block = re.search(rf"type :: {p}_{m}_\$\{{k\}}\$\n(.*?)end type", src, re.S)
+                self.assertIsNotNone(block, 'neither model_param_list nor a hand-written type')
+                comps = type_components(block.group(1))
+                params = mm.model_param_list(p, m)
+                self.assertEqual([c['name'] for c in comps], [q.name.lower() for q in params])
+                for c, q in zip(comps, params):
+                    with self.subTest(component=q.name):
+                        self.assertEqual(c['type'], expected_type(q), 'type')
+                        self.assertEqual(c['shape'], q.shape.replace(' ', '').lower(), 'shape')
+                        self.assertEqual(c['default'], expected_default(q), 'default value')
+
+    def test_hand_written_lists_name_every_registered_model(self):
+        # The module of a family lists its models by hand (use, interface, public): a registered model
+        # that a list misses would not be reachable through the generics.
+        for p, fam in mm.MODEL_FAMILIES.items():
+            src = family_module_source(fam)
+            for m in fam.models:
+                with self.subTest(family=p, model=m):
+                    self.assertRegex(src, rf"\b{p}_{m}_\$\{{k\}}\$|\bmuscle_{p}_{m}\b",
+                                     'the family module does not mention the model')
+
+    def test_max_visco_branches_literal_matches_the_metadata(self):
+        src = (ROOT / 'src' / 'viscoelasticity' / 'muscle_visco_types.fypp').read_text()
+        found = re.search(r"parameter\s*(?:,\s*public\s*)?::\s*MAX_VISCO_BRANCHES\s*=\s*(\d+)", src)
+        self.assertIsNotNone(found)
+        self.assertEqual(int(found.group(1)), mm.MAX_VISCO_BRANCHES)
 
 
 class TestModelInits(unittest.TestCase):
@@ -97,26 +170,6 @@ class TestModelInits(unittest.TestCase):
                 mm.model_inputs('hard', 'bilinear')
         finally:
             mm.MODEL_PARAMS = saved
-
-    def test_templates_use_the_init_header(self):
-        for p, m in mm.MODEL_INITS:
-            with self.subTest(model=(p, m)):
-                src = template(p, m)
-                self.assertIn(f"$:MODEL_INIT('{p}', '{m}', k)", src)
-                self.assertNotRegex(src, rf'pure subroutine {p}_{m}_init_\$\{{k\}}\$\(')
-
-    def test_signature(self):
-        sig = mm.model_init_signature('visco', 'kelvin', 'dp')
-        self.assertEqual(sig, '    pure subroutine visco_kelvin_init_dp(prm, bulk, shear, bulk_viscosity, '
-                              'shear_viscosity, status)')
-        sig = mm.model_init_signature('yield', 'cpb06ex2', 'dp')
-        lines = sig.split('\n')
-        self.assertGreater(len(lines), 1)
-        self.assertTrue(all(len(line) <= 120 for line in lines))
-        self.assertTrue(all(line.endswith(' &') for line in lines[:-1]))
-        args = re.sub(r'&\s*', '', sig).split('(', 1)[1].rstrip(')').split(',')
-        self.assertEqual([a.strip() for a in args],
-                         ['prm'] + [i.name for i in mm.model_inputs('yield', 'cpb06ex2')])
 
 
 if __name__ == '__main__':

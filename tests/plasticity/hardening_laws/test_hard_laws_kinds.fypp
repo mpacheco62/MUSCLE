@@ -1,12 +1,12 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
 #!
-#! Kernel API of the hardening laws (D-017) in every kind: the free functions of the laws written
-#! with the model contract macros (include/muscle_models_common.fypp), called through the family
+#! Kernel API of the hardening laws (D-017) in every kind: the free functions of the laws, called through the family
 #! generics of muscle_hard_laws, against the analytical formulas (bilinear, Ludwik, Swift, modified
 #! Voce; references evaluated in dp from the kind-k parameters, with exp/log instead of **); the
-#! finite-difference derivatives of MODEL_FD (test-only laws below),
+#! finite-difference derivatives of the test-only laws below (FD_DERIV, FD_DERIV2),
 #! one-sided where ep - h < 0 (hardening domain ep >= 0); and a `pure`, `@:DEVICE()` point
 #! procedure that calls them.
 #! Tolerances of the finite differences (relative, measured x ~10): see FD_TOL below.
@@ -18,9 +18,6 @@
 #! by FD_DERIV, ddstress_ddep by FD_DERIV2 of stress); fdvoce1 gives stress and dstress_dep
 #! (ddstress_ddep by FD_DERIV of dstress_dep), with a default k = 0; fdpow (Sy + k ep^1.5) is undefined for ep < 0: its default
 #! derivative must stay finite at ep = 0 (one-sided stencil).
-#:set VOCE = [('Sy', 'real', '', 'Initial yield stress.', None), ('k', 'real', '', 'Linear modulus.', '0.0'), &
-    & ('q', 'real', '', 'Saturation stress.', None), ('n', 'real', '', 'Saturation rate.', None)]
-#:set POW = [('Sy', 'real', '', 'Initial yield stress.', None), ('k', 'real', '', 'Coefficient.', None)]
 
 module muscle_hard_fdvoce
     !! Test law: modified Voce hardening, stress only.
@@ -28,21 +25,70 @@ module muscle_hard_fdvoce
     implicit none
     private
 
-    $:MODEL_PUBLIC('hard', 'fdvoce')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('hard', 'fdvoce', k, VOCE)
+    public :: hard_fdvoce_${k}$
+#:endfor
+#:for k in REAL_KINDS
+    public :: hard_stress_fdvoce_${k}$, hard_dstress_dep_fdvoce_${k}$, hard_ddstress_ddep_fdvoce_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: hard_fdvoce_${k}$
+        !! Parameters of the fdvoce model in `real(${k}$)`.
+        real(${k}$) :: Sy
+            !! Initial yield stress.
+        real(${k}$) :: k = 0.0_${k}$
+            !! Linear modulus.
+        real(${k}$) :: q
+            !! Saturation stress.
+        real(${k}$) :: n
+            !! Saturation rate.
+    end type hard_fdvoce_${k}$
+
+#:endfor
 contains
 #:for k in REAL_KINDS
 
-    $:MODEL_FUNCTION('hard', 'fdvoce', 'stress', k)
+    pure function hard_stress_fdvoce_${k}$(prm, ep) result(res)
+        !! Flow stress \( \sigma_y(\epsilon_p) \) of the fdvoce model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_fdvoce_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( \sigma_y \).
         res = prm%Sy + prm%k*ep + prm%q*(1.0_${k}$ - exp(-prm%n*ep))
     end function hard_stress_fdvoce_${k}$
 
-    $:MODEL_FD('hard', 'fdvoce', 'dstress_dep', k)
+    pure function hard_dstress_dep_fdvoce_${k}$(prm, ep) result(res)
+        !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the fdvoce model in `real(${k}$)`,
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(hard_fdvoce_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d\sigma_y/d\epsilon_p \).
+        @:FD_DERIV(res, hard_stress_fdvoce_${k}$(prm, {x}), ep, ${k}$, scale=1.0_${k}$, lower=0.0_${k}$)
+    end function hard_dstress_dep_fdvoce_${k}$
 
-    $:MODEL_FD('hard', 'fdvoce', 'ddstress_ddep', k, second=True)
+    pure function hard_ddstress_ddep_fdvoce_${k}$(prm, ep) result(res)
+        !! Second derivative \( d^2\sigma_y/d\epsilon_p^2 \) of the fdvoce model in `real(${k}$)`,
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(hard_fdvoce_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d^2\sigma_y/d\epsilon_p^2 \).
+        @:FD_DERIV2(res, hard_stress_fdvoce_${k}$(prm, {x}), ep, ${k}$, scale=1.0_${k}$, lower=0.0_${k}$)
+    end function hard_ddstress_ddep_fdvoce_${k}$
 #:endfor
 
 end module muscle_hard_fdvoce
@@ -53,25 +99,71 @@ module muscle_hard_fdvoce1
     implicit none
     private
 
-    $:MODEL_PUBLIC('hard', 'fdvoce1')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('hard', 'fdvoce1', k, VOCE)
+    public :: hard_fdvoce1_${k}$
+#:endfor
+#:for k in REAL_KINDS
+    public :: hard_stress_fdvoce1_${k}$, hard_dstress_dep_fdvoce1_${k}$, hard_ddstress_ddep_fdvoce1_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: hard_fdvoce1_${k}$
+        !! Parameters of the fdvoce1 model in `real(${k}$)`.
+        real(${k}$) :: Sy
+            !! Initial yield stress.
+        real(${k}$) :: k = 0.0_${k}$
+            !! Linear modulus.
+        real(${k}$) :: q
+            !! Saturation stress.
+        real(${k}$) :: n
+            !! Saturation rate.
+    end type hard_fdvoce1_${k}$
+
+#:endfor
 contains
 #:for k in REAL_KINDS
 
-    $:MODEL_FUNCTION('hard', 'fdvoce1', 'stress', k)
+    pure function hard_stress_fdvoce1_${k}$(prm, ep) result(res)
+        !! Flow stress \( \sigma_y(\epsilon_p) \) of the fdvoce1 model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_fdvoce1_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( \sigma_y \).
         res = prm%Sy + prm%k*ep + prm%q*(1.0_${k}$ - exp(-prm%n*ep))
     end function hard_stress_fdvoce1_${k}$
 
-    $:MODEL_FUNCTION('hard', 'fdvoce1', 'dstress_dep', k)
+    pure function hard_dstress_dep_fdvoce1_${k}$(prm, ep) result(res)
+        !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the fdvoce1 model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_fdvoce1_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d\sigma_y/d\epsilon_p \).
         real(${k}$) :: e
         e = exp(-prm%n*ep)
         res = prm%k + prm%q*prm%n*e
     end function hard_dstress_dep_fdvoce1_${k}$
 
-    $:MODEL_FD('hard', 'fdvoce1', 'ddstress_ddep', k)
+    pure function hard_ddstress_ddep_fdvoce1_${k}$(prm, ep) result(res)
+        !! Second derivative \( d^2\sigma_y/d\epsilon_p^2 \) of the fdvoce1 model in `real(${k}$)`,
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(hard_fdvoce1_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d^2\sigma_y/d\epsilon_p^2 \).
+        @:FD_DERIV(res, hard_dstress_dep_fdvoce1_${k}$(prm, {x}), ep, ${k}$, scale=1.0_${k}$, lower=0.0_${k}$)
+    end function hard_ddstress_ddep_fdvoce1_${k}$
 #:endfor
 
 end module muscle_hard_fdvoce1
@@ -82,21 +174,66 @@ module muscle_hard_fdpow
     implicit none
     private
 
-    $:MODEL_PUBLIC('hard', 'fdpow')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('hard', 'fdpow', k, POW)
+    public :: hard_fdpow_${k}$
+#:endfor
+#:for k in REAL_KINDS
+    public :: hard_stress_fdpow_${k}$, hard_dstress_dep_fdpow_${k}$, hard_ddstress_ddep_fdpow_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: hard_fdpow_${k}$
+        !! Parameters of the fdpow model in `real(${k}$)`.
+        real(${k}$) :: Sy
+            !! Initial yield stress.
+        real(${k}$) :: k
+            !! Coefficient.
+    end type hard_fdpow_${k}$
+
+#:endfor
 contains
 #:for k in REAL_KINDS
 
-    $:MODEL_FUNCTION('hard', 'fdpow', 'stress', k)
+    pure function hard_stress_fdpow_${k}$(prm, ep) result(res)
+        !! Flow stress \( \sigma_y(\epsilon_p) \) of the fdpow model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_fdpow_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( \sigma_y \).
         res = prm%Sy + prm%k*ep*sqrt(ep)
     end function hard_stress_fdpow_${k}$
 
-    $:MODEL_FD('hard', 'fdpow', 'dstress_dep', k)
+    pure function hard_dstress_dep_fdpow_${k}$(prm, ep) result(res)
+        !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the fdpow model in `real(${k}$)`,
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(hard_fdpow_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d\sigma_y/d\epsilon_p \).
+        @:FD_DERIV(res, hard_stress_fdpow_${k}$(prm, {x}), ep, ${k}$, scale=1.0_${k}$, lower=0.0_${k}$)
+    end function hard_dstress_dep_fdpow_${k}$
 
-    $:MODEL_FD('hard', 'fdpow', 'ddstress_ddep', k, second=True)
+    pure function hard_ddstress_ddep_fdpow_${k}$(prm, ep) result(res)
+        !! Second derivative \( d^2\sigma_y/d\epsilon_p^2 \) of the fdpow model in `real(${k}$)`,
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(hard_fdpow_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d^2\sigma_y/d\epsilon_p^2 \).
+        @:FD_DERIV2(res, hard_stress_fdpow_${k}$(prm, {x}), ep, ${k}$, scale=1.0_${k}$, lower=0.0_${k}$)
+    end function hard_ddstress_ddep_fdpow_${k}$
 #:endfor
 
 end module muscle_hard_fdpow

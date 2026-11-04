@@ -81,7 +81,7 @@ program test_math_golden_operations
     !! tensors (distinct, double and triple eigenvalues, the "middle eigenvalue = mean" branch,
     !! exact and rotated cases) and the central gradient of a scalar function of a ten_3D2Osym of
     !! the former `derivative_escalar_tensor3x3sym` (generic `derivative`, removed with the
-    !! `procedure(...)` API, D-018.18b), now `FD_GRAD` of `include/muscle_fd.fypp` with its step
+    !! `procedure(...)` API, D-018.18b), now `FD_GRAD` of `tests/common/muscle_fd.fypp` with its step
     !! `rel = FD_STEP_CEN`; the keys keep the former names. The forward differences of a 3x3
     !! matrix (`derivative_escalar_tensor3x3`, `..._3x3sym2`) have no kernel equivalent: their
     !! records were removed (header of the reference). Results are compared bit for bit with

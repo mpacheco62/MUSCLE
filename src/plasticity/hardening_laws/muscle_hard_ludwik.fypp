@@ -1,8 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the hardening family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = model_param_list('hard', 'ludwik')
+#:include "muscle_common.fypp"
 
 module muscle_hard_ludwik
     !! Ludwik isotropic hardening law:
@@ -30,31 +28,70 @@ module muscle_hard_ludwik
     implicit none
     private
 
-    $:MODEL_PUBLIC('hard', 'ludwik')
 #:for k in REAL_KINDS
+    public :: hard_ludwik_${k}$
+    public :: hard_stress_ludwik_${k}$, hard_dstress_dep_ludwik_${k}$, hard_ddstress_ddep_ludwik_${k}$
     public :: LUDWIK_EP_OFFSET_${k}$
+#:endfor
 
+#:for k in REAL_KINDS
     real(${k}$), parameter :: LUDWIK_EP_OFFSET_${k}$ = 1.0e-10_${k}$
         !! Offset \( \delta \) added to \( \epsilon_p \) in the derivatives in `real(${k}$)`: regularization
         !! at \( \epsilon_p = 0 \), same value in every kind (see the module documentation).
-#:endfor
-#:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('hard', 'ludwik', k, PARAMS)
-#:endfor
 
+    type :: hard_ludwik_${k}$
+        !! Parameters of the Ludwik model in `real(${k}$)`.
+        real(${k}$) :: sigma0
+            !! Initial yield stress \( \sigma_0 \).
+        real(${k}$) :: k
+            !! Strength coefficient \( K \).
+        real(${k}$) :: n
+            !! Hardening exponent \( n \).
+    end type hard_ludwik_${k}$
+
+#:endfor
 contains
 #:for k in REAL_KINDS
-    $:MODEL_FUNCTION('hard', 'ludwik', 'stress', k)
+    pure function hard_stress_ludwik_${k}$(prm, ep) result(res)
+        !! Flow stress \( \sigma_y(\epsilon_p) \) of the Ludwik model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_ludwik_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( \sigma_y \).
         res = prm%sigma0 + prm%k*(ep)**prm%n
     end function hard_stress_ludwik_${k}$
 
-    $:MODEL_FUNCTION('hard', 'ludwik', 'dstress_dep', k, doc='Evaluated at ep + LUDWIK_EP_OFFSET_' + k + '.')
+    pure function hard_dstress_dep_ludwik_${k}$(prm, ep) result(res)
+        !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the Ludwik model in `real(${k}$)`.
+        !! Evaluated at ep + LUDWIK_EP_OFFSET_${k}$.
+        implicit none
+        @:DEVICE()
+        type(hard_ludwik_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d\sigma_y/d\epsilon_p \).
         res = prm%k*prm%n*(ep + LUDWIK_EP_OFFSET_${k}$)**(prm%n - 1.0_${k}$)
     end function hard_dstress_dep_ludwik_${k}$
 
-    $:MODEL_FUNCTION('hard', 'ludwik', 'ddstress_ddep', k, doc='Evaluated at ep + LUDWIK_EP_OFFSET_' + k + '.')
+    pure function hard_ddstress_ddep_ludwik_${k}$(prm, ep) result(res)
+        !! Second derivative \( d^2\sigma_y/d\epsilon_p^2 \) of the Ludwik model in `real(${k}$)`.
+        !! Evaluated at ep + LUDWIK_EP_OFFSET_${k}$.
+        implicit none
+        @:DEVICE()
+        type(hard_ludwik_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d^2\sigma_y/d\epsilon_p^2 \).
         res = prm%k*prm%n*(prm%n - 1.0_${k}$)*(ep + LUDWIK_EP_OFFSET_${k}$)**(prm%n - 2.0_${k}$)
     end function hard_ddstress_ddep_ludwik_${k}$
-#:endfor
 
+#:endfor
 end module muscle_hard_ludwik

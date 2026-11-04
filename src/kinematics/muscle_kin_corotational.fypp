@@ -1,12 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the kinematics family (D-017.14): include/muscle_models_common.fypp. No
-#! parameters: the parameter type is empty and only selects the kinematics. Updated by
-#! `kin_corot_update` (strain and rotation, D-017.14d) instead of `kin_update` (F).
-#:set T2 = lambda k: tname('3D2O', k)
-#:set S2 = lambda k: tname('3D2Osym', k)
-#:set C4 = lambda k: tname('3D4O2sym', k)
+#:include "muscle_common.fypp"
 
 module muscle_kin_corotational
     !! Module muscle_kin_corotational
@@ -33,22 +27,49 @@ module muscle_kin_corotational
     !! `kin_*` of muscle_kin_laws. Back to the corotational frame: `kin_rotate_to_corotational`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
-    use muscle_tensors, only : ${', '.join(T2(k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$
-    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_rotate_from_corotational, &
-        kin_rotate_to_corotational, kin_volumetric_tangent
+#:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2O_${k}$, ten_3D2Osym_${k}$, ten_3D4O2sym_${k}$
+    use muscle_kin_finite, only : kin_state_${k}$
+#:endfor
+    use muscle_kin_finite, only : kin_rotate_from_corotational, kin_rotate_to_corotational, kin_volumetric_tangent
     implicit none
     private
 
-    $:MODEL_PUBLIC('kin', 'corotational')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('kin', 'corotational', k, model_param_list('kin', 'corotational'))
+    public :: kin_corotational_${k}$
+    public :: kin_corot_update_corotational_${k}$
+    public :: kin_to_cauchy_corotational_${k}$
+    public :: kin_to_spatial_tangent_corotational_${k}$
+    public :: kin_geometric_tangent_corotational_${k}$
+    public :: kin_is_finite_strain_corotational_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: kin_corotational_${k}$
+        !! Parameters of the corotational model in `real(${k}$)`.
+    end type kin_corotational_${k}$
 
+#:endfor
 contains
 #:for k in REAL_KINDS
 
-    $:MODEL_FUNCTION('kin', 'corotational', 'corot_update', k, doc=r'\( J = \exp(\varepsilon_{xx} + \varepsilon_{yy} + \varepsilon_{zz}) \).')
+    pure subroutine kin_corot_update_corotational_${k}$(prm, strain, state, status, R)
+        !! Kinematic state of a corotational kinematics from the strain in the unrotated frame and the rotation (identity if absent)
+        !! of the corotational model in `real(${k}$)`.
+        !! \( J = \exp(\varepsilon_{xx} + \varepsilon_{yy} + \varepsilon_{zz}) \).
+        implicit none
+        @:DEVICE()
+        type(kin_corotational_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: strain
+            !! Strain in the unrotated frame.
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state: strain, \( J = \exp(\operatorname{tr}\boldsymbol\varepsilon) \) and R; the F-based components keep
+            !! the reference configuration.
+        integer, intent(out) :: status
+            !! `STATUS_OK` (no validation).
+        type(ten_3D2O_${k}$), intent(in), optional :: R
+            !! Rotation \( \mathbf{R} \) (identity if absent).
 
         state%strain = strain
         state%J = exp(strain%vals(1) + strain%vals(2) + strain%vals(3))
@@ -56,22 +77,72 @@ contains
         status = STATUS_OK
     end subroutine kin_corot_update_corotational_${k}$
 
-    $:MODEL_FUNCTION('kin', 'corotational', 'to_cauchy', k, doc=r'Rotation to the spatial frame, \( \mathbf{R}\hat{\boldsymbol\sigma}\mathbf{R}^T \).')
+    pure function kin_to_cauchy_corotational_${k}$(prm, state, stress) result(res)
+        !! Cauchy stress from the constitutive stress (work conjugate of the strain of the kinematics) of the corotational model in
+        !! `real(${k}$)`.
+        !! Rotation to the spatial frame, \( \mathbf{R}\hat{\boldsymbol\sigma}\mathbf{R}^T \).
+        implicit none
+        @:DEVICE()
+        type(kin_corotational_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D2Osym_${k}$), intent(in) :: stress
+            !! Constitutive stress.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Cauchy stress \( \boldsymbol\sigma \).
 
         res = kin_rotate_from_corotational(stress, state%R)
     end function kin_to_cauchy_corotational_${k}$
 
-    $:MODEL_FUNCTION('kin', 'corotational', 'to_spatial_tangent', k, doc=r'Rotation to the spatial frame with R.')
+    pure function kin_to_spatial_tangent_corotational_${k}$(prm, state, tangent) result(res)
+        !! Spatial tangent from the constitutive tangent: the part of \(
+        !! J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) through the constitutive stress, for \( \delta\mathbf{F}
+        !! = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (with the derivative of the strain measure, D-018.15f; without the
+        !! geometric term) of the corotational model in `real(${k}$)`.
+        !! Rotation to the spatial frame with R.
+        implicit none
+        @:DEVICE()
+        type(kin_corotational_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D4O2sym_${k}$), intent(in) :: tangent
+            !! Constitutive tangent.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Spatial tangent.
 
         res = kin_rotate_from_corotational(tangent, state%R)
     end function kin_to_spatial_tangent_corotational_${k}$
 
-    $:MODEL_FUNCTION('kin', 'corotational', 'geometric_tangent', k, doc=r'The volume change, \( \boldsymbol\sigma\otimes\mathbf{I} \) (`kin_volumetric_tangent`; no spin: the FE code rotates the frame).')
+    pure function kin_geometric_tangent_corotational_${k}$(prm, state, stress) result(res)
+        !! Geometric term of the spatial tangent: the part of \( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) at
+        !! a fixed constitutive stress (D-018.15f); `to_spatial_tangent` plus this is the tangent of the Jaumann rate of the
+        !! Kirchhoff stress of the corotational model in `real(${k}$)`.
+        !! The volume change, \( \boldsymbol\sigma\otimes\mathbf{I} \) (`kin_volumetric_tangent`; no spin: the FE code rotates the
+        !! frame).
+        implicit none
+        @:DEVICE()
+        type(kin_corotational_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D2Osym_${k}$), intent(in) :: stress
+            !! Cauchy stress.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Geometric term.
 
         res = kin_volumetric_tangent(stress)
     end function kin_geometric_tangent_corotational_${k}$
 
-    $:MODEL_FUNCTION('kin', 'corotational', 'is_finite_strain', k)
+    pure function kin_is_finite_strain_corotational_${k}$(prm) result(res)
+        !! Whether the kinematics is a finite strain one of the corotational model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(kin_corotational_${k}$), intent(in) :: prm
+            !! Parameters.
+        logical :: res
+            !! `.true.` for a finite strain kinematics.
 
         res = .true.
     end function kin_is_finite_strain_corotational_${k}$

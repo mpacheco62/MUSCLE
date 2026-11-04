@@ -1,11 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the elastic family (D-017.6): include/muscle_models_common.fypp
-#! Every parameter is derived from E and nu by the initializer (`elas_linear_init`): private in the
-#! kernel type (D-017.10b). The tangents are assembled on the fly (D-017.12e). Storage order of the
-#! historical type.
-#:set PARAMS = model_param_list('elas', 'linear')
+#:include "muscle_common.fypp"
 
 module muscle_elasticity_linear
     !! Linear isotropic elasticity (Hooke law) in 3D and 2D (plane strain/stress and axisymmetry:
@@ -39,16 +34,32 @@ module muscle_elasticity_linear
     !! sig = elas_stress(prm, eps)
     !! ```
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('elas') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in DIMS for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
     implicit none
     private
 
-    $:MODEL_PUBLIC('elas', 'linear')
-    public :: elas_linear_init, ${', '.join('elas_linear_init_' + k for k in REAL_KINDS)}$
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('elas', 'linear', k, PARAMS)
+    public :: elas_linear_${k}$, elas_linear_init_${k}$
+    public :: elas_stress_linear_3D_${k}$, elas_stress_linear_2D_${k}$
+    public :: elas_stress_dev_linear_3D_${k}$, elas_stress_dev_linear_2D_${k}$
+    public :: elas_dstress_dstrain_linear_3D_${k}$, elas_dstress_dstrain_linear_2D_${k}$
+    public :: elas_dstress_dstrain_dev_linear_3D_${k}$, elas_dstress_dstrain_dev_linear_2D_${k}$
 #:endfor
+    public :: elas_linear_init
 
+#:for k in REAL_KINDS
+    type :: elas_linear_${k}$
+        !! Parameters of the linear isotropic elastic model in `real(${k}$)` (build it with `elas_linear_init`,
+        !! which computes the private derived components; do not change the inputs after `elas_linear_init`).
+        real(${k}$), private :: lambda = 0.0_${k}$
+            !! Lamé first parameter \( \lambda = E\nu/[(1+\nu)(1-2\nu)] \).
+        real(${k}$), private :: mu = 0.0_${k}$
+            !! Shear modulus \( \mu = E/[2(1+\nu)] \).
+        real(${k}$), private :: e1 = 0.0_${k}$
+            !! Diagonal constant \( e_1 = \lambda + 2\mu \) of Hooke law.
+    end type elas_linear_${k}$
+
+#:endfor
     interface elas_linear_init
         !! Parameters of the linear elastic model from E and nu.
         module procedure ${', '.join('elas_linear_init_' + k for k in REAL_KINDS)}$
@@ -57,18 +68,34 @@ module muscle_elasticity_linear
 contains
 #:for k in REAL_KINDS
 
-    $:MODEL_INIT('elas', 'linear', k)
+    pure subroutine elas_linear_init_${k}$(prm, young, poisson)
+        !! Parameters of the linear elastic model in `real(${k}$)` from the Young modulus and the Poisson
+        !! ratio: the Lamé parameters \( \lambda \), \( \mu \) and \( e_1 = \lambda + 2\mu \).
+        !! Needs \( \nu < 1/2 \) (D-017.12b).
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(out) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: young
+            !! Young modulus \( E > 0 \).
+        real(${k}$), intent(in) :: poisson
+            !! Poisson ratio \( -1 < \nu < 1/2 \).
 
         prm%lambda = young * poisson / ((1.0_${k}$ + poisson) * (1.0_${k}$ - 2.0_${k}$ * poisson))
         prm%mu     = 0.5_${k}$ * young / (1.0_${k}$ + poisson)
         prm%e1     = prm%lambda + 2.0_${k}$ * prm%mu
     end subroutine elas_linear_init_${k}$
-#:for d in model_dims('elas')
-#:set L2 = layout('2Osym', d)
-#:set N = [L2.index(i, i)[0] for i in (1, 2, 3)]
-#:set SHEARS = [c.pos[0] for c in L2.comps if c.idx[0] != c.idx[1]]
 
-    $:MODEL_FUNCTION('elas', 'linear', 'stress', k, d)
+    pure function elas_stress_linear_3D_${k}$(prm, strain) result(res)
+        !! Stress \( \boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \boldsymbol\sigma \).
         real(${k}$) :: e1, lam, two_mu
 
         e1     = prm%e1
@@ -76,48 +103,212 @@ contains
         two_mu = 2.0_${k}$*prm%mu
 
         ! sigma_ii = e1 eps_ii + lambda (eps_jj + eps_kk), (i, j, k) cyclic; shears 2 mu eps_ij
-        res%vals(${N[0]}$) = e1*strain%vals(${N[0]}$) + lam*(strain%vals(${N[1]}$) + strain%vals(${N[2]}$))
-        res%vals(${N[1]}$) = e1*strain%vals(${N[1]}$) + lam*(strain%vals(${N[2]}$) + strain%vals(${N[0]}$))
-        res%vals(${N[2]}$) = e1*strain%vals(${N[2]}$) + lam*(strain%vals(${N[0]}$) + strain%vals(${N[1]}$))
-#:for p in SHEARS
-        res%vals(${p}$) = two_mu*strain%vals(${p}$)
-#:endfor
-    end function elas_stress_linear_${d}$_${k}$
+        res%vals(1) = e1*strain%vals(1) + lam*(strain%vals(2) + strain%vals(3))
+        res%vals(2) = e1*strain%vals(2) + lam*(strain%vals(3) + strain%vals(1))
+        res%vals(3) = e1*strain%vals(3) + lam*(strain%vals(1) + strain%vals(2))
+        res%vals(4) = two_mu*strain%vals(4)
+        res%vals(5) = two_mu*strain%vals(5)
+        res%vals(6) = two_mu*strain%vals(6)
+    end function elas_stress_linear_3D_${k}$
 
-    $:MODEL_FUNCTION('elas', 'linear', 'stress_dev', k, d, doc=r'Analytic, also in 2D (D-017.12a): \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).')
+    pure function elas_stress_dev_linear_3D_${k}$(prm, strain) result(res)
+        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model in `real(${k}$)` (3D).
+        !! Analytic, also in 2D (D-017.12a): \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \operatorname{dev}\boldsymbol\sigma \).
         real(${k}$) :: two_mu, tr_comp
 
         two_mu  = 2.0_${k}$ * prm%mu
-        tr_comp = two_mu / 3.0_${k}$ * (strain%vals(${N[0]}$) + strain%vals(${N[1]}$) + strain%vals(${N[2]}$))
+        tr_comp = two_mu / 3.0_${k}$ * (strain%vals(1) + strain%vals(2) + strain%vals(3))
             ! = (2 mu/3) tr(eps), subtracted from each normal component
 
-#:for p in N
-        res%vals(${p}$) = two_mu*strain%vals(${p}$) - tr_comp
-#:endfor
-#:for p in SHEARS
-        res%vals(${p}$) = two_mu*strain%vals(${p}$)
-#:endfor
-    end function elas_stress_dev_linear_${d}$_${k}$
+        res%vals(1) = two_mu*strain%vals(1) - tr_comp
+        res%vals(2) = two_mu*strain%vals(2) - tr_comp
+        res%vals(3) = two_mu*strain%vals(3) - tr_comp
+        res%vals(4) = two_mu*strain%vals(4)
+        res%vals(5) = two_mu*strain%vals(5)
+        res%vals(6) = two_mu*strain%vals(6)
+    end function elas_stress_dev_linear_3D_${k}$
 
-    $:MODEL_FUNCTION('elas', 'linear', 'dstress_dstrain', k, d, doc=r'Constant: `strain` is not used. \( C_{iiii} = e_1 \), \( C_{iijj} = \lambda \), \( C_{ijij} = \mu \) (\( i \ne j \)), others 0.')
+    pure function elas_dstress_dstrain_linear_3D_${k}$(prm, strain) result(res)
+        !! Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in `real(${k}$)` (3D).
+        !! Constant: `strain` is not used. \( C_{iiii} = e_1 \), \( C_{iijj} = \lambda \), \( C_{ijij} = \mu \) (\( i \ne j \)), others 0.
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \).
 
-#:for p, v in isotropic_4o3sym(layout('4O3sym', d), 'prm%e1', 'prm%lambda', 'prm%mu', '0.0_' + k)
-        res%vals(${p}$) = ${v}$
-#:endfor
-    end function elas_dstress_dstrain_linear_${d}$_${k}$
+        res%vals(1) = prm%e1
+        res%vals(2) = prm%e1
+        res%vals(3) = prm%e1
+        res%vals(4) = prm%mu
+        res%vals(5) = prm%mu
+        res%vals(6) = prm%mu
+        res%vals(7) = prm%lambda
+        res%vals(8) = prm%lambda
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.0_${k}$
+        res%vals(11) = 0.0_${k}$
+        res%vals(12) = prm%lambda
+        res%vals(13) = 0.0_${k}$
+        res%vals(14) = 0.0_${k}$
+        res%vals(15) = 0.0_${k}$
+        res%vals(16) = 0.0_${k}$
+        res%vals(17) = 0.0_${k}$
+        res%vals(18) = 0.0_${k}$
+        res%vals(19) = 0.0_${k}$
+        res%vals(20) = 0.0_${k}$
+        res%vals(21) = 0.0_${k}$
+    end function elas_dstress_dstrain_linear_3D_${k}$
 
-    $:MODEL_FUNCTION('elas', 'linear', 'dstress_dstrain_dev', k, d, doc=r'Constant: `strain` is not used. Analytic: \( 4\mu/3 \) (normal diagonal), \( -2\mu/3 \) (normal off-diagonal), \( \mu \) (shears).')
+    pure function elas_dstress_dstrain_dev_linear_3D_${k}$(prm, strain) result(res)
+        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in `real(${k}$)` (3D).
+        !! Constant: `strain` is not used. Analytic: \( 4\mu/3 \) (normal diagonal), \( -2\mu/3 \) (normal off-diagonal), \( \mu \) (shears).
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \).
         real(${k}$) :: mu, c_diag, c_off
 
         mu     = prm%mu
         c_diag =  4.0_${k}$/3.0_${k}$ * mu   ! normal diagonal:     4mu/3
         c_off  = -2.0_${k}$/3.0_${k}$ * mu   ! normal off-diagonal: -2mu/3
 
-#:for p, v in isotropic_4o3sym(layout('4O3sym', d), 'c_diag', 'c_off', 'mu', '0.0_' + k)
-        res%vals(${p}$) = ${v}$
-#:endfor
-    end function elas_dstress_dstrain_dev_linear_${d}$_${k}$
-#:endfor
+        res%vals(1) = c_diag
+        res%vals(2) = c_diag
+        res%vals(3) = c_diag
+        res%vals(4) = mu
+        res%vals(5) = mu
+        res%vals(6) = mu
+        res%vals(7) = c_off
+        res%vals(8) = c_off
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.0_${k}$
+        res%vals(11) = 0.0_${k}$
+        res%vals(12) = c_off
+        res%vals(13) = 0.0_${k}$
+        res%vals(14) = 0.0_${k}$
+        res%vals(15) = 0.0_${k}$
+        res%vals(16) = 0.0_${k}$
+        res%vals(17) = 0.0_${k}$
+        res%vals(18) = 0.0_${k}$
+        res%vals(19) = 0.0_${k}$
+        res%vals(20) = 0.0_${k}$
+        res%vals(21) = 0.0_${k}$
+    end function elas_dstress_dstrain_dev_linear_3D_${k}$
+
+    pure function elas_stress_linear_2D_${k}$(prm, strain) result(res)
+        !! Stress \( \boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model in `real(${k}$)` (2D).
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_2D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_2D2Osym_${k}$) :: res
+            !! \( \boldsymbol\sigma \).
+        real(${k}$) :: e1, lam, two_mu
+
+        e1     = prm%e1
+        lam    = prm%lambda
+        two_mu = 2.0_${k}$*prm%mu
+
+        ! sigma_ii = e1 eps_ii + lambda (eps_jj + eps_kk), (i, j, k) cyclic; shears 2 mu eps_ij
+        res%vals(1) = e1*strain%vals(1) + lam*(strain%vals(2) + strain%vals(3))
+        res%vals(2) = e1*strain%vals(2) + lam*(strain%vals(3) + strain%vals(1))
+        res%vals(3) = e1*strain%vals(3) + lam*(strain%vals(1) + strain%vals(2))
+        res%vals(4) = two_mu*strain%vals(4)
+    end function elas_stress_linear_2D_${k}$
+
+    pure function elas_stress_dev_linear_2D_${k}$(prm, strain) result(res)
+        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model in `real(${k}$)` (2D).
+        !! Analytic, also in 2D (D-017.12a): \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_2D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_2D2Osym_${k}$) :: res
+            !! \( \operatorname{dev}\boldsymbol\sigma \).
+        real(${k}$) :: two_mu, tr_comp
+
+        two_mu  = 2.0_${k}$ * prm%mu
+        tr_comp = two_mu / 3.0_${k}$ * (strain%vals(1) + strain%vals(2) + strain%vals(3))
+            ! = (2 mu/3) tr(eps), subtracted from each normal component
+
+        res%vals(1) = two_mu*strain%vals(1) - tr_comp
+        res%vals(2) = two_mu*strain%vals(2) - tr_comp
+        res%vals(3) = two_mu*strain%vals(3) - tr_comp
+        res%vals(4) = two_mu*strain%vals(4)
+    end function elas_stress_dev_linear_2D_${k}$
+
+    pure function elas_dstress_dstrain_linear_2D_${k}$(prm, strain) result(res)
+        !! Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in `real(${k}$)` (2D).
+        !! Constant: `strain` is not used. \( C_{iiii} = e_1 \), \( C_{iijj} = \lambda \), \( C_{ijij} = \mu \) (\( i \ne j \)), others 0.
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_2D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_2D4O3sym_${k}$) :: res
+            !! \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \).
+
+        res%vals(1) = prm%e1
+        res%vals(2) = prm%e1
+        res%vals(3) = prm%e1
+        res%vals(4) = prm%mu
+        res%vals(5) = prm%lambda
+        res%vals(6) = prm%lambda
+        res%vals(7) = 0.0_${k}$
+        res%vals(8) = prm%lambda
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.0_${k}$
+    end function elas_dstress_dstrain_linear_2D_${k}$
+
+    pure function elas_dstress_dstrain_dev_linear_2D_${k}$(prm, strain) result(res)
+        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in `real(${k}$)` (2D).
+        !! Constant: `strain` is not used. Analytic: \( 4\mu/3 \) (normal diagonal), \( -2\mu/3 \) (normal off-diagonal), \( \mu \) (shears).
+        implicit none
+        @:DEVICE()
+        type(elas_linear_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_2D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_2D4O3sym_${k}$) :: res
+            !! \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \).
+        real(${k}$) :: mu, c_diag, c_off
+
+        mu     = prm%mu
+        c_diag =  4.0_${k}$/3.0_${k}$ * mu   ! normal diagonal:     4mu/3
+        c_off  = -2.0_${k}$/3.0_${k}$ * mu   ! normal off-diagonal: -2mu/3
+
+        res%vals(1) = c_diag
+        res%vals(2) = c_diag
+        res%vals(3) = c_diag
+        res%vals(4) = mu
+        res%vals(5) = c_off
+        res%vals(6) = c_off
+        res%vals(7) = 0.0_${k}$
+        res%vals(8) = c_off
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.0_${k}$
+    end function elas_dstress_dstrain_dev_linear_2D_${k}$
 #:endfor
 
 end module muscle_elasticity_linear

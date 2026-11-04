@@ -8,13 +8,13 @@
 #! (D-018.1), the Newton tolerance and the elastic check are relative as in `closest_point` (D-018.3,
 #! D-018.13) and there is no output. No constraint
 #! \( \Delta\gamma \ge 0 \) (D-018.10c). The consistent tangent is that of `closest_point`
-#! (muscle_closest_point_tangent.fypp): both solve the same residual equations.
+#! (muscle_closest_point_tangent.fypp, included by muscle_material.fypp): both solve the same residual equations.
 #!
 #! Included by src/materials/muscle_material.fypp inside its `#:for k` loop (contained procedures of
 #! the material module), with the variables listed in muscle_closest_point_body.fypp set (also for the
 #! argument `elas`). 3D only. The material type has the components `yield` and `hard`
 #! (MATERIAL_SOLVERS['closest_point_2']), `iter_nw` and `tol`.
-#! The dummy arguments of `SOLVE` are the macro `SOLVE_DUMMIES` of the material template.
+#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver, D-018.12c).
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
 
@@ -39,7 +39,26 @@
         use muscle_hard_laws, only : hard_stress
         implicit none
         @:DEVICE()
-@:SOLVE_DUMMIES()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material (parameters of its models, iteration limit and tolerance).
+        type(${ELAS_T}$), intent(in) :: elas
+            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
+        type(${S2}$), intent(in) :: strain
+            !! Total strain at \( t_{n+1} \).
+        real(${k}$), intent(in) :: dt
+            !! Time step (not used).
+        type(plastic_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(plastic_state_${k}$), intent(out) :: state_np1
+            !! State at \( t_{n+1} \) (stress, plastic strain, equivalent plastic strain).
+        type(${S2}$), intent(out) :: stress
+            !! Stress at \( t_{n+1} \) (the stress of `state_np1`).
+        type(${T4}$), intent(out) :: tangent
+            !! Consistent tangent \( d\boldsymbol\sigma/d\boldsymbol\varepsilon \) at \( t_{n+1} \).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_NOT_CONVERGED` (muscle_status).
+        integer, intent(out) :: iters
+            !! Newton iterations (0 in an elastic step, at most `mat%iter_nw`).
 
         type(${S2}$) :: stress_trial
         real(${k}$) :: hard_n, f_trial, dgamma
@@ -174,5 +193,4 @@
         end if
     end subroutine ${ITER}$
 
-#:include "muscle_closest_point_tangent.fypp"
 #:endif

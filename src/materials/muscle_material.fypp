@@ -29,39 +29,6 @@
 #:set STATE_MOD = muscle_meta.material_state(MAT, 'dp')[0]
 #:set model_type = muscle_meta.model_type
 #:set family_module_of = lambda p: muscle_meta.model_family(p).family_module
-#! Dummy arguments of the return mapping `SOLVE` of every solver body (one signature for every solver,
-#! D-018.12c), with the variables of the body (`k`, `MAT_T`, `ELAS_T`, `S2`, `T4`, `SOLVER`) set:
-#! `tangent_doc` / `iters_doc` describe the tangent and the iterations of the solver.
-#:def SOLVE_DUMMIES(tangent_doc=None, iters_doc='Newton iterations')
-        type(${MAT_T}$), intent(in) :: mat
-            !! Material (parameters of its models, iteration limit and tolerance).
-        type(${ELAS_T}$), intent(in) :: elas
-            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
-        type(${S2}$), intent(in) :: strain
-            !! Total strain at \( t_{n+1} \).
-        real(${k}$), intent(in) :: dt
-#:if SOLVER.dt
-            !! Time step \( \Delta t \).
-#:else
-            !! Time step (not used).
-#:endif
-        type(plastic_state_${k}$), intent(in) :: state_n
-            !! Converged state at \( t_n \).
-        type(plastic_state_${k}$), intent(out) :: state_np1
-            !! State at \( t_{n+1} \) (stress, plastic strain, equivalent plastic strain).
-        type(${S2}$), intent(out) :: stress
-            !! Stress at \( t_{n+1} \) (the stress of `state_np1`).
-        type(${T4}$), intent(out) :: tangent
-#:if tangent_doc
-            !! ${tangent_doc}$
-#:else
-            !! Consistent tangent \( d\boldsymbol\sigma/d\boldsymbol\varepsilon \) at \( t_{n+1} \).
-#:endif
-        integer, intent(out) :: status
-            !! `STATUS_OK` or `STATUS_NOT_CONVERGED` (muscle_status).
-        integer, intent(out) :: iters
-            !! ${iters_doc}$ (0 in an elastic step, at most `mat%iter_nw`).
-#:enddef SOLVE_DUMMIES
 
 module ${muscle_meta.material_module(MAT.name)}$
     !! Declared material `${MAT.name}$`${': ' + MAT.doc if MAT.doc else ''}$.
@@ -298,6 +265,12 @@ contains
 #:include "../solvers/muscle_cutting_plane_body.fypp"
 #:else
 #:stop 'muscle_material.fypp: no body for solver {}'.format(MAT.solver)
+#:endif
+
+#! Consistent tangent shared by the two closest point solvers (one include level).
+#:if MAT.solver in ('closest_point', 'closest_point_2')
+
+#:include "../solvers/muscle_closest_point_tangent.fypp"
 #:endif
 
 #:include "muscle_material_kernel.fypp"

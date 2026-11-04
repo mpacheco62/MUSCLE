@@ -1,10 +1,10 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
+#:include "muscle_common.fypp"
 
 module muscle_visco_laws
     !! Linear viscoelastic models for kernels (D-007, D-017.13): the parameter types of every
-    !! registered model (`visco_<name>_<k>`, `VISCOELASTIC_MODELS` of tools/fypp/muscle_meta.py), the
+    !! model (`visco_<name>_<k>`), the
     !! state and coefficient types (muscle_visco_types), the frozen elasticity `elas_frozen_<k>`
     !! (an elastic model, muscle_visco_frozen) and the family generics (prefix `visco_`), with the
     !! same names for every model and kind (3D only, D-017.13c). The state is explicit and the
@@ -36,15 +36,76 @@ module muscle_visco_laws
     !! call visco_update(prm, coefs, state_n, eps_e, state_np1)
     !! ! global convergence: state_n = state_np1
     !! ```
-    $:FAMILY_USES('visco')
-    use muscle_visco_types, only : MAX_VISCO_BRANCHES, visco_state_init, &
-        ${', '.join('visco_state_{0}, visco_coefs_{0}'.format(k) for k in REAL_KINDS)}$
-    use muscle_visco_frozen, only : ${', '.join('elas_frozen_' + k for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+    use muscle_visco_maxwell, only : visco_maxwell_${k}$, &
+        & visco_step_coefficients_maxwell_${k}$, visco_freeze_maxwell_${k}$, &
+        & visco_update_maxwell_${k}$, visco_n_branches_maxwell_${k}$, &
+        & visco_freeze_branches_maxwell_${k}$, visco_update_branches_maxwell_${k}$
+    use muscle_visco_kelvin, only : visco_kelvin_${k}$, &
+        & visco_step_coefficients_kelvin_${k}$, visco_freeze_kelvin_${k}$, &
+        & visco_update_kelvin_${k}$, visco_n_branches_kelvin_${k}$, &
+        & visco_freeze_branches_kelvin_${k}$, visco_update_branches_kelvin_${k}$
+    use muscle_visco_types, only : visco_state_${k}$, visco_coefs_${k}$
+    use muscle_visco_frozen, only : elas_frozen_${k}$
+#:endfor
+    use muscle_visco_types, only : MAX_VISCO_BRANCHES, visco_state_init
     implicit none
     private
 
-    $:FAMILY_EXPORTS('visco')
+    public :: visco_step_coefficients, visco_freeze, visco_update, visco_n_branches
+    public :: visco_freeze_branches, visco_update_branches
     public :: MAX_VISCO_BRANCHES, visco_state_init
-    public :: ${', '.join('visco_state_{0}, visco_coefs_{0}, elas_frozen_{0}'.format(k) for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+    public :: visco_maxwell_${k}$, visco_kelvin_${k}$
+    public :: visco_state_${k}$, visco_coefs_${k}$, elas_frozen_${k}$
+#:endfor
+
+    interface visco_step_coefficients
+        !! Coefficients of a time step (algorithmic moduli and the factors of each branch; the time step is
+        !! validated) (every model and kind of the family).
+#:for k in REAL_KINDS
+        module procedure visco_step_coefficients_maxwell_${k}$, visco_step_coefficients_kelvin_${k}$
+#:endfor
+    end interface visco_step_coefficients
+
+    interface visco_freeze
+        !! Frozen (algorithmic) elasticity of a time step at a point,
+        !! \( \boldsymbol\sigma_{n+1} = \mathbb{C}^{alg} : \boldsymbol\varepsilon^e_{n+1} + \boldsymbol\sigma^{hist}_n \)
+        !! (every model and kind of the family).
+#:for k in REAL_KINDS
+        module procedure visco_freeze_maxwell_${k}$, visco_freeze_kelvin_${k}$
+#:endfor
+    end interface visco_freeze
+
+    interface visco_update
+        !! State at \( t_{n+1} \) from the converged state and the elastic strain at \( t_{n+1} \) (every model and kind
+        !! of the family).
+#:for k in REAL_KINDS
+        module procedure visco_update_maxwell_${k}$, visco_update_kelvin_${k}$
+#:endfor
+    end interface visco_update
+
+    interface visco_n_branches
+        !! Number of history tensors of the state used by the model (every model and kind of the family).
+#:for k in REAL_KINDS
+        module procedure visco_n_branches_maxwell_${k}$, visco_n_branches_kelvin_${k}$
+#:endfor
+    end interface visco_n_branches
+
+    interface visco_freeze_branches
+        !! `visco_freeze` on the components of a state with `nb` history tensors (every model and kind of the
+        !! family).
+#:for k in REAL_KINDS
+        module procedure visco_freeze_branches_maxwell_${k}$, visco_freeze_branches_kelvin_${k}$
+#:endfor
+    end interface visco_freeze_branches
+
+    interface visco_update_branches
+        !! `visco_update` on the components of a state with `nb` history tensors (the caller stores the elastic
+        !! strain) (every model and kind of the family).
+#:for k in REAL_KINDS
+        module procedure visco_update_branches_maxwell_${k}$, visco_update_branches_kelvin_${k}$
+#:endfor
+    end interface visco_update_branches
 
 end module muscle_visco_laws

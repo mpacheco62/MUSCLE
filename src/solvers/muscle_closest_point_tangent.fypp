@@ -6,7 +6,7 @@
 #! (muscle_closest_point_2_body.fypp), which solve the same residual equations (plastic strain flow
 #! rule and consistency) by different Newton schemes: at a converged state both have this tangent
 #! (the Schur complement of the 7x7 Newton Jacobian of `closest_point_2` on the plastic multiplier).
-#! Included with the variables of src/materials/muscle_material.fypp set (`k`, `MAT`, `MAT_T`, `ELAS_T`,
+#! Included by src/materials/muscle_material.fypp (after the solver body) with its variables set (`k`, `MAT`, `MAT_T`, `ELAS_T`,
 #! `TANGENT`, `S2`, `C4`, `T4`); the material type has the components `yield` and `hard`, the
 #! elasticity of the step is the argument `elas` (muscle_closest_point_body.fypp).
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.

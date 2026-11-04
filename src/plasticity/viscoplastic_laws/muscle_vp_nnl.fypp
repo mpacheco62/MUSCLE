@@ -1,8 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = model_param_list('vp', 'nnl')
+#:include "muscle_common.fypp"
 
 module muscle_vp_nnl
     !! Nemat-Nasser-Li (NNL) viscoplastic law (self-contained: it does not compose a hardening law),
@@ -32,14 +30,55 @@ module muscle_vp_nnl
     implicit none
     private
 
-    $:MODEL_PUBLIC('vp', 'nnl')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('vp', 'nnl', k, PARAMS)
+    public :: vp_nnl_${k}$
+    public :: vp_flow_stress_nnl_${k}$, vp_dflow_dep_nnl_${k}$, vp_dflow_depd_nnl_${k}$, &
+        & vp_dstress_dep_nnl_${k}$
+#:endfor
+
+#:for k in REAL_KINDS
+    type :: vp_nnl_${k}$
+        !! Parameters of the Nemat-Nasser-Li model in `real(${k}$)`.
+        real(${k}$) :: sig_a
+            !! Athermal stress coefficient \( \sigma_a \).
+        real(${k}$) :: n1
+            !! Athermal hardening exponent \( n_1 \).
+        real(${k}$) :: sig_0
+            !! Thermal stress coefficient \( \sigma_0 \).
+        real(${k}$) :: KG0
+            !! Normalized activation coefficient \( k T/G_0 \).
+        real(${k}$) :: epd0
+            !! Reference strain rate \( \dot\epsilon_0 \).
+        real(${k}$) :: at
+            !! Microstructure evolution coefficient \( a \).
+        real(${k}$) :: n0
+            !! Microstructure evolution exponent \( n_0 \).
+        real(${k}$) :: q
+            !! Barrier profile exponent \( q \).
+        real(${k}$) :: p
+            !! Barrier profile exponent \( p \).
+        real(${k}$) :: eps_log = 1.0e-12_${k}$
+            !! Floor of the logarithm arguments and of the rate.
+        real(${k}$) :: eps_base = 1.0e-12_${k}$
+            !! Floor of \( 1 - X^{1/q} \).
+    end type vp_nnl_${k}$
 #:endfor
 
 contains
 #:for k in REAL_KINDS
-    $:MODEL_FUNCTION('vp', 'nnl', 'flow_stress', k)
+    pure function vp_flow_stress_nnl_${k}$(prm, ep, epd) &
+        & result(res)
+        !! Viscoplastic flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \) of the Nemat-Nasser-Li model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(vp_nnl_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \sigma \).
         real(${k}$) :: sig_u, S, X, X_pow, base2, h_ep, ep_eff, epd_eff
 
         ! Athermal component (floor of ep: finite derivative at ep = 0 for a small n1)
@@ -112,22 +151,64 @@ contains
         depd = (prm%sig_0*(1.0_${k}$/prm%p)*base2**(1.0_${k}$/prm%p - 1.0_${k}$)*(-dXpow_depd))*factor_h
     end subroutine vp_nnl_dparts_${k}$
 
-    $:MODEL_FUNCTION('vp', 'nnl', 'dflow_dep', k)
+    pure function vp_dflow_dep_nnl_${k}$(prm, ep, epd) &
+        & result(res)
+        !! Partial derivative \( \partial\sigma/\partial\epsilon_p \) (at constant \( \dot\epsilon_p \)) of the
+        !! Nemat-Nasser-Li model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(vp_nnl_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \partial\sigma/\partial\epsilon_p \).
         real(${k}$) :: depd
         call vp_nnl_dparts_${k}$(prm, ep, epd, res, depd)
     end function vp_dflow_dep_nnl_${k}$
 
-    $:MODEL_FUNCTION('vp', 'nnl', 'dflow_depd', k)
+    pure function vp_dflow_depd_nnl_${k}$(prm, ep, epd) &
+        & result(res)
+        !! Partial derivative \( \partial\sigma/\partial\dot\epsilon_p \) (at constant \( \epsilon_p \)) of the
+        !! Nemat-Nasser-Li model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(vp_nnl_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \partial\sigma/\partial\dot\epsilon_p \).
         real(${k}$) :: dep
         call vp_nnl_dparts_${k}$(prm, ep, epd, dep, res)
     end function vp_dflow_depd_nnl_${k}$
 
-    $:MODEL_FUNCTION('vp', 'nnl', 'dstress_dep', k, doc='dflow_dep + dflow_depd/dt, computed once (original operation order).')
+    pure function vp_dstress_dep_nnl_${k}$(prm, ep, epd, dt) &
+        & result(res)
+        !! Derivative of the flow stress with respect to the plastic strain increment, \( \partial\sigma/\partial\epsilon_p
+        !! + \partial\sigma/\partial\dot\epsilon_p/\Delta t \) of the Nemat-Nasser-Li model in `real(${k}$)`.
+        !! dflow_dep + dflow_depd/dt, computed once (original operation order).
+        implicit none
+        @:DEVICE()
+        type(vp_nnl_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$), intent(in) :: dt
+            !! Time step \( \Delta t \) (\( \dot\epsilon_p = \Delta\epsilon_p/\Delta t \)).
+        real(${k}$) :: res
+            !! \( d\sigma/d\Delta\epsilon_p \).
         real(${k}$) :: dep, depd
 
         call vp_nnl_dparts_${k}$(prm, ep, epd, dep, depd)
         res = dep + depd/dt
     end function vp_dstress_dep_nnl_${k}$
-#:endfor
 
+#:endfor
 end module muscle_vp_nnl

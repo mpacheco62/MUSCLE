@@ -26,7 +26,7 @@ set_tests_properties(plasticity-yield_criteria-yield_golden PROPERTIES
 # Kernel API of the yield criteria (D-017) in every kind: free functions through the generics of
 # muscle_yield_criteria against closed forms and central differences (dp) and against dp (sp), zero
 # derivatives at a null equivalent stress (D-017.9), default joint evaluation, finite-difference
-# derivatives of the contract (MODEL_FD in the stress), and a pure @:DEVICE() point procedure
+# finite-difference derivatives (FD_GRAD/FD_HESS of the stress), and a pure @:DEVICE() point procedure
 add_muscle_fypp_test(yield_kinds test_yield_kinds.fypp)
 
 # Compile-fail checks (D-017.10b): the kernel types with derived parameters (CPB06: B, L;

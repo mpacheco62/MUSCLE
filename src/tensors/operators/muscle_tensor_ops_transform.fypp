@@ -65,8 +65,16 @@ contains
 #:set F = e.tag_b[2:]
 #:if F == '2Osym'
 #:set tmp, rcomp = op_congruence(d, 'F%vals', 'S%vals')
-#:call OP_FUNCTION(e, 'Congruence transformation &
-    & \\(\\mathbf{res} = \\mathbf{F} \\cdot \\mathbf{S} \\cdot \\mathbf{F}^T\\)', args=['F', 'S'])
+#:set doc = 'Congruence transformation &
+    & \\(\\mathbf{res} = \\mathbf{F} \\cdot \\mathbf{S} \\cdot \\mathbf{F}^T\\)'
+#:set x, y = 'F', 'S'
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
         real(${k}$) :: ${', '.join('T{}{}'.format(*iL) for iL, _ in tmp)}$
             !! Entries of \(\mathbf{T} = \mathbf{F} \cdot \mathbf{S}\) that are used.
 
@@ -76,13 +84,22 @@ contains
 #:for c in op_layout(e.tag_res).comps
         res%vals(${c.pos[0]}$) = ${rcomp[c.idx]}$ ! ${c.name}$
 #:endfor
-#:endcall OP_FUNCTION
+    end function ${e.name}$
+
 #:else
 #:set lc = op_layout(e.tag_b)
 #:set V = op_voigt_congruence(lc, 'A%vals', 'C_in%vals', k)
 #:set n = V.n
-#:call OP_FUNCTION(e, 'Fourth-order transformation &
-    & \\( res_{ijkl} = A_{iI} A_{jJ} A_{kK} A_{lL} C_{IJKL} \\)', args=['A', 'C_in'])
+#:set doc = 'Fourth-order transformation &
+    & \\( res_{ijkl} = A_{iI} A_{jJ} A_{kK} A_{lL} C_{IJKL} \\)'
+#:set x, y = 'A', 'C_in'
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
 #:if F == '4O2sym' and len(V.T) == n * n
 #! Dense T (3D): whole-column products, W = T C then R = W T^T
         real(${k}$) :: T(${n}$,${n}$), W(${n}$,${n}$)
@@ -132,7 +149,8 @@ contains
 #:endfor
 #:endif
 #:endif
-#:endcall OP_FUNCTION
+    end function ${e.name}$
+
 #:endif
 #:endfor
 #:endfor

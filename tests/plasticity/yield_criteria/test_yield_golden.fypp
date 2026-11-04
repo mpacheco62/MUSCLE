@@ -1,7 +1,8 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#:set YIELD = model_family('yield').models
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:set YIELD = muscle_meta.model_family('yield').models
 
 module yield_golden_cases
     !! Cases of the golden test of the yield criteria: every function of the family of every

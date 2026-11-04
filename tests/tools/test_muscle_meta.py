@@ -987,30 +987,14 @@ class TestModelFamilies(unittest.TestCase):
         self.assertEqual(mm.model_type('hard', 'bilinear', 'sp'), 'hard_bilinear_sp')
         self.assertEqual(mm.model_specific('hard', 'dstress_dep', 'bilinear', 'dp'),
                          'hard_dstress_dep_bilinear_dp')
-        self.assertEqual(mm.model_call('hard', 'stress', 'bilinear', 'dp', 'ep'),
-                         'hard_stress_bilinear_dp(prm, {x})')
-        self.assertEqual(mm.model_call('hard', 'stress', 'bilinear', 'dp'),
-                         'hard_stress_bilinear_dp(prm, ep)')
 
-    def test_composition_and_extra_args(self):
-        # Composed models take the composition values each function needs, after `extra`
-        names = lambda args: [a.name for a in args]
+    def test_composition(self):
+        # Composed models receive the composition values each function needs (ModelFunc.comp)
         self.assertTrue(mm.model_composed('vp', 'jc'))
         self.assertFalse(mm.model_composed('vp', 'rk'))
         self.assertFalse(mm.model_composed('hard', 'bilinear'))
-        self.assertEqual(names(mm.model_args('vp', 'dstress_dep', 'jc')), ['ep', 'epd', 'dt', 'sy', 'dsy_dep'])
-        self.assertEqual(names(mm.model_args('vp', 'dstress_dep', 'rk')), ['ep', 'epd', 'dt'])
-        self.assertEqual(names(mm.model_args('vp', 'flow_stress', 'jc')), ['ep', 'epd', 'sy'])
-        self.assertEqual(names(mm.model_args('os', 'dflow_dep', 'perzyna')), ['sigma_eq', 'ep', 'sy', 'dsy_dep'])
-        self.assertEqual(names(mm.model_args('hard', 'stress', 'bilinear')), ['ep'])
         self.assertEqual([v.func for v in mm.model_comp_values('vp', 'dflow_dep')], ['stress', 'dstress_dep'])
         self.assertEqual(mm.model_comp_values('hard', 'stress'), [])
-        self.assertEqual(mm.model_call('vp', 'flow_stress', 'jc', 'sp', 'epd'),
-                         'vp_flow_stress_jc_sp(prm, ep, {x}, sy)')
-        self.assertEqual(mm.model_default_expr('vp', 'dstress_dep', 'rk', 'dp'),
-                         'vp_dflow_dep_rk_dp(prm, ep, epd) + vp_dflow_depd_rk_dp(prm, ep, epd)/dt')
-        with self.assertRaises(ValueError):
-            mm.model_default_expr('vp', 'flow_stress', 'rk', 'dp')
 
     def test_families_are_consistent(self):
         for fam in mm.MODEL_FAMILIES.values():
@@ -1022,10 +1006,6 @@ class TestModelFamilies(unittest.TestCase):
                 if f.deriv is not None:
                     self.assertIn(f.deriv[0], funcs)
                     self.assertIn(f.deriv[1], names)
-                    # the arguments of the derivative include those of the function
-                    for m in fam.models:
-                        self.assertTrue(set(a.name for a in mm.model_args(fam.prefix, f.deriv[0], m))
-                                        <= set(a.name for a in mm.model_args(fam.prefix, f.name, m)))
                 self.assertNotIn(fam.par, [a.name for a in f.extra])
                 if f.comp:
                     self.assertIsNotNone(fam.composition)
@@ -1041,28 +1021,10 @@ class TestModelFamilies(unittest.TestCase):
         with self.assertRaises(KeyError):
             mm.model_func('hard', 'nope')
 
-    def test_decl_and_defaults(self):
-        self.assertEqual(mm.model_decl('real', '', 'sp'), 'real(sp)')
-        self.assertEqual(mm.model_decl('integer', '(3)', 'dp'), 'integer')
-        self.assertEqual(mm.model_decl('2Osym', '', 'dp', '2D'), 'type(ten_2D2Osym_dp)')
-        with self.assertRaises(ValueError):
-            mm.model_decl('2Osym', '', 'dp')
-        with self.assertRaises(ValueError):
-            mm.model_decl('complex', '', 'dp')
+    def test_model_params_validation(self):
         p = mm.model_params([('a', 'real', '', 'A.', '0.5'), ('n', 'integer', '', 'N.', 2),
                              ('v', 'real', '(3)', 'V.', None)])
-        self.assertEqual([mm.model_default(x, 'sp') for x in p], [' = 0.5_sp', ' = 2', ''])
-        # Arrays of an intrinsic type: every element gets the scalar default
-        self.assertEqual(mm.model_default(mm.ModelParam('v', 'real', '(3)', 'V.', '1.0'), 'dp'), ' = 1.0_dp')
-        # Tensor of a fixed dimension: a value for every stored component
-        self.assertEqual(mm.model_default(mm.ModelParam('h', '3D2Osym', '', 'H.', '0.0'), 'sp'),
-                         ' = ten_3D2Osym_sp([' + ', '.join(['0.0_sp'] * 6) + '])')
-        with self.assertRaises(ValueError):   # stored as a matrix
-            mm.model_default(mm.ModelParam('c', '3D4O2sym', '', 'C.', '0.0'), 'dp')
-        with self.assertRaises(ValueError):   # tensor of the instance dimension
-            mm.model_default(mm.ModelParam('s', '2Osym', '', 'S.', '0.0'), 'dp')
-        # Derived types with one instance per kind
-        self.assertEqual(mm.model_decl('type:visco_state', '', 'sp'), 'type(visco_state_sp)')
+        self.assertEqual([x.name for x in p], ['a', 'n', 'v'])
         with self.assertRaises(ValueError):
             mm.model_params([('a', 'real', '', '', None), ('A', 'real', '', '', None)])
         with self.assertRaises(ValueError):
@@ -1082,27 +1044,7 @@ class TestModelFamilies(unittest.TestCase):
         self.assertEqual(mm.model_procs('yield'), ['stress_eq', 'dstress_eq', 'ddstress_eq',
                                                    'stress_eq_and_derivatives', 'joint_evaluation'])
         self.assertEqual(mm.model_procs('hard'), ['stress', 'dstress_dep', 'ddstress_ddep'])
-        self.assertEqual(mm.model_proc_specifics('yield', 'joint_evaluation', 'cpb06', ['sp', 'dp']),
-                         ['yield_joint_evaluation_cpb06_sp', 'yield_joint_evaluation_cpb06_dp'])
-        self.assertEqual(len(mm.model_specifics('yield', 'vonmises', ['sp', 'dp'])), 10)
-        self.assertEqual(mm.model_specifics('hard', 'bilinear', ['dp']),
-                         ['hard_stress_bilinear_dp', 'hard_dstress_dep_bilinear_dp',
-                          'hard_ddstress_ddep_bilinear_dp'])
-        self.assertEqual(mm.model_call('yield', 'stress_eq', 'cpb06', 'sp', 'sigma', '3D'),
-                         'yield_stress_eq_cpb06_3D_sp(prm, {x})')
-        self.assertEqual([(a.name, a.type) for a in mm.model_joint_outs('yield')],
-                         [('f', 'real'), ('df', '2Osym'), ('ddf', '4O3sym')])
-        self.assertFalse(mm.model_joint('yield', 'hill48'))
-        self.assertFalse(mm.model_joint('hard', 'bilinear'))
-        self.assertEqual(mm.model_proc_doc('yield', 'joint_evaluation'), mm.model_family('yield').joint.flag_doc)
         self.assertEqual(mm.model_family('yield').joint.optional, ('ddf',))
-        # a test-only model may declare its own joint evaluation; a registered one must agree
-        self.assertTrue(mm.model_joint('yield', 'testonly', True))
-        self.assertFalse(mm.model_joint('yield', 'testonly'))
-        with self.assertRaises(ValueError):
-            mm.model_joint('yield', 'hill48', True)
-        with self.assertRaises(ValueError):
-            mm.model_joint('hard', 'testonly', True)
         # private parameters (6th element), public by default
         p = mm.model_params([('a', 'real', '', 'A.', None), ('B', 'real', '', 'B.', None, True)])
         self.assertEqual([x.private for x in p], [False, True])
@@ -1137,41 +1079,25 @@ class TestModelFamilies(unittest.TestCase):
                          ['corot_update', 'to_cauchy', 'to_spatial_tangent', 'geometric_tangent', 'is_finite_strain'])
         self.assertEqual(mm.model_procs('kin', 'total_lagrangian'),
                          ['update', 'update_norot', 'to_cauchy', 'to_spatial_tangent', 'geometric_tangent', 'is_finite_strain'])
-        self.assertNotIn('kin_update_corotational_dp', mm.model_specifics('kin', 'corotational', ['dp']))
-        self.assertNotIn('kin_corot_update_total_lagrangian_dp', mm.model_specifics('kin', 'total_lagrangian', ['dp']))
-        self.assertIn('kin_corot_update_corotational_dp', mm.model_specifics('kin', 'corotational', ['dp']))
         self.assertEqual([o.name for o in mm.model_func('kin', 'corot_update').opts], ['R'])
         self.assertEqual(mm.model_procs('hard', 'bilinear'), mm.model_procs('hard'))
         # Newton derivative of the viscoplastic laws with a rate floor only (D-018.19b)
         self.assertEqual(mm.model_procs('vp', 'jc')[-1], 'newton_dstress_dep')
         self.assertNotIn('newton_dstress_dep', mm.model_procs('vp', 'rk'))
-        self.assertEqual([a.name for a in mm.model_args('vp', 'newton_dstress_dep', 'jc')],
-                         [a.name for a in mm.model_args('vp', 'dstress_dep', 'jc')])
         for fam in mm.MODEL_FAMILIES.values():
             for f in fam.funcs:
                 self.assertTrue(f.models is None or set(f.models) <= set(fam.models), (fam.prefix, f.name))
                 self.assertTrue(f.outs or not f.opts, (fam.prefix, f.name))
         self.assertEqual(mm.model_specific('kin', 'update', 'total_lagrangian', 'sp'),
                          'kin_update_total_lagrangian_sp')
-        self.assertEqual([a.name for a in mm.model_args('kin', 'to_cauchy', 'small_strain')], ['state', 'stress'])
         self.assertEqual([o.name for o in mm.model_func('kin', 'update').outs], ['state', 'status'])
-        self.assertEqual(mm.model_decl('type:kin_state', '', 'dp'), 'type(kin_state_dp)')
-        self.assertEqual(mm.model_decl('3D2O', '', 'sp'), 'type(ten_3D2O_sp)')
         self.assertEqual(mm.model_params([]), ())
-        # names fit the Fortran limit (63 characters)
-        for m in mm.KINEMATICS_MODELS:
-            for s in mm.model_specifics('kin', m, mm.KINDS):
-                self.assertLessEqual(len(s), 63, s)
 
     def test_elastic_family(self):
         # 3D and 2D
         self.assertEqual(mm.model_dims('elas'), ['3D', '2D'])
         self.assertEqual(mm.model_specific('elas', 'stress', 'linear', 'sp', '2D'), 'elas_stress_linear_2D_sp')
-        self.assertEqual(len(mm.model_specifics('elas', 'linear', ['sp', 'dp'])), 16)
-        self.assertEqual(mm.model_decl(mm.model_family('elas').args[0].type, '', 'dp', '2D'),
-                         'type(ten_2D2Osym_dp)')
         # tensor parameter of a fixed dimension
-        self.assertEqual(mm.model_decl('2D4O3sym', '', 'sp'), 'type(ten_2D4O3sym_sp)')
         self.assertEqual(mm.model_params([('t', '3D4O3sym', '', 'T.', None, True)])[0].type, '3D4O3sym')
         with self.assertRaises(ValueError):
             mm.model_params([('t', '4D4O3sym', '', 'T.', None)])
@@ -1185,14 +1111,9 @@ class TestModelFamilies(unittest.TestCase):
         self.assertEqual(mm.model_specific('visco', 'update', 'maxwell', 'sp'), 'visco_update_maxwell_sp')
         co = mm.model_func('visco', 'step_coefficients')
         self.assertIsNone(co.result)
-        self.assertEqual(names(mm.model_args('visco', 'step_coefficients', 'kelvin')), ['dt'])
         self.assertEqual(names(co.outs), ['coefs', 'status'])
         up = mm.model_func('visco', 'update')
-        self.assertEqual(names(mm.model_args('visco', 'update', 'maxwell')), ['coefs', 'state_n', 'strain_e'])
         self.assertEqual(names(up.outs), ['state_np1'])
-        self.assertEqual(mm.model_decl(up.outs[0].type, '', 'dp'), 'type(visco_state_dp)')
-        fr = mm.model_func('visco', 'freeze')
-        self.assertEqual(mm.model_decl(fr.result.type, '', 'sp'), 'type(elas_frozen_sp)')
         for f in mm.model_family('visco').funcs:   # a function or a subroutine, never both
             self.assertNotEqual(f.result is None, not f.outs, f.name)
             self.assertIsNone(f.deriv)
@@ -1200,25 +1121,6 @@ class TestModelFamilies(unittest.TestCase):
         self.assertIn('frozen', mm.model_family('elas').models)
         self.assertEqual(mm.model_module('elas', 'frozen'), 'muscle_visco_frozen')
         self.assertEqual(mm.model_module('visco', 'kelvin'), 'muscle_visco_kelvin')
-        # Docs of a parameter type with private components: derived (default) or validated inputs
-        prm = [('k', 'real', '', 'K.', '0.0', True)]
-        self.assertIn('validates', mm.model_params_init_doc('visco', 'kelvin', prm, True))
-        self.assertIn('derived', mm.model_params_init_doc('elas', 'linear', prm))
-        self.assertEqual(mm.model_params_init_doc('hard', 'swift', [('k', 'real', '', 'K.', '0.0')]), '')
-
-    def test_isotropic_4o3sym(self):
-        for dim in mm.DIMS:
-            lay = mm.layout('4O3sym', dim)
-            got = dict(mm.isotropic_4o3sym(lay, 'd', 'o', 's', 'z'))
-            self.assertEqual(sorted(got), [c.pos[0] for c in lay.comps])
-            for c in lay.comps:
-                i, j, k, l = c.idx
-                # a delta_ij delta_kl + b (delta_ik delta_jl + delta_il delta_jk) with a = 1, b = 10
-                v = (i == j) * (k == l) + 10 * ((i == k) * (j == l) + (i == l) * (j == k))
-                self.assertEqual(got[c.pos[0]], {21: 'd', 1: 'o', 10: 's', 0: 'z'}[v], (dim, c.name))
-        self.assertEqual(mm.isotropic_4o3sym(mm.layout('4O3sym', '2D'), 'e1', 'lam', 'mu', '0')[3], (4, 'mu'))
-        with self.assertRaises(ValueError):
-            mm.isotropic_4o3sym(mm.layout('2Osym', '3D'), 'd', 'o', 's', 'z')
 
     def test_literal_value(self):
         self.assertEqual(mm.literal_value('1.0'), 1.0)

@@ -1,6 +1,7 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
 #!
 #! Kernel API of the kinematics family (D-017.14) in every kind, through the generics of
 #! muscle_kin_laws (kin_update, kin_corot_update, kin_to_cauchy, kin_to_spatial_tangent,

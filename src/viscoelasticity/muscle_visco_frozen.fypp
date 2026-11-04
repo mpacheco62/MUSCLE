@@ -1,13 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Frozen elasticity of the viscoelastic models (D-017.13): a model of the elastic family `elas`
-#! (registered in ELASTICITY_MODELS, module kept by MODEL_MODULES of tools/fypp/muscle_meta.py), so
-#! that a return mapping written against the `elas_*` generics uses it as any other elasticity.
-#! The parameters are per point and per step (written by `visco_freeze`): public components.
-#:set PARAMS = model_param_list('elas', 'frozen')
-#:set T2 = lambda d, k: tname(d + '2Osym', k)
-#:set L3 = layout('2Osym', '3D')
+#:include "muscle_common.fypp"
 
 module muscle_visco_frozen
     !! Module muscle_visco_frozen
@@ -37,74 +30,261 @@ module muscle_visco_frozen
     !! of muscle_elasticity_laws. In 2D the history stress contributes its in-plane components
     !! (11, 22, 33, 12): its 23 and 13 components are ignored (D-017.13c).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in DIMS for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
-        operator(.dev.), operator(*), operator(+)
+#:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$, ten_2D2Osym_${k}$, ten_2D4O3sym_${k}$
+#:endfor
+    use muscle_tensors, only : operator(.dev.), operator(*), operator(+)
     implicit none
     private
 
-    $:MODEL_PUBLIC('elas', 'frozen')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('elas', 'frozen', k, PARAMS)
+    public :: elas_frozen_${k}$
+    public :: elas_stress_frozen_3D_${k}$, elas_stress_frozen_2D_${k}$
+    public :: elas_stress_dev_frozen_3D_${k}$, elas_stress_dev_frozen_2D_${k}$
+    public :: elas_dstress_dstrain_frozen_3D_${k}$, elas_dstress_dstrain_frozen_2D_${k}$
+    public :: elas_dstress_dstrain_dev_frozen_3D_${k}$, elas_dstress_dstrain_dev_frozen_2D_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: elas_frozen_${k}$
+        !! Parameters of the frozen (algorithmic) viscoelastic model in `real(${k}$)`.
+        real(${k}$) :: k_alg = 0.0_${k}$
+            !! Algorithmic bulk modulus \( K^{alg} \).
+        real(${k}$) :: g_alg = 0.0_${k}$
+            !! Algorithmic shear modulus \( G^{alg} \).
+        type(ten_3D2Osym_${k}$) :: stress_hist = &
+            & ten_3D2Osym_${k}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! History stress \( \boldsymbol\sigma^{hist}_n \) (constant over the step).
+    end type elas_frozen_${k}$
+
+#:endfor
 contains
 #:for k in REAL_KINDS
-#:for d in model_dims('elas')
-#:set L2 = layout('2Osym', d)
-#:set N = [L2.index(i, i)[0] for i in (1, 2, 3)]
-#! Each stored component of the strain and its position in the (3D) history stress
-#:set H = [(c.pos[0], L3.index(*c.idx)[0]) for c in L2.comps]
 
-    $:MODEL_FUNCTION('elas', 'frozen', 'stress', k, d, doc=r'\( \boldsymbol\sigma = 2G^{alg}\boldsymbol\varepsilon + (K^{alg} - \tfrac{2}{3}G^{alg})\,\mathrm{tr}(\boldsymbol\varepsilon)\,\mathbf{I} + \boldsymbol\sigma^{hist}_n \).')
+    pure function elas_stress_frozen_3D_${k}$(prm, strain) result(res)
+        !! Stress \( \boldsymbol\sigma(\boldsymbol\varepsilon) \) of the frozen (algorithmic) viscoelastic model in
+        !! `real(${k}$)` (3D).
+        !! \( \boldsymbol\sigma = 2G^{alg}\boldsymbol\varepsilon
+        !!   + (K^{alg} - \tfrac{2}{3}G^{alg})\,\mathrm{tr}(\boldsymbol\varepsilon)\,\mathbf{I} + \boldsymbol\sigma^{hist}_n \).
+        implicit none
+        @:DEVICE()
+        type(elas_frozen_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \boldsymbol\sigma \).
         real(${k}$) :: two_g, p
 
         two_g = 2.0_${k}$*prm%g_alg
-        p = (prm%k_alg - two_g/3.0_${k}$)*(strain%vals(${N[0]}$) + strain%vals(${N[1]}$) + strain%vals(${N[2]}$))
-#:for p2, p3 in H
-#:if p2 in N
-        res%vals(${p2}$) = two_g*strain%vals(${p2}$) + p + prm%stress_hist%vals(${p3}$)
-#:else
-        res%vals(${p2}$) = two_g*strain%vals(${p2}$) + prm%stress_hist%vals(${p3}$)
-#:endif
-#:endfor
-    end function elas_stress_frozen_${d}$_${k}$
+        p = (prm%k_alg - two_g/3.0_${k}$)*(strain%vals(1) + strain%vals(2) + strain%vals(3))
+        res%vals(1) = two_g*strain%vals(1) + p + prm%stress_hist%vals(1)
+        res%vals(2) = two_g*strain%vals(2) + p + prm%stress_hist%vals(2)
+        res%vals(3) = two_g*strain%vals(3) + p + prm%stress_hist%vals(3)
+        res%vals(4) = two_g*strain%vals(4) + prm%stress_hist%vals(4)
+        res%vals(5) = two_g*strain%vals(5) + prm%stress_hist%vals(5)
+        res%vals(6) = two_g*strain%vals(6) + prm%stress_hist%vals(6)
+    end function elas_stress_frozen_3D_${k}$
 
-    $:MODEL_FUNCTION('elas', 'frozen', 'stress_dev', k, d, doc=r'\( 2G^{alg}\operatorname{dev}\boldsymbol\varepsilon + \operatorname{dev}\boldsymbol\sigma^{hist}_n \).')
-#:if d == '3D'
+    pure function elas_stress_dev_frozen_3D_${k}$(prm, strain) result(res)
+        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the frozen
+        !! (algorithmic) viscoelastic model in `real(${k}$)` (3D).
+        !! \( 2G^{alg}\operatorname{dev}\boldsymbol\varepsilon + \operatorname{dev}\boldsymbol\sigma^{hist}_n \).
+        implicit none
+        @:DEVICE()
+        type(elas_frozen_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \operatorname{dev}\boldsymbol\sigma \).
 
         res = 2.0_${k}$*prm%g_alg*(.dev. strain) + (.dev. prm%stress_hist)
-#:else
-        type(${T2(d, k)}$) :: hist
+    end function elas_stress_dev_frozen_3D_${k}$
 
-#:for p2, p3 in H
-        hist%vals(${p2}$) = prm%stress_hist%vals(${p3}$)
-#:endfor
-        res = 2.0_${k}$*prm%g_alg*(.dev. strain) + (.dev. hist)
-#:endif
-    end function elas_stress_dev_frozen_${d}$_${k}$
-
-    $:MODEL_FUNCTION('elas', 'frozen', 'dstress_dstrain', k, d, doc=r'Constant: `strain` is not used. Isotropic with \( \mu = G^{alg} \), \( \lambda = K^{alg} - 2\mu/3 \).')
+    pure function elas_dstress_dstrain_frozen_3D_${k}$(prm, strain) result(res)
+        !! Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) of the frozen (algorithmic)
+        !! viscoelastic model in `real(${k}$)` (3D).
+        !! Constant: `strain` is not used. Isotropic with \( \mu = G^{alg} \), \( \lambda = K^{alg} - 2\mu/3 \).
+        implicit none
+        @:DEVICE()
+        type(elas_frozen_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \).
         real(${k}$) :: e1, lam, mu
 
         mu  = prm%g_alg
         lam = prm%k_alg - 2.0_${k}$*mu/3.0_${k}$
         e1  = lam + 2.0_${k}$*mu
-#:for p, v in isotropic_4o3sym(layout('4O3sym', d), 'e1', 'lam', 'mu', '0.0_' + k)
-        res%vals(${p}$) = ${v}$
-#:endfor
-    end function elas_dstress_dstrain_frozen_${d}$_${k}$
+        res%vals(1) = e1
+        res%vals(2) = e1
+        res%vals(3) = e1
+        res%vals(4) = mu
+        res%vals(5) = mu
+        res%vals(6) = mu
+        res%vals(7) = lam
+        res%vals(8) = lam
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.0_${k}$
+        res%vals(11) = 0.0_${k}$
+        res%vals(12) = lam
+        res%vals(13) = 0.0_${k}$
+        res%vals(14) = 0.0_${k}$
+        res%vals(15) = 0.0_${k}$
+        res%vals(16) = 0.0_${k}$
+        res%vals(17) = 0.0_${k}$
+        res%vals(18) = 0.0_${k}$
+        res%vals(19) = 0.0_${k}$
+        res%vals(20) = 0.0_${k}$
+        res%vals(21) = 0.0_${k}$
+    end function elas_dstress_dstrain_frozen_3D_${k}$
 
-    $:MODEL_FUNCTION('elas', 'frozen', 'dstress_dstrain_dev', k, d, doc=r'Constant: `strain` is not used. \( 4G^{alg}/3 \) (normal diagonal), \( -2G^{alg}/3 \) (normal off-diagonal), \( G^{alg} \) (shears).')
+    pure function elas_dstress_dstrain_dev_frozen_3D_${k}$(prm, strain) result(res)
+        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) of the
+        !! frozen (algorithmic) viscoelastic model in `real(${k}$)` (3D).
+        !! Constant: `strain` is not used. \( 4G^{alg}/3 \) (normal diagonal), \( -2G^{alg}/3 \) (normal off-diagonal),
+        !! \( G^{alg} \) (shears).
+        implicit none
+        @:DEVICE()
+        type(elas_frozen_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \).
         real(${k}$) :: d_n, o_n, mu
 
         mu  = prm%g_alg
         d_n =  4.0_${k}$*mu/3.0_${k}$
         o_n = -2.0_${k}$*mu/3.0_${k}$
-#:for p, v in isotropic_4o3sym(layout('4O3sym', d), 'd_n', 'o_n', 'mu', '0.0_' + k)
-        res%vals(${p}$) = ${v}$
-#:endfor
-    end function elas_dstress_dstrain_dev_frozen_${d}$_${k}$
-#:endfor
+        res%vals(1) = d_n
+        res%vals(2) = d_n
+        res%vals(3) = d_n
+        res%vals(4) = mu
+        res%vals(5) = mu
+        res%vals(6) = mu
+        res%vals(7) = o_n
+        res%vals(8) = o_n
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.0_${k}$
+        res%vals(11) = 0.0_${k}$
+        res%vals(12) = o_n
+        res%vals(13) = 0.0_${k}$
+        res%vals(14) = 0.0_${k}$
+        res%vals(15) = 0.0_${k}$
+        res%vals(16) = 0.0_${k}$
+        res%vals(17) = 0.0_${k}$
+        res%vals(18) = 0.0_${k}$
+        res%vals(19) = 0.0_${k}$
+        res%vals(20) = 0.0_${k}$
+        res%vals(21) = 0.0_${k}$
+    end function elas_dstress_dstrain_dev_frozen_3D_${k}$
+
+    pure function elas_stress_frozen_2D_${k}$(prm, strain) result(res)
+        !! Stress \( \boldsymbol\sigma(\boldsymbol\varepsilon) \) of the frozen (algorithmic) viscoelastic model in
+        !! `real(${k}$)` (2D).
+        !! \( \boldsymbol\sigma = 2G^{alg}\boldsymbol\varepsilon
+        !!   + (K^{alg} - \tfrac{2}{3}G^{alg})\,\mathrm{tr}(\boldsymbol\varepsilon)\,\mathbf{I} + \boldsymbol\sigma^{hist}_n \).
+        implicit none
+        @:DEVICE()
+        type(elas_frozen_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_2D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_2D2Osym_${k}$) :: res
+            !! \( \boldsymbol\sigma \).
+        real(${k}$) :: two_g, p
+
+        two_g = 2.0_${k}$*prm%g_alg
+        p = (prm%k_alg - two_g/3.0_${k}$)*(strain%vals(1) + strain%vals(2) + strain%vals(3))
+        res%vals(1) = two_g*strain%vals(1) + p + prm%stress_hist%vals(1)
+        res%vals(2) = two_g*strain%vals(2) + p + prm%stress_hist%vals(2)
+        res%vals(3) = two_g*strain%vals(3) + p + prm%stress_hist%vals(3)
+        res%vals(4) = two_g*strain%vals(4) + prm%stress_hist%vals(4)
+    end function elas_stress_frozen_2D_${k}$
+
+    pure function elas_stress_dev_frozen_2D_${k}$(prm, strain) result(res)
+        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the frozen
+        !! (algorithmic) viscoelastic model in `real(${k}$)` (2D).
+        !! \( 2G^{alg}\operatorname{dev}\boldsymbol\varepsilon + \operatorname{dev}\boldsymbol\sigma^{hist}_n \).
+        implicit none
+        @:DEVICE()
+        type(elas_frozen_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_2D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_2D2Osym_${k}$) :: res
+            !! \( \operatorname{dev}\boldsymbol\sigma \).
+        type(ten_2D2Osym_${k}$) :: hist
+
+        hist%vals(1) = prm%stress_hist%vals(1)
+        hist%vals(2) = prm%stress_hist%vals(2)
+        hist%vals(3) = prm%stress_hist%vals(3)
+        hist%vals(4) = prm%stress_hist%vals(4)
+        res = 2.0_${k}$*prm%g_alg*(.dev. strain) + (.dev. hist)
+    end function elas_stress_dev_frozen_2D_${k}$
+
+    pure function elas_dstress_dstrain_frozen_2D_${k}$(prm, strain) result(res)
+        !! Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) of the frozen (algorithmic)
+        !! viscoelastic model in `real(${k}$)` (2D).
+        !! Constant: `strain` is not used. Isotropic with \( \mu = G^{alg} \), \( \lambda = K^{alg} - 2\mu/3 \).
+        implicit none
+        @:DEVICE()
+        type(elas_frozen_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_2D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_2D4O3sym_${k}$) :: res
+            !! \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \).
+        real(${k}$) :: e1, lam, mu
+
+        mu  = prm%g_alg
+        lam = prm%k_alg - 2.0_${k}$*mu/3.0_${k}$
+        e1  = lam + 2.0_${k}$*mu
+        res%vals(1) = e1
+        res%vals(2) = e1
+        res%vals(3) = e1
+        res%vals(4) = mu
+        res%vals(5) = lam
+        res%vals(6) = lam
+        res%vals(7) = 0.0_${k}$
+        res%vals(8) = lam
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.0_${k}$
+    end function elas_dstress_dstrain_frozen_2D_${k}$
+
+    pure function elas_dstress_dstrain_dev_frozen_2D_${k}$(prm, strain) result(res)
+        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) of the
+        !! frozen (algorithmic) viscoelastic model in `real(${k}$)` (2D).
+        !! Constant: `strain` is not used. \( 4G^{alg}/3 \) (normal diagonal), \( -2G^{alg}/3 \) (normal off-diagonal),
+        !! \( G^{alg} \) (shears).
+        implicit none
+        @:DEVICE()
+        type(elas_frozen_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_2D2Osym_${k}$), intent(in) :: strain
+            !! Strain tensor \( \boldsymbol\varepsilon \).
+        type(ten_2D4O3sym_${k}$) :: res
+            !! \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \).
+        real(${k}$) :: d_n, o_n, mu
+
+        mu  = prm%g_alg
+        d_n =  4.0_${k}$*mu/3.0_${k}$
+        o_n = -2.0_${k}$*mu/3.0_${k}$
+        res%vals(1) = d_n
+        res%vals(2) = d_n
+        res%vals(3) = d_n
+        res%vals(4) = mu
+        res%vals(5) = o_n
+        res%vals(6) = o_n
+        res%vals(7) = 0.0_${k}$
+        res%vals(8) = o_n
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.0_${k}$
+    end function elas_dstress_dstrain_dev_frozen_2D_${k}$
 #:endfor
 
 end module muscle_visco_frozen

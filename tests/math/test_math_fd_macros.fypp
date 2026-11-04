@@ -3,7 +3,7 @@
 #:include "muscle_common.fypp"
 #:include "muscle_fd.fypp"
 #!
-#! Test of the finite-difference macros of include/muscle_fd.fypp (D-016.1): FD_DERIV, FD_DERIV2,
+#! Test of the finite-difference macros of tests/common/muscle_fd.fypp (D-016.1): FD_DERIV, FD_DERIV2,
 #! FD_GRAD, FD_JAC and FD_HESS (default step, explicit `step`, `scale` of the argument, D-017.5a;
 #! one-sided stencils with `lower`)
 #! instantiated for every kind and dimension inside `pure`, `@:DEVICE()`

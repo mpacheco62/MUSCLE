@@ -1,15 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Kernel API common to every kinematics (muscle_kin_finite), re-exported
-#:set COMMON = ['kin_finite_update', 'kin_log_measure', 'kin_green_lagrange', 'kin_euler_almansi', &
-    &          'kin_material_log', 'kin_spatial_log', 'kin_pk2_to_cauchy', 'kin_cauchy_to_pk2', &
-    &          'kin_pk2_to_kirchhoff', 'kin_kirchhoff_to_pk2', 'kin_cauchy_to_kirchhoff', 'kin_kirchhoff_to_cauchy', &
-    &          'kin_pk2_to_pk1', 'kin_pk1_to_pk2', 'kin_cauchy_to_pk1', 'kin_pk1_to_cauchy', &
-    &          'kin_push_forward_tangent', 'kin_pull_back_tangent', 'kin_rotate_to_corotational', &
-    &          'kin_rotate_from_corotational', 'kin_jaumann_tangent', 'kin_volumetric_tangent', 'kin_spin_tangent', &
-    &          'kin_log_tangent', 'kin_spatial_log_tangent', 'kin_almansi_tangent'] + ['kin_state_' + k for k in REAL_KINDS] + &
-    &         ['KIN_EIG_MIN_' + k for k in REAL_KINDS]
+#:include "muscle_common.fypp"
 
 module muscle_kin_laws
     !! Kinematics for kernels (D-007, D-017.14): the (empty) parameter types of every registered
@@ -51,14 +42,218 @@ module muscle_kin_laws
     !! S = elas_stress(elas, st%strain)             ! constitutive model in the strain of kin
     !! sig = kin_to_cauchy(kin, st, S)
     !! ```
-    $:FAMILY_USES('kin')
+#:for k in REAL_KINDS
+    use muscle_kin_small_strain, only : &
+        kin_update_small_strain_${k}$, &
+        kin_update_norot_small_strain_${k}$, &
+        kin_to_cauchy_small_strain_${k}$, &
+        kin_to_spatial_tangent_small_strain_${k}$, &
+        kin_geometric_tangent_small_strain_${k}$, &
+        kin_is_finite_strain_small_strain_${k}$, &
+        kin_small_strain_${k}$
+    use muscle_kin_total_lagrangian, only : &
+        kin_update_total_lagrangian_${k}$, &
+        kin_update_norot_total_lagrangian_${k}$, &
+        kin_to_cauchy_total_lagrangian_${k}$, &
+        kin_to_spatial_tangent_total_lagrangian_${k}$, &
+        kin_geometric_tangent_total_lagrangian_${k}$, &
+        kin_is_finite_strain_total_lagrangian_${k}$, &
+        kin_total_lagrangian_${k}$
+    use muscle_kin_updated_lagrangian, only : &
+        kin_update_updated_lagrangian_${k}$, &
+        kin_update_norot_updated_lagrangian_${k}$, &
+        kin_to_cauchy_updated_lagrangian_${k}$, &
+        kin_to_spatial_tangent_updated_lagrangian_${k}$, &
+        kin_geometric_tangent_updated_lagrangian_${k}$, &
+        kin_is_finite_strain_updated_lagrangian_${k}$, &
+        kin_updated_lagrangian_${k}$
+    use muscle_kin_material_logarithmic, only : &
+        kin_update_material_logarithmic_${k}$, &
+        kin_update_norot_material_logarithmic_${k}$, &
+        kin_to_cauchy_material_logarithmic_${k}$, &
+        kin_to_spatial_tangent_material_logarithmic_${k}$, &
+        kin_geometric_tangent_material_logarithmic_${k}$, &
+        kin_is_finite_strain_material_logarithmic_${k}$, &
+        kin_material_logarithmic_${k}$
+    use muscle_kin_spatial_logarithmic, only : &
+        kin_update_spatial_logarithmic_${k}$, &
+        kin_update_norot_spatial_logarithmic_${k}$, &
+        kin_to_cauchy_spatial_logarithmic_${k}$, &
+        kin_to_spatial_tangent_spatial_logarithmic_${k}$, &
+        kin_geometric_tangent_spatial_logarithmic_${k}$, &
+        kin_is_finite_strain_spatial_logarithmic_${k}$, &
+        kin_spatial_logarithmic_${k}$
+    use muscle_kin_corotational, only : &
+        kin_corot_update_corotational_${k}$, &
+        kin_to_cauchy_corotational_${k}$, &
+        kin_to_spatial_tangent_corotational_${k}$, &
+        kin_geometric_tangent_corotational_${k}$, &
+        kin_is_finite_strain_corotational_${k}$, &
+        kin_corotational_${k}$
+    use muscle_kin_finite, only : kin_state_${k}$, KIN_EIG_MIN_${k}$
+#:endfor
     use muscle_kin_finite, only : &
-        ${', &\n        '.join(COMMON)}$
+        kin_finite_update, &
+        kin_log_measure, &
+        kin_green_lagrange, &
+        kin_euler_almansi, &
+        kin_material_log, &
+        kin_spatial_log, &
+        kin_pk2_to_cauchy, &
+        kin_cauchy_to_pk2, &
+        kin_pk2_to_kirchhoff, &
+        kin_kirchhoff_to_pk2, &
+        kin_cauchy_to_kirchhoff, &
+        kin_kirchhoff_to_cauchy, &
+        kin_pk2_to_pk1, &
+        kin_pk1_to_pk2, &
+        kin_cauchy_to_pk1, &
+        kin_pk1_to_cauchy, &
+        kin_push_forward_tangent, &
+        kin_pull_back_tangent, &
+        kin_rotate_to_corotational, &
+        kin_rotate_from_corotational, &
+        kin_jaumann_tangent, &
+        kin_volumetric_tangent, &
+        kin_spin_tangent, &
+        kin_log_tangent, &
+        kin_spatial_log_tangent, &
+        kin_almansi_tangent
     implicit none
     private
 
-    $:FAMILY_EXPORTS('kin')
+    public :: kin_update
+    public :: kin_update_norot
+    public :: kin_corot_update
+    public :: kin_to_cauchy
+    public :: kin_to_spatial_tangent
+    public :: kin_geometric_tangent
+    public :: kin_is_finite_strain
+#:for k in REAL_KINDS
+    public :: kin_small_strain_${k}$
+    public :: kin_total_lagrangian_${k}$
+    public :: kin_updated_lagrangian_${k}$
+    public :: kin_material_logarithmic_${k}$
+    public :: kin_spatial_logarithmic_${k}$
+    public :: kin_corotational_${k}$
+#:endfor
+
+    interface kin_update
+        !! Kinematic state of a deformation gradient \( \mathbf{F} \) (the deformation gradient is validated) (every applicable
+        !! model, kind of the family).
+#:for k in REAL_KINDS
+        module procedure kin_update_small_strain_${k}$
+        module procedure kin_update_total_lagrangian_${k}$
+        module procedure kin_update_updated_lagrangian_${k}$
+        module procedure kin_update_material_logarithmic_${k}$
+        module procedure kin_update_spatial_logarithmic_${k}$
+#:endfor
+    end interface kin_update
+
+    interface kin_update_norot
+        !! `kin_update` without the polar decomposition (D-019.7c): the rotation R of the state is the identity, unless the
+        !! functions of the kinematics read it (`KINEMATICS_ROTATION`: then the same state as `kin_update`); every other component
+        !! and `status` are the same bits (every applicable model, kind of the family).
+#:for k in REAL_KINDS
+        module procedure kin_update_norot_small_strain_${k}$
+        module procedure kin_update_norot_total_lagrangian_${k}$
+        module procedure kin_update_norot_updated_lagrangian_${k}$
+        module procedure kin_update_norot_material_logarithmic_${k}$
+        module procedure kin_update_norot_spatial_logarithmic_${k}$
+#:endfor
+    end interface kin_update_norot
+
+    interface kin_corot_update
+        !! Kinematic state of a corotational kinematics from the strain in the unrotated frame and the rotation (identity if
+        !! absent) (every applicable model, kind of the family).
+#:for k in REAL_KINDS
+        module procedure kin_corot_update_corotational_${k}$
+#:endfor
+    end interface kin_corot_update
+
+    interface kin_to_cauchy
+        !! Cauchy stress from the constitutive stress (work conjugate of the strain of the kinematics) (every model, kind of the
+        !! family).
+#:for k in REAL_KINDS
+        module procedure kin_to_cauchy_small_strain_${k}$
+        module procedure kin_to_cauchy_total_lagrangian_${k}$
+        module procedure kin_to_cauchy_updated_lagrangian_${k}$
+        module procedure kin_to_cauchy_material_logarithmic_${k}$
+        module procedure kin_to_cauchy_spatial_logarithmic_${k}$
+        module procedure kin_to_cauchy_corotational_${k}$
+#:endfor
+    end interface kin_to_cauchy
+
+    interface kin_to_spatial_tangent
+        !! Spatial tangent from the constitutive tangent: the part of \(
+        !! J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) through the constitutive stress, for \( \delta\mathbf{F}
+        !! = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (with the derivative of the strain measure, D-018.15f; without the
+        !! geometric term) (every model, kind of the family).
+#:for k in REAL_KINDS
+        module procedure kin_to_spatial_tangent_small_strain_${k}$
+        module procedure kin_to_spatial_tangent_total_lagrangian_${k}$
+        module procedure kin_to_spatial_tangent_updated_lagrangian_${k}$
+        module procedure kin_to_spatial_tangent_material_logarithmic_${k}$
+        module procedure kin_to_spatial_tangent_spatial_logarithmic_${k}$
+        module procedure kin_to_spatial_tangent_corotational_${k}$
+#:endfor
+    end interface kin_to_spatial_tangent
+
+    interface kin_geometric_tangent
+        !! Geometric term of the spatial tangent: the part of \( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) at
+        !! a fixed constitutive stress (D-018.15f); `to_spatial_tangent` plus this is the tangent of the Jaumann rate of the
+        !! Kirchhoff stress (every model, kind of the family).
+#:for k in REAL_KINDS
+        module procedure kin_geometric_tangent_small_strain_${k}$
+        module procedure kin_geometric_tangent_total_lagrangian_${k}$
+        module procedure kin_geometric_tangent_updated_lagrangian_${k}$
+        module procedure kin_geometric_tangent_material_logarithmic_${k}$
+        module procedure kin_geometric_tangent_spatial_logarithmic_${k}$
+        module procedure kin_geometric_tangent_corotational_${k}$
+#:endfor
+    end interface kin_geometric_tangent
+
+    interface kin_is_finite_strain
+        !! Whether the kinematics is a finite strain one (every model, kind of the family).
+#:for k in REAL_KINDS
+        module procedure kin_is_finite_strain_small_strain_${k}$
+        module procedure kin_is_finite_strain_total_lagrangian_${k}$
+        module procedure kin_is_finite_strain_updated_lagrangian_${k}$
+        module procedure kin_is_finite_strain_material_logarithmic_${k}$
+        module procedure kin_is_finite_strain_spatial_logarithmic_${k}$
+        module procedure kin_is_finite_strain_corotational_${k}$
+#:endfor
+    end interface kin_is_finite_strain
+
     public :: &
-        ${', &\n        '.join(COMMON)}$
+        kin_finite_update, &
+        kin_log_measure, &
+        kin_green_lagrange, &
+        kin_euler_almansi, &
+        kin_material_log, &
+        kin_spatial_log, &
+        kin_pk2_to_cauchy, &
+        kin_cauchy_to_pk2, &
+        kin_pk2_to_kirchhoff, &
+        kin_kirchhoff_to_pk2, &
+        kin_cauchy_to_kirchhoff, &
+        kin_kirchhoff_to_cauchy, &
+        kin_pk2_to_pk1, &
+        kin_pk1_to_pk2, &
+        kin_cauchy_to_pk1, &
+        kin_pk1_to_cauchy, &
+        kin_push_forward_tangent, &
+        kin_pull_back_tangent, &
+        kin_rotate_to_corotational, &
+        kin_rotate_from_corotational, &
+        kin_jaumann_tangent, &
+        kin_volumetric_tangent, &
+        kin_spin_tangent, &
+        kin_log_tangent, &
+        kin_spatial_log_tangent, &
+        kin_almansi_tangent
+#:for k in REAL_KINDS
+    public :: kin_state_${k}$, KIN_EIG_MIN_${k}$
+#:endfor
 
 end module muscle_kin_laws

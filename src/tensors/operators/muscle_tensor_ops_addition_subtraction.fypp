@@ -40,7 +40,14 @@ contains
 #:set A, B, R = op_symbols(e)
 #:set ia, ib = op_iden(e.tag_a), op_iden(e.tag_b)
 #:set what = 'Sum' if g == '+' else 'Difference'
-#:call OP_FUNCTION(e, '{} \\({} = {} {} {}\\)'.format(what, R, A, g, B))
+#:set doc = '{} \\({} = {} {} {}\\)'.format(what, R, A, g, B)
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
 #:if ia is None and ib is None
 #:set la, lb, lr = op_layout(e.tag_a), op_layout(e.tag_b), op_layout(e.tag_res)
 #:for c in lr.comps
@@ -63,7 +70,8 @@ contains
         res%vals(${p}$) = ${v}$
 #:endfor
 #:endif
-#:endcall OP_FUNCTION
+    end function ${e.name}$
+
 #:endfor
 #:endfor
 #:endfor

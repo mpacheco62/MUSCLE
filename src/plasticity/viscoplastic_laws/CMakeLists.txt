@@ -1,5 +1,4 @@
-# Laws written with the model contract macros (include/muscle_models_common.fypp) and the family
-# modules with the generics vp_* (flow stress laws) and os_* (overstress laws) (D-017)
+# Laws written by hand (D-020) and the family modules with the generics vp_* (flow stress laws) and os_* (overstress laws) (D-017)
 muscle_add_fypp_sources(muscle
                  muscle_vp_jc.fypp
                  muscle_vp_jcfull.fypp

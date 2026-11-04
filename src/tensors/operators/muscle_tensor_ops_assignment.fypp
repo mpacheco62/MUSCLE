@@ -33,19 +33,33 @@ contains
 #:set A, B, _ = op_symbols(e)
 #:set la = op_layout(e.tag_a)
 #:if op_iden(e.tag_b) is None
-#:call OP_SUBROUTINE(e, 'Assignment \\({} = {}\\)'.format(A, B))
+#:set doc = 'Assignment \\({} = {}\\)'.format(A, B)
+    pure subroutine ${e.name}$(${x}$, ${y}$)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(out) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
 #:set lb = op_layout(e.tag_b)
 #:for c in la.comps
         ${la.ref(x + '%vals', *c.idx)}$ = ${lb.ref(y + '%vals', *c.idx)}$
 #:endfor
-#:endcall OP_SUBROUTINE
+    end subroutine ${e.name}$
+
 #:else
-#:call OP_SUBROUTINE(e, 'Assignment \\({} = {}\\)'.format(A, B))
+#:set doc = 'Assignment \\({} = {}\\)'.format(A, B)
+    pure subroutine ${e.name}$(${x}$, ${y}$)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(out) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
         ${x}$%vals = 0.0_${k}$
 #:for p, v in iden_combination(la, [op_iden_term(e.tag_b, y + '%val')], k)
         ${x}$%vals(${p}$) = ${v}$
 #:endfor
-#:endcall OP_SUBROUTINE
+    end subroutine ${e.name}$
+
 #:endif
 #:endfor
 #:endfor

@@ -4,14 +4,14 @@ add_muscle_test(muscle_math_spectral_derivs test_muscle_math_spectral_derivs.f90
 add_muscle_fypp_test(muscle_math_inverses test_muscle_math_inverses.fypp)
 # Small fixed-size LU solvers for kernels (muscle_math_lu_solve), sp and dp
 add_muscle_fypp_test(math_lu_solve test_math_lu_solve.fypp)
-# Finite-difference macros of include/muscle_fd.fypp (in MUSCLE_FYPP_DEPENDS) against analytical
-# derivatives
+# Finite-difference macros of tests/common/muscle_fd.fypp (a dependency of every test, tests/CMakeLists.txt)
+# against analytical derivatives
 add_muscle_fypp_test(math_fd_macros test_math_fd_macros.fypp)
 
 # Golden (characterization) tests of the public routines of the math modules, double precision,
 # bit for bit against references captured from the original code (tests/reference/math/,
 # regenerate.sh there). The finite differences (derivatives, operations) are the macros of
-# include/muscle_fd.fypp, which call the test functions directly: the references were captured
+# tests/common/muscle_fd.fypp, which call the test functions directly: the references were captured
 # through a procedure argument, so the test functions must not be inlined into the macro stencils
 # (with inlining, -O3 vectorization changes the last bits, measured 4e-11 relative, D-016.9).
 # -fno-inline is accepted by gfortran and ifx (IntelLLVM; ifx also takes -inline-level=0).

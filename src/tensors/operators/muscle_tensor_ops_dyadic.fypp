@@ -44,45 +44,78 @@ contains
 #! .tdot.: C_IJ = a_I b_J (4O2sym, Voigt matrix of the 2Osym layout)
 #! ------------------------------------------------------------------------------------------
 #:for e in op_entries('.tdot.', d, k)
+#:set x, y = op_args(e)
 #:set rows = op_layout(e.tag_res).base.comps
 #:set A, B, R = op_symbols(e, 'ab')
 #:if not op_iden(e.tag_a) and not op_iden(e.tag_b)
-#:call OP_FUNCTION(e, 'Dyadic product \\(\\mathbb{C} = \\mathbf{a} \\otimes \\mathbf{b}\\), \\( C_{IJ} = a_I b_J \\)')
+#:set doc = 'Dyadic product \\(\\mathbb{C} = \\mathbf{a} \\otimes \\mathbf{b}\\), \\( C_{IJ} = a_I b_J \\)'
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
 #! b%vals(:) runs over the columns: the result columns use the storage order of b
 #:assert [c.idx for c in rows] == [c.idx for c in op_layout(e.tag_b).comps]
 #:for r in rows
         res%vals(${r.pos[0]}$,:) = ${op_layout(e.tag_a).ref('a%vals', *r.idx)}$ * b%vals(:)
 #:endfor
-#:endcall OP_FUNCTION
+    end function ${e.name}$
+
 #:else
 #! a (x) I: a in every normal column (d_kl = 1); I (x) a: a in every normal row
 #:set left = op_iden(e.tag_a) is not None
-#:call OP_FUNCTION(e, 'Dyadic product \\(\\mathbb{{C}} = {} \\otimes {}\\)'.format(A, B))
+#:set doc = 'Dyadic product \\(\\mathbb{{C}} = {} \\otimes {}\\)'.format(A, B)
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
         res%vals = 0.0_${k}$
 #:for r in rows
 #:if r.idx[0] == r.idx[1]
         res%vals(${'{},:'.format(r.pos[0]) if left else ':,{}'.format(r.pos[0])}$) = a%vals
 #:endif
 #:endfor
-#:endcall OP_FUNCTION
+    end function ${e.name}$
+
 #:endif
 #:endfor
 #! ------------------------------------------------------------------------------------------
 #! .tdotsym.: upper triangle of the Voigt matrix (4O3sym storage)
 #! ------------------------------------------------------------------------------------------
 #:for e in op_entries('.tdotsym.', d, k)
+#:set x = op_args(e)[0]
+#:set y = op_args(e)[-1]
 #:set comps = op_layout(e.tag_res).comps
 #:if e.tag_b is None
 #:set la = op_layout(e.tag_a)
-#:call OP_FUNCTION(e, 'Dyadic product with itself \\(\\mathbb{C} = \\mathbf{a} \\otimes \\mathbf{a}\\)')
+#:set doc = 'Dyadic product with itself \\(\\mathbb{C} = \\mathbf{a} \\otimes \\mathbf{a}\\)'
+    pure function ${e.name}$(${x}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        ${op_res_decl(e)}$ :: res
 #:for c in comps
         res%vals(${c.pos[0]}$) = ${la.ref('a%vals', *c.idx[:2])}$*${la.ref('a%vals', *c.idx[2:])}$
 #:endfor
-#:endcall OP_FUNCTION
+    end function ${e.name}$
+
 #:elif not op_iden(e.tag_a) and not op_iden(e.tag_b)
 #:set la, lb = op_layout(e.tag_a), op_layout(e.tag_b)
-#:call OP_FUNCTION(e, 'Symmetrized dyadic product &
-    & \\(\\mathbb{C} = \\frac{1}{2} (\\mathbf{a} \\otimes \\mathbf{b} + \\mathbf{b} \\otimes \\mathbf{a})\\)')
+#:set doc = 'Symmetrized dyadic product &
+    & \\(\\mathbb{C} = \\frac{1}{2} (\\mathbf{a} \\otimes \\mathbf{b} + \\mathbf{b} \\otimes \\mathbf{a})\\)'
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
 #:for c in comps
 #:set ij, kl = c.idx[:2], c.idx[2:]
 #! The diagonal (I == J) is written a_I b_I: (a_I b_I + b_I a_I)/2 gives the same bits but
@@ -93,12 +126,20 @@ contains
         res%vals(${c.pos[0]}$) = 0.5_${k}$ * (${la.ref('a%vals', *ij)}$*${lb.ref('b%vals', *kl)}$ + ${lb.ref('b%vals', *ij)}$*${la.ref('a%vals', *kl)}$)
 #:endif
 #:endfor
-#:endcall OP_FUNCTION
+    end function ${e.name}$
+
 #:elif op_iden(e.tag_b)
 #! C_ijkl = (a_ij d_kl + d_ij a_kl)/2
 #:set la = op_layout(e.tag_a)
-#:call OP_FUNCTION(e, 'Symmetrized dyadic product &
-    & \\(\\mathbb{C} = \\frac{1}{2}(\\mathbf{a} \\otimes \\mathbf{I} + \\mathbf{I} \\otimes \\mathbf{a})\\)')
+#:set doc = 'Symmetrized dyadic product &
+    & \\(\\mathbb{C} = \\frac{1}{2}(\\mathbf{a} \\otimes \\mathbf{I} + \\mathbf{I} \\otimes \\mathbf{a})\\)'
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
 #:for c in comps
 #:set ij, kl = c.idx[:2], c.idx[2:]
 #:set terms = [la.ref('a%vals', *x) for x, y in ((ij, kl), (kl, ij)) if y[0] == y[1]]
@@ -112,12 +153,21 @@ contains
         res%vals(${c.pos[0]}$) = 0.5_${k}$ * (${' + '.join(terms)}$)
 #:endif
 #:endfor
-#:endcall OP_FUNCTION
+    end function ${e.name}$
+
 #:else
-#:call OP_FUNCTION(e, 'Symmetrized dyadic product &
-    & \\(\\mathbb{C} = \\frac{1}{2}(\\mathbf{I} \\otimes \\mathbf{a} + \\mathbf{a} \\otimes \\mathbf{I})\\)')
+#:set doc = 'Symmetrized dyadic product &
+    & \\(\\mathbb{C} = \\frac{1}{2}(\\mathbf{I} \\otimes \\mathbf{a} + \\mathbf{a} \\otimes \\mathbf{I})\\)'
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
         res = ${op_mirror(e).name}$(a, I2)
-#:endcall OP_FUNCTION
+    end function ${e.name}$
+
 #:endif
 #:endfor
 #:endfor

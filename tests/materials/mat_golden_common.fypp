@@ -13,7 +13,7 @@
 #! - sp: the same sequences converge where dp converges and agree with dp within the per-kind
 #!   tolerances of the test.
 #! - Both kinds: the analytic tangent of every converged plastic step against central finite
-#!   differences of the kernel stress (FD_JAC, include/muscle_fd.fypp; no closures).
+#!   differences of the kernel stress (FD_JAC, tests/common/muscle_fd.fypp; no closures).
 #!
 #! The state goes from step to step through the FE history layout (`mat_pack_<name>` /
 #! `mat_unpack_<name>`, without the stress). The parameter sets by golden name are in

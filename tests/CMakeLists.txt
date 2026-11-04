@@ -2,6 +2,10 @@ find_package(OpenMP REQUIRED COMPONENTS Fortran)
 add_library(compile_options INTERFACE)
 target_link_libraries(compile_options INTERFACE OpenMP::OpenMP_Fortran)
 add_custom_target(build_all_tests)
+# Test-only macros (tests/common/muscle_fd.fypp: central finite differences without closures): the templates
+# of the tests include them by name and every test is regenerated when they change.
+list(APPEND MUSCLE_FYPP_FLAGS "-I${CMAKE_CURRENT_SOURCE_DIR}/common")
+list(APPEND MUSCLE_FYPP_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/common/muscle_fd.fypp")
 # The tests that run kernels in an OpenMP target region (muscle_target_test_options, ctest label `target`)
 add_custom_target(build_target_tests)
 

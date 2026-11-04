@@ -1,6 +1,5 @@
-# Kernel types (state, coefficients), the frozen elasticity (an elastic model), the models written
-# with the model contract macros (include/muscle_models_common.fypp) and the family module with the
-# generics visco_* (D-017.13)
+# Kernel types (state, coefficients), the frozen elasticity (an elastic model), the models and the
+# family module with the generics visco_* (D-017.13)
 muscle_add_fypp_sources(muscle
                  muscle_visco_types.fypp
                  muscle_visco_frozen.fypp

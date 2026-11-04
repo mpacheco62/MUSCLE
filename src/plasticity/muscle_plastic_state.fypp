@@ -1,7 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
-#:set T2 = lambda k: tname('3D2Osym', k)
 
 module muscle_plastic_state
     !! Module muscle_plastic_state
@@ -24,7 +23,9 @@ module muscle_plastic_state
     !! Kernels keep the converged and candidate states as separate arguments: the caller (the FE
     !! program, in its history array) keeps the converged one.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_tensors, only : ${', '.join(T2(k) for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$
+#:endfor
     implicit none
     private
 
@@ -39,23 +40,27 @@ module muscle_plastic_state
 
     type :: plastic_state_${k}$
         !! Physical state of an elastoplastic material point at an instant, `real(${k}$)`.
-        type(${T2(k)}$) :: strain_p = ${T2(k)}$([${', '.join(['0.0_' + k] * 6)}$])
+        type(ten_3D2Osym_${k}$) :: strain_p = ten_3D2Osym_${k}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
             !! Plastic strain tensor.
         real(${k}$) :: strain_pf = 0.0_${k}$
             !! Accumulated equivalent plastic strain.
-        type(${T2(k)}$) :: stress = ${T2(k)}$([${', '.join(['0.0_' + k] * 6)}$])
+        type(ten_3D2Osym_${k}$) :: stress = ten_3D2Osym_${k}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
             !! Constitutive stress tensor.
     end type plastic_state_${k}$
 #:endfor
 
     interface plastic_state_pack
         !! State to the components of an FE history array (every kind).
-        module procedure ${', '.join('plastic_state_pack_' + k for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+        module procedure plastic_state_pack_${k}$
+#:endfor
     end interface plastic_state_pack
 
     interface plastic_state_unpack
         !! State from the components of an FE history array (every kind).
-        module procedure ${', '.join('plastic_state_unpack_' + k for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+        module procedure plastic_state_unpack_${k}$
+#:endfor
     end interface plastic_state_unpack
 
 contains

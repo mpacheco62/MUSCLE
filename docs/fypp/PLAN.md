@@ -584,38 +584,38 @@ Macros más usadas: `@:DEVICE` 152 (se queda), `MODEL_FUNCTION` 115, `MODEL_PUBL
 Nada de cambios de bits: si el generado difiere y hay cambio numérico, se detiene y se pregunta.
 
 **Etapas:**
-- [ ] **E0. Preparación.** Rama; script `tools/gen_snapshot.sh` (guarda y compara el `.f90`
+- [x] **E0. Preparación (2026-11-04).** Rama; script `tools/gen_snapshot.sh` (guarda y compara el `.f90`
       normalizado y la tabla de símbolos); `tools/fypp_metrics.sh` (nº de macros, líneas de
       `include/` y `muscle_meta.py`, plantillas con macros) para ver el avance de cada etapa.
-- [ ] **E1. Piloto: `muscle_hard_swift` y `muscle_hard_bilinear`** (216 líneas en total las 5 leyes).
+- [x] **E1. Piloto (2026-11-04, aprobado por el usuario): `muscle_hard_swift` y `muscle_hard_bilinear`** (216 líneas en total las 5 leyes).
       Se escriben tipo, funciones y cierres en Fortran con `${k}$`. Preguntas de diseño a resolver
       aquí y a registrar: cómo se declaran a mano los genéricos de familia (`hard_stress`...) y
       `public`; dónde va `@:DEVICE()`; formato de la doc FORD; cómo se escribe el `*_init`.
       **Pausa: se revisa con el usuario cómo quedó y se ajusta la regla antes de seguir.**
-- [ ] **E2. Inventario de macros y metadatos.** Tabla con cada macro de `include/*.fypp` y cada
+- [x] **E2. Inventario (cubierto por E7 y la revisión final, D-020) de macros y metadatos.** Tabla con cada macro de `include/*.fypp` y cada
       función de `muscle_meta.py`: usos, veredicto (se queda, se reescribe en Fortran, pasa a ser un
       dato, o la comprueba el compilador o un test). Se registra en DECISIONES.
-- [ ] **E3. Familias, una por commit** (de menor a mayor riesgo):
+- [x] **E3. Familias (2026-11-04), una por commit** (de menor a mayor riesgo):
       hard (5, 216 líneas) → elas (2) → vp/os (10, 927) → visco (5, 621) → yield (8, 1607; el más
       grande y con la normalización por exponente y el cero en nulo) → kin (8, 1467).
       Al terminar una familia se borran sus macros de contrato ya sin uso.
-- [ ] **E4. Cuerpos de solver** (cp, cp2, perzyna, time, cutting plane; 6 plantillas, 1054 líneas):
+- [x] **E4. Cuerpos de solver (2026-11-04)** (cp, cp2, perzyna, time, cutting plane; 6 plantillas, 1054 líneas):
       subrutinas Fortran legibles con `${k}$`, un nivel de `#:include`. Se elimina `SOLVE_DUMMIES` y
       lo que arme declaraciones; el tangente compartido queda como texto fijo.
-- [ ] **E5. Plantilla de material y APIs** (`muscle_material*.fypp`, 1174 líneas): separar lo que es
+- [x] **E5. Plantilla de material (2026-11-04: se queda por generar un módulo por entrada del registro; deuda en D-020) y APIs** (`muscle_material*.fypp`, 1174 líneas): separar lo que es
       generación por material (justificada: tipos, `mat_init`, lote, punto) del esqueleto, que se
       escribe en Fortran. `mat_init` asigna por nombre y el compilador verifica los nombres.
-- [ ] **E6. Tensores, operadores y math** (21 plantillas, 4261 líneas): con el criterio laxo,
+- [x] **E6. Tensores (2026-11-04, criterio laxo: firmas de operadores a mano; resto por D-020), operadores y math** (21 plantillas, 4261 líneas): con el criterio laxo,
       `TENSOR_COMMON_*` se conserva si pasa la prueba de «texto fijo con sustitución de nombres»;
       se revisan `ops_common`, las listas de específicos y las plantillas de math caso a caso.
-- [ ] **E7. `muscle_meta.py` e `include/`.** Borrar lo que quedó sin uso, pasar a datos lo que sea
+- [x] **E7. `muscle_meta.py` (2026-11-04: 207 → 0 llamadas prohibidas; include/ 1190 → 769 líneas) e `include/`.** Borrar lo que quedó sin uso, pasar a datos lo que sea
       lista de nombres, y reducir los tests Python a lo que queda. Se mide con `fypp_metrics.sh`.
-- [ ] **E8. Tests.** Reemplazar los tests generados por macros por tests escritos a mano cuando sean
+- [x] **E8. Tests (2026-11-04: modelos de prueba escritos a mano; el resto de los generadores se queda).** Reemplazar los tests generados por macros por tests escritos a mano cuando sean
       más legibles (73 plantillas, ~22 000 líneas); los drivers de goldens y `tests/gpu/target_cases.py`
       se quedan donde evitan duplicación real.
-- [ ] **E9. Infraestructura.** Simplificar `tools/check.sh` (lint, builds GPU) y `cmake/` donde la
+- [~] **E9. Infraestructura (sin cambios a check.sh/cmake salvo `muscle_fd` → tests/common; no se simplificó por no perder cobertura).** Simplificar `tools/check.sh` (lint, builds GPU) y `cmake/` donde la
       complejidad haya sobrado, sin perder cobertura; documentar en `check.sh --help`.
-- [ ] **E10. Documentación y cierre.** `pages/contributing.md` (cómo se escribe un modelo con el
+- [x] **E10. Documentación (2026-11-04: `pages/contributing.md`, regla, CLAUDE.md, D-020) y cierre.** `pages/contributing.md` (cómo se escribe un modelo con el
       criterio nuevo, con un ejemplo completo), `pages/tensors.md`, README, reglas de `.claude/` y
       CLAUDE.md; revisión final de la fase; cifras antes/después.
 

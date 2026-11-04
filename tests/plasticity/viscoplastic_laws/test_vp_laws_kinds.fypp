@@ -1,6 +1,7 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
 #!
 #! Kernel API of the viscoplastic (`vp_*`) and overstress (`os_*`) laws (D-017) in every kind, the
 #! nine registered laws (vp: Johnson-Cook, full Johnson-Cook, MRK, NNL, Rusinek-Klepaczko, VA; os:
@@ -13,7 +14,7 @@
 #! - documented bugs and limits (D-017.7): RK dflow_dep = 0, flow stress 0 (RK, JCfull) or sigma_u
 #!   (MRK) at epd <= 0, JCfull at epd < tiny; dstress_dep with dt = 0 as the original code (MRK 0
 #!   at epd <= 1e-12; VA and NNL +Inf or NaN, values of the original code);
-#! - the default derivatives of the contract (MODEL_FD, MODEL_DEFAULT) on test-only laws, against
+#! - the finite-difference derivatives (FD_DERIV) and the total derivative on test-only laws, against
 #!   the analytical derivatives;
 #! - `pure`, `@:DEVICE()` point procedures that compose hard_* with vp_* and os_*.
 #! Tolerances (relative, measured x ~10 unless stated): FD_TOL of the finite differences (max
@@ -50,12 +51,8 @@
 #:enddef
 
 #! Test-only laws: fdvp, sigma = Y0 (1 + A ep)(1 + C atan(epd/R)), gives only flow_stress (partial
-#! derivatives by MODEL_FD, dstress_dep by MODEL_DEFAULT); fdos,
+#! derivatives by FD_DERIV, dstress_dep = dflow_dep + dflow_depd/dt); fdos,
 #! g = (sigma_eq/(S0 (1 + B ep)))**2/eta, gives only flow_rate.
-#:set FDVP = [('Y0', 'real', '', 'Yield stress.', None), ('A', 'real', '', 'Hardening.', None), &
-    & ('C', 'real', '', 'Rate sensitivity.', None), ('R', 'real', '', 'Reference rate.', None)]
-#:set FDOS = [('S0', 'real', '', 'Yield stress.', None), ('B', 'real', '', 'Hardening.', None), &
-    & ('eta', 'real', '', 'Viscosity.', None)]
 
 module muscle_vp_fdvp
     !! Test law: smooth self-contained flow stress, only `flow_stress` given.
@@ -63,23 +60,96 @@ module muscle_vp_fdvp
     implicit none
     private
 
-    $:MODEL_PUBLIC('vp', 'fdvp')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('vp', 'fdvp', k, FDVP)
+    public :: vp_fdvp_${k}$
+#:endfor
+#:for k in REAL_KINDS
+    public :: vp_flow_stress_fdvp_${k}$, vp_dflow_dep_fdvp_${k}$, vp_dflow_depd_fdvp_${k}$, vp_dstress_dep_fdvp_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: vp_fdvp_${k}$
+        !! Parameters of the fdvp model in `real(${k}$)`.
+        real(${k}$) :: Y0
+            !! Yield stress.
+        real(${k}$) :: A
+            !! Hardening.
+        real(${k}$) :: C
+            !! Rate sensitivity.
+        real(${k}$) :: R
+            !! Reference rate.
+    end type vp_fdvp_${k}$
+
+#:endfor
 contains
 #:for k in REAL_KINDS
 
-    $:MODEL_FUNCTION('vp', 'fdvp', 'flow_stress', k)
+    pure function vp_flow_stress_fdvp_${k}$(prm, ep, epd) result(res)
+        !! Viscoplastic flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \) of the fdvp model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(vp_fdvp_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \sigma \).
         res = prm%Y0*(1.0_${k}$ + prm%A*ep)*(1.0_${k}$ + prm%C*atan(epd/prm%R))
     end function vp_flow_stress_fdvp_${k}$
 
-    $:MODEL_FD('vp', 'fdvp', 'dflow_dep', k)
+    pure function vp_dflow_dep_fdvp_${k}$(prm, ep, epd) result(res)
+        !! Partial derivative \( \partial\sigma/\partial\epsilon_p \) (at constant \( \dot\epsilon_p \)) of the fdvp model
+        !! in `real(${k}$)`, computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(vp_fdvp_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \partial\sigma/\partial\epsilon_p \).
+        @:FD_DERIV(res, vp_flow_stress_fdvp_${k}$(prm, {x}, epd), ep, ${k}$)
+    end function vp_dflow_dep_fdvp_${k}$
 
-    $:MODEL_FD('vp', 'fdvp', 'dflow_depd', k)
+    pure function vp_dflow_depd_fdvp_${k}$(prm, ep, epd) result(res)
+        !! Partial derivative \( \partial\sigma/\partial\dot\epsilon_p \) (at constant \( \epsilon_p \)) of the fdvp model
+        !! in `real(${k}$)`, computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(vp_fdvp_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \partial\sigma/\partial\dot\epsilon_p \).
+        @:FD_DERIV(res, vp_flow_stress_fdvp_${k}$(prm, ep, {x}), epd, ${k}$)
+    end function vp_dflow_depd_fdvp_${k}$
 
-    $:MODEL_DEFAULT('vp', 'fdvp', 'dstress_dep', k)
+    pure function vp_dstress_dep_fdvp_${k}$(prm, ep, epd, dt) result(res)
+        !! Derivative of the flow stress with respect to the plastic strain increment,
+        !! \( \partial\sigma/\partial\epsilon_p + \partial\sigma/\partial\dot\epsilon_p/\Delta t \) of the fdvp model
+        !! in `real(${k}$)`, computed as `dflow_dep + dflow_depd/dt`.
+        implicit none
+        @:DEVICE()
+        type(vp_fdvp_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$), intent(in) :: dt
+            !! Time step \( \Delta t \) (\( \dot\epsilon_p = \Delta\epsilon_p/\Delta t \)).
+        real(${k}$) :: res
+            !! \( d\sigma/d\Delta\epsilon_p \).
+
+        res = vp_dflow_dep_fdvp_${k}$(prm, ep, epd) + vp_dflow_depd_fdvp_${k}$(prm, ep, epd)/dt
+    end function vp_dstress_dep_fdvp_${k}$
 #:endfor
 
 end module muscle_vp_fdvp
@@ -90,21 +160,74 @@ module muscle_vp_fdos
     implicit none
     private
 
-    $:MODEL_PUBLIC('os', 'fdos')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('os', 'fdos', k, FDOS)
+    public :: os_fdos_${k}$
+#:endfor
+#:for k in REAL_KINDS
+    public :: os_flow_rate_fdos_${k}$, os_dflow_dsigma_fdos_${k}$, os_dflow_dep_fdos_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: os_fdos_${k}$
+        !! Parameters of the fdos model in `real(${k}$)`.
+        real(${k}$) :: S0
+            !! Yield stress.
+        real(${k}$) :: B
+            !! Hardening.
+        real(${k}$) :: eta
+            !! Viscosity.
+    end type os_fdos_${k}$
+
+#:endfor
 contains
 #:for k in REAL_KINDS
 
-    $:MODEL_FUNCTION('os', 'fdos', 'flow_rate', k)
+    pure function os_flow_rate_fdos_${k}$(prm, sigma_eq, ep) result(res)
+        !! Plastic multiplier rate \( g(\sigma_{eq}, \epsilon_p) \) of the fdos model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(os_fdos_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: sigma_eq
+            !! Equivalent stress \( \sigma_{eq} \).
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( g \).
         res = (sigma_eq/(prm%S0*(1.0_${k}$ + prm%B*ep)))**2/prm%eta
     end function os_flow_rate_fdos_${k}$
 
-    $:MODEL_FD('os', 'fdos', 'dflow_dsigma', k)
+    pure function os_dflow_dsigma_fdos_${k}$(prm, sigma_eq, ep) result(res)
+        !! Derivative \( \partial g/\partial\sigma_{eq} \) of the fdos model in `real(${k}$)`,
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(os_fdos_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: sigma_eq
+            !! Equivalent stress \( \sigma_{eq} \).
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( \partial g/\partial\sigma_{eq} \).
+        @:FD_DERIV(res, os_flow_rate_fdos_${k}$(prm, {x}, ep), sigma_eq, ${k}$)
+    end function os_dflow_dsigma_fdos_${k}$
 
-    $:MODEL_FD('os', 'fdos', 'dflow_dep', k)
+    pure function os_dflow_dep_fdos_${k}$(prm, sigma_eq, ep) result(res)
+        !! Derivative \( \partial g/\partial\epsilon_p \) of the fdos model in `real(${k}$)`,
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(os_fdos_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: sigma_eq
+            !! Equivalent stress \( \sigma_{eq} \).
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( \partial g/\partial\epsilon_p \).
+        @:FD_DERIV(res, os_flow_rate_fdos_${k}$(prm, sigma_eq, {x}), ep, ${k}$)
+    end function os_dflow_dep_fdos_${k}$
 #:endfor
 
 end module muscle_vp_fdos
@@ -379,8 +502,8 @@ contains
     end function test_perzyna_${k}$
 
     function test_fd_${k}$() result(passed)
-        !! Default derivatives generated by the contract (MODEL_FD of each partial derivative,
-        !! MODEL_DEFAULT of dstress_dep) on the test laws, against the analytical derivatives.
+        !! Finite-difference derivatives (FD_DERIV of each partial derivative,
+        !! dflow_dep + dflow_depd/dt for dstress_dep) on the test laws, against the analytical derivatives.
         use muscle_vp_laws, only : vp_flow_stress
         use muscle_vp_fdvp, only : vp_fdvp_${k}$, vp_dflow_dep_fdvp_${k}$, vp_dflow_depd_fdvp_${k}$, &
             vp_dstress_dep_fdvp_${k}$

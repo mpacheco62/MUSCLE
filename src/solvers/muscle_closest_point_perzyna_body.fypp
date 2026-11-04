@@ -14,7 +14,7 @@
 #! / `T4` (see muscle_closest_point_body.fypp, also for the argument `elas`). 3D only. The material type
 #! has the components `yield`, `os` and `hard` (the hardening law the overstress law composes,
 #! MATERIAL_SOLVERS['closest_point_perzyna']), `iter_nw` and `tol`.
-#! The dummy arguments of `SOLVE` are the macro `SOLVE_DUMMIES` of the material template.
+#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver, D-018.12c).
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
 #! Values of the composed hardening law the overstress function `f` receives at `ep` (D-017.6b)
@@ -47,7 +47,26 @@
 #:endif
         implicit none
         @:DEVICE()
-@:SOLVE_DUMMIES()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material (parameters of its models, iteration limit and tolerance).
+        type(${ELAS_T}$), intent(in) :: elas
+            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
+        type(${S2}$), intent(in) :: strain
+            !! Total strain at \( t_{n+1} \).
+        real(${k}$), intent(in) :: dt
+            !! Time step \( \Delta t \).
+        type(plastic_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(plastic_state_${k}$), intent(out) :: state_np1
+            !! State at \( t_{n+1} \) (stress, plastic strain, equivalent plastic strain).
+        type(${S2}$), intent(out) :: stress
+            !! Stress at \( t_{n+1} \) (the stress of `state_np1`).
+        type(${T4}$), intent(out) :: tangent
+            !! Consistent tangent \( d\boldsymbol\sigma/d\boldsymbol\varepsilon \) at \( t_{n+1} \).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_NOT_CONVERGED` (muscle_status).
+        integer, intent(out) :: iters
+            !! Newton iterations (0 in an elastic step, at most `mat%iter_nw`).
 
         type(${S2}$) :: stress_trial
         logical :: converged

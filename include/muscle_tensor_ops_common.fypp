@@ -64,42 +64,7 @@
 #:set op_ddot_voigt_terms = muscle_meta.op_ddot_voigt_terms
 #:set op_ddot_matrix_terms = muscle_meta.op_ddot_matrix_terms
 
-#! Kernel function of the operator entry `e` (OpEntry); `body` is the content of the #:call block
-#! (fypp passes it after the positional arguments of the #:call header, so the optional ones go
-#! by keyword). `doc`: one-line FORD summary (a formula) without the final period; the dimension
-#! and kind are appended (op_doc). The operands and the result are not documented one by one: the
-#! module and the generic interface carry the details. `args`: dummy arguments (default op_args(e)).
-#:def OP_FUNCTION(e, doc, body, args=None)
-    pure function ${e.name}$(${', '.join(args or op_args(e))}$) result(res)
-        !! ${op_doc(e, doc)}$
-        implicit none
-        @:DEVICE()
-$:_OP_DUMMIES(e, args, ['in', 'in'])
-        ${e.res if e.res.startswith('real(') else 'type({})'.format(e.res)}$ :: res
-$:body
-    end function ${e.name}$
-
-#:enddef
-
-#! Defined assignment `a = b` of the entry `e` (generic `=`): a subroutine whose left-hand side is
-#! intent(out). Arguments as in OP_FUNCTION.
-#:def OP_SUBROUTINE(e, doc, body, args=None)
-#:assert e.generic == '='
-    pure subroutine ${e.name}$(${', '.join(args or op_args(e))}$)
-        !! ${op_doc(e, doc)}$
-        implicit none
-        @:DEVICE()
-$:_OP_DUMMIES(e, args, ['out', 'in'])
-$:body
-    end subroutine ${e.name}$
-
-#:enddef
-
-#! Dummy argument declarations (`intents`: one per operand) of OP_FUNCTION and OP_SUBROUTINE.
-#:def _OP_DUMMIES(e, args, intents)
-#:for typ, arg, intent in zip([e.a, e.b], args or op_args(e), intents)
-        type(${typ}$), intent(${intent}$) :: ${arg}$
-#:endfor
-#:enddef
+#! Declaration of the result `res` of the operator entry `e`: `real(k)` for a scalar, else `type(...)`.
+#:set op_res_decl = lambda e: e.res if e.res.startswith('real(') else 'type({})'.format(e.res)
 
 #:endmute

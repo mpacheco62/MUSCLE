@@ -1,11 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the kinematics family (D-017.14): include/muscle_models_common.fypp. No
-#! parameters: the parameter type is empty and only selects the kinematics.
-#:set T2 = lambda k: tname('3D2O', k)
-#:set S2 = lambda k: tname('3D2Osym', k)
-#:set C4 = lambda k: tname('3D4O2sym', k)
+#:include "muscle_common.fypp"
 
 module muscle_kin_small_strain
     !! Module muscle_kin_small_strain
@@ -25,23 +20,48 @@ module muscle_kin_small_strain
     !! muscle_kin_laws.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
-    use muscle_tensors, only : ${', '.join(T2(k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$, &
-        transpose, operator(+), operator(*)
-    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2O_${k}$, ten_3D2Osym_${k}$, ten_3D4O2sym_${k}$
+    use muscle_kin_finite, only : kin_state_${k}$
+#:endfor
+    use muscle_tensors, only : transpose, operator(+), operator(*)
     implicit none
     private
 
-    $:MODEL_PUBLIC('kin', 'small_strain')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('kin', 'small_strain', k, model_param_list('kin', 'small_strain'))
+    public :: kin_small_strain_${k}$
+    public :: kin_update_small_strain_${k}$
+    public :: kin_update_norot_small_strain_${k}$
+    public :: kin_to_cauchy_small_strain_${k}$
+    public :: kin_to_spatial_tangent_small_strain_${k}$
+    public :: kin_geometric_tangent_small_strain_${k}$
+    public :: kin_is_finite_strain_small_strain_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: kin_small_strain_${k}$
+        !! Parameters of the small strain model in `real(${k}$)`.
+    end type kin_small_strain_${k}$
 
+#:endfor
 contains
 #:for k in REAL_KINDS
 
-    $:MODEL_FUNCTION('kin', 'small_strain', 'update', k, doc=r'Strain \( \tfrac{1}{2}(\mathbf{F} + \mathbf{F}^T) - \mathbf{I} \); the rest of the state is the reference configuration.')
-        type(${T2(k)}$) :: F_sym
+    pure subroutine kin_update_small_strain_${k}$(prm, F, state, status)
+        !! Kinematic state of a deformation gradient \( \mathbf{F} \) (the deformation gradient is validated) of the small strain
+        !! model in `real(${k}$)`.
+        !! Strain \( \tfrac{1}{2}(\mathbf{F} + \mathbf{F}^T) - \mathbf{I} \); the rest of the state is the reference configuration.
+        implicit none
+        @:DEVICE()
+        type(kin_small_strain_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2O_${k}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state (not valid when `status` is not `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (muscle_status).
+        type(ten_3D2O_${k}$) :: F_sym
 
         F_sym = 0.5_${k}$ * (F + transpose(F))
         state%strain%vals = [F_sym%vals(1) - 1.0_${k}$, F_sym%vals(5) - 1.0_${k}$, F_sym%vals(9) - 1.0_${k}$, &
@@ -49,27 +69,90 @@ contains
         status = STATUS_OK
     end subroutine kin_update_small_strain_${k}$
 
-    $:MODEL_FUNCTION('kin', 'small_strain', 'update_norot', k, doc=r'The same as `kin_update` (no polar decomposition).')
+    pure subroutine kin_update_norot_small_strain_${k}$(prm, F, state, status)
+        !! `kin_update` without the polar decomposition (D-019.7c): the rotation R of the state is the identity, unless the
+        !! functions of the kinematics read it (`KINEMATICS_ROTATION`: then the same state as `kin_update`); every other component
+        !! and `status` are the same bits of the small strain model in `real(${k}$)`.
+        !! The same as `kin_update` (no polar decomposition).
+        implicit none
+        @:DEVICE()
+        type(kin_small_strain_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2O_${k}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state without R (not valid when `status` is not `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (muscle_status).
 
         call kin_update_small_strain_${k}$(prm, F, state, status)
     end subroutine kin_update_norot_small_strain_${k}$
 
-    $:MODEL_FUNCTION('kin', 'small_strain', 'to_cauchy', k, doc=r'The identity.')
+    pure function kin_to_cauchy_small_strain_${k}$(prm, state, stress) result(res)
+        !! Cauchy stress from the constitutive stress (work conjugate of the strain of the kinematics) of the small strain model in
+        !! `real(${k}$)`.
+        !! The identity.
+        implicit none
+        @:DEVICE()
+        type(kin_small_strain_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D2Osym_${k}$), intent(in) :: stress
+            !! Constitutive stress.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Cauchy stress \( \boldsymbol\sigma \).
 
         res = stress
     end function kin_to_cauchy_small_strain_${k}$
 
-    $:MODEL_FUNCTION('kin', 'small_strain', 'to_spatial_tangent', k, doc=r'The identity.')
+    pure function kin_to_spatial_tangent_small_strain_${k}$(prm, state, tangent) result(res)
+        !! Spatial tangent from the constitutive tangent: the part of \(
+        !! J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) through the constitutive stress, for \( \delta\mathbf{F}
+        !! = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (with the derivative of the strain measure, D-018.15f; without the
+        !! geometric term) of the small strain model in `real(${k}$)`.
+        !! The identity.
+        implicit none
+        @:DEVICE()
+        type(kin_small_strain_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D4O2sym_${k}$), intent(in) :: tangent
+            !! Constitutive tangent.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Spatial tangent.
 
         res = tangent
     end function kin_to_spatial_tangent_small_strain_${k}$
 
-    $:MODEL_FUNCTION('kin', 'small_strain', 'geometric_tangent', k, doc=r'Zero: the configurations are not distinguished.')
+    pure function kin_geometric_tangent_small_strain_${k}$(prm, state, stress) result(res)
+        !! Geometric term of the spatial tangent: the part of \( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) at
+        !! a fixed constitutive stress (D-018.15f); `to_spatial_tangent` plus this is the tangent of the Jaumann rate of the
+        !! Kirchhoff stress of the small strain model in `real(${k}$)`.
+        !! Zero: the configurations are not distinguished.
+        implicit none
+        @:DEVICE()
+        type(kin_small_strain_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D2Osym_${k}$), intent(in) :: stress
+            !! Cauchy stress.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Geometric term.
 
         res%vals = 0.0_${k}$
     end function kin_geometric_tangent_small_strain_${k}$
 
-    $:MODEL_FUNCTION('kin', 'small_strain', 'is_finite_strain', k)
+    pure function kin_is_finite_strain_small_strain_${k}$(prm) result(res)
+        !! Whether the kinematics is a finite strain one of the small strain model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(kin_small_strain_${k}$), intent(in) :: prm
+            !! Parameters.
+        logical :: res
+            !! `.true.` for a finite strain kinematics.
 
         res = .false.
     end function kin_is_finite_strain_small_strain_${k}$

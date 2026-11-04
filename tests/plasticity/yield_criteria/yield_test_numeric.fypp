@@ -1,13 +1,14 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#:set YIELD = model_family('yield').models
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:set YIELD = muscle_meta.model_family('yield').models
 
 module yield_test_numeric
     !! Numeric derivatives of the equivalent stress of every registered yield criterion (dp, 3D), for
     !! the tests that compare the analytical derivatives against them: central differences of
     !! `yield_stress_eq` with the default steps of the finite-difference macros (FD_GRAD, FD_HESS of
-    !! include/muscle_fd.fypp), the steps of the numeric procedures of the retired OO base.
+    !! tests/common/muscle_fd.fypp), the steps of the numeric procedures of the retired OO base.
     use muscle_kinds, only : dp
     use muscle_tensors, only : ten_3D2Osym, ten_3D4O3sym
     use muscle_yield_criteria, only : yield_stress_eq, ${', '.join('yield_' + m + '_dp' for m in YIELD)}$

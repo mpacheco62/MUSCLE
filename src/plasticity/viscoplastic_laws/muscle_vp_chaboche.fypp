@@ -1,10 +1,8 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the overstress family (D-017.6): include/muscle_models_common.fypp
+#:include "muscle_common.fypp"
 #! Note: the parameter `k` (historical keyword, `prm%k`) is unrelated to the fypp kind variable `${k}$`
 #! of the `#:for k in REAL_KINDS` loops: write the kind always as `${k}$` and the parameter as `prm%k`.
-#:set PARAMS = model_param_list('os', 'chaboche')
 
 module muscle_vp_chaboche
     !! Additive power overstress law, Chaboche (2008), Eq. (15), p. 1646:
@@ -30,9 +28,19 @@ module muscle_vp_chaboche
     implicit none
     private
 
-    $:MODEL_PUBLIC('os', 'chaboche')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('os', 'chaboche', k, PARAMS)
+    public :: os_chaboche_${k}$
+    public :: os_flow_rate_chaboche_${k}$, os_dflow_dsigma_chaboche_${k}$, os_dflow_dep_chaboche_${k}$
+#:endfor
+
+#:for k in REAL_KINDS
+    type :: os_chaboche_${k}$
+        !! Parameters of the Chaboche model in `real(${k}$)`.
+        real(${k}$) :: k = 1.0_${k}$
+            !! Viscous resistance \( K \) (stress time\(^{1/n}\)).
+        real(${k}$) :: n = 1.0_${k}$
+            !! Positive rate exponent \( n \).
+    end type os_chaboche_${k}$
 #:endfor
 
 contains
@@ -55,7 +63,21 @@ contains
         end if
     end function os_chaboche_dz_${k}$
 
-    $:MODEL_FUNCTION('os', 'chaboche', 'flow_rate', k)
+    pure function os_flow_rate_chaboche_${k}$(prm, sigma_eq, ep, sy) &
+        & result(res)
+        !! Plastic multiplier rate \( g(\sigma_{eq}, \epsilon_p) \) of the Chaboche model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(os_chaboche_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: sigma_eq
+            !! Equivalent stress \( \sigma_{eq} \).
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: sy
+            !! Static yield stress \( \sigma_y(\epsilon_p) \) of the composed hardening law (`hard_stress`).
+        real(${k}$) :: res
+            !! \( g \).
         real(${k}$) :: z
 
         z = (sigma_eq - sy)/prm%k
@@ -66,13 +88,43 @@ contains
         end if
     end function os_flow_rate_chaboche_${k}$
 
-    $:MODEL_FUNCTION('os', 'chaboche', 'dflow_dsigma', k)
+    pure function os_dflow_dsigma_chaboche_${k}$(prm, sigma_eq, ep, sy) &
+        & result(res)
+        !! Derivative \( \partial g/\partial\sigma_{eq} \) of the Chaboche model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(os_chaboche_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: sigma_eq
+            !! Equivalent stress \( \sigma_{eq} \).
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: sy
+            !! Static yield stress \( \sigma_y(\epsilon_p) \) of the composed hardening law (`hard_stress`).
+        real(${k}$) :: res
+            !! \( \partial g/\partial\sigma_{eq} \).
         res = os_chaboche_dz_${k}$(prm, (sigma_eq - sy)/prm%k)/prm%k
     end function os_dflow_dsigma_chaboche_${k}$
 
-    $:MODEL_FUNCTION('os', 'chaboche', 'dflow_dep', k)
+    pure function os_dflow_dep_chaboche_${k}$(prm, sigma_eq, ep, sy, dsy_dep) &
+        & result(res)
+        !! Derivative \( \partial g/\partial\epsilon_p \) of the Chaboche model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(os_chaboche_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: sigma_eq
+            !! Equivalent stress \( \sigma_{eq} \).
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: sy
+            !! Static yield stress \( \sigma_y(\epsilon_p) \) of the composed hardening law (`hard_stress`).
+        real(${k}$), intent(in) :: dsy_dep
+            !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the composed hardening law (`hard_dstress_dep`).
+        real(${k}$) :: res
+            !! \( \partial g/\partial\epsilon_p \).
         res = -os_chaboche_dz_${k}$(prm, (sigma_eq - sy)/prm%k)*dsy_dep/prm%k
     end function os_dflow_dep_chaboche_${k}$
-#:endfor
 
+#:endfor
 end module muscle_vp_chaboche

@@ -1,7 +1,8 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#:set KIN = model_family('kin').models
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:set KIN = muscle_meta.model_family('kin').models
 #:set KIN_F = ['total_lagrangian', 'updated_lagrangian', 'material_logarithmic', 'spatial_logarithmic']
 
 module kin_golden_cases

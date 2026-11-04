@@ -1,19 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the viscoelastic family (D-017.13): include/muscle_models_common.fypp.
-#! Every parameter is private: the initializers (`visco_maxwell_init`, `visco_maxwell_init_normalized`)
-#! validate them and keep the unused branch slots at their defaults (G_k = 0, tau_k = 1). Storage order
-#! of the historical type.
-#:set PARAMS = model_param_list('visco', 'maxwell')
-#! Switch of gamma = (1 - exp(-x))/x to its series 1 - x/2 + x^2/6 (D-017.13a): optimum near
-#! (24 eps)^(1/4) (truncation x^3/24 against the cancellation ~eps/x of the direct formula),
-#! rounded down to a power of ten: 1e-4 in dp (2.7e-4), 1e-2 in sp (4.1e-2). Measured largest
-#! relative error of gamma: dp 5.5e-13, sp 3.0e-6.
-#:set GAMMA_SERIES = {'sp': '1.0e-2', 'dp': '1.0e-4'}
-#:set T2 = lambda k: tname('3D2Osym', k)
-#:set INITS = ['visco_maxwell_init', 'visco_maxwell_init_normalized', 'visco_maxwell_relaxation_shear', &
-    &         'visco_maxwell_shear_instantaneous']
+#:include "muscle_common.fypp"
 
 module muscle_visco_maxwell
     !! Module muscle_visco_maxwell
@@ -66,35 +53,99 @@ module muscle_visco_maxwell
     !! ```
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER, STATUS_INVALID_TIME_STEP
-    use muscle_tensors, only : ${', '.join(T2(k) for k in REAL_KINDS)}$, operator(.dev.), operator(-)
-    use muscle_visco_types, only : MAX_VISCO_BRANCHES, ${', '.join('visco_state_{0}, visco_coefs_{0}'.format(k) for k in REAL_KINDS)}$
-    use muscle_visco_frozen, only : ${', '.join('elas_frozen_' + k for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$
+#:endfor
+    use muscle_tensors, only : operator(.dev.), operator(-)
+    use muscle_visco_types, only : MAX_VISCO_BRANCHES
+#:for k in REAL_KINDS
+    use muscle_visco_types, only : visco_state_${k}$, visco_coefs_${k}$
+    use muscle_visco_frozen, only : elas_frozen_${k}$
+#:endfor
     implicit none
     private
 
-    $:MODEL_PUBLIC('visco', 'maxwell')
-#:for n in INITS
-    public :: ${n}$, ${', '.join(n + '_' + k for k in REAL_KINDS)}$
-#:endfor
+    public :: visco_maxwell_init, visco_maxwell_init_normalized
+    public :: visco_maxwell_relaxation_shear, visco_maxwell_shear_instantaneous
 #:for k in REAL_KINDS
+    public :: visco_maxwell_${k}$
+    public :: visco_maxwell_init_${k}$, visco_maxwell_init_normalized_${k}$
+    public :: visco_maxwell_relaxation_shear_${k}$, visco_maxwell_shear_instantaneous_${k}$
+    public :: visco_step_coefficients_maxwell_${k}$, visco_freeze_maxwell_${k}$, visco_update_maxwell_${k}$
+    public :: visco_n_branches_maxwell_${k}$, visco_freeze_branches_maxwell_${k}$, visco_update_branches_maxwell_${k}$
+#:endfor
 
+    ! Switch of gamma = (1 - exp(-x))/x to its series 1 - x/2 + x^2/6 (D-017.13a): optimum near
+    ! (24 eps)^(1/4) (truncation x^3/24 against the cancellation ~eps/x of the direct formula),
+    ! rounded down to a power of ten: 1e-4 in dp (2.7e-4), 1e-2 in sp (4.1e-2). Measured largest
+    ! relative error of gamma: dp 5.5e-13, sp 3.0e-6.
+#:set GAMMA_SERIES = {'sp': '1.0e-2', 'dp': '1.0e-4'}
+#:for k in REAL_KINDS
     real(${k}$), parameter :: MAXWELL_GAMMA_SERIES_${k}$ = ${GAMMA_SERIES[k]}$_${k}$
         !! Below this \( x = \Delta t/\tau_k \), \( \gamma_k \) is its series (`real(${k}$)`, D-017.13a).
 #:endfor
-#:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('visco', 'maxwell', k, PARAMS, validated=True)
-#:endfor
-#:for n in INITS
 
-    interface ${n}$
-        module procedure ${', '.join(n + '_' + k for k in REAL_KINDS)}$
-    end interface ${n}$
+#:for k in REAL_KINDS
+    type :: visco_maxwell_${k}$
+        !! Parameters of the generalized Maxwell model in `real(${k}$)` (build it with `visco_maxwell_init`, which validates
+        !! the private parameters).
+        real(${k}$), private :: k = 0.0_${k}$
+            !! Bulk modulus \( K \).
+        real(${k}$), private :: g_inf = 0.0_${k}$
+            !! Long-term shear modulus \( G_\infty \).
+        integer, private :: n = 0
+            !! Number of Maxwell branches.
+        real(${k}$), private :: g(MAX_VISCO_BRANCHES) = 0.0_${k}$
+            !! Branch shear moduli \( G_k \) (0 in the unused slots).
+        real(${k}$), private :: tau(MAX_VISCO_BRANCHES) = 1.0_${k}$
+            !! Branch relaxation times \( \tau_k \) (1 in the unused slots).
+    end type visco_maxwell_${k}$
+
 #:endfor
+    interface visco_maxwell_init
+#:for k in REAL_KINDS
+        module procedure visco_maxwell_init_${k}$
+#:endfor
+    end interface visco_maxwell_init
+
+    interface visco_maxwell_init_normalized
+#:for k in REAL_KINDS
+        module procedure visco_maxwell_init_normalized_${k}$
+#:endfor
+    end interface visco_maxwell_init_normalized
+
+    interface visco_maxwell_relaxation_shear
+#:for k in REAL_KINDS
+        module procedure visco_maxwell_relaxation_shear_${k}$
+#:endfor
+    end interface visco_maxwell_relaxation_shear
+
+    interface visco_maxwell_shear_instantaneous
+#:for k in REAL_KINDS
+        module procedure visco_maxwell_shear_instantaneous_${k}$
+#:endfor
+    end interface visco_maxwell_shear_instantaneous
 
 contains
 #:for k in REAL_KINDS
-
-    $:MODEL_INIT('visco', 'maxwell', k)
+    pure subroutine visco_maxwell_init_${k}$(prm, bulk, shear_inf, shear, tau, status)
+        !! Parameters of the generalized Maxwell model in `real(${k}$)` from the Prony series with
+        !! absolute moduli. `STATUS_INVALID_PARAMETER` (and the default parameters) if `shear` and
+        !! `tau` differ in size, have more than `MAX_VISCO_BRANCHES` branches or a `tau <= 0`.
+        implicit none
+        @:DEVICE()
+        type(visco_maxwell_${k}$), intent(out) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: bulk
+            !! Bulk modulus \( K \).
+        real(${k}$), intent(in) :: shear_inf
+            !! Long-term shear modulus \( G_\infty \).
+        real(${k}$), intent(in) :: shear(:)
+            !! Branch shear moduli \( G_k \).
+        real(${k}$), intent(in) :: tau(:)
+            !! Branch relaxation times \( \tau_k \).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_PARAMETER`.
 
         if (size(shear) /= size(tau) .or. size(shear) > MAX_VISCO_BRANCHES) then
             status = STATUS_INVALID_PARAMETER
@@ -170,7 +221,21 @@ contains
         res = prm%g_inf + sum(prm%g(1:prm%n))
     end function visco_maxwell_shear_instantaneous_${k}$
 
-    $:MODEL_FUNCTION('visco', 'maxwell', 'step_coefficients', k, doc=r'\( a_k = e^{-x} \), \( \gamma_k = (1 - a_k)/x \), \( x = \Delta t/\tau_k \); \( \Delta t = 0 \) is valid, \( \Delta t < 0 \) gives `STATUS_INVALID_TIME_STEP` (D-017.13b).')
+    pure subroutine visco_step_coefficients_maxwell_${k}$(prm, dt, coefs, status)
+        !! Coefficients of a time step (algorithmic moduli and the factors of each branch; the time step is
+        !! validated) of the generalized Maxwell model in `real(${k}$)`.
+        !! \( a_k = e^{-x} \), \( \gamma_k = (1 - a_k)/x \), \( x = \Delta t/\tau_k \); \( \Delta t = 0 \) is valid,
+        !! \( \Delta t < 0 \) gives `STATUS_INVALID_TIME_STEP` (D-017.13b).
+        implicit none
+        @:DEVICE()
+        type(visco_maxwell_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: dt
+            !! Time step \( \Delta t \).
+        type(visco_coefs_${k}$), intent(out) :: coefs
+            !! Coefficients of the step (default values when `status` is not `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_TIME_STEP` (muscle_status).
         real(${k}$) :: x, gamma
         integer :: i
 
@@ -195,12 +260,45 @@ contains
         end do
     end subroutine visco_step_coefficients_maxwell_${k}$
 
-    $:MODEL_FUNCTION('visco', 'maxwell', 'freeze', k, doc=r'\( K^{alg} = K \), \( G^{alg} \) of the coefficients and \( \boldsymbol\sigma^{hist}_n = \sum_k (a_k \mathbf{s}_k^n - 2 G_k \gamma_k \mathbf{e}^n) \) (`visco_freeze_branches`).')
+    pure function visco_freeze_maxwell_${k}$(prm, coefs, state_n) result(elas)
+        !! Frozen (algorithmic) elasticity of a time step at a point,
+        !! \( \boldsymbol\sigma_{n+1} = \mathbb{C}^{alg} : \boldsymbol\varepsilon^e_{n+1} + \boldsymbol\sigma^{hist}_n \)
+        !! of the generalized Maxwell model in `real(${k}$)`.
+        !! \( K^{alg} = K \), \( G^{alg} \) of the coefficients and
+        !! \( \boldsymbol\sigma^{hist}_n = \sum_k (a_k \mathbf{s}_k^n - 2 G_k \gamma_k \mathbf{e}^n) \)
+        !! (`visco_freeze_branches`).
+        implicit none
+        @:DEVICE()
+        type(visco_maxwell_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(visco_coefs_${k}$), intent(in) :: coefs
+            !! Coefficients of the time step (`visco_step_coefficients`).
+        type(visco_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(elas_frozen_${k}$) :: elas
+            !! Frozen elasticity (`elas_*` generics of muscle_elasticity_laws).
 
         elas = visco_freeze_branches_maxwell_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h)
     end function visco_freeze_maxwell_${k}$
 
-    $:MODEL_FUNCTION('visco', 'maxwell', 'update', k, doc=r'\( \mathbf{s}_k^{n+1} = a_k \mathbf{s}_k^n + 2 G_k \gamma_k (\mathbf{e}^{n+1} - \mathbf{e}^n) \) (`visco_update_branches`); the other components of `state_n` are carried over.')
+    pure subroutine visco_update_maxwell_${k}$(prm, coefs, state_n, strain_e, state_np1)
+        !! State at \( t_{n+1} \) from the converged state and the elastic strain at \( t_{n+1} \) of the generalized
+        !! Maxwell model in `real(${k}$)`.
+        !! \( \mathbf{s}_k^{n+1} = a_k \mathbf{s}_k^n + 2 G_k \gamma_k (\mathbf{e}^{n+1} - \mathbf{e}^n) \)
+        !! (`visco_update_branches`); the other components of `state_n` are carried over.
+        implicit none
+        @:DEVICE()
+        type(visco_maxwell_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(visco_coefs_${k}$), intent(in) :: coefs
+            !! Coefficients of the time step (`visco_step_coefficients`).
+        type(visco_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(ten_3D2Osym_${k}$), intent(in) :: strain_e
+            !! Elastic strain at \( t_{n+1} \).
+        type(visco_state_${k}$), intent(out) :: state_np1
+            !! State at \( t_{n+1} \): `state_n` with the branches of the model updated; the inactive branches are copied
+            !! from `state_n`.
 
         state_np1%n_branches = prm%n
         call visco_update_branches_maxwell_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h, strain_e, &
@@ -208,8 +306,26 @@ contains
         state_np1%strain_e = strain_e
     end subroutine visco_update_maxwell_${k}$
 
-    $:MODEL_FUNCTION('visco', 'maxwell', 'freeze_branches', k, doc=r'\( \boldsymbol\sigma^{hist}_n = \sum_k (a_k \mathbf{s}_k^n - 2 G_k \gamma_k \mathbf{e}^n) \) over the branches of the model (at most `nb`).')
-        type(${T2(k)}$) :: e_n, hist
+    pure function visco_freeze_branches_maxwell_${k}$(prm, coefs, strain_e_n, nb, h_n) result(elas)
+        !! `visco_freeze` on the components of a state with `nb` history tensors of the generalized Maxwell model in
+        !! `real(${k}$)`.
+        !! \( \boldsymbol\sigma^{hist}_n = \sum_k (a_k \mathbf{s}_k^n - 2 G_k \gamma_k \mathbf{e}^n) \) over the branches
+        !! of the model (at most `nb`).
+        implicit none
+        @:DEVICE()
+        type(visco_maxwell_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(visco_coefs_${k}$), intent(in) :: coefs
+            !! Coefficients of the time step (`visco_step_coefficients`).
+        type(ten_3D2Osym_${k}$), intent(in) :: strain_e_n
+            !! Elastic strain at \( t_n \).
+        integer, intent(in) :: nb
+            !! Number of history tensors of `h_n` (at least the number of branches of the model, `visco_n_branches`).
+        real(${k}$), intent(in) :: h_n(6, nb)
+            !! History tensors at \( t_n \) (Voigt order of `ten_3D2Osym`).
+        type(elas_frozen_${k}$) :: elas
+            !! Frozen elasticity (`elas_*` generics of muscle_elasticity_laws).
+        type(ten_3D2Osym_${k}$) :: e_n, hist
         integer :: i
 
         e_n = .dev. strain_e_n
@@ -222,8 +338,28 @@ contains
         elas%stress_hist = hist
     end function visco_freeze_branches_maxwell_${k}$
 
-    $:MODEL_FUNCTION('visco', 'maxwell', 'update_branches', k, doc=r'\( \mathbf{s}_k^{n+1} = a_k \mathbf{s}_k^n + 2 G_k \gamma_k (\mathbf{e}^{n+1} - \mathbf{e}^n) \) for the branches of the model (at most `nb`).')
-        type(${T2(k)}$) :: de
+    pure subroutine visco_update_branches_maxwell_${k}$(prm, coefs, strain_e_n, nb, h_n, strain_e, h_np1)
+        !! `visco_update` on the components of a state with `nb` history tensors (the caller stores the elastic strain)
+        !! of the generalized Maxwell model in `real(${k}$)`.
+        !! \( \mathbf{s}_k^{n+1} = a_k \mathbf{s}_k^n + 2 G_k \gamma_k (\mathbf{e}^{n+1} - \mathbf{e}^n) \) for the
+        !! branches of the model (at most `nb`).
+        implicit none
+        @:DEVICE()
+        type(visco_maxwell_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(visco_coefs_${k}$), intent(in) :: coefs
+            !! Coefficients of the time step (`visco_step_coefficients`).
+        type(ten_3D2Osym_${k}$), intent(in) :: strain_e_n
+            !! Elastic strain at \( t_n \).
+        integer, intent(in) :: nb
+            !! Number of history tensors of `h_n` (at least the number of branches of the model, `visco_n_branches`).
+        real(${k}$), intent(in) :: h_n(6, nb)
+            !! History tensors at \( t_n \) (Voigt order of `ten_3D2Osym`).
+        type(ten_3D2Osym_${k}$), intent(in) :: strain_e
+            !! Elastic strain at \( t_{n+1} \).
+        real(${k}$), intent(out) :: h_np1(6, nb)
+            !! History tensors at \( t_{n+1} \): those of the model updated, the others copied from `h_n`.
+        type(ten_3D2Osym_${k}$) :: de
         integer :: i
 
         de = (.dev. strain_e) - (.dev. strain_e_n)
@@ -233,10 +369,17 @@ contains
         end do
     end subroutine visco_update_branches_maxwell_${k}$
 
-    $:MODEL_FUNCTION('visco', 'maxwell', 'n_branches', k)
+    pure function visco_n_branches_maxwell_${k}$(prm) result(res)
+        !! Number of history tensors of the state used by the model of the generalized Maxwell model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(visco_maxwell_${k}$), intent(in) :: prm
+            !! Parameters.
+        integer :: res
+            !! Number of branches.
 
         res = prm%n
     end function visco_n_branches_maxwell_${k}$
-#:endfor
 
+#:endfor
 end module muscle_visco_maxwell

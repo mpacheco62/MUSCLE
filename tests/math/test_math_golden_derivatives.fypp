@@ -126,7 +126,7 @@ end module math_golden_derivatives_funcs
 
 program test_math_golden_derivatives
     !! Golden test of the numerical derivatives of `muscle_math_derivatives` (double precision),
-    !! now the finite-difference macros of `include/muscle_fd.fypp` (D-018.18b): `FD_DERIV`
+    !! now the finite-difference macros of `tests/common/muscle_fd.fypp` (D-018.18b): `FD_DERIV`
     !! (scalar-scalar), `FD_GRAD` (scalar-ten_3D2O, scalar-ten_3D2Osym), `FD_JAC`
     !! (ten_3D2Osym-ten_3D2Osym) and `FD_HESS` (scalar-ten_3D2Osym), with the default and an
     !! explicit step, and `dsquare`. The keys keep the names of the former `procedure(...)` API

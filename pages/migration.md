@@ -22,7 +22,7 @@ formatted output of `muscle_tensor_io`) is unchanged.
 | `call solver%solve(strain, history, status, iters)` | `call muscle_point_<name>(mat, strain, dt, hsv_n, hsv_np1, stress, status, iters)` (flat arrays), or the kernel `call mat_update(mat, strain, dt, state_n, state_np1, stress, tangent, status, iters)` (tensor types) |
 | Loop of `solver%solve` over the Gauss points (OpenMP `private` solver copies) | `call muscle_update_<name>(mat, eps, dt, hsv_n, hsv_np1, sig, status, iters [, ddsdde] [, idx])` over SoA arrays `eps(npts, 6)` |
 | `call solver%tangent(strain, history, tangent)` (`ten_3D4O2sym`) | Optional `ddsdde` of the point / batch API (`ddsdde(6, 6)`, engineering shear columns as UMAT DDSDDE), or `tangent` of `mat_update` |
-| `solver%tangent_numerical(...)` | No kernel equivalent: finite differences of the point API in tests (macros of `include/muscle_fd.fypp`) |
+| `solver%tangent_numerical(...)` | No kernel equivalent: finite differences of the point API in tests (macros of `tests/common/muscle_fd.fypp`) |
 | Free wrapper `closest_point2(strain, elasticity, hardening, yield, stress, strain_pf, strain_p, status)` | `muscle_point_<name>` of a `'closest_point_2'` material |
 | `type(Plastic_material_history)`: `%init`, `%unpack_from_fea`, `%pack_to_fea` | History array of `MAT_<NAME>_NSTATE` reals per point (`hsv_n`, `hsv_np1`), `mat_pack_<name>` / `mat_unpack_<name>` for the kernel states; the stress is not part of it |
 | `history%commit()` / `history%rollback()` | None: the caller (FE code) keeps the converged `hsv_n`; the update writes only `hsv_np1` |
@@ -34,7 +34,7 @@ formatted output of `muscle_tensor_io`) is unchanged.
 | `type(VonMises)`, `type(Hill48)`, ... (`Base_yield_critera`), `%stress_eq(sigma)` and derivatives | `yield_vonmises_dp`, `yield_hill48_dp`, ... (`yield_<m>_init` for the anisotropic ones and Drucker-Prager), `yield_stress_eq`, `yield_dstress_eq`, `yield_ddstress_eq`, `yield_stress_eq_and_derivatives` (`muscle_yield_criteria`) |
 | `Perzyna_overstress`, `Chaboche_overstress`, `JohnsonCook_full_visco_hardening`, ... (with a `class` hardening component) | `os_perzyna_<k>`, `os_chaboche_<k>`, `vp_jc_<k>`, ... with the composed hardening law as a separate argument (`sy`, `dsy_dep`): `os_flow_rate`, `vp_flow_stress`, ... (`muscle_vp_overstress_laws`, `muscle_vp_laws`) |
 | Facade `muscle_kinematics` (`Small_strain_kinematics`, `Total_lagrangian_kinematics`, ...) | `kin='<kinematics>'` (and `tangent_rate`) in the material entry; the point API takes `F_n(9)`, `F_np1(9)`; family functions `kin_update`, `kin_to_cauchy`, ... in `muscle_kin_laws` |
-| `derivative(fun, x[, eps])`, `derivative2O(...)` (`procedure(...)` argument, `*_host` modules) | Macros `FD_DERIV`, `FD_DERIV2`, ... of `include/muscle_fd.fypp` (FYPP, call expanded in place) |
+| `derivative(fun, x[, eps])`, `derivative2O(...)` (`procedure(...)` argument, `*_host` modules) | Macros `FD_DERIV`, `FD_DERIV2`, ... of `tests/common/muscle_fd.fypp` (FYPP, call expanded in place) |
 | Solver status `STATUS_ELASTIC_CASE`, `STATUS_CONVERGED`, `STATUS_NONCONVERGED` | `STATUS_OK` (elastic if `iters = 0`) and `STATUS_NOT_CONVERGED` of `muscle_status` |
 | Double precision only | Every type and procedure in `_sp` and `_dp` |
 

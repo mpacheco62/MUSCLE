@@ -1,8 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the viscoplastic family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = model_param_list('vp', 'va')
+#:include "muscle_common.fypp"
 
 module muscle_vp_va
     !! VA viscoplastic law (self-contained: it does not compose a hardening law):
@@ -29,9 +27,28 @@ module muscle_vp_va
     implicit none
     private
 
-    $:MODEL_PUBLIC('vp', 'va')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('vp', 'va', k, PARAMS)
+    public :: vp_va_${k}$
+    public :: vp_flow_stress_va_${k}$, vp_dflow_dep_va_${k}$, vp_dflow_depd_va_${k}$, &
+        & vp_dstress_dep_va_${k}$
+#:endfor
+
+#:for k in REAL_KINDS
+    type :: vp_va_${k}$
+        !! Parameters of the VA model in `real(${k}$)`.
+        real(${k}$) :: B
+            !! Hardening modulus \( B \).
+        real(${k}$) :: n
+            !! Hardening exponent \( n \).
+        real(${k}$) :: B1
+            !! Rate coefficient \( B_1 \).
+        real(${k}$) :: B2
+            !! Rate offset \( B_2 \).
+        real(${k}$) :: m
+            !! Rate exponent \( m \) (0: no rate term).
+        real(${k}$) :: sig_u
+            !! Athermal stress \( \sigma_u \).
+    end type vp_va_${k}$
 #:endfor
 
 contains
@@ -74,25 +91,79 @@ contains
         end if
     end function vp_va_drate_${k}$
 
-    $:MODEL_FUNCTION('vp', 'va', 'flow_stress', k)
+    pure function vp_flow_stress_va_${k}$(prm, ep, epd) &
+        & result(res)
+        !! Viscoplastic flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \) of the VA model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(vp_va_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \sigma \).
         res = prm%B*(max(ep, 1.0e-10_${k}$)**prm%n)*vp_va_rate_${k}$(prm, epd) + prm%sig_u
     end function vp_flow_stress_va_${k}$
 
-    $:MODEL_FUNCTION('vp', 'va', 'dflow_dep', k)
+    pure function vp_dflow_dep_va_${k}$(prm, ep, epd) &
+        & result(res)
+        !! Partial derivative \( \partial\sigma/\partial\epsilon_p \) (at constant \( \dot\epsilon_p \)) of the VA model in
+        !! `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(vp_va_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \partial\sigma/\partial\epsilon_p \).
         res = prm%B*prm%n*(max(ep, 1.0e-10_${k}$)**(prm%n - 1.0_${k}$))*vp_va_rate_${k}$(prm, epd)
     end function vp_dflow_dep_va_${k}$
 
-    $:MODEL_FUNCTION('vp', 'va', 'dflow_depd', k)
+    pure function vp_dflow_depd_va_${k}$(prm, ep, epd) &
+        & result(res)
+        !! Partial derivative \( \partial\sigma/\partial\dot\epsilon_p \) (at constant \( \epsilon_p \)) of the VA model in
+        !! `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(vp_va_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \partial\sigma/\partial\dot\epsilon_p \).
         res = prm%B*(max(ep, 1.0e-10_${k}$)**prm%n)*vp_va_drate_${k}$(prm, epd)
     end function vp_dflow_depd_va_${k}$
 
-    $:MODEL_FUNCTION('vp', 'va', 'dstress_dep', k, doc='dflow_dep + dflow_depd/dt, computed once (original operation order).')
+    pure function vp_dstress_dep_va_${k}$(prm, ep, epd, dt) &
+        & result(res)
+        !! Derivative of the flow stress with respect to the plastic strain increment, \( \partial\sigma/\partial\epsilon_p
+        !! + \partial\sigma/\partial\dot\epsilon_p/\Delta t \) of the VA model in `real(${k}$)`.
+        !! dflow_dep + dflow_depd/dt, computed once (original operation order).
+        implicit none
+        @:DEVICE()
+        type(vp_va_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$), intent(in) :: dt
+            !! Time step \( \Delta t \) (\( \dot\epsilon_p = \Delta\epsilon_p/\Delta t \)).
+        real(${k}$) :: res
+            !! \( d\sigma/d\Delta\epsilon_p \).
         real(${k}$) :: ep_eff
 
         ep_eff = max(ep, 1.0e-10_${k}$)
         res = prm%B*prm%n*(ep_eff**(prm%n - 1.0_${k}$))*vp_va_rate_${k}$(prm, epd) &
               + (prm%B*(ep_eff**prm%n)*vp_va_drate_${k}$(prm, epd))/dt
     end function vp_dstress_dep_va_${k}$
-#:endfor
 
+#:endfor
 end module muscle_vp_va

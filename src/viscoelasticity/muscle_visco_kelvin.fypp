@@ -1,11 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the viscoelastic family (D-017.13): include/muscle_models_common.fypp.
-#! Every parameter is private: the initializer (`visco_kelvin_init`) validates them. Storage order of
-#! the historical type.
-#:set PARAMS = model_param_list('visco', 'kelvin')
-#:set T2 = lambda k: tname('3D2Osym', k)
+#:include "muscle_common.fypp"
 
 module muscle_visco_kelvin
     !! Module muscle_visco_kelvin
@@ -36,28 +31,66 @@ module muscle_visco_kelvin
     !! `visco_n_branches_kelvin_<k>` (generics `visco_*` of muscle_visco_laws).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER, STATUS_INVALID_TIME_STEP
-    use muscle_tensors, only : ${', '.join(T2(k) for k in REAL_KINDS)}$, iden_2O, operator(.dev.), operator(.ddot.), &
-        operator(*), operator(-)
-    use muscle_visco_types, only : MAX_VISCO_BRANCHES, ${', '.join('visco_state_{0}, visco_coefs_{0}'.format(k) for k in REAL_KINDS)}$
-    use muscle_visco_frozen, only : ${', '.join('elas_frozen_' + k for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$
+#:endfor
+    use muscle_tensors, only : iden_2O, operator(.dev.), operator(.ddot.), operator(*), operator(-)
+    use muscle_visco_types, only : MAX_VISCO_BRANCHES
+#:for k in REAL_KINDS
+    use muscle_visco_types, only : visco_state_${k}$, visco_coefs_${k}$
+    use muscle_visco_frozen, only : elas_frozen_${k}$
+#:endfor
     implicit none
     private
 
-    $:MODEL_PUBLIC('visco', 'kelvin')
-    public :: visco_kelvin_init, ${', '.join('visco_kelvin_init_' + k for k in REAL_KINDS)}$
+    public :: visco_kelvin_init
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('visco', 'kelvin', k, PARAMS, validated=True)
+    public :: visco_kelvin_${k}$, visco_kelvin_init_${k}$
+    public :: visco_step_coefficients_kelvin_${k}$, visco_freeze_kelvin_${k}$, visco_update_kelvin_${k}$
+    public :: visco_n_branches_kelvin_${k}$, visco_freeze_branches_kelvin_${k}$, visco_update_branches_kelvin_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: visco_kelvin_${k}$
+        !! Parameters of the Kelvin-Voigt model in `real(${k}$)` (build it with `visco_kelvin_init`, which validates the
+        !! private parameters).
+        real(${k}$), private :: k = 0.0_${k}$
+            !! Elastic bulk modulus \( K \).
+        real(${k}$), private :: g = 0.0_${k}$
+            !! Elastic shear modulus \( G \).
+        real(${k}$), private :: zeta = 0.0_${k}$
+            !! Volumetric viscosity of the dashpot \( \zeta \).
+        real(${k}$), private :: mu_v = 0.0_${k}$
+            !! Deviatoric viscosity of the dashpot \( \mu_v \).
+    end type visco_kelvin_${k}$
+
+#:endfor
     interface visco_kelvin_init
         !! Parameters of the Kelvin-Voigt solid.
-        module procedure ${', '.join('visco_kelvin_init_' + k for k in REAL_KINDS)}$
+#:for k in REAL_KINDS
+        module procedure visco_kelvin_init_${k}$
+#:endfor
     end interface visco_kelvin_init
 
 contains
 #:for k in REAL_KINDS
-
-    $:MODEL_INIT('visco', 'kelvin', k)
+    pure subroutine visco_kelvin_init_${k}$(prm, bulk, shear, bulk_viscosity, shear_viscosity, status)
+        !! Parameters of the Kelvin-Voigt solid in `real(${k}$)`: elastic moduli and viscosities.
+        !! `STATUS_INVALID_PARAMETER` (and the default parameters) if any of them is negative.
+        implicit none
+        @:DEVICE()
+        type(visco_kelvin_${k}$), intent(out) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: bulk
+            !! Bulk modulus \( K \).
+        real(${k}$), intent(in) :: shear
+            !! Shear modulus \( G \).
+        real(${k}$), intent(in) :: bulk_viscosity
+            !! Volumetric viscosity \( \zeta \).
+        real(${k}$), intent(in) :: shear_viscosity
+            !! Deviatoric viscosity \( \mu_v \).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_PARAMETER`.
 
         if (bulk < 0.0_${k}$ .or. shear < 0.0_${k}$ .or. bulk_viscosity < 0.0_${k}$ .or. shear_viscosity < 0.0_${k}$) then
             status = STATUS_INVALID_PARAMETER
@@ -70,7 +103,21 @@ contains
         prm%mu_v = shear_viscosity
     end subroutine visco_kelvin_init_${k}$
 
-    $:MODEL_FUNCTION('visco', 'kelvin', 'step_coefficients', k, doc=r'Algorithmic moduli \(K^{alg} = K + \zeta/\Delta t\), \(G^{alg} = G + \mu_v/\Delta t\) and the two viscous factors used by `visco_freeze`; \( \Delta t \le 0 \) gives `STATUS_INVALID_TIME_STEP` (D-017.13b).')
+    pure subroutine visco_step_coefficients_kelvin_${k}$(prm, dt, coefs, status)
+        !! Coefficients of a time step (algorithmic moduli and the factors of each branch; the time step is
+        !! validated) of the Kelvin-Voigt model in `real(${k}$)`.
+        !! Algorithmic moduli \(K^{alg} = K + \zeta/\Delta t\), \(G^{alg} = G + \mu_v/\Delta t\) and the two viscous factors
+        !! used by `visco_freeze`; \( \Delta t \le 0 \) gives `STATUS_INVALID_TIME_STEP` (D-017.13b).
+        implicit none
+        @:DEVICE()
+        type(visco_kelvin_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: dt
+            !! Time step \( \Delta t \).
+        type(visco_coefs_${k}$), intent(out) :: coefs
+            !! Coefficients of the step (default values when `status` is not `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_TIME_STEP` (muscle_status).
 
         if (dt <= 0.0_${k}$) then
             status = STATUS_INVALID_TIME_STEP
@@ -84,12 +131,43 @@ contains
         coefs%weight(2) = 2.0_${k}$*prm%mu_v/dt
     end subroutine visco_step_coefficients_kelvin_${k}$
 
-    $:MODEL_FUNCTION('visco', 'kelvin', 'freeze', k, doc=r'History stress \(\sigma^{hist}_n = -(\zeta/\Delta t)\,\mathrm{tr}(\varepsilon_n)\,\mathbf{I} - (2\mu_v/\Delta t)\,\mathrm{dev}(\varepsilon_n)\), constant over the step (`visco_freeze_branches`).')
+    pure function visco_freeze_kelvin_${k}$(prm, coefs, state_n) result(elas)
+        !! Frozen (algorithmic) elasticity of a time step at a point,
+        !! \( \boldsymbol\sigma_{n+1} = \mathbb{C}^{alg} : \boldsymbol\varepsilon^e_{n+1} + \boldsymbol\sigma^{hist}_n \)
+        !! of the Kelvin-Voigt model in `real(${k}$)`.
+        !! History stress \(\sigma^{hist}_n = -(\zeta/\Delta t)\,\mathrm{tr}(\varepsilon_n)\,\mathbf{I} -
+        !! (2\mu_v/\Delta t)\,\mathrm{dev}(\varepsilon_n)\), constant over the step (`visco_freeze_branches`).
+        implicit none
+        @:DEVICE()
+        type(visco_kelvin_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(visco_coefs_${k}$), intent(in) :: coefs
+            !! Coefficients of the time step (`visco_step_coefficients`).
+        type(visco_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(elas_frozen_${k}$) :: elas
+            !! Frozen elasticity (`elas_*` generics of muscle_elasticity_laws).
 
         elas = visco_freeze_branches_kelvin_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h)
     end function visco_freeze_kelvin_${k}$
 
-    $:MODEL_FUNCTION('visco', 'kelvin', 'update', k, doc=r'Stores the elastic strain; there are no branch tensors (the other components of `state_n` are carried over).')
+    pure subroutine visco_update_kelvin_${k}$(prm, coefs, state_n, strain_e, state_np1)
+        !! State at \( t_{n+1} \) from the converged state and the elastic strain at \( t_{n+1} \) of the Kelvin-Voigt
+        !! model in `real(${k}$)`.
+        !! Stores the elastic strain; there are no branch tensors (the other components of `state_n` are carried over).
+        implicit none
+        @:DEVICE()
+        type(visco_kelvin_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(visco_coefs_${k}$), intent(in) :: coefs
+            !! Coefficients of the time step (`visco_step_coefficients`).
+        type(visco_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(ten_3D2Osym_${k}$), intent(in) :: strain_e
+            !! Elastic strain at \( t_{n+1} \).
+        type(visco_state_${k}$), intent(out) :: state_np1
+            !! State at \( t_{n+1} \): `state_n` with the branches of the model updated; the inactive branches are copied
+            !! from `state_n`.
 
         state_np1%n_branches = 0
         call visco_update_branches_kelvin_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h, strain_e, &
@@ -97,8 +175,26 @@ contains
         state_np1%strain_e = strain_e
     end subroutine visco_update_kelvin_${k}$
 
-    $:MODEL_FUNCTION('visco', 'kelvin', 'freeze_branches', k, doc=r'History stress \(\sigma^{hist}_n = -(\zeta/\Delta t)\,\mathrm{tr}(\varepsilon_n)\,\mathbf{I} - (2\mu_v/\Delta t)\,\mathrm{dev}(\varepsilon_n)\) (no history tensors: `h_n` is not used).')
-        type(${T2(k)}$) :: e_n
+    pure function visco_freeze_branches_kelvin_${k}$(prm, coefs, strain_e_n, nb, h_n) result(elas)
+        !! `visco_freeze` on the components of a state with `nb` history tensors of the Kelvin-Voigt model in
+        !! `real(${k}$)`.
+        !! History stress \(\sigma^{hist}_n = -(\zeta/\Delta t)\,\mathrm{tr}(\varepsilon_n)\,\mathbf{I} -
+        !! (2\mu_v/\Delta t)\,\mathrm{dev}(\varepsilon_n)\) (no history tensors: `h_n` is not used).
+        implicit none
+        @:DEVICE()
+        type(visco_kelvin_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(visco_coefs_${k}$), intent(in) :: coefs
+            !! Coefficients of the time step (`visco_step_coefficients`).
+        type(ten_3D2Osym_${k}$), intent(in) :: strain_e_n
+            !! Elastic strain at \( t_n \).
+        integer, intent(in) :: nb
+            !! Number of history tensors of `h_n` (at least the number of branches of the model, `visco_n_branches`).
+        real(${k}$), intent(in) :: h_n(6, nb)
+            !! History tensors at \( t_n \) (Voigt order of `ten_3D2Osym`).
+        type(elas_frozen_${k}$) :: elas
+            !! Frozen elasticity (`elas_*` generics of muscle_elasticity_laws).
+        type(ten_3D2Osym_${k}$) :: e_n
 
         e_n = strain_e_n
         elas%k_alg = coefs%k_alg
@@ -106,15 +202,42 @@ contains
         elas%stress_hist = -coefs%weight(2)*(.dev. e_n) - (coefs%weight(1)*(e_n .ddot. iden_2O()))*iden_2O()
     end function visco_freeze_branches_kelvin_${k}$
 
-    $:MODEL_FUNCTION('visco', 'kelvin', 'update_branches', k, doc=r'No branch tensors: `h_np1` is a copy of `h_n` (the elastic strain is the whole history of the model).')
+    pure subroutine visco_update_branches_kelvin_${k}$(prm, coefs, strain_e_n, nb, h_n, strain_e, h_np1)
+        !! `visco_update` on the components of a state with `nb` history tensors (the caller stores the elastic strain)
+        !! of the Kelvin-Voigt model in `real(${k}$)`.
+        !! No branch tensors: `h_np1` is a copy of `h_n` (the elastic strain is the whole history of the model).
+        implicit none
+        @:DEVICE()
+        type(visco_kelvin_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(visco_coefs_${k}$), intent(in) :: coefs
+            !! Coefficients of the time step (`visco_step_coefficients`).
+        type(ten_3D2Osym_${k}$), intent(in) :: strain_e_n
+            !! Elastic strain at \( t_n \).
+        integer, intent(in) :: nb
+            !! Number of history tensors of `h_n` (at least the number of branches of the model, `visco_n_branches`).
+        real(${k}$), intent(in) :: h_n(6, nb)
+            !! History tensors at \( t_n \) (Voigt order of `ten_3D2Osym`).
+        type(ten_3D2Osym_${k}$), intent(in) :: strain_e
+            !! Elastic strain at \( t_{n+1} \).
+        real(${k}$), intent(out) :: h_np1(6, nb)
+            !! History tensors at \( t_{n+1} \): those of the model updated, the others copied from `h_n`.
 
         h_np1 = h_n
     end subroutine visco_update_branches_kelvin_${k}$
 
-    $:MODEL_FUNCTION('visco', 'kelvin', 'n_branches', k, doc='No history tensors: the elastic strain at t_n is the whole history of the model.')
+    pure function visco_n_branches_kelvin_${k}$(prm) result(res)
+        !! Number of history tensors of the state used by the model of the Kelvin-Voigt model in `real(${k}$)`.
+        !! No history tensors: the elastic strain at t_n is the whole history of the model.
+        implicit none
+        @:DEVICE()
+        type(visco_kelvin_${k}$), intent(in) :: prm
+            !! Parameters.
+        integer :: res
+            !! Number of branches.
 
         res = 0
     end function visco_n_branches_kelvin_${k}$
-#:endfor
 
+#:endfor
 end module muscle_visco_kelvin

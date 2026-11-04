@@ -1,6 +1,7 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
 #!
 #! Kernel API of the elastic family (D-017.12) in every kind and dimension, through the generics of
 #! muscle_elasticity_laws:
@@ -67,7 +68,7 @@ module test_elas_cases
     use muscle_elasticity_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev, &
         ${', '.join('elas_linear_' + k for k in REAL_KINDS)}$
     use muscle_elasticity_linear, only : elas_linear_init, &
-        ${', '.join(model_specific('elas', f.name, 'linear', 'dp', d) for f in model_family('elas').funcs for d in DIMS)}$
+        ${', '.join(muscle_meta.model_specific('elas', f.name, 'linear', 'dp', d) for f in muscle_meta.model_family('elas').funcs for d in DIMS)}$
     use test_elas_point, only : ${', '.join('point_{}_{}'.format(d, k) for k in REAL_KINDS for d in DIMS)}$
     use muscle_test_utils, only : check_true, check_scaled
     implicit none

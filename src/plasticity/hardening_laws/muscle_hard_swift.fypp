@@ -1,8 +1,6 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
-#! Model contract of the hardening family (D-017.6): include/muscle_models_common.fypp
-#:set PARAMS = model_param_list('hard', 'swift')
+#:include "muscle_common.fypp"
 
 module muscle_hard_swift
     !! Swift isotropic hardening law:
@@ -25,24 +23,63 @@ module muscle_hard_swift
     implicit none
     private
 
-    $:MODEL_PUBLIC('hard', 'swift')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('hard', 'swift', k, PARAMS)
+    public :: hard_swift_${k}$
+    public :: hard_stress_swift_${k}$, hard_dstress_dep_swift_${k}$, hard_ddstress_ddep_swift_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: hard_swift_${k}$
+        !! Parameters of the Swift model in `real(${k}$)`.
+        real(${k}$) :: k
+            !! Strength coefficient \( K \).
+        real(${k}$) :: e0
+            !! Initial strain offset \( \epsilon_0 \) (> 0, see the module documentation).
+        real(${k}$) :: n
+            !! Hardening exponent \( n \).
+    end type hard_swift_${k}$
+
+#:endfor
 contains
 #:for k in REAL_KINDS
-    $:MODEL_FUNCTION('hard', 'swift', 'stress', k)
+    pure function hard_stress_swift_${k}$(prm, ep) result(res)
+        !! Flow stress \( \sigma_y(\epsilon_p) \) of the Swift model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_swift_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( \sigma_y \).
         res = prm%k*(prm%e0 + ep)**prm%n
     end function hard_stress_swift_${k}$
 
-    $:MODEL_FUNCTION('hard', 'swift', 'dstress_dep', k)
+    pure function hard_dstress_dep_swift_${k}$(prm, ep) result(res)
+        !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the Swift model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_swift_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d\sigma_y/d\epsilon_p \).
         res = prm%k*prm%n*(prm%e0 + ep)**(prm%n - 1.0_${k}$)
     end function hard_dstress_dep_swift_${k}$
 
-    $:MODEL_FUNCTION('hard', 'swift', 'ddstress_ddep', k)
+    pure function hard_ddstress_ddep_swift_${k}$(prm, ep) result(res)
+        !! Second derivative \( d^2\sigma_y/d\epsilon_p^2 \) of the Swift model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_swift_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d^2\sigma_y/d\epsilon_p^2 \).
         res = prm%k*prm%n*(prm%n - 1.0_${k}$)*(prm%e0 + ep)**(prm%n - 2.0_${k}$)
     end function hard_ddstress_ddep_swift_${k}$
-#:endfor
 
+#:endfor
 end module muscle_hard_swift

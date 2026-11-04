@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_fd.fypp"
-#! Finite differences of include/muscle_fd.fypp (FD_DERIV, FD_GRAD, FD_JAC, FD_HESS; formerly the
+#! Finite differences of tests/common/muscle_fd.fypp (FD_DERIV, FD_GRAD, FD_JAC, FD_HESS; formerly the
 #! `procedure(...)` API derivative/derivative2O, removed in D-018.18b) on functions with known
 #! derivatives, double precision, 3D, and the analytical dsquare of muscle_math_derivatives.
 module test_muscle_math_derivatives_mod

@@ -1,6 +1,7 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#:include "muscle_models_common.fypp"
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
 #!
 #! Kernel API of the yield criteria (D-017) in every kind: von Mises, Hill48, Drucker-Prager, CPB06,
 #! CPB06ex2 and Yld2004 through the family generics of muscle_yield_criteria:
@@ -20,9 +21,9 @@
 #! - joint evaluation (default: the three functions in turn, same bits; Yld2004: its own, same bits as
 #!   the three functions; with and without the optional second derivative, D-017.10a), its flag
 #!   (true only for Yld2004) and the generics = specifics;
-#! - the finite-difference derivatives of the contract (MODEL_FD with a `2Osym` argument: FD_GRAD
-#!   and FD_HESS) on a test-only criterion (Hill48 written with stress_eq only, with its own joint
-#!   evaluation by MODEL_JOINT), against the analytical Hill48 derivatives; the kernel types with
+#! - the finite-difference derivatives (FD_GRAD and FD_HESS)
+#!   on a test-only criterion (Hill48 written with stress_eq only, with its own joint
+#!   evaluation), against the analytical Hill48 derivatives; the kernel types with
 #!   derived parameters are built only with their initializers (private components, D-017.10b; the
 #!   compile-fail checks are the ctests *_private_params);
 #! - `pure`, `@:DEVICE()` point procedures that call the generics.
@@ -36,50 +37,127 @@
 #!   1e-8..1e5 (CPB06ex2 and Yld2004 from 1e-7, see test_vs_dp), Drucker-Prager 1e-8..1e12, von
 #!   Mises 1e-15..1e15) (measured 5.6e-7 stress_eq, Drucker-Prager; 6.3e-7 gradient and 1.7e-6 Hessian,
 #!   CPB06ex2);
-#! - FD_TOL: MODEL_FD against the analytical derivatives with the default steps of FD_GRAD and
+#! - FD_TOL: FD_GRAD/FD_HESS against the analytical derivatives with the default steps of FD_GRAD and
 #!   FD_HESS (measured sp 1.1e-4 / 4.7e-3, dp 1.1e-10 / 1.2e-7).
 #:set TOL_K = {'sp': {'f': '3.0e-6', 'df': '1.0e-5', 'ddf': '1.0e-5'}, 'dp': {'f': '0.0', 'df': '0.0', 'ddf': '0.0'}}
 #:set FD_TOL = {'sp': {'d1': '1.0e-3', 'd2': '5.0e-2'}, 'dp': {'d1': '1.0e-9', 'd2': '1.0e-6'}}
 #:set FD_REF = '2.0e-8'
-#! Test-only criterion: Hill48 with stress_eq only (derivatives by MODEL_FD)
-#:set HILLP = [('f', 'real', '', 'F.', None), ('g', 'real', '', 'G.', None), ('h', 'real', '', 'H.', None), &
-    & ('l', 'real', '', 'L.', None), ('m', 'real', '', 'M.', None), ('n', 'real', '', 'N.', None)]
+#! Test-only criterion: Hill48 with stress_eq only (derivatives by FD_GRAD and FD_HESS)
 #:set LAY4 = layout('4O3sym', '3D')
 
 module muscle_yield_fdhill
     !! Test criterion: Hill48 equivalent stress only, derivatives by finite differences, and its own
-    !! joint evaluation (MODEL_JOINT on a model not registered in the family): the three functions,
+    !! joint evaluation (a model not registered in the family): the three functions,
     !! the second derivative only when requested.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
     implicit none
     private
 
-    $:MODEL_PUBLIC('yield', 'fdhill')
 #:for k in REAL_KINDS
-    $:MODEL_PARAMS_TYPE('yield', 'fdhill', k, HILLP)
+    public :: yield_fdhill_${k}$
+#:endfor
+#:for k in REAL_KINDS
+    public :: yield_stress_eq_fdhill_3D_${k}$, yield_dstress_eq_fdhill_3D_${k}$, yield_ddstress_eq_fdhill_3D_${k}$
+    public :: yield_stress_eq_and_derivatives_fdhill_3D_${k}$, yield_joint_evaluation_fdhill_${k}$
 #:endfor
 
+#:for k in REAL_KINDS
+    type :: yield_fdhill_${k}$
+        !! Parameters of the fdhill model in `real(${k}$)`.
+        real(${k}$) :: f
+            !! F.
+        real(${k}$) :: g
+            !! G.
+        real(${k}$) :: h
+            !! H.
+        real(${k}$) :: l
+            !! L.
+        real(${k}$) :: m
+            !! M.
+        real(${k}$) :: n
+            !! N.
+    end type yield_fdhill_${k}$
+
+#:endfor
 contains
 #:for k in REAL_KINDS
-#:for d in model_dims('yield')
 
-    $:MODEL_FUNCTION('yield', 'fdhill', 'stress_eq', k, d)
+    pure function yield_stress_eq_fdhill_3D_${k}$(prm, sigma) result(res)
+        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the fdhill model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$) :: res
+            !! \( \sigma_{eq} \).
         res = sqrt(prm%f*(sigma%vals(2) - sigma%vals(3))**2 + prm%g*(sigma%vals(3) - sigma%vals(1))**2 &
                    + prm%h*(sigma%vals(1) - sigma%vals(2))**2 + 2.0_${k}$*prm%l*sigma%vals(5)**2 &
                    + 2.0_${k}$*prm%m*sigma%vals(6)**2 + 2.0_${k}$*prm%n*sigma%vals(4)**2)
-    end function yield_stress_eq_fdhill_${d}$_${k}$
+    end function yield_stress_eq_fdhill_3D_${k}$
 
-    $:MODEL_FD('yield', 'fdhill', 'dstress_eq', k, d)
+    pure function yield_dstress_eq_fdhill_3D_${k}$(prm, sigma) result(res)
+        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the fdhill model in `real(${k}$)` (3D),
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        @:FD_GRAD(res, yield_stress_eq_fdhill_3D_${k}$(prm, {x}), sigma, ${k}$, 3D)
+    end function yield_dstress_eq_fdhill_3D_${k}$
 
-    $:MODEL_FD('yield', 'fdhill', 'ddstress_eq', k, d, second=True)
+    pure function yield_ddstress_eq_fdhill_3D_${k}$(prm, sigma) result(res)
+        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) of the fdhill model in `real(${k}$)` (3D),
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \).
+        @:FD_HESS(res, yield_stress_eq_fdhill_3D_${k}$(prm, {x}), sigma, ${k}$, 3D)
+    end function yield_ddstress_eq_fdhill_3D_${k}$
 
-    $:MODEL_JOINT('yield', 'fdhill', k, d)
-        f = yield_stress_eq_fdhill_${d}$_${k}$(prm, sigma)
-        df = yield_dstress_eq_fdhill_${d}$_${k}$(prm, sigma)
-        if (present(ddf)) ddf = yield_ddstress_eq_fdhill_${d}$_${k}$(prm, sigma)
-    end subroutine yield_stress_eq_and_derivatives_fdhill_${d}$_${k}$
-#:endfor
+    pure function yield_joint_evaluation_fdhill_${k}$(prm) result(res)
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn):
+        !! true for the fdhill model (`real(${k}$)` parameters; a constant, resolved at compile time).
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters (not used: only selects the model).
+        logical :: res
+            !! .true.
+
+        res = .true.
+    end function yield_joint_evaluation_fdhill_${k}$
+
+    pure subroutine yield_stress_eq_and_derivatives_fdhill_3D_${k}$(prm, sigma, f, df, ddf)
+        !! Equivalent stress and its first and second derivatives at the same stress of the fdhill model
+        !! in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$), intent(out) :: f
+            !! \( \sigma_{eq} \).
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$), intent(out), optional :: ddf
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \). Optional: not computed when absent.
+        f = yield_stress_eq_fdhill_3D_${k}$(prm, sigma)
+        df = yield_dstress_eq_fdhill_3D_${k}$(prm, sigma)
+        if (present(ddf)) ddf = yield_ddstress_eq_fdhill_3D_${k}$(prm, sigma)
+    end subroutine yield_stress_eq_and_derivatives_fdhill_3D_${k}$
 #:endfor
 
 end module muscle_yield_fdhill
@@ -175,7 +253,7 @@ module test_yield_eval
         yield_stress_eq_and_derivatives, &
         ${', '.join('yield_{}_{}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$
     use muscle_yield_fdhill, only : ${', '.join('yield_fdhill_' + k for k in REAL_KINDS)}$, &
-        ${', '.join('yield_{}_fdhill_3D_{}'.format(f, k) for f in model_procs('yield')[:4] for k in REAL_KINDS)}$
+        ${', '.join('yield_{}_fdhill_3D_{}'.format(f, k) for f in ('stress_eq', 'dstress_eq', 'ddstress_eq', 'stress_eq_and_derivatives') for k in REAL_KINDS)}$
     implicit none
     private
 
@@ -364,7 +442,7 @@ contains
         call record(test_null_${k}$(), ${10*i + 1}$, 'null equivalent stress ${k}$ (D-017.9)', code)
         call record(test_generics_${k}$(), ${10*i + 2}$, 'generics, joint evaluation and flag ${k}$', code)
         call record(test_point_${k}$(), ${10*i + 3}$, 'pure point procedure ${k}$', code)
-        call record(test_model_fd_${k}$(), ${10*i + 4}$, 'MODEL_FD gradient and Hessian ${k}$', code)
+        call record(test_model_fd_${k}$(), ${10*i + 4}$, 'FD_GRAD gradient and FD_HESS Hessian ${k}$', code)
 #:if k != 'dp'
         call record(test_vs_dp_${k}$(), ${10*i + 5}$, '${k}$ against dp', code)
 #:endif
@@ -722,25 +800,25 @@ contains
     end function test_point_${k}$
 
     function test_model_fd_${k}$() result(passed)
-        !! MODEL_FD (FD_GRAD, FD_HESS of stress_eq) on the test criterion against the analytical
-        !! Hill48 derivatives; its own joint evaluation (MODEL_JOINT, flag true), with and without ddf.
+        !! FD_GRAD and FD_HESS of stress_eq on the test criterion against the analytical
+        !! Hill48 derivatives; its own joint evaluation (flag true), with and without ddf.
         logical :: passed
         real(${k}$), parameter :: TOL1 = ${FD_TOL[k]['d1']}$_${k}$, TOL2 = ${FD_TOL[k]['d2']}$_${k}$
         real(${k}$) :: rt(28), rh(28)
         integer :: i, j
 
         passed = .true.
-        call check_true(passed, '${k}$ MODEL_JOINT flag true', yield_joint_evaluation_fdhill_${k}$(fdhill_${k}$(1)))
+        call check_true(passed, '${k}$ joint evaluation flag true', yield_joint_evaluation_fdhill_${k}$(fdhill_${k}$(1)))
         do i = 1, size(HILLV, 2)
             do j = 1, NS
                 rt = ev(fdhill_${k}$(i), stress_${k}$(j))
                 rh = ev(hill_${k}$(i), stress_${k}$(j))
-                call check_approx(passed, '${k}$ MODEL_FD stress_eq = Hill48', rt(1), rh(1), 2.0_${k}$*epsilon(1.0_${k}$))
-                call check_approx(passed, '${k}$ MODEL_FD gradient (FD_GRAD)', rt(2:7), rh(2:7), TOL1)
-                call check_approx(passed, '${k}$ MODEL_FD Hessian (FD_HESS)', rt(8:28), rh(8:28), TOL2)
-                call check_approx(passed, '${k}$ MODEL_JOINT = functions', ev_joint(fdhill_${k}$(i), stress_${k}$(j)), &
+                call check_approx(passed, '${k}$ FD stress_eq = Hill48', rt(1), rh(1), 2.0_${k}$*epsilon(1.0_${k}$))
+                call check_approx(passed, '${k}$ FD gradient (FD_GRAD)', rt(2:7), rh(2:7), TOL1)
+                call check_approx(passed, '${k}$ FD Hessian (FD_HESS)', rt(8:28), rh(8:28), TOL2)
+                call check_approx(passed, '${k}$ joint evaluation = functions', ev_joint(fdhill_${k}$(i), stress_${k}$(j)), &
                                   rt, 0.0_${k}$)
-                call check_approx(passed, '${k}$ MODEL_JOINT without ddf', ev_joint_noddf(fdhill_${k}$(i), stress_${k}$(j)), &
+                call check_approx(passed, '${k}$ joint evaluation without ddf', ev_joint_noddf(fdhill_${k}$(i), stress_${k}$(j)), &
                                   rt(1:7), 0.0_${k}$)
             end do
         end do
