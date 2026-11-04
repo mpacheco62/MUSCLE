@@ -1,0 +1,278 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "../materials/mat_golden_common.fypp"
+#! The generics of every model of one model family in one kind (fypp define TARGET_CASE =
+#! '<prefix>_<kind>', tests/gpu/target_cases.py) called from `pure`, `@:DEVICE()` point procedures inside
+#! an `!$omp target teams distribute parallel do` region and on the CPU (testing.md, GPU): bit for bit on
+#! the host, `check_target` on a device (TOL_DEVICE_<k> relative to each point, each result on its own:
+#! target_cases.family_output_blocks). The calls are generated
+#! from the family metadata (muscle_meta.MODEL_FAMILIES: arguments, results, models of each function, the
+#! composed hardening values, the joint evaluation of the criteria); the parameters are the first golden
+#! set of each model (tests/materials/golden_params.py; linear elasticity E = 210000, nu = 0.3). The
+#! viscoelastic family runs a two-step history at a point (step coefficients, update, frozen elasticity
+#! and its `elas_*` generics, i.e. the `frozen` elastic model, update again).
+#:set P, K = TARGET_CASE.rsplit('_', 1)
+#:set FAM = muscle_meta.model_family(P)
+#:set MODELS = [m for m in FAM.models if not (P == 'elas' and m == 'frozen')]
+#:set DIMS_P = muscle_meta.model_dims(P)
+#:set TC = muscle_meta.load_python_file('target_cases.py', base=_THIS_FILE_)
+#! Inputs (argument, position, size) and outputs (procedure, call, result type, position, size) of the
+#! point procedure of a model (target_cases.py)
+#:set INPUTS = TC.family_inputs
+#:set OUTS = TC.family_outputs
+#:set NIN = lambda m, d: sum(z for _, _, z in TC.family_inputs(P, m, d))
+#:set NOUT = lambda m, d: sum(o[4] for o in TC.family_outputs(P, m, d))
+#! Values of the scalar inputs at point i (t = i/NPTS) and size of the components of the tensor inputs
+#! (uniform in (-1, 1) times the size). The rates stay in 1e-4 .. 3e-3, below the epdmax of the golden sets
+#! (the Mod. Rusinek-Klepaczko law overflows above it).
+#:set SAMPLE = {'ep': '1.0e-3_dp + 5.0e-2_dp*t', 'epd': '1.0e-4_dp*10.0_dp**(1.5_dp*t)', 'dt': '1.0e-3_dp', &
+    & 'sigma_eq': '300.0_dp*(1.0_dp + 0.5_dp*t)', 'sy': '250.0_dp + 50.0_dp*t', 'dsy_dep': '1000.0_dp'}
+#:set SCALE = {'sigma': '200.0_dp', 'strain': '1.0e-3_dp'}
+#:set ttype = lambda typ, d: tname(d + typ, K)
+#:set dsuf = lambda d: '_' + d if d else ''
+#! Viscoelastic point: status, branches, coefficients (k_alg, g_alg, decay, weight), frozen elastic
+#! stress, tangent, deviatoric stress and tangent, state (elastic strain, history)
+#:set VNOUT = '2 + 2 + 2*MAX_VISCO_BRANCHES + 6 + 21 + 6 + 21 + 6 + 6*MAX_VISCO_BRANCHES'
+#:set VNIN = 13
+
+module test_family_target_points
+    !! Point procedures (kernels) of the models of the family `${P}$`, `real(${K}$)`.
+    use muscle_kinds, only : ${K}$
+#:if P == 'visco'
+    use muscle_tensors, only : ${tname('3D2Osym', K)}$, ${tname('3D4O3sym', K)}$
+    use muscle_visco_types, only : visco_state_${K}$, visco_coefs_${K}$, visco_state_init, MAX_VISCO_BRANCHES
+    use muscle_visco_laws, only : visco_step_coefficients, visco_freeze, visco_update, visco_n_branches
+    use muscle_visco_frozen, only : elas_frozen_${K}$
+    use muscle_elasticity_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev
+#:else
+#:if DIMS_P != [None]
+    use muscle_tensors, only : ${', '.join(tname(d + F, K) for d in DIMS_P for F in ('2Osym', '4O3sym'))}$
+#:endif
+    use ${FAM.family_module}$, only : ${', '.join(sorted({P + '_' + n for m in MODELS for n in muscle_meta.model_procs(P, m)}))}$
+#:endif
+#:for m in MODELS
+    use ${muscle_meta.model_module(P, m)}$, only : ${muscle_meta.model_type(P, m, K)}$
+#:endfor
+    implicit none
+    private
+#:for m in MODELS
+#:for d in DIMS_P
+    public :: point_${m}$${dsuf(d)}$
+#:endfor
+#:endfor
+#:if P == 'visco'
+    integer, parameter, public :: VNOUT = ${VNOUT}$
+        !! Size of the packed output of a viscoelastic point.
+#:endif
+
+contains
+#:for m in MODELS
+#:set PT = muscle_meta.model_type(P, m, K)
+#:if P == 'visco'
+
+    pure subroutine point_${m}$(prm, x, out)
+        !! Two steps of `${m}$` at a point: x = (dt, strain at the first step, elastic strain at the second).
+        @:DEVICE()
+        type(${PT}$), intent(in) :: prm
+        real(${K}$), intent(in) :: x(${VNIN}$)
+        real(${K}$), intent(out) :: out(VNOUT)
+        type(visco_coefs_${K}$) :: coefs
+        type(visco_state_${K}$) :: s0, s1, s2
+        type(elas_frozen_${K}$) :: frozen
+        type(${tname('3D2Osym', K)}$) :: e1, e2, s
+        type(${tname('3D4O3sym', K)}$) :: c
+        integer :: status, status_init, nb, o
+
+        call visco_step_coefficients(prm, x(1), coefs, status)
+        nb = visco_n_branches(prm)
+        call visco_state_init(s0, nb, status_init)
+        e1%vals = x(2:7)
+        e2%vals = x(8:13)
+        call visco_update(prm, coefs, s0, e1, s1)
+        frozen = visco_freeze(prm, coefs, s1)
+        call visco_update(prm, coefs, s1, e2, s2)
+        out(1) = real(max(status, status_init), ${K}$)
+        out(2) = real(nb, ${K}$)
+        out(3) = coefs%k_alg
+        out(4) = coefs%g_alg
+        o = 5
+        out(o:o + MAX_VISCO_BRANCHES - 1) = coefs%decay
+        o = o + MAX_VISCO_BRANCHES
+        out(o:o + MAX_VISCO_BRANCHES - 1) = coefs%weight
+        o = o + MAX_VISCO_BRANCHES
+        s = elas_stress(frozen, e2)
+        out(o:o + 5) = s%vals
+        c = elas_dstress_dstrain(frozen, e2)
+        out(o + 6:o + 26) = c%vals
+        s = elas_stress_dev(frozen, e2)
+        out(o + 27:o + 32) = s%vals
+        c = elas_dstress_dstrain_dev(frozen, e2)
+        out(o + 33:o + 53) = c%vals
+        out(o + 54:o + 59) = s2%strain_e%vals
+        out(o + 60:) = reshape(s2%h, [6*MAX_VISCO_BRANCHES])
+    end subroutine point_${m}$
+#:else
+#:for d in DIMS_P
+
+    pure subroutine point_${m}$${dsuf(d)}$(prm, x, out)
+        !! Every generic of `${m}$`${' (' + d + ')' if d else ''}$ at the inputs `x` (${', '.join(a.name for a, _, _ in INPUTS(P, m, d))}$).
+        @:DEVICE()
+        type(${PT}$), intent(in) :: prm
+        real(${K}$), intent(in) :: x(${NIN(m, d)}$)
+        real(${K}$), intent(out) :: out(${NOUT(m, d)}$)
+#:for a, s, z in INPUTS(P, m, d)
+#:if a.type == 'real'
+        real(${K}$) :: ${a.name}$
+#:else
+        type(${ttype(a.type, d)}$) :: ${a.name}$
+#:endif
+#:endfor
+#:for F in ('2Osym', '4O3sym')
+#:if any(o[2] in (F, 'joint') for o in OUTS(P, m, d))
+        type(${ttype(F, d)}$) :: r_${F}$
+#:endif
+#:endfor
+#:if FAM.joint
+        real(${K}$) :: f
+#:endif
+
+#:for a, s, z in INPUTS(P, m, d)
+#:if a.type == 'real'
+        ${a.name}$ = x(${s}$)
+#:else
+        ${a.name}$%vals = x(${s}$:${s + z - 1}$)
+#:endif
+#:endfor
+#:for n, call, typ, s, z in OUTS(P, m, d)
+#:if typ == 'logical'
+        out(${s}$) = merge(1.0_${K}$, 0.0_${K}$, ${P}$_${n}$(prm))
+#:elif typ == 'joint'
+        call ${P}$_${n}$(prm, ${', '.join(a.name for a in FAM.args)}$, f, r_2Osym, r_4O3sym)
+        out(${s}$) = f
+        out(${s + 1}$:${s + len(layout('2Osym', d).comps)}$) = r_2Osym%vals
+        out(${s + len(layout('2Osym', d).comps) + 1}$:${s + z - 1}$) = r_4O3sym%vals
+#:elif typ == 'real'
+        out(${s}$) = ${call}$
+#:else
+        r_${typ}$ = ${call}$
+        out(${s}$:${s + z - 1}$) = r_${typ}$%vals
+#:endif
+#:endfor
+    end subroutine point_${m}$${dsuf(d)}$
+#:endfor
+#:endif
+#:endfor
+
+end module test_family_target_points
+
+
+program test_family_target
+    !! The models of the family `${P}$` in a target region and on the CPU, `real(${K}$)`.
+    use omp_lib, only : omp_is_initial_device
+    use muscle_kinds, only : dp, ${K}$
+    use muscle_status, only : STATUS_OK
+    use muscle_test_utils, only : check_target, check_target_ran, check_true
+    use muscle_test_helpers, only : park_miller, rnd
+#:if P == 'elas'
+    use muscle_elasticity_linear, only : elas_linear_init
+#:elif P == 'yield'
+#:for y in sorted(set(MODELS) & set(GOLDEN.YIELD_USES))
+    use ${GOLDEN.YIELD_USES[y][0]}$, only : ${', '.join(GOLDEN.YIELD_USES[y][1])}$
+#:endfor
+#:elif P == 'visco'
+#:for v in MODELS
+    use ${GOLDEN.VISCO_USES[v][0]}$, only : ${', '.join(GOLDEN.VISCO_USES[v][1])}$
+#:endfor
+#:endif
+#:for m in MODELS
+    use ${muscle_meta.model_module(P, m)}$, only : ${muscle_meta.model_type(P, m, K)}$
+#:endfor
+    use test_family_target_points
+    implicit none
+
+    integer, parameter :: NPTS = 32
+    logical :: passed
+
+    passed = .true.
+#:for m in MODELS
+#:for d in DIMS_P
+    call run_${m}$${dsuf(d)}$()
+#:endfor
+#:endfor
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_family_target ${P}$ ${K}$'
+        stop 1
+    end if
+    print '(a)', ' PASS: test_family_target ${P}$ ${K}$'
+
+contains
+#:for m in MODELS
+#:set PT = muscle_meta.model_type(P, m, K)
+#:for d in DIMS_P
+#:set L = '{0} {1}{2} ({3})'.format(P, m, ' ' + d if d else '', K)
+#:set NI = VNIN if P == 'visco' else NIN(m, d)
+#:set NO = 'VNOUT' if P == 'visco' else NOUT(m, d)
+
+    subroutine run_${m}$${dsuf(d)}$()
+        !! `${L}$` in a target region and on the CPU.
+        type(${PT}$) :: prm
+        type(park_miller) :: rng
+        real(${K}$) :: x(${NI}$, NPTS), out_t(${NO}$, NPTS), out_c(${NO}$, NPTS)
+        real(dp) :: t
+        integer :: i, j, status
+        logical :: host
+
+#:if P == 'elas'
+        call elas_linear_init(prm, young=210000.0_${K}$, poisson=0.3_${K}$)
+#:else
+#:set gs = GOLDEN.GOLDEN_PARAMS[(P, m)]
+        ${golden_set(P, m, list(gs)[0], 'prm', K, 8)}$
+#:endif
+        status = STATUS_OK
+        rng = park_miller(20261104)
+        do i = 1, NPTS
+            t = real(i, dp)/real(NPTS, dp)
+#:if P == 'visco'
+            x(1, i) = 1.0e-2_${K}$
+            do j = 2, ${VNIN}$
+                x(j, i) = real(1.0e-3_dp*rnd(rng), ${K}$)
+            end do
+#:else
+#:for a, s, z in INPUTS(P, m, d)
+#:if a.type == 'real'
+            x(${s}$, i) = real(${SAMPLE[a.name]}$, ${K}$)
+#:else
+            do j = ${s}$, ${s + z - 1}$
+                x(j, i) = real(${SCALE[a.name]}$*rnd(rng), ${K}$)
+            end do
+#:endif
+#:endfor
+#:endif
+        end do
+
+        host = .true.
+        !$omp target teams distribute parallel do map(to: prm, x) map(from: out_t) map(tofrom: host)
+        do i = 1, NPTS
+            if (i == 1) host = omp_is_initial_device()
+            call point_${m}$${dsuf(d)}$(prm, x(:, i), out_t(:, i))
+        end do
+        !$omp end target teams distribute parallel do
+        do i = 1, NPTS
+            call point_${m}$${dsuf(d)}$(prm, x(:, i), out_c(:, i))
+        end do
+
+        call check_target_ran(passed, '${L}$', host)
+#:for b, lo, hi in (TC.visco_output_blocks() if P == 'visco' else TC.family_output_blocks(P, m, d))
+        call check_target(passed, '${L}$: target = CPU, ${b}$', &
+                          out_t(${lo}$:${hi}$, :), out_c(${lo}$:${hi}$, :), .not. host)
+#:endfor
+#:if P == 'visco'
+        call check_true(passed, '${L}$: valid time step', all(out_c(1, :) == real(STATUS_OK, ${K}$)))
+#:endif
+    end subroutine run_${m}$${dsuf(d)}$
+#:endfor
+#:endfor
+
+end program test_family_target

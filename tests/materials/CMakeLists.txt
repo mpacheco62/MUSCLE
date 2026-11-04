@@ -67,6 +67,15 @@ if(NOT MUSCLE_MATERIALS)
     # rejected time step) and its thread safety (the historical test of the OO solvers, test_muscle_openmp)
     add_muscle_fypp_test(mat_batch test_mat_batch.fypp)
     add_muscle_fypp_test(mat_batch_openmp test_mat_batch_openmp.fypp)
+    # Batch API on device memory muscle_update_<name>_dev (D-019.7a): arrays of omp_target_alloc against
+    # muscle_update_<name> on mapped arrays, one test per material and kind (target_cases.py)
+    add_muscle_fypp_target_tests(mat_batch_dev test_mat_batch_dev.fypp batch_dev)
+    # Point kernels of materials that use every model and every solver in an OpenMP target region
+    # against the CPU (testing.md, GPU), one test per material (add_muscle_fypp_target_tests,
+    # tests/CMakeLists.txt; the materials are in tests/gpu/target_cases.py)
+    add_muscle_fypp_target_tests(mat_kernels_target test_mat_kernels_target.fypp material
+                                 DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mat_golden_common.fypp
+                                         ${CMAKE_CURRENT_SOURCE_DIR}/golden_params.py)
     # Generic API for FE codes (D-018.17): point API over flat arrays bit for bit the point kernel,
     # rotation of the history array
     add_muscle_fypp_test(mat_point test_mat_point.fypp)

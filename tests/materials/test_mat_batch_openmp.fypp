@@ -10,6 +10,10 @@ program test_mat_batch_openmp
     !! and with `muscle_update_cp_vm_swift` on 1, 2 and 4 OpenMP threads, which must give the same bits
     !! (stress, history, tangent, status, iterations). Two load sets: the uniaxial strain xx = 0.005 of
     !! the OO test at every point (plastic) and a ramp from 0 to 1e-2 (elastic and plastic points).
+    !! With MUSCLE_GPU the batch runs on data mapped beforehand (`target enter data`, the contract of
+    !! the batch API) and, if the target region runs on a device, the real outputs of each point are
+    !! compared with `check_target` (TOL_DEVICE_<k> relative to the point; statuses and iterations exact)
+    !! instead of bit for bit.
     use omp_lib, only : omp_set_num_threads, omp_get_max_threads, omp_get_num_threads
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
@@ -18,12 +22,14 @@ program test_mat_batch_openmp
     use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
     use muscle_mat_cp_vm_swift, only : mat_update, mat_pack_cp_vm_swift, mat_unpack_cp_vm_swift, &
         muscle_update_cp_vm_swift, MAT_CP_VM_SWIFT_NSTATE, ${', '.join('mat_cp_vm_swift_' + k for k in REAL_KINDS)}$
-    use muscle_test_utils, only : check_true
+    use muscle_test_utils, only : check_true, check_target, target_on_device
     implicit none
 
-    logical :: passed
+    logical :: passed, device
 
     passed = .true.
+    device = target_on_device()
+    print '(a, l1)', ' batch target regions on a device: ', device
 #:for k in REAL_KINDS
     call run_${k}$()
 #:endfor
@@ -46,7 +52,8 @@ contains
         type(plastic_state_${k}$) :: sn, snp1
         type(${tname('3D2Osym', k)}$) :: strain, stress
         type(${tname('3D4O2sym', k)}$) :: tang
-        real(${k}$), allocatable :: eps(:, :), hn(:, :), hr(:, :), hb(:, :), sr(:, :), sb(:, :), tr(:, :, :), tb(:, :, :)
+        real(${k}$), allocatable :: eps(:, :), hn(:, :), hr(:, :), hb(:, :), sr(:, :), sb(:, :), tr(:, :, :), tb(:, :, :), &
+            got(:, :), ref(:, :)
         integer, allocatable :: str(:), stb(:), itr(:), itb(:)
         real(${k}$) :: hsv(NS)
         integer :: i, it, load, active
@@ -58,6 +65,9 @@ contains
         mat%hard%e0 = 1.0e-3_${k}$
         mat%hard%n = 0.2_${k}$
         hn = 0.0_${k}$
+#:if defined('MUSCLE_GPU')
+        !$omp target enter data map(to: mat)
+#:endif
 
         do load = 1, 2
             eps = 0.0_${k}$
@@ -81,6 +91,9 @@ contains
                 sr(i, :) = stress%vals
                 tr(i, :, :) = tang%vals
             end do
+#:if defined('MUSCLE_GPU')
+            !$omp target enter data map(to: eps, hn) map(alloc: hb, sb, tb, stb, itb)
+#:endif
             call check_true(passed, 'every point converges (${k}$)', all(str == STATUS_OK))
             if (load == 1) then
                 call check_true(passed, 'uniaxial 0.005: every point plastic (${k}$)', all(itr > 0))
@@ -103,11 +116,38 @@ contains
                 tb = -7.0_${k}$
                 stb = -7
                 itb = -7
+#:if defined('MUSCLE_GPU')
+                !$omp target update to(hb, sb, tb, stb, itb)
+#:endif
                 call muscle_update_cp_vm_swift(mat, eps, DT, hn, hb, sb, stb, itb, ddsdde=tb)
-                call check_true(passed, 'batch == sequential, bit for bit (${k}$)', all(stb == str) &
-                    .and. all(itb == itr) .and. all(sb == sr) .and. all(hb == hr) .and. all(tb == tr))
+#:if defined('MUSCLE_GPU')
+                !$omp target update from(hb, sb, tb, stb, itb)
+#:endif
+                if (device) then
+                    call check_true(passed, 'batch == sequential: status and iterations (${k}$)', all(stb == str) &
+                        .and. all(itb == itr))
+                    ! Points along the second dimension for check_target (allocatable copies: N is large)
+                    got = transpose(sb)
+                    ref = transpose(sr)
+                    call check_target(passed, 'batch == sequential: stress (${k}$)', got, ref, device)
+                    got = transpose(hb)
+                    ref = transpose(hr)
+                    call check_target(passed, 'batch == sequential: history (${k}$)', got, ref, device)
+                    got = transpose(reshape(tb, [N, 36]))
+                    ref = transpose(reshape(tr, [N, 36]))
+                    call check_target(passed, 'batch == sequential: tangent (${k}$)', got, ref, device)
+                else
+                    call check_true(passed, 'batch == sequential, bit for bit (${k}$)', all(stb == str) &
+                        .and. all(itb == itr) .and. all(sb == sr) .and. all(hb == hr) .and. all(tb == tr))
+                end if
             end do
+#:if defined('MUSCLE_GPU')
+            !$omp target exit data map(delete: eps, hn, hb, sb, tb, stb, itb)
+#:endif
         end do
+#:if defined('MUSCLE_GPU')
+        !$omp target exit data map(delete: mat)
+#:endif
     end subroutine run_${k}$
 #:endfor
 

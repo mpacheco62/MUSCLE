@@ -53,6 +53,11 @@ contains
         state%strain = kin_log_measure(eig, proj)
     end subroutine kin_update_material_logarithmic_${k}$
 
+    $:MODEL_FUNCTION('kin', 'material_logarithmic', 'update_norot', k, doc=r'The same as `kin_update` (its conversions read R (KINEMATICS_ROTATION)).')
+
+        call kin_update_material_logarithmic_${k}$(prm, F, state, status)
+    end subroutine kin_update_norot_material_logarithmic_${k}$
+
     $:MODEL_FUNCTION('kin', 'material_logarithmic', 'to_cauchy', k, doc=r'Rotated Kirchhoff stress to Cauchy, \( J^{-1}\mathbf{R}\boldsymbol\tau_R\mathbf{R}^T \).')
 
         res = (state%R .transform. stress) / state%J

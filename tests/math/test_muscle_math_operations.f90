@@ -1,3 +1,5 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 program test_muscle_math_operations
     use muscle_math_operations
     implicit none

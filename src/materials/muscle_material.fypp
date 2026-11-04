@@ -116,6 +116,8 @@ module ${muscle_meta.material_module(MAT.name)}$
     !!   (`sig(npts, 6)`, `hsv_n(npts, NSTATE)`, ...), in an OpenMP parallel loop (a target region on
     !!   device-resident data with MUSCLE_GPU)${', with `mat_step` once per batch' if VISCO else ''}$; tangent `ddsdde(npts, 6, 6)` and
     !!   `idx` optional;
+    !! - `${muscle_meta.material_batch_dev(MAT.name)}$(...)`: the same batch API on arrays given by their device
+    !!   addresses (`omp_target_alloc`, device libraries; `has_device_addr` with MUSCLE_GPU, D-019.7a);
     !! - `mat_init_${MAT.name}$(mat, props, status)`: the material from a flat parameter array of an FE
     !!   code, `props(${muscle_meta.material_nprops(MAT.name)}$)` (D-018.17a; pure; the order of the parameters is in its
     !!   documentation and printed as a Markdown table by `muscle_meta.py props ${MAT.name}$`);
@@ -135,11 +137,12 @@ module ${muscle_meta.material_module(MAT.name)}$
     use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$, &
         ${', '.join(tname('3D4O3sym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D2O', k) for k in REAL_KINDS)}$
-    use ${STATE_MOD}$, only : ${', '.join(muscle_meta.material_state(MAT, k)[1] for k in REAL_KINDS)}$
 #:if VISCO
     use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
     use ${family_module_of('elas')}$, only : ${', '.join(model_type('elas', MAT.elas, k) for k in REAL_KINDS)}$
+#:else
+    use ${STATE_MOD}$, only : ${', '.join(muscle_meta.material_state(MAT, k)[1] for k in REAL_KINDS)}$
 #:endif
 #:for p, m in COMPS
     use ${family_module_of(p)}$, only : ${', '.join(model_type(p, m, k) for k in REAL_KINDS)}$
@@ -155,6 +158,7 @@ module ${muscle_meta.material_module(MAT.name)}$
     integer, parameter, public :: ${muscle_meta.material_nprops(MAT.name)}$ = ${len(muscle_meta.material_props(MAT))}$
         !! Size of the parameter array of `mat_init_${MAT.name}$` (order: `muscle_meta.py props ${MAT.name}$`).
     public :: mat_update, mat_pack_${MAT.name}$, mat_unpack_${MAT.name}$, ${muscle_meta.material_batch(MAT.name)}$
+    public :: ${muscle_meta.material_batch_dev(MAT.name)}$
     public :: ${muscle_meta.material_point(MAT.name)}$, mat_init_${MAT.name}$
 #:if muscle_meta.material_strain_input(MAT)
     public :: ${muscle_meta.material_rotate_hsv(MAT.name)}$
@@ -164,6 +168,9 @@ module ${muscle_meta.material_module(MAT.name)}$
 #:endif
 #:for k in REAL_KINDS
     public :: ${muscle_meta.material_type(MAT.name, k)}$
+#:if VISCO
+    public :: ${muscle_meta.material_state_type(MAT.name, k)}$, ${muscle_meta.material_visco_state(MAT.name, k)}$
+#:endif
 #:endfor
 #:for k in REAL_KINDS
 
@@ -180,6 +187,25 @@ module ${muscle_meta.material_module(MAT.name)}$
             !! against \( tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \), \( \sigma_y \) the current flow (yield)
             !! stress; a dimensionless plastic strain residual against `tol` itself (see `mat_update`).
     end type ${muscle_meta.material_type(MAT.name, k)}$
+#:if VISCO
+
+    type :: ${muscle_meta.material_visco_state(MAT.name, k)}$
+        !! Viscoelastic state of a point of material `${MAT.name}$` at an instant, `real(${k}$)` (D-019.7b): the
+        !! ${MAT.visco_branches}$ history tensors the FE history array keeps (not `MAX_VISCO_BRANCHES`).
+        type(${tname('3D2Osym', k)}$) :: strain_e = ${tname('3D2Osym', k)}$([${', '.join(['0.0_' + k] * 6)}$])
+            !! Elastic strain.
+        real(${k}$) :: h(6, ${MAT.visco_branches}$) = 0.0_${k}$
+            !! History tensors (Voigt order of `${tname('3D2Osym', k)}$`; the model uses its first `visco_n_branches`).
+    end type ${muscle_meta.material_visco_state(MAT.name, k)}$
+
+    type :: ${muscle_meta.material_state_type(MAT.name, k)}$
+        !! State of a point of material `${MAT.name}$` at an instant, `real(${k}$)` (argument of `mat_update`).
+        type(plastic_state_${k}$) :: plastic
+            !! Plastic state (plastic strain, equivalent plastic strain, stress).
+        type(${muscle_meta.material_visco_state(MAT.name, k)}$) :: visco
+            !! Viscoelastic state (elastic strain and history tensors).
+    end type ${muscle_meta.material_state_type(MAT.name, k)}$
+#:endif
 #:endfor
 
     interface mat_update
@@ -198,6 +224,11 @@ module ${muscle_meta.material_module(MAT.name)}$
         !! Batch API of the material over SoA arrays (every kind).
         module procedure ${', '.join(muscle_meta.material_proc('batch', MAT.name, k) for k in REAL_KINDS)}$
     end interface ${muscle_meta.material_batch(MAT.name)}$
+
+    interface ${muscle_meta.material_batch_dev(MAT.name)}$
+        !! Batch API of the material over SoA arrays in device memory (every kind).
+        module procedure ${', '.join(muscle_meta.material_proc('batchdev', MAT.name, k) for k in REAL_KINDS)}$
+    end interface ${muscle_meta.material_batch_dev(MAT.name)}$
 
     interface mat_init_${MAT.name}$
         !! Material from a flat parameter array (every kind).
@@ -239,6 +270,7 @@ contains
 #:set UNPACK = muscle_meta.material_proc('unpack', MAT.name, k)
 #:set MERIT = muscle_meta.material_proc('merit', MAT.name, k)
 #:set BATCH = muscle_meta.material_proc('batch', MAT.name, k)
+#:set BATCH_DEV = muscle_meta.material_proc('batchdev', MAT.name, k)
 #:set NSTATE = muscle_meta.material_nstate(MAT.name)
 #:set S2 = tname('3D2Osym', k)
 #:set C4 = tname('3D4O3sym', k)

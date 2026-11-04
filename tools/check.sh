@@ -4,13 +4,19 @@
 #
 # Verification gate of the FYPP migration (docs/fypp/PLAN.md).
 #
-#   tools/check.sh [--lint-only] [BUILD_DIR]
+#   tools/check.sh [--lint-only] [--gpu-full] [BUILD_DIR]
 #
 # 1. Lint: mechanical rules from .claude/rules/ on the migrated sources (*.fypp) and tab
 #    checks on every Fortran source.
 # 2. Configure BUILD_DIR (default: build-check) as Debug with every real kind, build
 #    `build_all_tests`, check the operator signatures (tools/fypp/ops_signatures.py) and run
 #    ctest; build the FORD documentation if FORD is installed. Skipped with --lint-only.
+# 3. GPU builds (D-019.3, D-019.4b), library and target tests (GPU_TARGET_TESTS): BUILD_DIR-nvptx and
+#    BUILD_DIR-amdgcn (gfortran, compiled and linked with offload, both at once) and BUILD_DIR-spir64
+#    (ifx, the target tests run on the Intel GPU with memory and time limits). With --gpu-full,
+#    NVPTX and AMDGCN compile and link every test. ifx comes from PATH or $ONEAPI_ROOT/setvars.sh.
+# 4. Audit of the device images (tools/audit_kernels.sh): the NVPTX, AMDGCN and SPIR64 images above and
+#    the NVPTX image of a Release dp library (BUILD_DIR-nvptx-release) call only allowed runtime symbols.
 #
 # Opt-outs:
 # - `! lint: allow(<rule>)` at the end of a line skips that rule on that line.
@@ -25,10 +31,15 @@ set -u
 cd "$(dirname "$0")/.."
 
 lint_only=0
-if [[ "${1:-}" == "--lint-only" ]]; then
-    lint_only=1
+gpu_full=0
+while [[ "${1:-}" == --* ]]; do
+    case "$1" in
+        --lint-only) lint_only=1 ;;
+        --gpu-full) gpu_full=1 ;;
+        *) echo "usage: $0 [--lint-only] [--gpu-full] [BUILD_DIR]" >&2; exit 2 ;;
+    esac
     shift
-fi
+done
 build_dir="${1:-build-check}"
 
 failures=0
@@ -77,6 +88,9 @@ listed() { git ls-files --cached --others --exclude-standard -- "$@"; }
 mapfile -t fypp_files < <(listed '*.fypp')
 mapfile -t fortran_files < <(listed '*.f90' '*.F90' '*.inc' '*.fypp')
 mapfile -t py_files < <(listed 'tools/fypp/*.py')
+# Other sources with a license header: tests, benchmarks (Fortran and Python) and the shell tools
+mapfile -t header_files < <(listed 'tests/*.f90' 'tests/*.F90' 'tests/*.py' 'benchmarks/*.f90' \
+                            'benchmarks/*.F90' 'benchmarks/*.py' 'tools/*.sh')
 # Library templates subject to the GPU kernel rules
 mapfile -t kernel_files < <(printf '%s\n' "${fypp_files[@]}" | grep -E '^(src|include)/' \
                             | xargs -r grep -L '! lint: host-only')
@@ -88,8 +102,8 @@ echo "== lint: ${#fypp_files[@]} templates (${#kernel_files[@]} kernel), ${#fort
 # Formatting (every Fortran source)
 report tabs "tab characters" "$(grep -nP '\t' "${fortran_files[@]}" 2>/dev/null)"
 
-# Headers of migrated sources
-for f in "${fypp_files[@]}" "${py_files[@]}"; do
+# License headers (sources of the library, tests, benchmarks and tools)
+for f in $(printf '%s\n' "${fypp_files[@]}" "${py_files[@]}" "${header_files[@]}" | sort -u); do
     head -n 3 "$f" | grep -q 'SPDX-License-Identifier' || report spdx "missing SPDX header" "$f"
 done
 
@@ -116,7 +130,7 @@ if (( ${#library_files[@]} > 0 )); then
         my $sq = () = $comment =~ /\x27/g;
         my $dq = () = $comment =~ /"/g;
         print "$ARGV:$.: $_" if $sq % 2 || $dq % 2;
-    } continue { if (eof) { close ARGV; $cont = 0 } }' "${library_files[@]}")"
+    } continue { if (eof) { close ARGV; $cont = 0 }' "${library_files[@]}")"
 fi
 
 # Kinds and literals (precision-kinds.md)
@@ -165,6 +179,17 @@ if (( ${#kernel_files[@]} > 0 )); then
     } continue { close ARGV if eof' "${kernel_files[@]}")"
 fi
 rule alloc "allocatable/pointer" '(?i)\b(allocatable|pointer)\b' "${kernel_files[@]}"
+# ifx implements exponent() with a runtime routine that does not load with the emulated FP64 of Intel
+# GPUs (__isinfd/__isnand): fp_exponent of muscle_math_spectral_derivs
+rule exponent "intrinsic exponent() in kernel code, use fp_exponent" '(?i)(?<![\w%])exponent\s*\(' "${kernel_files[@]}"
+# ifx 2026.2 keeps only the last element of a leading array item of an array constructor in the host
+# code of a declare target procedure ([x, y] with x(3) gives [0, 0, x(3), y]): assign the sections
+# (detects whole components and sections; a leading whole array variable needs review)
+# ifx implements leadz() with a runtime routine (for_<j|k>ileadz) in device code (tools/audit_kernels.sh)
+rule fortran-rt "intrinsic leadz() in kernel code" '(?i)(?<![\w%])leadz\s*\(' "${kernel_files[@]}"
+rule arrayctor "array constructor led by an array component or section (ifx host code)" \
+    '\[\s*[A-Za-z_]\w*(\([^()]*\))?(%\w+)*%vals\s*[,\]]|\[\s*[A-Za-z_][\w%]*\([^()]*:[^()]*\)\s*,' \
+    "${kernel_files[@]}"
 rule io "I/O or stop in kernel code" \
     '(?i)^\s*(\d+\s+)?(if\s*\(.*\)\s*)?(print\b|write\s*\(|read\s*\(|stop\b|error\s+stop\b)' \
     "${kernel_files[@]}"
@@ -197,6 +222,7 @@ prune_stale_modules() {
 }
 prune_stale_modules "$build_dir"
 prune_stale_modules "${build_dir}-udtio"
+for gpu in nvptx nvptx-release amdgcn spir64; do prune_stale_modules "${build_dir}-${gpu}"; done
 
 echo "== build: ${build_dir} (Debug, MUSCLE_REAL_KINDS=sp;dp)"
 cmake -S . -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DMUSCLE_REAL_KINDS=sp;dp" \
@@ -259,4 +285,115 @@ else
     echo "== doc: FORD not installed, skipped"
 fi
 
-ctest --test-dir "$build_dir" --output-on-failure -j "$(nproc)"
+ctest --test-dir "$build_dir" --output-on-failure -j "$(nproc)" || failures=$((failures + 1))
+
+# GPU builds (D-019.3, D-019.4b), each in its own directory, every real kind, of the library and the
+# target tests (ctest label `target`, built by the target build_target_tests: the tests that run kernels
+# in an OpenMP target region, muscle_target_test_options in tests/CMakeLists.txt):
+# - gfortran NVPTX and AMDGCN, at the same time: compiled and linked with offload (no device to run
+#   them here); every test with --gpu-full;
+# - ifx SPIR64: run on the Intel GPU under memory and time limits (testing.md). Each test binary holds
+#   one device image with the kernels of its kinds: with dp the dp emulation of the GPU must be on for
+#   the image to load. GPU_SKIP_TESTS: ctest name patterns (regex) not run on the GPU, with the reason.
+GPU_TARGETS=(muscle build_target_tests)
+# GPU_SKIP_TESTS: tools/gpu_skip_tests.sh
+source tools/gpu_skip_tests.sh
+gpu_build() { # gpu_build <MUSCLE_GPU> <dir> <jobs> <targets...> [-- cmake args]
+    local gpu="$1" dir="$2" jobs="$3"
+    shift 3
+    local targets=() args=()
+    while (( $# )) && [[ "$1" != "--" ]]; do targets+=("$1"); shift; done
+    (( $# )) && shift && args=("$@")
+    local t0=$SECONDS
+    # The offload compilers write large temporary files (device assembly) at link time: keep them
+    # in the build directory, not in /tmp (often a small tmpfs)
+    mkdir -p "$dir/tmp"
+    local -x TMPDIR="$PWD/$dir/tmp"
+    [[ "$dir" == /* ]] && TMPDIR="$dir/tmp"
+    cmake -S . -B "$dir" -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DMUSCLE_REAL_KINDS=sp;dp" \
+        "-DMUSCLE_GPU=$gpu" "${args[@]}" > "$dir/configure.log" 2>&1 || {
+        echo "== GPU $gpu: configure failed (see $dir/configure.log)"; tail -5 "$dir/configure.log"; return 1; }
+    # GPU_MEM: memory cap of the build (systemd-run scope, no swap)
+    local run=()
+    [[ -n "${GPU_MEM:-}" ]] && run=(systemd-run --user --scope -p "MemoryMax=$GPU_MEM" -p MemorySwapMax=0 --quiet)
+    "${run[@]}" cmake --build "$dir" --target "${targets[@]}" -j "$jobs" > "$dir/build.log" 2>&1 || {
+        echo "== GPU $gpu: build failed (see $dir/build.log)"; grep -E '^FAILED' "$dir/build.log" | head; return 1; }
+    echo "== GPU $gpu: built ${targets[*]} in $((SECONDS - t0)) s"
+}
+mkdir -p "${build_dir}-nvptx" "${build_dir}-amdgcn" "${build_dir}-spir64"
+gnu_targets=("${GPU_TARGETS[@]}")
+(( gpu_full )) && gnu_targets=(build_all_tests)
+half=$(( ($(nproc) + 1) / 2 ))
+GPU_MEM=6G gpu_build NVPTX "${build_dir}-nvptx" "$half" "${gnu_targets[@]}" > "${build_dir}-nvptx/check.log" 2>&1 &
+nvptx_pid=$!
+GPU_MEM=6G gpu_build AMDGCN "${build_dir}-amdgcn" "$half" "${gnu_targets[@]}" > "${build_dir}-amdgcn/check.log" 2>&1 &
+amdgcn_pid=$!
+nvptx_ok=1
+amdgcn_ok=1
+wait "$nvptx_pid" || { failures=$((failures + 1)); nvptx_ok=0; }
+cat "${build_dir}-nvptx/check.log"
+wait "$amdgcn_pid" || { failures=$((failures + 1)); amdgcn_ok=0; }
+cat "${build_dir}-amdgcn/check.log"
+
+# Audit of the device images (tools/audit_kernels.sh: runtime symbols called from device code, per object),
+# in the background while SPIR64 builds and runs: the Debug images of NVPTX and AMDGCN, and the NVPTX
+# image of a Release dp library (optimized code: the runtime calls that -O0 leaves are inlined there,
+# and the heap temporaries of array expressions only remain there). SPIR64 after its build.
+audit_dirs=()
+(( nvptx_ok )) && audit_dirs+=("${build_dir}-nvptx")
+(( amdgcn_ok )) && audit_dirs+=("${build_dir}-amdgcn")
+mkdir -p "${build_dir}-nvptx-release"
+(
+    rc=0
+    GPU_MEM=6G gpu_build NVPTX "${build_dir}-nvptx-release" "$half" muscle \
+        -- -DCMAKE_BUILD_TYPE=Release -DMUSCLE_REAL_KINDS=dp || rc=1
+    (( rc == 0 )) && audit_dirs+=("${build_dir}-nvptx-release")
+    (( ${#audit_dirs[@]} > 0 )) && { systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 --quiet \
+        tools/audit_kernels.sh "${audit_dirs[@]}" || rc=1; }
+    exit $rc
+) > "${build_dir}-nvptx/audit.log" 2>&1 &
+audit_pid=$!
+
+# ifx from the oneAPI environment (ONEAPI_ROOT, default /opt/intel/oneapi), in a subshell
+oneapi="${ONEAPI_ROOT:-/opt/intel/oneapi}"
+if ! command -v ifx > /dev/null && [[ ! -f "$oneapi/setvars.sh" ]]; then
+    echo "== GPU SPIR64: ifx not found (PATH, $oneapi/setvars.sh)"; failures=$((failures + 1))
+else
+    (
+        # setvars.sh reads unset variables
+        set +u
+        command -v ifx > /dev/null || source "$oneapi/setvars.sh" > /dev/null 2>&1
+        set -u
+        command -v ifx > /dev/null || { echo "== GPU SPIR64: ifx not found after $oneapi/setvars.sh"; exit 1; }
+        # The NVPTX Release build (half of the jobs) may still run: the other half, under the same cap
+        GPU_MEM=6G gpu_build SPIR64 "${build_dir}-spir64" "$(( $(nproc) - half > 0 ? $(nproc) - half : 1 ))" \
+            "${GPU_TARGETS[@]}" \
+            -- -DCMAKE_Fortran_COMPILER=ifx -DCMAKE_C_COMPILER=icx || exit 1
+        skip=()
+        for t in "${!GPU_SKIP_TESTS[@]}"; do
+            echo "   skipped on the GPU: $t (${GPU_SKIP_TESTS[$t]})"
+            skip+=("$t")
+        done
+        exclude="^($(IFS='|'; echo "${skip[*]}"))\$"
+        echo "== GPU SPIR64: ctest -L target on the Intel GPU"
+        t0=$SECONDS
+        systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0 --quiet \
+            env OMP_TARGET_OFFLOAD=MANDATORY OverrideDefaultFP64Settings=1 IGC_EnableDPEmulation=1 \
+            timeout -k 30 3600 ctest --test-dir "${build_dir}-spir64" -L target -E "$exclude" --timeout 300 --output-on-failure \
+            > "${build_dir}-spir64/ctest-gpu.log" 2>&1
+        rc=$?
+        grep -E 'tests passed|\*\*\*' "${build_dir}-spir64/ctest-gpu.log"
+        echo "   ($((SECONDS - t0)) s, log: ${build_dir}-spir64/ctest-gpu.log)"
+        systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 --quiet \
+            tools/audit_kernels.sh "${build_dir}-spir64" || rc=1
+        exit $rc
+    ) || failures=$((failures + 1))
+fi
+wait "$audit_pid" || failures=$((failures + 1))
+cat "${build_dir}-nvptx/audit.log"
+
+if (( failures > 0 )); then
+    echo "== check: ${failures} stage(s) failed"
+    exit 1
+fi
+echo "== check: OK"

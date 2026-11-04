@@ -74,8 +74,8 @@ class TestValidation(unittest.TestCase):
     def test_names(self):
         for bad in ('CP', '1cp', 'cp-a', '', 'cp a', '_cp'):
             self.assertInvalid([cp(bad)], 'lower case Fortran identifier')
-        # Longest identifier: mat_tangent_<name>_sp / _dp (15 extra characters) <= 63
-        longest_ok = 'a' * (mm.FORTRAN_NAME_MAX - len('mat_tangent__dp'))
+        # Longest identifier: muscle_update_<name>_dev (18 extra characters) <= 63
+        longest_ok = 'a' * (mm.FORTRAN_NAME_MAX - len('muscle_update__dev'))
         mm.validate_material(cp(longest_ok))
         self.assertInvalid([cp(longest_ok + 'b')], 'name too long')
 
@@ -119,7 +119,7 @@ class TestValidation(unittest.TestCase):
         m = mm.validate_material(cp(elas='frozen', visco='maxwell', visco_branches=mm.MAX_VISCO_BRANCHES))
         self.assertEqual(mm.material_components(m), [('visco', 'maxwell'), ('yield', 'vonmises'), ('hard', 'swift')])
         self.assertEqual(mm.material_state_size(m), 7 + 6 + 6 * mm.MAX_VISCO_BRANCHES)
-        self.assertEqual(mm.material_state(m, 'sp'), ('muscle_material_state', 'visco_plastic_state_sp'))
+        self.assertEqual(mm.material_state(m, 'sp'), (mm.material_module(m.name), mm.material_state_type(m.name, 'sp')))
         self.assertEqual(mm.material_state_size(cp()), 7)
         self.assertEqual(mm.material_state(cp(), 'dp'), ('muscle_plastic_state', 'plastic_state_dp'))
 
@@ -183,7 +183,8 @@ class TestNames(unittest.TestCase):
         ids = mm.material_identifiers('cp_a')
         self.assertIn('muscle_mat_cp_a', ids)
         self.assertIn('mat_tangent_cp_a_sp', ids)
-        self.assertEqual(len(ids), 2 + len(mm.KINDS) * (1 + len(mm.MATERIAL_PROCS)))
+        self.assertIn('muscle_update_cp_a_dev', ids)
+        self.assertEqual(len(ids), 3 + len(mm.KINDS) * (3 + len(mm.MATERIAL_PROCS)))
 
     def test_components(self):
         self.assertEqual(mm.material_components(cp(yield_='hill48', hard='ludwik')),

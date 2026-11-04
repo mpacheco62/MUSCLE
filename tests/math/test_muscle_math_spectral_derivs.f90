@@ -1,3 +1,5 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 module test_muscle_math_spectral_derivs_mod
     use, intrinsic :: iso_fortran_env
     implicit none

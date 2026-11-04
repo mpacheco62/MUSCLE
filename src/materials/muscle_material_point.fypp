@@ -194,7 +194,7 @@ ${muscle_meta.material_init_call(MAT, p, k)}$
         integer :: i
 #:endif
 
-        r%vals = reshape(drot, [9])
+        @:MAT33_TO_VEC9(r%vals, drot)
         a%vals = hsv(1:6)
         a = r .transform. a
         hsv(1:6) = a%vals

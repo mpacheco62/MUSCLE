@@ -1,0 +1,361 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! One material and kind per executable (fypp define TARGET_CASE = '<material>_<kind>', group `batch_dev` of
+#! tests/gpu/target_cases.py), so that each device image is small and a case the GPU compiler of the
+#! Intel GPU miscompiles can be left out of the GPU run (tools/check.sh).
+#:set TARGET_CASES = muscle_meta.load_python_file('../gpu/target_cases.py', base=_THIS_FILE_)
+#:set MAT_CASE, K = TARGET_CASE.rsplit('_', 1)
+#:set REAL_KINDS = [K]
+#! Input and parameters of each material of BATCH_DEV_MATERIALS (test registry,
+#! tools/fypp/muscle_materials.py): (name, input, parameters)
+#!   input: 'F' = deformation gradients F_n, F_np1; 'eps' = strain
+#!   parameters: 'os' Perzyna overstress, 'maxwell' frozen Maxwell elasticity; linear elasticity otherwise
+#:set ALL_MATS = [ &
+    & ('cut_vm_bilinear', 'eps', ''), &
+    & ('pz_vm_bilinear', 'eps', 'os'), &
+    & ('cut_maxwell_vm_bilinear', 'eps', 'maxwell'), &
+    & ('kin_ul_pz_vm_bilinear', 'F', 'os')]
+#:assert sorted(m for m, _, _ in ALL_MATS) == sorted(TARGET_CASES.BATCH_DEV_MATERIALS)
+#:set MATS = [c for c in ALL_MATS if c[0] == MAT_CASE]
+#! Device memory: that of the default device with MUSCLE_GPU, host memory (the initial device) without it
+#:set DEVNUM = 'omp_get_default_device()' if defined('MUSCLE_GPU') else 'omp_get_initial_device()'
+
+module test_mat_batch_dev_cases
+    !! Batch API on device memory (D-019.7a): `muscle_update_<name>_dev` with every array allocated by
+    !! `omp_target_alloc` (seen as Fortran arrays with `c_f_pointer`, the inputs copied in and the outputs
+    !! copied back with `omp_target_memcpy`) against `muscle_update_<name>` on mapped host arrays, for
+    !! material `${MAT_CASE}$` (one of a strain input, a deformation gradient input and a frozen viscoelastic
+    !! elasticity):
+    !! two load steps with elastic and plastic points, with and without `ddsdde` and `idx`, and (Maxwell)
+    !! a time step rejected by `mat_step`.
+    !!
+    !! Without MUSCLE_GPU the memory is that of the initial device (host) and the two APIs are the same
+    !! procedure: bit for bit. With MUSCLE_GPU, if the target regions run on a device, the real outputs of
+    !! each point (row) are compared within `TOL_DEVICE_<k>` relative to the row (statuses, iterations and
+    !! untouched rows stay exact).
+    use, intrinsic :: iso_c_binding, only : c_ptr, c_loc, c_f_pointer, c_size_t, c_int, c_associated
+    use omp_lib, only : omp_target_alloc, omp_target_free, omp_target_memcpy, omp_get_initial_device
+#:if defined('MUSCLE_GPU')
+    use omp_lib, only : omp_get_default_device
+#:endif
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
+    use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_visco_maxwell, only : visco_maxwell_init
+#:for m, x, extra in MATS
+    use muscle_mat_${m}$, only : ${'mat_step, ' if extra == 'maxwell' else ''}$muscle_update_${m}$, muscle_update_${m}$_dev, &
+        MAT_${m.upper()}$_NSTATE, ${', '.join('mat_' + m + '_' + k for k in REAL_KINDS)}$
+#:endfor
+#:if any(extra == 'maxwell' for _, _, extra in MATS)
+    use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
+#:endif
+    use muscle_test_utils, only : check_true, target_on_device, ${', '.join('TOL_DEVICE_' + k for k in REAL_KINDS)}$
+    implicit none
+    private
+    public :: run_all
+
+    logical, public :: passed = .true.
+        !! Accumulated result of every check.
+    logical :: device = .false.
+        !! The batch target regions run on a device (set by run_all).
+    integer(c_int) :: dev = 0
+        !! Device of the memory of `omp_target_alloc`.
+    integer(c_int) :: host = 0
+        !! Initial (host) device.
+
+contains
+
+    subroutine run_all()
+        !! Every material.
+        device = target_on_device()
+        dev = ${DEVNUM}$
+        host = omp_get_initial_device()
+        print '(a, l1)', ' batch target regions on a device: ', device
+#:for k in REAL_KINDS
+#:for m, x, extra in MATS
+        call run_${m}$_${k}$()
+#:endfor
+#:endfor
+    end subroutine run_all
+
+    function dev_alloc(nbytes) result(c)
+        !! `nbytes` bytes of device memory (stops the test if the allocation fails).
+        integer(c_size_t), intent(in) :: nbytes
+            !! Size.
+        type(c_ptr) :: c
+            !! Device address.
+        c = omp_target_alloc(nbytes, dev)
+        if (.not. c_associated(c)) then
+            print '(a)', ' FAIL: omp_target_alloc'
+            stop 1
+        end if
+    end function dev_alloc
+
+    subroutine to_dev(d, h, nbytes)
+        !! Copies `nbytes` bytes from the host address `h` to the device address `d`.
+        type(c_ptr), intent(in) :: d
+            !! Device address.
+        type(c_ptr), intent(in) :: h
+            !! Host address.
+        integer(c_size_t), intent(in) :: nbytes
+            !! Size.
+        call check_true(passed, 'omp_target_memcpy to the device', &
+            omp_target_memcpy(d, h, nbytes, 0_c_size_t, 0_c_size_t, dev, host) == 0)
+    end subroutine to_dev
+
+    subroutine from_dev(h, d, nbytes)
+        !! Copies `nbytes` bytes from the device address `d` to the host address `h`.
+        type(c_ptr), intent(in) :: h
+            !! Host address.
+        type(c_ptr), intent(in) :: d
+            !! Device address.
+        integer(c_size_t), intent(in) :: nbytes
+            !! Size.
+        call check_true(passed, 'omp_target_memcpy from the device', &
+            omp_target_memcpy(h, d, nbytes, 0_c_size_t, 0_c_size_t, host, dev) == 0)
+    end subroutine from_dev
+#:for k in REAL_KINDS
+#:for m, x, extra in MATS
+#:set NS = 'MAT_' + m.upper() + '_NSTATE'
+#:set NX = 9 if x == 'F' else 6
+#:set XS = ['x0', 'x1'] if x == 'F' else ['x0']
+#:set L = m + ' (' + k + ')'
+
+    subroutine run_${m}$_${k}$()
+        !! `muscle_update_${m}$_dev` on device memory against `muscle_update_${m}$`, `real(${k}$)`.
+        integer, parameter :: N = 97
+        integer, parameter :: NIDX = 32
+        real(${k}$), parameter :: DT = 0.01_${k}$
+        real(${k}$), parameter :: BAD = -7.0_${k}$
+            ! Sentinel of the outputs before each batch call
+        integer(c_size_t), parameter :: RB = storage_size(1.0_${k}$)/8
+            ! Bytes of a real
+        integer(c_size_t), parameter :: IB = storage_size(1)/8
+            ! Bytes of an integer
+        type(mat_${m}$_${k}$) :: mat
+        ! Host arrays: inputs, reference outputs (r) and outputs of the device memory API (b)
+#:for v in XS
+        real(${k}$), target :: ${v}$(N, ${NX}$)
+#:endfor
+        real(${k}$), target :: hn(N, ${NS}$), hr(N, ${NS}$), hb(N, ${NS}$)
+        real(${k}$), target :: sr(N, 6), sb(N, 6), tr(N, 6, 6), tb(N, 6, 6)
+        integer, target :: str(N), stb(N), itr(N), itb(N), idx(NIDX)
+        ! Device memory and its Fortran views
+#:for v in XS
+        type(c_ptr) :: c_${v}$
+        real(${k}$), pointer :: d_${v}$(:, :)
+#:endfor
+        type(c_ptr) :: c_hn, c_hb, c_sb, c_tb, c_stb, c_itb, c_idx
+        real(${k}$), pointer :: d_hn(:, :), d_hb(:, :), d_sb(:, :), d_tb(:, :, :)
+        integer, pointer :: d_stb(:), d_itb(:), d_idx(:)
+        real(${k}$) :: a
+        integer :: i, step
+        logical :: plastic
+#:if extra == 'maxwell'
+        type(visco_coefs_${k}$) :: coefs
+        integer :: st
+#:endif
+
+#:if extra == 'maxwell'
+        call visco_maxwell_init(mat%visco, bulk=150000.0_${k}$, shear_inf=50000.0_${k}$, &
+            shear=[20000.0_${k}$, 10000.0_${k}$], tau=[0.05_${k}$, 1.0_${k}$], status=st)
+        call check_true(passed, '${L}$: Maxwell init', st == STATUS_OK)
+#:else
+        call elas_linear_init(mat%elas, young=210000.0_${k}$, poisson=0.3_${k}$)
+#:endif
+        mat%hard%y0 = 200.0_${k}$
+        mat%hard%K = 1000.0_${k}$
+#:if extra == 'os'
+        mat%os%eta = 1.0e-2_${k}$
+        mat%os%n = 1.0_${k}$
+#:endif
+        ! Every third point, in decreasing order (the last point is in the list, the first is not)
+        do i = 1, NIDX
+            idx(i) = N + 1 - 3*i
+        end do
+#:for v in XS
+        c_${v}$ = dev_alloc(RB*size(${v}$))
+        call c_f_pointer(c_${v}$, d_${v}$, [N, ${NX}$])
+#:endfor
+        c_hn = dev_alloc(RB*size(hn))
+        c_hb = dev_alloc(RB*size(hb))
+        c_sb = dev_alloc(RB*size(sb))
+        c_tb = dev_alloc(RB*size(tb))
+        c_stb = dev_alloc(IB*N)
+        c_itb = dev_alloc(IB*N)
+        c_idx = dev_alloc(IB*NIDX)
+        call c_f_pointer(c_hn, d_hn, [N, ${NS}$])
+        call c_f_pointer(c_hb, d_hb, [N, ${NS}$])
+        call c_f_pointer(c_sb, d_sb, [N, 6])
+        call c_f_pointer(c_tb, d_tb, [N, 6, 6])
+        call c_f_pointer(c_stb, d_stb, [N])
+        call c_f_pointer(c_itb, d_itb, [N])
+        call c_f_pointer(c_idx, d_idx, [NIDX])
+        call to_dev(c_idx, c_loc(idx), IB*NIDX)
+#:if defined('MUSCLE_GPU')
+        !$omp target enter data map(to: mat, idx)
+#:endif
+
+        hn = 0.0_${k}$
+        plastic = .false.
+        do step = 1, 2
+            ! Inputs: from 0 up to 4e-3*step along a fixed direction (elastic and plastic points)
+            do i = 1, N
+                a = real(i, ${k}$)/real(N, ${k}$)*4.0e-3_${k}$*real(step, ${k}$)
+#:if x == 'F'
+                x0(i, :) = [1.0_${k}$ + 0.8_${k}$*a*real(step - 1, ${k}$)/real(step, ${k}$), 0.1_${k}$*a, 0.0_${k}$, &
+                    0.3_${k}$*a, 1.0_${k}$ - 0.3_${k}$*a, 0.2_${k}$*a, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$ - 0.3_${k}$*a]
+                x1(i, :) = x0(i, :)
+                x1(i, 1) = 1.0_${k}$ + a
+#:else
+                x0(i, :) = a*[1.0_${k}$, -0.3_${k}$, -0.3_${k}$, 0.2_${k}$, 0.05_${k}$, 0.1_${k}$]
+#:endif
+            end do
+#:for v in XS
+            call to_dev(c_${v}$, c_loc(${v}$), RB*size(${v}$))
+#:endfor
+            call to_dev(c_hn, c_loc(hn), RB*size(hn))
+#:if defined('MUSCLE_GPU')
+            !$omp target enter data map(to: ${', '.join(XS)}$, hn) map(alloc: hr, sr, tr, str, itr)
+#:endif
+            call compare(.true., .false., DT, 'with tangent')
+            call compare(.false., .false., DT, 'without tangent')
+            call compare(.true., .true., DT, 'index list and tangent')
+            call compare(.false., .true., DT, 'index list')
+            plastic = plastic .or. any(itr > 0)
+#:if extra == 'maxwell'
+            if (step == 2) then
+                ! Rejected time step: its status for the points to compute, iterations 0
+                call mat_step(mat, -DT, coefs, st)
+                call check_true(passed, '${L}$: dt < 0 rejected by mat_step', st /= STATUS_OK)
+                call compare(.true., .false., -DT, 'step error')
+                call check_true(passed, '${L}$: step error statuses', all(stb == st) .and. all(itb == 0))
+                call compare(.false., .true., -DT, 'step error, index list')
+            end if
+#:endif
+            ! Next step from the converged states of every point
+            call compare(.false., .false., DT, 'next step')
+#:if defined('MUSCLE_GPU')
+            !$omp target exit data map(delete: ${', '.join(XS)}$, hn, hr, sr, tr, str, itr)
+#:endif
+            hn = hr
+        end do
+        call check_true(passed, '${L}$: the sequence has plastic points', plastic)
+#:if defined('MUSCLE_GPU')
+        !$omp target exit data map(delete: mat, idx)
+#:endif
+#:for v in XS
+        call omp_target_free(c_${v}$, dev)
+#:endfor
+        call omp_target_free(c_hn, dev)
+        call omp_target_free(c_hb, dev)
+        call omp_target_free(c_sb, dev)
+        call omp_target_free(c_tb, dev)
+        call omp_target_free(c_stb, dev)
+        call omp_target_free(c_itb, dev)
+        call omp_target_free(c_idx, dev)
+
+    contains
+
+        subroutine compare(tan, use_idx, dt_call, label)
+            !! One call of each API on the same inputs and sentinel outputs, the outputs compared (the
+            !! reference outputs stay in hr, sr, tr, str, itr).
+            logical, intent(in) :: tan
+                !! With `ddsdde`.
+            logical, intent(in) :: use_idx
+                !! With `idx`.
+            real(${k}$), intent(in) :: dt_call
+                !! Time step.
+            character(len=*), intent(in) :: label
+                !! Variant.
+            logical :: good
+            integer :: j
+
+            ! Reference: mapped host arrays
+            hr = BAD
+            sr = BAD
+            tr = BAD
+            str = -7
+            itr = -7
+#:if defined('MUSCLE_GPU')
+            !$omp target update to(hr, sr, tr, str, itr)
+#:endif
+            if (tan .and. use_idx) then
+                call muscle_update_${m}$(mat, ${', '.join(XS)}$, dt_call, hn, hr, sr, str, itr, tr, idx)
+            else if (tan) then
+                call muscle_update_${m}$(mat, ${', '.join(XS)}$, dt_call, hn, hr, sr, str, itr, ddsdde=tr)
+            else if (use_idx) then
+                call muscle_update_${m}$(mat, ${', '.join(XS)}$, dt_call, hn, hr, sr, str, itr, idx=idx)
+            else
+                call muscle_update_${m}$(mat, ${', '.join(XS)}$, dt_call, hn, hr, sr, str, itr)
+            end if
+#:if defined('MUSCLE_GPU')
+            !$omp target update from(hr, sr, tr, str, itr)
+#:endif
+
+            ! Device memory
+            hb = BAD
+            sb = BAD
+            tb = BAD
+            stb = -7
+            itb = -7
+            call to_dev(c_hb, c_loc(hb), RB*size(hb))
+            call to_dev(c_sb, c_loc(sb), RB*size(sb))
+            call to_dev(c_tb, c_loc(tb), RB*size(tb))
+            call to_dev(c_stb, c_loc(stb), IB*N)
+            call to_dev(c_itb, c_loc(itb), IB*N)
+            if (tan .and. use_idx) then
+                call muscle_update_${m}$_dev(mat, ${', '.join('d_' + v for v in XS)}$, dt_call, d_hn, d_hb, d_sb, d_stb, d_itb, d_tb, d_idx)
+            else if (tan) then
+                call muscle_update_${m}$_dev(mat, ${', '.join('d_' + v for v in XS)}$, dt_call, d_hn, d_hb, d_sb, d_stb, d_itb, ddsdde=d_tb)
+            else if (use_idx) then
+                call muscle_update_${m}$_dev(mat, ${', '.join('d_' + v for v in XS)}$, dt_call, d_hn, d_hb, d_sb, d_stb, d_itb, idx=d_idx)
+            else
+                call muscle_update_${m}$_dev(mat, ${', '.join('d_' + v for v in XS)}$, dt_call, d_hn, d_hb, d_sb, d_stb, d_itb)
+            end if
+            call from_dev(c_loc(hb), c_hb, RB*size(hb))
+            call from_dev(c_loc(sb), c_sb, RB*size(sb))
+            call from_dev(c_loc(tb), c_tb, RB*size(tb))
+            call from_dev(c_loc(stb), c_stb, IB*N)
+            call from_dev(c_loc(itb), c_itb, IB*N)
+
+            good = all(stb == str) .and. all(itb == itr)
+            do j = 1, N
+                good = good .and. same_row(hb(j, :), hr(j, :)) .and. same_row(sb(j, :), sr(j, :)) &
+                    .and. same_row(reshape(tb(j, :, :), [36]), reshape(tr(j, :, :), [36]))
+            end do
+            call check_true(passed, '${L}$: device memory == mapped arrays, ' // label, good)
+        end subroutine compare
+
+        pure logical function same_row(a, b)
+            !! Row `a` of the device memory API equals row `b` of the reference: bit for bit (sentinels
+            !! included), or on a device within `TOL_DEVICE_${k}$` relative to its largest component.
+            real(${k}$), intent(in) :: a(:)
+                !! Device memory API.
+            real(${k}$), intent(in) :: b(:)
+                !! Reference.
+            if (device) then
+                same_row = all(abs(a - b) <= TOL_DEVICE_${k}$*max(maxval(abs(a)), maxval(abs(b)), tiny(1.0_${k}$)))
+            else
+                same_row = all(a == b)
+            end if
+        end function same_row
+    end subroutine run_${m}$_${k}$
+#:endfor
+#:endfor
+
+end module test_mat_batch_dev_cases
+
+program test_mat_batch_dev
+    !! Batch API on device memory: see module `test_mat_batch_dev_cases`.
+    use test_mat_batch_dev_cases, only : run_all, passed
+    implicit none
+
+    call run_all()
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_mat_batch_dev'
+        stop 1
+    end if
+    print '(a)', ' PASS: test_mat_batch_dev'
+end program test_mat_batch_dev

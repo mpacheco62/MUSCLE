@@ -1,3 +1,5 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 program test_ddot_4O3_4O3
     use, intrinsic :: iso_fortran_env
     use muscle_tensors

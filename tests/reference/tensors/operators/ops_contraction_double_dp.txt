@@ -4,6 +4,9 @@
 # <signature> | case <c> | <n> | <IEEE-754 bits of each stored value, hex, storage order of vals>
 # Updated (D-015.8, approved): the 4O3sym .ddot. 4O3sym records, after unifying the 2D/3D
 # kernels (sum over K ascending, shear weight on B); every other record is the original one.
+# Updated (D-019.4c, approved): the 6 records of 2Osym .ddot. 4O2sym (2D and 3D, cases 1-3), after
+# writing out the vector-matrix matmul as sums over I ascending (ifx device code); the change is
+# <= 2.2e-16 relative to the largest component of each result.
 operator(.ddot.) (type(iden_2o), type(ten_2d2o)) -> real(dp) | case 1 | 1 | 3F9D1474583A28E0
 operator(.ddot.) (type(iden_2o), type(ten_2d2osym)) -> real(dp) | case 1 | 1 | 3FBDBF546A3B7EA8
 operator(.ddot.) (type(iden_2o), type(ten_3d2o)) -> real(dp) | case 1 | 1 | BFDEBEF6DBBD7DEE
@@ -27,7 +30,7 @@ operator(.ddot.) (type(ten_2d2osym), type(iden_2o)) -> real(dp) | case 1 | 1 | 3
 operator(.ddot.) (type(ten_2d2osym), type(iden_2os)) -> real(dp) | case 1 | 1 | BFCFCD577DB89621
 operator(.ddot.) (type(ten_2d2osym), type(iden_4o4ts)) -> type(ten_2d2osym) | case 1 | 4 | 3FBE3DAAA49D86C8 3FD16000CD49AF4E BFEC6B8EC67BA7FB BFCD807A7A136FBC
 operator(.ddot.) (type(ten_2d2osym), type(ten_2d2o)) -> real(dp) | case 1 | 1 | 3FCB62DDE00542C6
-operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o2sym)) -> type(ten_2d2osym) | case 1 | 4 | BF738E8752935590 3FED493021FA9EFD BFF09CFFD591F8C0 BFEB96D3A053DC5B
+operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o2sym)) -> type(ten_2d2osym) | case 1 | 4 | BF738E8752935500 3FED493021FA9EFE BFF09CFFD591F8BF BFEB96D3A053DC5A
 operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o3sym)) -> type(ten_2d2osym) | case 1 | 4 | BFC983B91F2116BA BFC65B16BA5335ED 3FE82493104A87B8 3FD5D4B331A66A29
 operator(.ddot.) (type(ten_2d4o2sym), type(ten_2d2osym)) -> type(ten_2d2osym) | case 1 | 4 | 3FD766430AB43B6D 3FF6361E1B2A6A70 3FE292DD3DC24B24 3FD1C2AB80A288C0
 operator(.ddot.) (type(ten_2d4o3sym), type(ten_2d2osym)) -> type(ten_2d2osym) | case 1 | 4 | 3FDA7907093BA036 BFE5BD51A74DD2A3 3FE6082175A0E8D9 BFC29E56D58D06AA
@@ -41,7 +44,7 @@ operator(.ddot.) (type(ten_3d2osym), type(iden_2o)) -> real(dp) | case 1 | 1 | 3
 operator(.ddot.) (type(ten_3d2osym), type(iden_2os)) -> real(dp) | case 1 | 1 | 3FF70C2D183E1607
 operator(.ddot.) (type(ten_3d2osym), type(iden_4o4ts)) -> type(ten_3d2osym) | case 1 | 6 | 3FC16930341F13C9 BFC8915916400E2B 3FD6882E8A8C07A4 3FCA9F9C3C7DE36A 3FB03F90087066E1 3FC5B40F3E941B86
 operator(.ddot.) (type(ten_3d2osym), type(ten_3d2o)) -> real(dp) | case 1 | 1 | BFF3D1D5B01071F0
-operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o2sym)) -> type(ten_3d2osym) | case 1 | 6 | 40006A7627AFFB9B C0006290CC7AEC61 BFF26E8405775966 3FCE45DEB00003F8 3FDF0FEED8B08D78 BFC4296D614F2E3C
+operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o2sym)) -> type(ten_3d2osym) | case 1 | 6 | 40006A7627AFFB9B C0006290CC7AEC60 BFF26E8405775966 3FCE45DEB00003F0 3FDF0FEED8B08D78 BFC4296D614F2E41
 operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o3sym)) -> type(ten_3d2osym) | case 1 | 6 | 3FBEEA22015EC056 3FF2C969593CD6BE 3FCA3ECCBBF6298B 4005B68158B80300 BFF025DDAFFA0A3A 3FE5A37E4014929C
 operator(.ddot.) (type(ten_3d4o2sym), type(ten_3d2osym)) -> type(ten_3d2osym) | case 1 | 6 | BFF9224CEEA1FF7A 3FC73A7E6EFE1728 BFE397949AE1513E BFF23CB59F65ADF6 BFE956EC2FB6DC6B 3FC3396719F9F93C
 operator(.ddot.) (type(ten_3d4o3sym), type(ten_3d2osym)) -> type(ten_3d2osym) | case 1 | 6 | BFF1E575A220B0F1 BFFEB189D33E7BEA 40030230E589FFC2 C000F0A1D0422E07 4000A7D3C7A02784 400AE85947F4AEF9
@@ -69,7 +72,7 @@ operator(.ddot.) (type(ten_2d2osym), type(iden_2o)) -> real(dp) | case 2 | 1 | C
 operator(.ddot.) (type(ten_2d2osym), type(iden_2os)) -> real(dp) | case 2 | 1 | C0E8A8A0C75292CA
 operator(.ddot.) (type(ten_2d2osym), type(iden_4o4ts)) -> type(ten_2d2osym) | case 2 | 4 | C0F0CA2A9AEEDDDE C0F3A2F3292A71F9 40E7A84D936455CB C0F3C2AECDCD4D34
 operator(.ddot.) (type(ten_2d2osym), type(ten_2d2o)) -> real(dp) | case 2 | 1 | 40C535744F88C781
-operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o2sym)) -> type(ten_2d2osym) | case 2 | 4 | C0F3B58FBABB502A C0F712519A864A7C C0F1BBDC81E80576 C0FB162DB16E2A98
+operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o2sym)) -> type(ten_2d2osym) | case 2 | 4 | C0F3B58FBABB502A C0F712519A864A7B C0F1BBDC81E80576 C0FB162DB16E2A97
 operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o3sym)) -> type(ten_2d2osym) | case 2 | 4 | C0FACE74C67CA02C C0A78A9074D71520 40F56F5823B24E5C C0D3C40F75040226
 operator(.ddot.) (type(ten_2d4o2sym), type(ten_2d2osym)) -> type(ten_2d2osym) | case 2 | 4 | C0E29C1D86A06D96 C103C4A3BB3483D2 C0E8F6B5A9148605 C0E0AC5CA9D99863
 operator(.ddot.) (type(ten_2d4o3sym), type(ten_2d2osym)) -> type(ten_2d2osym) | case 2 | 4 | C0C41F46B54F7F5E C0C657F0F84EDFE4 C0D744049B36A1BE C0EA6E72E242B805
@@ -83,7 +86,7 @@ operator(.ddot.) (type(ten_3d2osym), type(iden_2o)) -> real(dp) | case 2 | 1 | C
 operator(.ddot.) (type(ten_3d2osym), type(iden_2os)) -> real(dp) | case 2 | 1 | C0E3CF3227CAC4E3
 operator(.ddot.) (type(ten_3d2osym), type(iden_4o4ts)) -> type(ten_3d2osym) | case 2 | 6 | C1013A0475D74C60 C0E8CB332012549E C0FC6945E3D49907 40F0E236D602783A C0DAD5164798A743 C0EA5422E66E44BD
 operator(.ddot.) (type(ten_3d2osym), type(ten_3d2o)) -> real(dp) | case 2 | 1 | C0DA4152DDA045F0
-operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o2sym)) -> type(ten_3d2osym) | case 2 | 6 | C0E4EBFA582DB234 C0FE5F92C51E26B0 C0D8299697003112 40E6C52C3FF5C95E C0F77CBA40F66E8A C101BD8BBAA59D4D
+operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o2sym)) -> type(ten_3d2osym) | case 2 | 6 | C0E4EBFA582DB234 C0FE5F92C51E26AE C0D8299697003114 40E6C52C3FF5C95D C0F77CBA40F66E8B C101BD8BBAA59D4D
 operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o3sym)) -> type(ten_3d2osym) | case 2 | 6 | 4102F6E155AC3487 C0F6160D9BF760F7 40E81015FB2E9F6C C0FFC1E6401A9A38 C0F20F6B8117D605 40FB4C668D69E8E8
 operator(.ddot.) (type(ten_3d4o2sym), type(ten_3d2osym)) -> type(ten_3d2osym) | case 2 | 6 | C0F32A002566782E 410101F1B2C534D9 40B9788716A92328 C0FDA11D8109478A 40F5FDA913B73DDD 40FC7A6CC9AEA1D8
 operator(.ddot.) (type(ten_3d4o3sym), type(ten_3d2osym)) -> type(ten_3d2osym) | case 2 | 6 | C0EA9B4853CF8A17 40F672DB05CD3DC1 40C377DE67761A4E 40E1E08CC319CC90 40EF06B6701FDC4A 40F29EAB9EA10AC4
@@ -111,7 +114,7 @@ operator(.ddot.) (type(ten_2d2osym), type(iden_2o)) -> real(dp) | case 3 | 1 | B
 operator(.ddot.) (type(ten_2d2osym), type(iden_2os)) -> real(dp) | case 3 | 1 | BF42680391087919
 operator(.ddot.) (type(ten_2d2osym), type(iden_4o4ts)) -> type(ten_2d2osym) | case 3 | 4 | BF45062A1B10E646 BF3CF1195E7F50EB BF431774D83DDADF 3F127A2C6F187DE9
 operator(.ddot.) (type(ten_2d2osym), type(ten_2d2o)) -> real(dp) | case 3 | 1 | BF1CEC4B5EEE18D6
-operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o2sym)) -> type(ten_2d2osym) | case 3 | 4 | 3F1C7EF569FA30E0 BF22CFB4E1BDA9F4 BF44C884A775B56C 3F1D32243017FBAA
+operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o2sym)) -> type(ten_2d2osym) | case 3 | 4 | 3F1C7EF569FA30DC BF22CFB4E1BDA9F5 BF44C884A775B56B 3F1D32243017FBAB
 operator(.ddot.) (type(ten_2d2osym), type(ten_2d4o3sym)) -> type(ten_2d2osym) | case 3 | 4 | BF35686A69D83B47 BF24E4BD290ABC38 BF3FC0B202FC8314 3F4BF4E0AF43E5EA
 operator(.ddot.) (type(ten_2d4o2sym), type(ten_2d2osym)) -> type(ten_2d2osym) | case 3 | 4 | 3F275BA4BA050058 3F45BC10FF7AF332 BF3BEB87EF9482CB 3F165F0BAEFE80D2
 operator(.ddot.) (type(ten_2d4o3sym), type(ten_2d2osym)) -> type(ten_2d2osym) | case 3 | 4 | BF5219B5F1927AE3 BF41A3F55835F291 BF54CAC94D49026E BF5042F434FEDF50
@@ -125,7 +128,7 @@ operator(.ddot.) (type(ten_3d2osym), type(iden_2o)) -> real(dp) | case 3 | 1 | 3
 operator(.ddot.) (type(ten_3d2osym), type(iden_2os)) -> real(dp) | case 3 | 1 | 3EFEC6993CABFE70
 operator(.ddot.) (type(ten_3d2osym), type(iden_4o4ts)) -> type(ten_3d2osym) | case 3 | 6 | BF43DAB9A094BE71 BF5CE0BA7CB81BB9 3F5CBA2430054A6E 3F53F25DADE3DD2B 3F3FF3B021B90A40 3F49D531D1A82513
 operator(.ddot.) (type(ten_3d2osym), type(ten_3d2o)) -> real(dp) | case 3 | 1 | 3F35384D723F8777
-operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o2sym)) -> type(ten_3d2osym) | case 3 | 6 | BF519D2B9128B892 BF4147A081C4EF49 BF40BFB9A6380D9A BF41062A508D7145 BF5AE5D6966124E8 BF5194A0DA64025B
+operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o2sym)) -> type(ten_3d2osym) | case 3 | 6 | BF519D2B9128B892 BF4147A081C4EF4A BF40BFB9A6380D99 BF41062A508D7145 BF5AE5D6966124E8 BF5194A0DA64025A
 operator(.ddot.) (type(ten_3d2osym), type(ten_3d4o3sym)) -> type(ten_3d2osym) | case 3 | 6 | 3F638F94347E82E9 3F3EFB493171AFF8 BF345720794C8099 BF5F2ADD810FD780 BF5CFA981D325A64 3F5016284BC65E06
 operator(.ddot.) (type(ten_3d4o2sym), type(ten_3d2osym)) -> type(ten_3d2osym) | case 3 | 6 | 3F4F715BD935C946 3F0A9C3B1BC1AD60 3F4CF94DC07E63CC 3F4772EE8DAF38DF 3F3BF481298052D6 3F0BF863198F6300
 operator(.ddot.) (type(ten_3d4o3sym), type(ten_3d2osym)) -> type(ten_3d2osym) | case 3 | 6 | 3F57D4D158F032ED 3F43B3EBE554ACF5 BF38463A093A2E96 3F40076C821D549C 3F40090F23CA3FCF BF3174EE650ED9C2

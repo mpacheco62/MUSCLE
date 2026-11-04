@@ -32,23 +32,17 @@ endforeach()
 # gradient/Hessian) in sp and dp at stress scales 1e-3..2.1e5 with distinct, nearly repeated and
 # repeated eigenvalues, against independent dp references (D-016.6)
 add_muscle_fypp_test(math_spectral_kinds test_math_spectral_kinds.fypp)
-# Abort on an overflow or invalid operation in the library: gfortran enables the traps from the
-# options of the main program. Division by zero is not trapped: eigenvals divides by d2 : d2 = 0
-# for an exactly repeated largest root (d = Inf, then atan(1/d) = 0 gives the right result).
+# eigenvals with exactly repeated (largest or smallest), triple and nearly repeated roots, exact
+# references
+add_muscle_fypp_test(math_eigenvals_repeated test_math_eigenvals_repeated.fypp)
+# Abort on a division by zero, overflow or invalid operation in the library: gfortran enables the
+# traps from the options of the main program
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(test_math_spectral_kinds PRIVATE -ffpe-trap=overflow,invalid)
+    target_compile_options(test_math_spectral_kinds PRIVATE -ffpe-trap=zero,overflow,invalid)
+    target_compile_options(test_math_eigenvals_repeated PRIVATE -ffpe-trap=zero,overflow,invalid)
 endif()
 # Math kernel routines (eigenvals, spectral_decomposition, dEigenvalues_dTensor, FD_GRAD, LU6SOLVE)
 # called from a pure point procedure inside an OpenMP target region, sp and dp, bit for bit
 # against the CPU call
 add_muscle_fypp_test(math_kernels_target test_math_kernels_target.fypp)
-# The library has no `declare target` until the GPU build (Phase 8, MUSCLE_GPU): an offload-enabled
-# gfortran (e.g. Ubuntu's, offload-defaulted to nvptx/amdgcn) would fail to link the device image
-# (unresolved library symbols), so the region is compiled for host fallback only. -fno-inline keeps
-# one copy of the point procedure for both calls (inlined copies may be vectorized differently).
-if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(test_math_kernels_target PRIVATE -foffload=disable -fno-inline)
-    target_link_options(test_math_kernels_target PRIVATE -foffload=disable)
-elseif (CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
-    target_compile_options(test_math_kernels_target PRIVATE -fno-inline)
-endif()
+muscle_target_test_options(test_math_kernels_target)

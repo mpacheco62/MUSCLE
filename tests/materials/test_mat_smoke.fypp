@@ -50,13 +50,12 @@ module test_mat_smoke_cases
     use muscle_status, only : STATUS_OK
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
     use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
-    use muscle_material_state, only : ${', '.join('visco_plastic_state_' + k for k in REAL_KINDS)}$
 #:for MAT in MATS
     use ${muscle_meta.material_module(MAT.name)}$, only : mat_init_${MAT.name}$, &
         ${muscle_meta.material_point(MAT.name)}$, ${muscle_meta.material_batch(MAT.name)}$, &
         mat_pack_${MAT.name}$, mat_unpack_${MAT.name}$, ${muscle_meta.material_nprops(MAT.name)}$, &
         ${muscle_meta.material_nstate(MAT.name)}$, ${'mat_step, ' if muscle_meta.material_visco(MAT) else ''}$&
-        ${', '.join(muscle_meta.material_type(MAT.name, k) for k in REAL_KINDS)}$
+        ${', '.join(muscle_meta.material_type(MAT.name, k) for k in REAL_KINDS)}$${''.join(', ' + muscle_meta.material_state_type(MAT.name, k) for k in REAL_KINDS) if muscle_meta.material_visco(MAT) else ''}$
 #:endfor
     use muscle_test_utils, only : check_true
     implicit none

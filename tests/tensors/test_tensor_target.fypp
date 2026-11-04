@@ -1,0 +1,131 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! The free functions of muscle_tensor_functions (norm, det, square, transpose, convert_3sym,
+#! convert_2sym, inverse with its condition number, is_approx) of one family, dimension and kind (fypp
+#! define TARGET_CASE = '<family>_<dim>_<kind>', tests/gpu/target_cases.py) called from a `pure`,
+#! `@:DEVICE()` point procedure inside an `!$omp target teams distribute parallel do` region and on the
+#! CPU (testing.md, GPU): bit for bit on the host, `check_target` on a device (TOL_DEVICE_<k> relative to
+#! each point, amplified by the condition number of the inverse).
+#:set TF = muscle_meta.load_python_file('../gpu/target_cases.py', base=_THIS_FILE_)
+#:set FAM, D, K = TARGET_CASE.split('_')
+#:set T = tname(D + FAM, K)
+#:set LAY = layout(FAM, D)
+#:set N = len(LAY.comps)
+#:set FNS = dict(TF.TENSOR_FUNCTIONS)[FAM]
+#! Tensor-valued functions: type and size of the result
+#:set RES_T = {'square': T, 'transpose': T, 'convert_3sym': tname(D + '4O3sym', K), 'convert_2sym': tname(D + '4O2sym', K)}
+#:set RES_N = {'square': N, 'transpose': N, 'convert_3sym': len(layout('4O3sym', D).comps), &
+    & 'convert_2sym': len(layout('4O2sym', D).comps)}
+#! Packed output of a point: (name, size) and the first position of each
+#:set OUTS = [(f, RES_N.get(f, 1)) for f in FNS] + [('inverse', N), ('cond', 1), ('ok', 1), ('is_approx', 2)]
+#:set START = dict((OUTS[i][0], 1 + sum(s for _, s in OUTS[:i])) for i in range(len(OUTS)))
+#:set NOUT = sum(s for _, s in OUTS)
+
+module test_tensor_target_point
+    !! Point procedure (kernel) that calls every free function of `${T}$`.
+    use muscle_kinds, only : ${K}$
+    use muscle_tensors, only : ${', '.join(sorted({T} | {RES_T[f] for f in FNS if f in RES_T}))}$
+    use muscle_tensor_functions, only : ${', '.join(list(FNS) + ['inverse', 'is_approx'])}$
+    implicit none
+    private
+
+    integer, parameter, public :: N = ${N}$, NOUT = ${NOUT}$
+        !! Components of `${T}$` and size of the packed output of a point.
+    integer, parameter, public :: COND_POS = ${START['cond']}$
+        !! Position of the condition number of the inverse in the output.
+    public :: point
+
+contains
+
+    pure subroutine point(x, out)
+        !! Every free function of `${T}$` at the tensor of components `x`; results packed in `out`.
+        @:DEVICE()
+        real(${K}$), intent(in) :: x(N)
+        real(${K}$), intent(out) :: out(NOUT)
+        type(${T}$) :: a, a_inv
+#:for f in FNS
+#:if f in RES_T
+        type(${RES_T[f]}$) :: r_${f}$
+#:endif
+#:endfor
+        real(${K}$) :: cond
+        logical :: ok
+
+        a%vals = reshape(x, shape(a%vals))
+#:for f in FNS
+#:if f in RES_T
+        r_${f}$ = ${f}$(a)
+        out(${START[f]}$:${START[f] + RES_N[f] - 1}$) = reshape(r_${f}$%vals, [${RES_N[f]}$])
+#:else
+        out(${START[f]}$) = ${f}$(a)
+#:endif
+#:endfor
+        call inverse(a, a_inv, ok, cond)
+        out(${START['inverse']}$:${START['inverse'] + N - 1}$) = reshape(a_inv%vals, [N])
+        out(${START['cond']}$) = cond
+        out(${START['ok']}$) = merge(1.0_${K}$, 0.0_${K}$, ok)
+        out(${START['is_approx']}$) = merge(1.0_${K}$, 0.0_${K}$, is_approx(a, a))
+        out(${START['is_approx'] + 1}$) = merge(1.0_${K}$, 0.0_${K}$, is_approx(a, a_inv))
+    end subroutine point
+
+end module test_tensor_target_point
+
+
+program test_tensor_target
+    !! Free functions of `${T}$` in a target region and on the CPU.
+    use omp_lib, only : omp_is_initial_device
+    use muscle_kinds, only : dp, ${K}$
+    use muscle_tensors, only : ${T}$
+    use muscle_test_utils, only : check_target, check_target_ran, check_true
+    use muscle_test_helpers, only : park_miller, rnd
+    use test_tensor_target_point, only : N, NOUT, COND_POS, point
+    implicit none
+
+    integer, parameter :: NPTS = 32
+    type(park_miller) :: rng
+    type(${T}$) :: a
+    real(${K}$) :: x(N, NPTS), out_t(NOUT, NPTS), out_c(NOUT, NPTS), amp(NPTS)
+    logical :: passed, host
+    integer :: i, j
+
+    passed = .true.
+    rng = park_miller(20261103)
+    ! Components in (-1/4, 1/4) plus 2 on the diagonal of the matrix shown by Layout.matrix(): diagonally
+    ! dominant, hence regular
+    do i = 1, NPTS
+        do j = 1, N
+            x(j, i) = real(0.25_dp*rnd(rng), ${K}$)
+        end do
+        a%vals = reshape(x(:, i), shape(a%vals))
+#:set rows = LAY.matrix('a%vals')
+#:for r in range(len(rows))
+        ${rows[r][r]}$ = ${rows[r][r]}$ + 2.0_${K}$
+#:endfor
+        x(:, i) = reshape(a%vals, [N])
+    end do
+
+    host = .true.
+    !$omp target teams distribute parallel do map(to: x) map(from: out_t) map(tofrom: host)
+    do i = 1, NPTS
+        if (i == 1) host = omp_is_initial_device()
+        call point(x(:, i), out_t(:, i))
+    end do
+    !$omp end target teams distribute parallel do
+    do i = 1, NPTS
+        call point(x(:, i), out_c(:, i))
+    end do
+
+    call check_target_ran(passed, '${T}$', host)
+    call check_true(passed, '${T}$: CPU inverse ok, is_approx(a, a) and not is_approx(a, a^-1)', &
+                    all(out_c(COND_POS + 1, :) == 1.0_${K}$) .and. all(out_c(COND_POS + 2, :) == 1.0_${K}$) &
+                    .and. all(out_c(COND_POS + 3, :) == 0.0_${K}$))
+    ! The inverse (and every result with it in the point scale) amplifies the rounding by kappa
+    amp = max(1.0_${K}$, out_c(COND_POS, :))
+    call check_target(passed, '${T}$ free functions: target = CPU', out_t, out_c, .not. host, amp=amp)
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_tensor_target ${T}$'
+        stop 1
+    end if
+    print '(a)', ' PASS: test_tensor_target ${T}$'
+end program test_tensor_target

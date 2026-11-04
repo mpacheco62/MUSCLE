@@ -39,7 +39,7 @@ module muscle_math_operations
             !! Eigenvalues, \( \lambda_1 \ge \lambda_2 \ge \lambda_3 \).
 
         real(${k}$), parameter :: EPS = ${EIG_EPS[k]}$_${k}$
-        real(${k}$) :: I1, J2, s, d, alpha
+        real(${k}$) :: I1, J2, s, d, alpha, n1, n2
         real(${k}$) :: J2_sqrt
         real(${k}$) :: cd, lam_a, lam_b, lam_c, sd
         integer :: sj
@@ -63,19 +63,28 @@ module muscle_math_operations
         T = square(Sm) - (2.0_${k}$/3.0_${k}$)*J2*Iden
         d1 = T-s*Sm
         d2 = T+s*Sm
-        d = ((d1 .ddot. d1) / (d2 .ddot. d2))**0.5_${k}$
-
+        n1 = d1 .ddot. d1
+        n2 = d2 .ddot. d2
         J2_sqrt = J2**0.5_${k}$
-        if (abs(1.0_${k}$-d) .le. EPS) then
-          res(1) = J2_sqrt
-          res(2) = 0.0_${k}$
-          res(3) = -res(1)
-          res = res + I1/3.0_${k}$
-          return
-        end if
 
-        sj = int(sign(1.0_${k}$,(1.0_${k}$-d)))
-        alpha = 2.0_${k}$/3.0_${k}$ * atan(d**sj)
+        if (n2 <= n1/huge(n1)) then
+          ! d = sqrt(n1/n2) would be infinite (d2 = 0: the largest root is repeated) or overflow: its
+          ! limit, atan(1/d) = 0, without the division by zero (same result as the Inf it gave before)
+          sj = -1
+          alpha = 0.0_${k}$
+        else
+          d = (n1 / n2)**0.5_${k}$
+          if (abs(1.0_${k}$-d) .le. EPS) then
+            res(1) = J2_sqrt
+            res(2) = 0.0_${k}$
+            res(3) = -res(1)
+            res = res + I1/3.0_${k}$
+            return
+          end if
+
+          sj = int(sign(1.0_${k}$,(1.0_${k}$-d)))
+          alpha = 2.0_${k}$/3.0_${k}$ * atan(d**sj)
+        end if
         cd = sj*s*cos(alpha)
         lam_a = 2.0_${k}$*cd
 

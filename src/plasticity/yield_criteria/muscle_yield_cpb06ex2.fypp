@@ -41,7 +41,7 @@ module muscle_yield_cpb06ex2
     use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in model_dims('yield') for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
         & operator(.tdotsym.), operator(*), operator(+), assignment(=)
     use muscle_math_operations, only : eigenvals
-    use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian
+    use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian, fp_exponent
     use muscle_anisotropic_yield, only : yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, &
         & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian
     implicit none
@@ -64,9 +64,16 @@ contains
 
     $:MODEL_INIT('yield', 'cpb06ex2', k)
         type(${tname('3D2Osym', k)}$) :: rd
+        real(${k}$) :: blk(3, 3)
 
-        prm%L = yield_lin_dev_block(reshape([c11, c21, c31, c12, c22, c32, c13, c23, c33], [3, 3]))
-        prm%Lp = yield_lin_dev_block(reshape([cp11, cp21, cp31, cp12, cp22, cp32, cp13, cp23, cp33], [3, 3]))
+        blk(:, 1) = [c11, c21, c31]
+        blk(:, 2) = [c12, c22, c32]
+        blk(:, 3) = [c13, c23, c33]
+        prm%L = yield_lin_dev_block(blk)
+        blk(:, 1) = [cp11, cp21, cp31]
+        blk(:, 2) = [cp12, cp22, cp32]
+        blk(:, 3) = [cp13, cp23, cp33]
+        prm%Lp = yield_lin_dev_block(blk)
         prm%c_shear = [c44, c55, c66]
         prm%cp_shear = [cp44, cp55, cp66]
         prm%k = k

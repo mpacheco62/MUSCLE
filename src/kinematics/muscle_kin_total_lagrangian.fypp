@@ -28,7 +28,7 @@ module muscle_kin_total_lagrangian
     !! muscle_kin_laws.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D2O', k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$
-    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_green_lagrange, &
+    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_finite_update_norot, kin_green_lagrange, &
         kin_pk2_to_cauchy, kin_push_forward_tangent, kin_jaumann_tangent
     implicit none
     private
@@ -46,6 +46,12 @@ contains
         call kin_finite_update(F, state, status)
         state%strain = kin_green_lagrange(state)
     end subroutine kin_update_total_lagrangian_${k}$
+
+    $:MODEL_FUNCTION('kin', 'total_lagrangian', 'update_norot', k, doc=r'`kin_update` with `kin_finite_update_norot` (R not computed).')
+
+        call kin_finite_update_norot(F, state, status)
+        state%strain = kin_green_lagrange(state)
+    end subroutine kin_update_norot_total_lagrangian_${k}$
 
     $:MODEL_FUNCTION('kin', 'total_lagrangian', 'to_cauchy', k, doc=r'Push-forward of the second Piola-Kirchhoff stress.')
 

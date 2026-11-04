@@ -4,7 +4,7 @@
 #! runs the point kernel `UPDATE` on every point of a batch stored in SoA arrays (`eps(npts, 6)`), or
 #! on the points of an index list (multiphase). Included by src/materials/muscle_material.fypp after
 #! muscle_material_kernel.fypp with its variables set (`k`, `MAT`, `MAT_T`, `STATE_T`, `COEFS_T`,
-#! `VISCO`, `KIN`, `COROT`, `UPDATE`, `STEP`, `PACK`, `UNPACK`, `BATCH`, `NSTATE`, `S2`, `T4`, `G2`).
+#! `VISCO`, `KIN`, `COROT`, `UPDATE`, `STEP`, `PACK`, `UNPACK`, `BATCH`, `BATCH_DEV`, `NSTATE`, `S2`, `T4`, `G2`).
 #!
 #! Structure (no optional argument reaches a device region): `BATCH` (host) computes the coefficients of
 #! the step of a viscoelastic material (`STEP`, once per batch, D-018.14d) and calls one of four private
@@ -12,6 +12,9 @@
 #! (muscle_common.fypp: OpenMP `parallel do`, or `target teams distribute parallel do` over data
 #! already on the device with MUSCLE_GPU) whose body calls a point procedure (`@:DEVICE()`, the per
 #! point locals live there): load the point to local tensors, `UNPACK`, `UPDATE`, `PACK`, store.
+#! `BATCH_DEV` (public generic `muscle_update_<name>_dev`, D-019.7a) is the same API on arrays given by
+#! their device addresses: with MUSCLE_GPU it calls four more loops whose `BATCH_LOOP` takes the arrays
+#! with `has_device_addr` instead of `map(present, alloc: ...)`; without it, the loops of `BATCH`.
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
 #! Finite strain material: the deformation gradients at t_n and t_n+1 instead of the strain
@@ -21,6 +24,9 @@
 #:set XARGS = ', '.join(XS)
 #:set VARGS = 'coefs, step_status, ' if VISCO else ''
 #:set OUTS = 'hsv_n, hsv_np1, sig, status, iters'
+#! Loops on device addresses (`_dev` suffix, D-019.7a): only with MUSCLE_GPU (on the CPU the `_dev` API
+#! calls the loops of `BATCH`)
+#:set DEVS = [False, True] if defined('MUSCLE_GPU') else [False]
 #:for TAN in [False, True]
 #:set POINT = 'batch_point_tangent_' + k if TAN else 'batch_point_' + k
 
@@ -99,12 +105,13 @@
 #:endif
     end subroutine ${POINT}$
 #:for IDX in [False, True]
-#:set LOOP = 'batch_loop' + ('_tangent' if TAN else '') + ('_idx' if IDX else '') + '_' + k
-#:set PRESENT = ', '.join(['mat'] + XS + [OUTS] + (['ddsdde'] if TAN else []) + (['idx'] if IDX else []))
+#:for DEV in DEVS
+#:set LOOP = 'batch_loop' + ('_tangent' if TAN else '') + ('_idx' if IDX else '') + ('_dev' if DEV else '') + '_' + k
+#:set ARRAYS = ', '.join(XS + [OUTS] + (['ddsdde'] if TAN else []) + (['idx'] if IDX else []))
 
     subroutine ${LOOP}$(mat, ${VARGS}$npts, ${XARGS}$, dt, ${OUTS}$${', ddsdde' if TAN else ''}$${', n, idx' if IDX else ''}$)
-        !! Loop of `${BATCH}$` over ${'the points idx(1:n)' if IDX else 'every point'}$${', with the tangent' if TAN else ''}$ (host;
-        !! parallel loop of `BATCH_LOOP`).
+        !! Loop of `${BATCH_DEV if DEV else BATCH}$` over ${'the points idx(1:n)' if IDX else 'every point'}$${', with the tangent' if TAN else ''}$ (host;
+        !! parallel loop of `BATCH_LOOP`${', the arrays given by their device addresses' if DEV else ''}$).
         implicit none
         type(${MAT_T}$), intent(in) :: mat
             !! Material.
@@ -145,15 +152,36 @@
 
         integer :: i
 
-        $:BATCH_LOOP(PRESENT, 'coefs' if VISCO else None)
+#:if DEV
+        $:BATCH_LOOP('mat', 'coefs' if VISCO else None, dev=ARRAYS)
+#:else
+        $:BATCH_LOOP('mat, ' + ARRAYS, 'coefs' if VISCO else None)
+#:endif
         do i = 1, ${'n' if IDX else 'npts'}$
             call ${POINT}$(mat, ${VARGS}$${'idx(i)' if IDX else 'i'}$, npts, ${XARGS}$, dt, ${OUTS}$${', ddsdde' if TAN else ''}$)
         end do
     end subroutine ${LOOP}$
 #:endfor
 #:endfor
+#:endfor
+#:for DEV in [False, True]
+#:set API = BATCH_DEV if DEV else BATCH
+#! Loops called: those on device addresses only exist with MUSCLE_GPU
+#:set SUF = ('_dev' if DEV and len(DEVS) > 1 else '') + '_' + k
 
-    subroutine ${BATCH}$(mat, ${XARGS}$, dt, ${OUTS}$, ddsdde, idx)
+    subroutine ${API}$(mat, ${XARGS}$, dt, ${OUTS}$, ddsdde, idx)
+#:if DEV
+#:set GEN = muscle_meta.material_batch(MAT.name)
+        !! Batch API of material `${MAT.name}$`, `real(${k}$)`, on device memory (D-019.7a): `${GEN}$` with
+        !! every array argument (`${XARGS}$`, `hsv_n`, `hsv_np1`, `sig`, `status`, `iters`, `ddsdde`, `idx`) given by
+        !! its device address, not mapped (memory of `omp_target_alloc` or of a device library such as
+        !! cuFFT, seen as a Fortran array with `c_f_pointer`). Only the target region reads and writes them
+        !! (`has_device_addr`, OpenMP 5.1); the host only takes their extents. `mat` is mapped by the caller
+        !! (once, as for `${GEN}$`)${', and the coefficients of the step are copied in' if VISCO else ''}$.
+        !! Without MUSCLE_GPU (CPU build) it is `${GEN}$` itself (the arrays are host memory).
+        !! Otherwise as `${GEN}$`:
+        !!
+#:endif
         !! Batch API of material `${MAT.name}$`, `real(${k}$)` (D-008.2, D-018.7): the point kernel
         !! `mat_update` on every point `p` of the SoA arrays (first dimension: `npts = size(sig, 1)`), or
         !! only on the points `idx(:)` (multiphase: the other rows are not touched). Bit for bit the same
@@ -232,16 +260,17 @@
 #:endif
         if (present(ddsdde)) then
             if (present(idx)) then
-                call batch_loop_tangent_idx_${k}$(${LARGS}$, ddsdde, size(idx), idx)
+                call batch_loop_tangent_idx${SUF}$(${LARGS}$, ddsdde, size(idx), idx)
             else
-                call batch_loop_tangent_${k}$(${LARGS}$, ddsdde)
+                call batch_loop_tangent${SUF}$(${LARGS}$, ddsdde)
             end if
         else
             if (present(idx)) then
-                call batch_loop_idx_${k}$(${LARGS}$, size(idx), idx)
+                call batch_loop_idx${SUF}$(${LARGS}$, size(idx), idx)
             else
-                call batch_loop_${k}$(${LARGS}$)
+                call batch_loop${SUF}$(${LARGS}$)
             end if
         end if
-    end subroutine ${BATCH}$
+    end subroutine ${API}$
+#:endfor
 #:endif

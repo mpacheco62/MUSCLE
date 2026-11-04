@@ -1,8 +1,3 @@
-# State of a point of a material with a viscoelastic (frozen) elasticity (every kind)
-muscle_add_fypp_sources(muscle
-                 muscle_material_state.fypp
-                 )
-
 # Declared materials (D-008, D-018): one module muscle_mat_<name> per entry of the material registry
 # (tools/fypp/muscle_materials.py, or -DMUSCLE_MATERIALS=<path>) from the same template, which
 # includes the body of the return mapping of the material (src/solvers/muscle_<solver>_body.fypp,

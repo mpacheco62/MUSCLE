@@ -16,13 +16,12 @@ program test_mat_visco_errors
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER, STATUS_INVALID_TIME_STEP
     use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
-    use muscle_material_state, only : ${', '.join('visco_plastic_state_' + k for k in REAL_KINDS)}$
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
     use muscle_visco_maxwell, only : visco_maxwell_init
     use muscle_visco_kelvin, only : visco_kelvin_init
     use muscle_mat_cp_maxwell_vm_bilinear, only : mat_update, mat_step, mat_pack_cp_maxwell_vm_bilinear, &
         mat_unpack_cp_maxwell_vm_bilinear, MAT_CP_MAXWELL_VM_BILINEAR_NSTATE, &
-        ${', '.join('mat_cp_maxwell_vm_bilinear_' + k for k in REAL_KINDS)}$
+        ${', '.join('mat_cp_maxwell_vm_bilinear_' + k + ', mat_state_cp_maxwell_vm_bilinear_' + k for k in REAL_KINDS)}$
     use muscle_mat_cp_kelvin_hill48_swift, only : mat_step, ${', '.join('mat_cp_kelvin_hill48_swift_' + k for k in REAL_KINDS)}$
     use muscle_test_utils, only : check_true
     implicit none
@@ -51,7 +50,7 @@ contains
         type(mat_cp_maxwell_vm_bilinear_${k}$) :: mat
         type(mat_cp_kelvin_hill48_swift_${k}$) :: kv
         type(visco_coefs_${k}$) :: coefs
-        type(visco_plastic_state_${k}$) :: sn_a, snp1_a, sn_b, snp1_b
+        type(mat_state_cp_maxwell_vm_bilinear_${k}$) :: sn_a, snp1_a, sn_b, snp1_b
         type(${tname('3D2Osym', k)}$) :: strain, stress_a, stress_b
         type(${tname('3D4O2sym', k)}$) :: tan_a, tan_b
         real(${k}$) :: hsv(NSTATE), hsv2(NSTATE)
@@ -97,7 +96,7 @@ contains
             call mat_pack_cp_maxwell_vm_bilinear(snp1_b, hsv)
             call check_true(passed, 'unused history tensor zero (${k}$)', all(hsv(20:25) == 0.0_${k}$))
             call mat_unpack_cp_maxwell_vm_bilinear(hsv, sn_b)
-            call check_true(passed, 'unpack: visco_branches branches (${k}$)', sn_b%visco%n_branches == 2)
+            call check_true(passed, 'state of the material: visco_branches tensors (${k}$)', size(sn_b%visco%h, 2) == 2)
             call mat_pack_cp_maxwell_vm_bilinear(sn_b, hsv2)
             call check_true(passed, 'history array round trip (${k}$)', all(hsv2 == hsv))
             sn_a = snp1_a

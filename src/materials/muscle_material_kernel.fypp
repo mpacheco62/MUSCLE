@@ -9,7 +9,9 @@
 #! A finite strain material (`KIN`, D-018.15) has its own `UPDATE`: the deformation gradients at t_n
 #! and t_n+1, the return mapping in the strain measure of the kinematics and the Cauchy stress and
 #! spatial tangent (`tangent_rate`); with a spatial measure (`SPATIAL_KIN`) the converged plastic strain
-#! is rotated with the rotation increment of the polar decompositions (D-018.15f). The corotational
+#! is rotated with the rotation increment of the polar decompositions (D-018.15f); without a spatial
+#! measure nor a kinematics that reads R (`material_kin_rotation`), `kin_update` skips the polar
+#! decomposition (D-019.7c). The corotational
 #! kinematics (`COROT`) takes the strain already rotated by the FE code (small strain signature).
 #!
 #! `UPDATE` calls the body (`SOLVE`) with the elasticity of the step: the component `elas` of the
@@ -22,9 +24,9 @@
 #!
 #! History layout (D-018.7, D-018.11d; without the stress): hsv(1:6) plastic strain (xx, yy, zz, xy,
 #! yz, xz), hsv(7) equivalent plastic strain and, with a viscoelastic elasticity, hsv(8:13) elastic
-#! strain and hsv(8 + 6 i : 13 + 6 i) history tensor i = 1 .. visco_branches. `UNPACK` sets the number
-#! of branches of the viscoelastic state to `visco_branches` (an upper bound: the model kernels use their
-#! own number, `prm%n`; the unused tensors are zero).
+#! strain and hsv(8 + 6 i : 13 + 6 i) history tensor i = 1 .. visco_branches. The viscoelastic state of the
+#! material keeps `visco_branches` tensors (D-019.7b; an upper bound: the model kernels use their own
+#! number, `prm%n`, checked by `STEP`; the unused tensors are copied).
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
 #:set P = 'state%plastic' if VISCO else 'state'
@@ -92,7 +94,7 @@
         !! run and the outputs keep default values) or of the return mapping.
         use muscle_status, only : STATUS_OK
         use muscle_tensors, only : operator(+)${', operator(*), operator(.transform.), operator(.ddot.), transpose' if SPATIAL_KIN else ''}$
-        use muscle_kin_laws, only : kin_update, kin_to_cauchy, kin_to_spatial_tangent, kin_state_${k}$${', kin_geometric_tangent' if MAT.tangent_rate == 'jaumann' else ''}$${', kin_spin_tangent' if SPATIAL_KIN else ''}$
+        use muscle_kin_laws, only : kin_update, kin_update_norot, kin_to_cauchy, kin_to_spatial_tangent, kin_state_${k}$${', kin_geometric_tangent' if MAT.tangent_rate == 'jaumann' else ''}$${', kin_spin_tangent' if SPATIAL_KIN else ''}$
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat
@@ -136,7 +138,12 @@
         end associate
 #:endif
 
+#:if muscle_meta.material_kin_rotation(MAT)
         call kin_update(mat%kin, F_np1, ks, status)
+#:else
+        ! The polar rotation is not used (D-019.7c)
+        call kin_update_norot(mat%kin, F_np1, ks, status)
+#:endif
 #:if SPATIAL_KIN
         if (status == STATUS_OK) call kin_update(mat%kin, F_n, ks_n, status)
 #:endif
@@ -259,7 +266,7 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
         !! \( \boldsymbol\varepsilon - \boldsymbol\varepsilon^p_{n+1} \) of the return mapping
         !! (`visco_update`), also when it does not converge.
         use muscle_tensors, only : operator(-)
-        use muscle_visco_laws, only : visco_freeze, visco_update
+        use muscle_visco_laws, only : visco_freeze_branches, visco_update_branches
 #:endif
         implicit none
         @:DEVICE()
@@ -288,11 +295,16 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
 #:if VISCO
 
         type(${ELAS_T}$) :: elas
+        type(${S2}$) :: strain_e
 
-        elas = visco_freeze(mat%${VISCO}$, coefs, state_n%visco)
+        ! The ${NB}$ history tensors of the material (D-019.7b): the model uses its own number, at most ${NB}$
+        elas = visco_freeze_branches(mat%${VISCO}$, coefs, state_n%visco%strain_e, ${NB}$, state_n%visco%h)
         call ${SOLVE}$(mat, elas, strain, dt, state_n%plastic, state_np1%plastic, stress, tangent, &
             status, iters)
-        call visco_update(mat%${VISCO}$, coefs, state_n%visco, strain - state_np1%plastic%strain_p, state_np1%visco)
+        strain_e = strain - state_np1%plastic%strain_p
+        call visco_update_branches(mat%${VISCO}$, coefs, state_n%visco%strain_e, ${NB}$, state_n%visco%h, strain_e, &
+            state_np1%visco%h)
+        state_np1%visco%strain_e = strain_e
 #:else
 
         call ${SOLVE}$(mat, mat%elas, strain, dt, state_n, state_np1, stress, tangent, status, iters)
@@ -336,8 +348,8 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
         !! State of a point of material `${MAT.name}$` from the `${NSTATE}$` components of an FE
         !! history array (layout of `${PACK}$`), `real(${k}$)`; the stress of the plastic state is zero
 #:if VISCO
-        !! (the kernel does not read the stress of the converged state) and the viscoelastic state has
-        !! ${NB}$ branches (the models use their own number of branches).
+        !! (the kernel does not read the stress of the converged state); the viscoelastic state keeps
+        !! ${NB}$ history tensors (the models use their own number of branches).
 #:else
         !! (the kernel does not read the stress of the converged state).
 #:endif
@@ -354,7 +366,6 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
         ${P}$%strain_p%vals = hsv(1:6)
         ${P}$%strain_pf = hsv(7)
 #:if VISCO
-        state%visco%n_branches = ${NB}$
         state%visco%strain_e%vals = hsv(8:13)
 #:if NB > 0
         do i = 1, ${NB}$

@@ -1,3 +1,5 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 program test_muscle_tensor_iden_4o3ts
     use muscle_tensors
     implicit none

@@ -130,6 +130,10 @@ KINEMATICS_FE_ROTATED = ('corotational',)
 #: stored plastic strain with the rotation increment of the polar decomposition (D-018.15f).
 KINEMATICS_SPATIAL = ('updated_lagrangian', 'spatial_logarithmic')
 
+#: Kinematics whose own family functions read the polar rotation R of the state (``kin_to_cauchy`` and
+#: the tangents of the material logarithmic kinematics): their ``kin_update_norot`` is ``kin_update`` (D-019.7c).
+KINEMATICS_ROTATION = ('material_logarithmic',)
+
 #: Module of a model whose name does not follow ``ModelFamily.module`` (a model that keeps its
 #: historical module, ``model_module``): the frozen elasticity of the viscoelastic models.
 MODEL_MODULES = {('elas', 'frozen'): 'muscle_visco_frozen'}
@@ -1012,6 +1016,10 @@ _SIGMA = ModelArg('sigma', '2Osym', '', r'Stress tensor \( \boldsymbol\sigma \).
 _STRAIN = ModelArg('strain', '2Osym', '', r'Strain tensor \( \boldsymbol\varepsilon \).')
 _COEFS = ModelArg('coefs', 'type:visco_coefs', '', r'Coefficients of the time step (`visco_step_coefficients`).')
 _STATE_N = ModelArg('state_n', 'type:visco_state', '', r'Converged state at \( t_n \).')
+_STRAIN_E_N = ModelArg('strain_e_n', '3D2Osym', '', r'Elastic strain at \( t_n \).')
+_NB = ModelArg('nb', 'integer', '', r'Number of history tensors of `h_n` (at least the number of branches of '
+               r'the model, `visco_n_branches`).')
+_H_N = ModelArg('h_n', 'real', '(6, nb)', r'History tensors at \( t_n \) (Voigt order of `ten_3D2Osym`).')
 _KIN_STATE = ModelArg('state', 'type:kin_state', '', r'Kinematic state (`kin_update` or `kin_corot_update`).')
 
 #: Composition with an isotropic hardening law (viscoplastic and overstress families): the
@@ -1163,7 +1171,22 @@ MODEL_FAMILIES = {
                                         r'`state_n` with the branches of the model updated; the inactive '
                                         r'branches are copied from `state_n`.'),)),
                ModelFunc('n_branches', r'Number of history tensors of the state used by the model',
-                         ModelArg('res', 'integer', '', r'Number of branches.'), None)),
+                         ModelArg('res', 'integer', '', r'Number of branches.'), None),
+               # The same two kernels on the components of a state of any size (D-019.7b): the
+               # declared materials keep `visco_branches` history tensors, not MAX_VISCO_BRANCHES;
+               # `visco_freeze` and `visco_update` call them with the state of muscle_visco_types
+               ModelFunc('freeze_branches', r'`visco_freeze` on the components of a state with `nb` history '
+                         r'tensors',
+                         ModelArg('elas', 'type:elas_frozen', '', r'Frozen elasticity (`elas_*` generics of '
+                                  r'muscle_elasticity_laws).'), None,
+                         extra=(_COEFS, _STRAIN_E_N, _NB, _H_N)),
+               ModelFunc('update_branches', r'`visco_update` on the components of a state with `nb` history '
+                         r'tensors (the caller stores the elastic strain)',
+                         None, None,
+                         extra=(_COEFS, _STRAIN_E_N, _NB, _H_N,
+                                ModelArg('strain_e', '3D2Osym', '', r'Elastic strain at \( t_{n+1} \).')),
+                         outs=(ModelArg('h_np1', 'real', '(6, nb)', r'History tensors at \( t_{n+1} \): those '
+                                        r'of the model updated, the others copied from `h_n`.'),))),
         fd_scale=None, fd_lower=None, models=VISCOELASTIC_MODELS,
         support=('muscle_visco_types',)),
     # Kinematics (D-017.14): the configuration of a material point from its deformation gradient F.
@@ -1186,6 +1209,17 @@ MODEL_FAMILIES = {
                          extra=(ModelArg('F', '3D2O', '', r'Deformation gradient \( \mathbf{F} \).'),),
                          outs=(ModelArg('state', 'type:kin_state', '', r'Kinematic state (not valid when '
                                         r'`status` is not `STATUS_OK`).'),
+                               ModelArg('status', 'integer', '', r'`STATUS_OK` or `STATUS_INVALID_DEFORMATION` '
+                                        r'(muscle_status).')),
+                         models=KINEMATICS_F_MODELS),
+               ModelFunc('update_norot', r'`kin_update` without the polar decomposition (D-019.7c): the rotation R '
+                         r'of the state is the identity, unless the functions of the kinematics read it '
+                         r'(`KINEMATICS_ROTATION`: then the same state as `kin_update`); every other component and '
+                         r'`status` are the same bits',
+                         None, None,
+                         extra=(ModelArg('F', '3D2O', '', r'Deformation gradient \( \mathbf{F} \).'),),
+                         outs=(ModelArg('state', 'type:kin_state', '', r'Kinematic state without R (not valid '
+                                        r'when `status` is not `STATUS_OK`).'),
                                ModelArg('status', 'integer', '', r'`STATUS_OK` or `STATUS_INVALID_DEFORMATION` '
                                         r'(muscle_status).')),
                          models=KINEMATICS_F_MODELS),
@@ -1923,8 +1957,8 @@ MATERIAL_SOLVERS = {
 #: array (public generic ``material_rotate_hsv``, ``mat_rotate_hsv_<name>``, D-018.17c; only for a
 #: material whose input is a strain, ``material_strain_input``); ``init``: the material from a flat parameter
 #: array (public generic ``mat_init_<name>``, D-018.17a; ``material_props``).
-MATERIAL_PROCS = ('update', 'solve', 'step', 'iter', 'tangent', 'merit', 'pack', 'unpack', 'batch', 'point',
-                  'pointdd', 'rotate', 'init')
+MATERIAL_PROCS = ('update', 'solve', 'step', 'iter', 'tangent', 'merit', 'pack', 'unpack', 'batch', 'batchdev',
+                  'point', 'pointdd', 'rotate', 'init')
 
 #: Maximum length of a Fortran identifier (F2008).
 FORTRAN_NAME_MAX = 63
@@ -1980,17 +2014,37 @@ def material_state_size(mat):
 
 def material_state(mat, kind):
     """``(module, type)`` of the state of a point of the material (argument of ``mat_update``):
-    ``plastic_state_<k>`` of muscle_plastic_state, or with a viscoelastic elasticity
-    ``visco_plastic_state_<k>`` of muscle_material_state (components ``plastic`` and ``visco``)."""
+    ``plastic_state_<k>`` of muscle_plastic_state, or with a viscoelastic elasticity the type of the
+    material module (D-019.7b) ``mat_state_<name>_<k>``, components ``plastic`` and ``visco``
+    (``material_visco_state``)."""
     if material_visco(mat) is not None:
-        return 'muscle_material_state', f'visco_plastic_state_{kind}'
+        return material_module(mat.name), material_state_type(mat.name, kind)
     return 'muscle_plastic_state', f'plastic_state_{kind}'
+
+
+def material_state_type(name, kind):
+    """State type of a point of a material with a viscoelastic elasticity (D-019.7b), defined in the
+    material module: ``mat_state_<name>_<k>``."""
+    return f'mat_state_{name}_{kind}'
+
+
+def material_visco_state(name, kind):
+    """Viscoelastic state of a point of a material with a viscoelastic elasticity (D-019.7b): the
+    elastic strain and ``visco_branches`` history tensors, ``mat_vstate_<name>_<k>``."""
+    return f'mat_vstate_{name}_{kind}'
 
 
 def material_spatial_kin(mat):
     """Whether the material has a kinematics with a spatial strain measure (``KINEMATICS_SPATIAL``): its
     kernel rotates the converged plastic strain with the rotation increment (D-018.15f)."""
     return mat.kin in KINEMATICS_SPATIAL
+
+
+def material_kin_rotation(mat):
+    """Whether the point kernel of a finite strain material reads the polar rotation R of its kinematic
+    states (D-019.7c): a spatial strain measure (rotation increment, D-018.15f) or a kinematics of
+    ``KINEMATICS_ROTATION``; otherwise it calls ``kin_update_norot`` (no polar decomposition)."""
+    return material_spatial_kin(mat) or mat.kin in KINEMATICS_ROTATION
 
 
 def material_rotated(mat):
@@ -2012,6 +2066,13 @@ def material_batch(name):
     ``material_batch('cp_vm_swift')`` -> ``muscle_update_cp_vm_swift``. Its length is that of
     ``material_proc('unpack', name, k)``, so ``material_identifiers`` already bounds it."""
     return f'muscle_update_{name}'
+
+
+def material_batch_dev(name):
+    """Public generic of the batch API of a material on arrays given by their device addresses (D-019.7a,
+    every kind, specifics ``material_proc('batchdev', ...)``): ``material_batch_dev('cp_vm_swift')`` ->
+    ``muscle_update_cp_vm_swift_dev``. The longest generated name: listed in ``material_identifiers``."""
+    return material_batch(name) + '_dev'
 
 
 def material_point(name):
@@ -2040,9 +2101,9 @@ def material_strain_input(mat):
 def material_identifiers(name):
     """Every Fortran identifier generated for a material name (module, types, procedures) in every
     kind of ``KINDS``: what the name length is validated against."""
-    ids = [material_module(name), material_nstate(name)]
+    ids = [material_module(name), material_nstate(name), material_batch_dev(name)]
     for k in KINDS:
-        ids.append(material_type(name, k))
+        ids += [material_type(name, k), material_state_type(name, k), material_visco_state(name, k)]
         ids += [material_proc(p, name, k) for p in MATERIAL_PROCS]
     return ids
 

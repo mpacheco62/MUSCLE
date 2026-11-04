@@ -28,7 +28,7 @@ module muscle_kin_updated_lagrangian
     !! muscle_kin_laws.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D2O', k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$
-    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_euler_almansi, &
+    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_finite_update_norot, kin_euler_almansi, &
         kin_almansi_tangent, kin_volumetric_tangent
     implicit none
     private
@@ -46,6 +46,12 @@ contains
         call kin_finite_update(F, state, status)
         state%strain = kin_euler_almansi(state)
     end subroutine kin_update_updated_lagrangian_${k}$
+
+    $:MODEL_FUNCTION('kin', 'updated_lagrangian', 'update_norot', k, doc=r'`kin_update` with `kin_finite_update_norot` (R not computed).')
+
+        call kin_finite_update_norot(F, state, status)
+        state%strain = kin_euler_almansi(state)
+    end subroutine kin_update_norot_updated_lagrangian_${k}$
 
     $:MODEL_FUNCTION('kin', 'updated_lagrangian', 'to_cauchy', k, doc=r'The identity: the constitutive stress is the Cauchy stress.')
 

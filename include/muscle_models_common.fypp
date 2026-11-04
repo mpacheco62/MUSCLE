@@ -378,9 +378,11 @@ $:_MODEL_JOINT_HEADER(fam, model, k, d, None, None, True)
 #! Yield criteria (D-017.10c): exponent `e` of the power of two of the largest magnitude `m >= 0` of
 #! the principal values (e = 0 if m is 0 or NaN), so that `scale(x, -e)` (exact) brings them to
 #! [1/2, 1) before raising them to the exponent of the criterion: no power under- or overflows.
+#! The module uses `fp_exponent` of muscle_math_spectral_derivs (the intrinsic `exponent` does not load
+#! on a GPU with emulated FP64).
 #:def YIELD_SCALE_EXPONENT(e, m, k)
         ${e}$ = 0
-        if (${m}$ > 0.0_${k}$) ${e}$ = exponent(${m}$)
+        if (${m}$ > 0.0_${k}$) ${e}$ = fp_exponent(${m}$)
 #:enddef
 
 #! Family module: `use` of every registered model (before `implicit none`)

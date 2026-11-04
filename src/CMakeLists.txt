@@ -29,6 +29,22 @@ if(BLAS_LIBRARIES MATCHES "mkl" OR LAPACK_LIBRARIES MATCHES "mkl")
     message(STATUS "MUSCLE: Intel MKL detectado. Activando directiva USE_MKL.")
     list(APPEND MUSCLE_FYPP_DEFINES USE_MKL)
 endif()
+# GPU offload (MUSCLE_GPU, cmake/MuscleGpu.cmake): fypp define MUSCLE_GPU and the offload flags, PUBLIC
+# so that the tests and benchmarks compile and link with the same flags
+include(MuscleGpu)
+target_compile_options(muscle PUBLIC $<$<COMPILE_LANGUAGE:Fortran>:${MUSCLE_GPU_COMPILE_OPTIONS}>)
+target_link_options(muscle PUBLIC ${MUSCLE_GPU_LINK_OPTIONS})
+# Device image of the whole library for tools/audit_kernels.sh (gfortran: the offload compiler builds
+# the device code at link time; -save-temps keeps its assembly next to the probe, in audit/)
+if(MUSCLE_GPU_ENABLED AND CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+    add_executable(muscle_audit_probe EXCLUDE_FROM_ALL ${PROJECT_SOURCE_DIR}/tools/audit_kernels_probe.f90)
+    target_link_libraries(muscle_audit_probe PRIVATE muscle)
+    target_link_options(muscle_audit_probe PRIVATE
+                        "LINKER:--whole-archive" "$<TARGET_FILE:muscle>" "LINKER:--no-whole-archive"
+                        # absolute: the AMDGCN mkoffload embeds its image by a path relative to the temporaries
+                        -save-temps=obj -dumpdir ${CMAKE_BINARY_DIR}/audit/muscle_audit_probe.)
+    set_target_properties(muscle_audit_probe PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/audit)
+endif()
 # The tests (sibling directory) preprocess their templates with the same switches
 set(MUSCLE_FYPP_DEFINES "${MUSCLE_FYPP_DEFINES}" PARENT_SCOPE)
 
@@ -49,11 +65,20 @@ add_subdirectory(materials)
 
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-        target_compile_options(muscle PRIVATE 
+        if (WIN32)
+            target_compile_options(muscle PRIVATE
                                         /c /Qopenmp
                                         $<$<CONFIG:Debug>:/Z7>
                                         $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
                                 )
+        else()
+            # Linux: the Windows-style options above are read as file names
+            target_compile_options(muscle PRIVATE
+                                        -fpp -qopenmp -fPIC
+                                        $<$<CONFIG:Debug>:-g -O0>
+                                        $<$<CONFIG:Profile>:-Ofast -ipo -fp-model=fast -DNDEBUG>
+                                )
+        endif()
 
         # target_compile_options(muscle PRIVATE 
         #                                 -c -Qopenmp -fpic

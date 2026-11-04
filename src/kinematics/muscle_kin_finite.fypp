@@ -45,7 +45,7 @@
     &           ('kin_log_tangent', 'st, tangent', r'Material part of a stress in the material Hencky strain rotated with R, \( \mathbf{R}(\mathbb{A} : \delta\mathbf{H})\mathbf{R}^T \), \( \delta\mathbf{H} = \tfrac{1}{2}\,d\ln\mathbf{C}/d\mathbf{C} : 2\mathbf{F}^T\delta\boldsymbol\varepsilon\mathbf{F} \) (no division by J)'), &
     &           ('kin_spatial_log_tangent', 'st, tangent', r'Material part of a stress in the spatial Hencky strain, \( \mathbb{A} : \delta\mathbf{h} \), \( \delta\mathbf{h} = \tfrac{1}{2}\,d\ln\mathbf{b}/d\mathbf{b} : (\delta\boldsymbol\varepsilon\mathbf{b} + \mathbf{b}\delta\boldsymbol\varepsilon) \) (no division by J)'), &
     &           ('kin_almansi_tangent', 'st, tangent', r'Material part of a stress in the Euler-Almansi strain, \( \mathbb{A} : \delta\mathbf{e} \), \( \delta\mathbf{e} = \tfrac{1}{2}(\delta\boldsymbol\varepsilon\mathbf{b}^{-1} + \mathbf{b}^{-1}\delta\boldsymbol\varepsilon) \)')]
-#:set GENERICS = ['kin_finite_update', 'kin_log_measure'] + [m[0] for m in MEASURES] + [c[0] for c in CONV] + [t[0] for t in TANGENTS] + [r[0] for r in ROTATIONS] + [s[0] for s in SPATIAL]
+#:set GENERICS = ['kin_finite_update', 'kin_finite_update_norot', 'kin_log_measure'] + [m[0] for m in MEASURES] + [c[0] for c in CONV] + [t[0] for t in TANGENTS] + [r[0] for r in ROTATIONS] + [s[0] for s in SPATIAL]
 #:set TYPE_OF = lambda kind, k: S2(k) if kind == 'sym' else T2(k)
 
 module muscle_kin_finite
@@ -175,6 +175,11 @@ module muscle_kin_finite
         module procedure ${', '.join('kin_finite_update_' + k for k in REAL_KINDS)}$
     end interface kin_finite_update
 
+    interface kin_finite_update_norot
+        !! Kinematic state of a deformation gradient, except the strain and the rotation (every kind).
+        module procedure ${', '.join('kin_finite_update_norot_' + k for k in REAL_KINDS)}$
+    end interface kin_finite_update_norot
+
     interface kin_log_measure
         !! Hencky strain from the eigenvalues and eigenprojections of C or b (every kind).
         module procedure ${', '.join('kin_log_measure_' + k for k in REAL_KINDS)}$
@@ -239,12 +244,65 @@ contains
             !! Eigenvalues of \( \mathbf{C} \) (descending).
         type(${S2(k)}$), intent(out), optional :: proj_c(3)
             !! Eigenprojections of \( \mathbf{C} \) (`dEigenvalues_dTensor`).
-        real(${k}$) :: F11, F21, F31, F12, F22, F32, F13, F23, F33
-        real(${k}$) :: G11, G21, G31, G12, G22, G32, G13, G23, G33
         real(${k}$) :: eig(3)
         type(${S2(k)}$) :: proj(3), U_inv
         integer :: a
         logical :: ok
+
+        call finite_base_${k}$(F, state, ok)
+
+        ! R = F U^-1, U^-1 from the spectral decomposition of C
+        call sym_eigen_${k}$(state%C, eig, proj)
+        U_inv = 0.0_${k}$
+        do a = 1, 3
+            if (eig(a) > KIN_EIG_MIN_${k}$) then
+                U_inv = U_inv + (1.0_${k}$ / sqrt(eig(a))) * proj(a)
+            end if
+        end do
+        state%R = F * U_inv
+
+        status = finite_status_${k}$(ok, state%J, eig)
+#:if k == 'sp'
+        ! sp: the rotation of the scaled Newton iteration of the polar decomposition (D-018.15f)
+        if (status == STATUS_OK) state%R = polar_rotation_${k}$(F)
+#:endif
+        if (present(eig_c)) eig_c = eig
+        if (present(proj_c)) proj_c = proj
+    end subroutine kin_finite_update_${k}$
+
+    pure subroutine kin_finite_update_norot_${k}$(F, state, status)
+        !! `kin_finite_update` without the polar decomposition (D-019.7c), `real(${k}$)`: R is the identity
+        !! (for a caller that does not read it); every other component and `status` are the same bits
+        !! (the same eigenvalues of C, without the eigenprojections).
+        implicit none
+        @:DEVICE()
+        type(${T2(k)}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state (strain zero, R the identity; not valid unless `status` is `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (as `kin_finite_update`).
+        real(${k}$) :: eig(3)
+        logical :: ok
+
+        call finite_base_${k}$(F, state, ok)
+        call sym_eigenvalues_${k}$(state%C, eig)
+        status = finite_status_${k}$(ok, state%J, eig)
+    end subroutine kin_finite_update_norot_${k}$
+
+    pure subroutine finite_base_${k}$(F, state, ok)
+        !! The components of a kinematic state that do not need a spectral decomposition, `real(${k}$)`:
+        !! F, J, \( \mathbf{F}^{-1} \) (`ok`: `inverse` succeeded), C, b and \( \mathbf{b}^{-1} \).
+        implicit none
+        @:DEVICE()
+        type(${T2(k)}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(inout) :: state
+            !! Kinematic state (the other components are not touched).
+        logical, intent(out) :: ok
+            !! `inverse` of F succeeded.
+        real(${k}$) :: F11, F21, F31, F12, F22, F32, F13, F23, F33
+        real(${k}$) :: G11, G21, G31, G12, G22, G32, G13, G23, G33
 
         state%F = F
         state%J = det(F)
@@ -266,30 +324,27 @@ contains
                         F11*F21 + F12*F22 + F13*F23, F21*F31 + F22*F32 + F23*F33, F11*F31 + F12*F32 + F13*F33]
         state%b_inv%vals = [G11*G11 + G21*G21 + G31*G31, G12*G12 + G22*G22 + G32*G32, G13*G13 + G23*G23 + G33*G33, &
                             G11*G12 + G21*G22 + G31*G32, G12*G13 + G22*G23 + G32*G33, G11*G13 + G21*G23 + G31*G33]
+    end subroutine finite_base_${k}$
 
-        ! R = F U^-1, U^-1 from the spectral decomposition of C
-        call sym_eigen_${k}$(state%C, eig, proj)
-        U_inv = 0.0_${k}$
-        do a = 1, 3
-            if (eig(a) > KIN_EIG_MIN_${k}$) then
-                U_inv = U_inv + (1.0_${k}$ / sqrt(eig(a))) * proj(a)
-            end if
-        end do
-        state%R = F * U_inv
+    pure function finite_status_${k}$(ok, J, eig) result(status)
+        !! Status of a kinematic state (D-017.14a), `real(${k}$)`; NaN fails every test.
+        implicit none
+        @:DEVICE()
+        logical, intent(in) :: ok
+            !! `inverse` of F succeeded.
+        real(${k}$), intent(in) :: J
+            !! \( \det\mathbf{F} \).
+        real(${k}$), intent(in) :: eig(3)
+            !! Eigenvalues of C.
+        integer :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION`.
 
-        ! Status (D-017.14a); NaN fails every test
-        if (ok .and. state%J > 0.0_${k}$ .and. all(eig > KIN_EIG_MIN_${k}$)) then
+        if (ok .and. J > 0.0_${k}$ .and. all(eig > KIN_EIG_MIN_${k}$)) then
             status = STATUS_OK
-#:if k == 'sp'
-            ! sp: the rotation of the scaled Newton iteration of the polar decomposition (D-018.15f)
-            state%R = polar_rotation_${k}$(F)
-#:endif
         else
             status = STATUS_INVALID_DEFORMATION
         end if
-        if (present(eig_c)) eig_c = eig
-        if (present(proj_c)) proj_c = proj
-    end subroutine kin_finite_update_${k}$
+    end function finite_status_${k}$
 
     pure function kin_log_measure_${k}$(eig, proj) result(res)
         !! \( \sum_a \tfrac{1}{2}\ln\lambda_a\,\mathbf{P}_a \) over the eigenvalues above
@@ -437,16 +492,42 @@ contains
             !! Eigenvalues (descending).
         type(${S2(k)}$), intent(out) :: proj(3)
             !! Eigenprojections.
-        real(${k}$) :: gap(2)
 
         eig = eigenvals(s)
-        gap = abs([eig(1) - eig(2), eig(2) - eig(3)])/max(abs(eig(1)), abs(eig(3)), EPS_ABS_${k}$)
-        if (any(gap >= KIN_JACOBI_GAP_LO_${k}$ .and. gap < KIN_JACOBI_GAP_HI_${k}$)) then
+        if (jacobi_band_${k}$(eig)) then
             call jacobi_eigen_${k}$(s, eig, proj)
         else
             proj = dEigenvalues_dTensor(s, eig)
         end if
     end subroutine sym_eigen_${k}$
+
+    pure subroutine sym_eigenvalues_${k}$(s, eig)
+        !! The eigenvalues of `sym_eigen`, `real(${k}$)` (the same bits), without the eigenprojections of the
+        !! closed form.
+        implicit none
+        @:DEVICE()
+        type(${S2(k)}$), intent(in) :: s
+            !! Symmetric tensor.
+        real(${k}$), intent(out) :: eig(3)
+            !! Eigenvalues (descending).
+        type(${S2(k)}$) :: proj(3)
+
+        eig = eigenvals(s)
+        if (jacobi_band_${k}$(eig)) call jacobi_eigen_${k}$(s, eig, proj)
+    end subroutine sym_eigenvalues_${k}$
+
+    pure logical function jacobi_band_${k}$(eig)
+        !! A relative gap between consecutive eigenvalues of the closed form lies in
+        !! [`KIN_JACOBI_GAP_LO_${k}$`, `KIN_JACOBI_GAP_HI_${k}$`): `sym_eigen` uses Jacobi rotations, `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: eig(3)
+            !! Eigenvalues of the closed form (descending).
+        real(${k}$) :: gap(2)
+
+        gap = abs([eig(1) - eig(2), eig(2) - eig(3)])/max(abs(eig(1)), abs(eig(3)), EPS_ABS_${k}$)
+        jacobi_band_${k}$ = any(gap >= KIN_JACOBI_GAP_LO_${k}$ .and. gap < KIN_JACOBI_GAP_HI_${k}$)
+    end function jacobi_band_${k}$
 
     pure subroutine jacobi_eigen_${k}$(s, eig, proj)
         !! Eigenvalues and eigenprojections of a symmetric tensor by cyclic Jacobi rotations
@@ -527,7 +608,7 @@ contains
         real(${k}$) :: x(3, 3), cof(3, 3), d, g
         integer :: it
 
-        x = reshape(F%vals, [3, 3])
+        @:VEC9_TO_MAT33(x, F%vals)
         do it = 1, POLAR_ITERATIONS
             cof(1, :) = [x(2, 2)*x(3, 3) - x(2, 3)*x(3, 2), x(2, 3)*x(3, 1) - x(2, 1)*x(3, 3), &
                          x(2, 1)*x(3, 2) - x(2, 2)*x(3, 1)]
@@ -541,7 +622,7 @@ contains
             ! X^-T = cof(X)/det(X)
             x = 0.5_${k}$*(g*x + cof/(g*d))
         end do
-        R%vals = reshape(x, [9])
+        @:MAT33_TO_VEC9(R%vals, x)
     end function polar_rotation_${k}$
 #:endif
 
@@ -695,7 +776,7 @@ contains
             !! Cauchy stress.
         type(${C4(k)}$) :: res
             !! Geometric term.
-        real(${k}$) :: lam(3), u(3), proj(3, 3, 3), r(3, 3), s(3, 3), x(3, 3), om(3, 3), w
+        real(${k}$) :: lam(3), u(3), proj(3, 3, 3), r(3, 3), s(3, 3), x(3, 3), om(3, 3), w, t(3, 3)
         logical :: active(3)
         integer :: a, b, c
 
@@ -703,11 +784,17 @@ contains
         if (is_identity_${k}$(st%C)) return
         call spectral_${k}$(st%C, lam, proj, active)
         u = sqrt(merge(lam, 0.0_${k}$, active))
-        r = reshape(st%R%vals, [3, 3])
+        @:VEC9_TO_MAT33(r, st%R%vals)
         ! Material frame: R^T (Omega sigma - sigma Omega) R = om s - s om, s = R^T sigma R
-        s = matmul(transpose(r), matmul(mat33_${k}$(sigma), r))
+        ! Function results and inner products into locals: as matmul arguments they are heap
+        ! temporaries in device code (malloc, tools/audit_kernels.sh); same operations
+        x = mat33_${k}$(sigma)
+        t = matmul(x, r)
+        s = matmul(transpose(r), t)
         do c = 1, 6
-            x = matmul(transpose(r), matmul(unit_strain_${k}$(c), r))
+            x = unit_strain_${k}$(c)
+            t = matmul(x, r)
+            x = matmul(transpose(r), t)
             om = 0.0_${k}$
             do a = 1, 3
                 do b = 1, 3
@@ -716,7 +803,9 @@ contains
                     om = om + w*matmul(proj(:, :, a), matmul(x, proj(:, :, b)))
                 end do
             end do
-            res%vals(:, c) = voigt6_${k}$(matmul(r, matmul(matmul(om, s) - matmul(s, om), transpose(r))))
+            t = matmul(matmul(om, s) - matmul(s, om), transpose(r))
+            x = matmul(r, t)
+            res%vals(:, c) = voigt6_${k}$(x)
         end do
     end function kin_spin_tangent_${k}$
 
@@ -733,7 +822,7 @@ contains
             !! Constitutive tangent \( d\boldsymbol\tau_R/d\mathbf{H} \).
         type(${C4(k)}$) :: res
             !! Material part of the spatial tangent (times J).
-        real(${k}$) :: lam(3), proj(3, 3, 3), r(3, 3), x(3, 3), dh(3, 3), w(3, 3)
+        real(${k}$) :: lam(3), proj(3, 3, 3), r(3, 3), x(3, 3), dh(3, 3), w(3, 3), t(3, 3)
         logical :: active(3)
         type(${S2(k)}$) :: ds, dsym
         integer :: a, b, c
@@ -749,9 +838,13 @@ contains
                 if (active(a) .and. active(b)) w(a, b) = log_ratio_${k}$(lam(a), lam(b))*sqrt(lam(a)*lam(b))
             end do
         end do
-        r = reshape(st%R%vals, [3, 3])
+        @:VEC9_TO_MAT33(r, st%R%vals)
         do c = 1, 6
-            x = matmul(transpose(r), matmul(unit_strain_${k}$(c), r))
+            ! Function results and inner products into locals (heap temporaries in device code, as in
+            ! kin_spin_tangent)
+            x = unit_strain_${k}$(c)
+            t = matmul(x, r)
+            x = matmul(transpose(r), t)
             dh = 0.0_${k}$
             do a = 1, 3
                 do b = 1, 3
@@ -760,7 +853,10 @@ contains
             end do
             dsym%vals = voigt6_${k}$(dh)
             ds = tangent .ddot. dsym
-            res%vals(:, c) = voigt6_${k}$(matmul(r, matmul(mat33_${k}$(ds), transpose(r))))
+            x = mat33_${k}$(ds)
+            t = matmul(x, transpose(r))
+            x = matmul(r, t)
+            res%vals(:, c) = voigt6_${k}$(x)
         end do
     end function kin_log_tangent_${k}$
 

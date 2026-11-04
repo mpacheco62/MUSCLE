@@ -33,12 +33,11 @@ module test_mat_point_cases
     use muscle_elasticity_linear, only : elas_linear_init
     use muscle_visco_maxwell, only : visco_maxwell_init
     use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
-    use muscle_material_state, only : ${', '.join('visco_plastic_state_' + k for k in REAL_KINDS)}$
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
 #:for m, x, extra in MATS
     use muscle_mat_${m}$, only : mat_update, ${'mat_step, ' if is_visco(extra) else ''}$mat_pack_${m}$, mat_unpack_${m}$, &
         muscle_point_${m}$, ${'mat_rotate_hsv_' + m + ', ' if x == 'eps' else ''}$MAT_${m.upper()}$_NSTATE, &
-        ${', '.join('mat_' + m + '_' + k for k in REAL_KINDS)}$
+        ${', '.join('mat_' + m + '_' + k for k in REAL_KINDS)}$${''.join(', mat_state_' + m + '_' + k for k in REAL_KINDS) if is_visco(extra) else ''}$
 #:endfor
     use muscle_test_utils, only : check_true, check_approx
     implicit none
@@ -92,7 +91,7 @@ contains
     end function rotation_${k}$
 #:for m, x, extra in MATS
 #:set NS = 'MAT_' + m.upper() + '_NSTATE'
-#:set ST = 'visco_plastic_state_' + k if is_visco(extra) else 'plastic_state_' + k
+#:set ST = 'mat_state_' + m + '_' + k if is_visco(extra) else 'plastic_state_' + k
 #:set L = m + ' (' + k + ')'
 #:set XA = 'x0(i, :), x1(i, :)' if x == 'F' else 'x0(i, :)'
 #:set CO = 'coefs, ' if is_visco(extra) else ''

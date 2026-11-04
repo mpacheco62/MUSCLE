@@ -1,0 +1,197 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "mat_golden_common.fypp"
+#! One material and kind per executable (fypp define TARGET_CASE = '<material>_<kind>', the cases of
+#! tests/gpu/target_cases.py: materials
+#! that together use every model of every family and every solver, with the parameters, time step and
+#! yield strain of one of their golden cases), so that each device image is small. The batch API (and
+#! the finite strain kinematics) are covered by test_mat_batch.fypp.
+#:set TARGET_CASES = muscle_meta.load_python_file('../gpu/target_cases.py', base=_THIS_FILE_)
+#:set MAT_CASE, K = TARGET_CASE.rsplit('_', 1)
+#:set CASES = [TARGET_CASES.material_case(MAT_CASE)]
+#! One kind per executable too (a dp image that the emulated FP64 of a GPU cannot run does not stop sp)
+#:set REAL_KINDS = [K]
+#:set MATS = [c[0] for c in CASES]
+#! Packed output of a point: stress, tangent, history (mat_pack_<name>)
+#:set NOUT = lambda m: '42 + ' + muscle_meta.material_nstate(m)
+
+module test_mat_target_points
+    !! Point procedures (kernels) of the materials under test, every kind: `mat_update` from a zero
+    !! history, results packed.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
+#:if any(muscle_meta.material_visco(muscle_meta.material(m)) for m in MATS)
+    use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
+#:endif
+#:for mod in sorted({muscle_meta.material_state(muscle_meta.material(m), 'dp')[0] for m in MATS})
+    use ${mod}$, only : ${', '.join(sorted({state_t(m, k) for m in MATS for k in REAL_KINDS if muscle_meta.material_state(muscle_meta.material(m), k)[0] == mod}))}$
+#:endfor
+#:for m in MATS
+    use ${muscle_meta.material_module(m)}$, only : mat_update, mat_pack_${m}$, mat_unpack_${m}$, &
+        ${muscle_meta.material_nstate(m)}$, ${', '.join(muscle_meta.material_type(m, k) for k in REAL_KINDS)}$
+#:endfor
+    implicit none
+    private
+#:for k in REAL_KINDS
+#:for m in MATS
+    public :: point_${m}$_${k}$
+#:endfor
+#:endfor
+
+contains
+#:for k in REAL_KINDS
+#:for m in MATS
+#:set NS = muscle_meta.material_nstate(m)
+
+    pure subroutine point_${m}$_${k}$(mat, ${coefs_arg(m, 'coefs')[2:] + ', ' if coefs_arg(m, 'coefs') else ''}$e6, dt, out, status, iters)
+        !! `mat_update` of `${m}$` at a point from a zero history, `real(${k}$)`: stress, tangent and
+        !! history packed in `out`.
+        @:DEVICE()
+        type(${muscle_meta.material_type(m, k)}$), intent(in) :: mat
+#:if coefs_arg(m, 'coefs')
+        type(visco_coefs_${k}$), intent(in) :: coefs
+#:endif
+        real(${k}$), intent(in) :: e6(6)
+        real(${k}$), intent(in) :: dt
+        real(${k}$), intent(out) :: out(${NOUT(m)}$)
+        integer, intent(out) :: status
+        integer, intent(out) :: iters
+        type(${tname('3D2Osym', k)}$) :: strain, stress
+        type(${tname('3D4O2sym', k)}$) :: tangent
+        type(${state_t(m, k)}$) :: state_n, state_np1
+        real(${k}$) :: hsv(${NS}$)
+
+        hsv = 0.0_${k}$
+        call mat_unpack_${m}$(hsv, state_n)
+        strain%vals = e6
+        call mat_update(mat, strain, dt${coefs_arg(m, 'coefs')}$, state_n, state_np1, stress, tangent, status, iters)
+        call mat_pack_${m}$(state_np1, hsv)
+        out(1:6) = stress%vals
+        out(7:42) = reshape(tangent%vals, [36])
+        out(43:) = hsv
+    end subroutine point_${m}$_${k}$
+#:endfor
+#:endfor
+
+end module test_mat_target_points
+
+program test_mat_kernels_target
+    !! Point kernels of the declared materials (`mat_update`) inside an `!$omp target teams distribute
+    !! parallel do` region and on the CPU, in every kind (testing.md, GPU), for materials that use every
+    !! model of every family and every solver (one per executable, a golden case of each, see
+    !! tests/gpu/target_cases.py): one increment from the
+    !! zero state to the strains f a_y D1 + 0.3 a_y sin(i) D2 of the golden directions, f from f0 to 4
+    !! (the single first increment of the golden tests; f0 in tests/gpu/target_cases.py): elastic and plastic points (the rate-dependent
+    !! laws flow from the smallest strains). On the host (CPU builds,
+    !! host fallback) bit for bit; on a device `check_target` (TOL_DEVICE_<k> relative to each point) on
+    !! each block of the output (stress, tangent, each part of the history; target_cases.py) on its own.
+    !! The plastic strain blocks (strain_p, ep) relative to max(|strain_p|, |strain|) of the point: they
+    !! come from strain_p = strain - C^-1:stress, whose rounding scales with the total strain (barely
+    !! plastic points: |strain_p| << |strain|).
+    !! Statuses and iterations exact; the points that do not converge on the CPU (sp of
+    !! tm_jcfull_vm_vocemod, as in its golden test) are left out of the comparison of the values.
+    use omp_lib, only : omp_is_initial_device
+    $:MAT_TEST_USES(MATS)
+    use muscle_test_utils, only : check_target, check_target_ran
+    use muscle_test_solver_golden, only : FIRST_FACTOR
+    use muscle_tensors, only : ten_3D2Osym_dp
+    use test_mat_target_points
+    implicit none
+
+    $:MAT_TEST_DECLS()
+    integer, parameter :: NPTS = 24
+        !! Points of the strain ramp.
+
+    passed = .true.
+#:for k in REAL_KINDS
+#:for m in MATS
+    call run_${m}$_${k}$()
+#:endfor
+#:endfor
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_mat_kernels_target'
+        stop 1
+    end if
+    print '(a)', ' PASS: test_mat_kernels_target'
+
+contains
+
+    pure function strain_ramp(i, a, f0) result(e)
+        !! Strain of point `i` (dp) for the yield strain `a`: f a D1 + 0.3 a sin(i) D2, f from f0 to 4 at
+        !! the midpoints of NPTS intervals (none at f = 1, on the yield surface of the golden directions).
+        integer, intent(in) :: i
+        real(dp), intent(in) :: a
+        real(dp), intent(in) :: f0
+        real(dp) :: e(6)
+        type(ten_3D2Osym_dp) :: d1, d2
+
+        ! d1 = FIRST_FACTOR D1; d2 = D2, from the last step 2.6 D1 + 25 D2 of the golden sequence
+        d1 = first_strain(1.0_dp)
+        d2 = seq_strain(NSTEP - 1, 1.0_dp)
+        d2%vals = (d2%vals - 2.6_dp*d1%vals/FIRST_FACTOR)/25.0_dp
+        e = ((f0 + (FIRST_FACTOR - f0)*(real(i, dp) - 0.5_dp)/real(NPTS, dp))/FIRST_FACTOR*a)*d1%vals &
+            + (0.3_dp*a*sin(real(i, dp)))*d2%vals
+    end function strain_ramp
+
+$:MAT_CASE_PROCS(MATS, fd_check=False)
+#:for k in REAL_KINDS
+#:for m, elas, visc, hard, yld, dt, a_y, f0 in CASES
+#:set CO = coefs_arg(m, 'coefs')
+
+    subroutine run_${m}$_${k}$()
+        !! `${m}$` in a target region and on the CPU, `real(${k}$)`.
+        real(${k}$), parameter :: DT = ${dt}$_${k}$
+        type(${muscle_meta.material_type(m, k)}$) :: mat
+#:if CO
+        type(visco_coefs_${k}$) :: coefs
+#:endif
+        real(${k}$) :: e(6, NPTS), emax(NPTS), out_t(${NOUT(m)}$, NPTS), out_c(${NOUT(m)}$, NPTS)
+        integer :: st_t(NPTS), st_c(NPTS), it_t(NPTS), it_c(NPTS), i, status
+        logical :: host
+
+        call make_${m}$_${k}$(golden_case(0, '${m}$', '${elas}$', '${visc}$', '${hard}$', '${yld}$', 200, ${dt}$_dp, &
+            ${a_y}$_dp), mat)
+#:if CO
+        call mat_step(mat, DT, coefs, status)
+        call check_true(passed, '${m}$ time step (${k}$)', status == STATUS_OK)
+#:else
+        status = STATUS_OK
+#:endif
+        do i = 1, NPTS
+            e(:, i) = real(strain_ramp(i, ${a_y}$_dp, ${f0}$_dp), ${k}$)
+            emax(i) = maxval(abs(e(:, i)))
+        end do
+
+        host = .true.
+        !$omp target teams distribute parallel do map(to: mat${CO}$, e) map(from: out_t, st_t, it_t) &
+        !$omp& map(tofrom: host)
+        do i = 1, NPTS
+            if (i == 1) host = omp_is_initial_device()
+            call point_${m}$_${k}$(mat${CO}$, e(:, i), DT, out_t(:, i), st_t(i), it_t(i))
+        end do
+        !$omp end target teams distribute parallel do
+        do i = 1, NPTS
+            call point_${m}$_${k}$(mat${CO}$, e(:, i), DT, out_c(:, i), st_c(i), it_c(i))
+        end do
+
+        call check_target_ran(passed, '${m}$ (${k}$)', host)
+        call check_true(passed, '${m}$ (${k}$): converged plastic points', any(it_c > 0 .and. st_c == STATUS_OK))
+        call check_true(passed, '${m}$ (${k}$): target = CPU statuses and iterations', &
+                        all(st_t == st_c) .and. all(it_t == it_c))
+        do i = 1, NPTS
+            if (st_c(i) /= STATUS_OK) then
+                out_t(:, i) = 0.0_${k}$
+                out_c(:, i) = 0.0_${k}$
+            end if
+        end do
+#:for b, lo, hi in TARGET_CASES.material_output_blocks(m)
+        call check_target(passed, '${m}$ (${k}$): target = CPU, ${b}$', &
+                          out_t(${lo}$:${hi}$, :), out_c(${lo}$:${hi}$, :), .not. host${', scale_min=emax' if b in ('strain_p', 'ep') else ''}$)
+#:endfor
+    end subroutine run_${m}$_${k}$
+#:endfor
+#:endfor
+
+end program test_mat_kernels_target

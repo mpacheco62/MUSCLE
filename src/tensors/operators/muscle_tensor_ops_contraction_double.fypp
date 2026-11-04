@@ -95,8 +95,10 @@ contains
 #:endcall OP_FUNCTION
 #:elif e.tag_res.endswith('2Osym') and e.tag_b.endswith('4O2sym')
 #! ------------------------------------------------------------------------------------------
-#! 2Osym : 4O2sym, C_J = (w_I a_I) A_IJ: weighted vector times the Voigt matrix (matmul, as the
-#! original)
+#! 2Osym : 4O2sym, C_J = (w_I a_I) A_IJ: weighted vector times the Voigt matrix, I ascending. Written
+#! out instead of the original matmul (D-019.4c): a vector-matrix matmul in a `declare target`
+#! procedure gives broken device code with ifx 2026.2 (spir64); the matmul of libgfortran rounded
+#! differently (<= 2.2e-16 relative to the largest component of the result).
 #! ------------------------------------------------------------------------------------------
 #:set la = op_layout(e.tag_a)
 #:call OP_FUNCTION(e, 'Double contraction \\(\\mathbf{A} : \\mathbb{B}\\), \\( C_{kl} = A_{ij} B_{ijkl} \\)')
@@ -105,7 +107,9 @@ contains
 #:for c in la.comps
         a_weighted(${c.pos[0]}$) = ${op_weight('a%vals({})'.format(c.pos[0]), c.mult, k)}$
 #:endfor
-        res%vals = matmul(a_weighted, b%vals)
+#:for j in la.comps
+        ${assign_terms('res%vals({})'.format(j.pos[0]), ['a_weighted({0})*b%vals({0}, {1})'.format(i.pos[0], j.pos[0]) for i in la.comps], 8)}$
+#:endfor
 #:endcall OP_FUNCTION
 #:elif e.tag_res.endswith('2Osym')
 #! ------------------------------------------------------------------------------------------

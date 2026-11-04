@@ -38,7 +38,7 @@ module muscle_visco_kelvin
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER, STATUS_INVALID_TIME_STEP
     use muscle_tensors, only : ${', '.join(T2(k) for k in REAL_KINDS)}$, iden_2O, operator(.dev.), operator(.ddot.), &
         operator(*), operator(-)
-    use muscle_visco_types, only : ${', '.join('visco_state_{0}, visco_coefs_{0}'.format(k) for k in REAL_KINDS)}$
+    use muscle_visco_types, only : MAX_VISCO_BRANCHES, ${', '.join('visco_state_{0}, visco_coefs_{0}'.format(k) for k in REAL_KINDS)}$
     use muscle_visco_frozen, only : ${', '.join('elas_frozen_' + k for k in REAL_KINDS)}$
     implicit none
     private
@@ -84,21 +84,32 @@ contains
         coefs%weight(2) = 2.0_${k}$*prm%mu_v/dt
     end subroutine visco_step_coefficients_kelvin_${k}$
 
-    $:MODEL_FUNCTION('visco', 'kelvin', 'freeze', k, doc=r'History stress \(\sigma^{hist}_n = -(\zeta/\Delta t)\,\mathrm{tr}(\varepsilon_n)\,\mathbf{I} - (2\mu_v/\Delta t)\,\mathrm{dev}(\varepsilon_n)\), constant over the step.')
-        type(${T2(k)}$) :: e_n
+    $:MODEL_FUNCTION('visco', 'kelvin', 'freeze', k, doc=r'History stress \(\sigma^{hist}_n = -(\zeta/\Delta t)\,\mathrm{tr}(\varepsilon_n)\,\mathbf{I} - (2\mu_v/\Delta t)\,\mathrm{dev}(\varepsilon_n)\), constant over the step (`visco_freeze_branches`).')
 
-        e_n = state_n%strain_e
-        elas%k_alg = coefs%k_alg
-        elas%g_alg = coefs%g_alg
-        elas%stress_hist = -coefs%weight(2)*(.dev. e_n) - (coefs%weight(1)*(e_n .ddot. iden_2O()))*iden_2O()
+        elas = visco_freeze_branches_kelvin_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h)
     end function visco_freeze_kelvin_${k}$
 
     $:MODEL_FUNCTION('visco', 'kelvin', 'update', k, doc=r'Stores the elastic strain; there are no branch tensors (the other components of `state_n` are carried over).')
 
-        state_np1 = state_n
         state_np1%n_branches = 0
+        call visco_update_branches_kelvin_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h, strain_e, &
+            state_np1%h)
         state_np1%strain_e = strain_e
     end subroutine visco_update_kelvin_${k}$
+
+    $:MODEL_FUNCTION('visco', 'kelvin', 'freeze_branches', k, doc=r'History stress \(\sigma^{hist}_n = -(\zeta/\Delta t)\,\mathrm{tr}(\varepsilon_n)\,\mathbf{I} - (2\mu_v/\Delta t)\,\mathrm{dev}(\varepsilon_n)\) (no history tensors: `h_n` is not used).')
+        type(${T2(k)}$) :: e_n
+
+        e_n = strain_e_n
+        elas%k_alg = coefs%k_alg
+        elas%g_alg = coefs%g_alg
+        elas%stress_hist = -coefs%weight(2)*(.dev. e_n) - (coefs%weight(1)*(e_n .ddot. iden_2O()))*iden_2O()
+    end function visco_freeze_branches_kelvin_${k}$
+
+    $:MODEL_FUNCTION('visco', 'kelvin', 'update_branches', k, doc=r'No branch tensors: `h_np1` is a copy of `h_n` (the elastic strain is the whole history of the model).')
+
+        h_np1 = h_n
+    end subroutine visco_update_branches_kelvin_${k}$
 
     $:MODEL_FUNCTION('visco', 'kelvin', 'n_branches', k, doc='No history tensors: the elastic strain at t_n is the whole history of the model.')
 

@@ -4,8 +4,7 @@
 #! muscle_tensor_functions (D-011): the free generics of every family through one `use`, equal
 #! (tol = 0) to the type-bound API, and not leaked by muscle_tensors.
 #! (family, functions compared with their type-bound counterpart)
-#:set CASES = [('2Osym', ['norm', 'det', 'square']), ('2O', ['norm', 'det', 'transpose']), &
-                ('4O3sym', ['norm']), ('4O2sym', ['norm', 'convert_3sym']), ('4O', ['norm', 'convert_2sym'])]
+#:set CASES = muscle_meta.load_python_file('../gpu/target_cases.py', base=_THIS_FILE_).TENSOR_FUNCTIONS
 
 module test_functions_lib
     use muscle_kinds, only: sp, dp

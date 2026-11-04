@@ -1,3 +1,5 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 module test_muscle_vp_models_mod
     ! Fits of the viscoplastic laws against Python reference values, through the kernel API (the
     ! Johnson-Cook law receives the modified Voce hardening values evaluated by hard_stress, D-017.6b).

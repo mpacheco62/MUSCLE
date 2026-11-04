@@ -5,16 +5,18 @@
 #!
 #! Kernel routines of the math modules called from a `pure`, `@:DEVICE()` point procedure inside an
 #! `!$omp target teams distribute parallel do` region, in every kind, compared bit for bit with the
-#! same procedure called on the CPU outside the region (testing.md, GPU): eigenvals,
-#! spectral_decomposition, dEigenvalues_dTensor, the FD_GRAD macro of muscle_fd.fypp and LU6SOLVE.
+#! same procedure called on the CPU outside the region (testing.md, GPU): eigenvals (also alone, on
+#! exactly and nearly repeated and triple roots, PROBLEMAS.md: it divided by zero with a repeated largest root),
+#! spectral_decomposition, dEigenvalues_dTensor, the FD_GRAD macro of muscle_fd.fypp and LU6SOLVE; and
+#! fp_exponent (the device replacement of the intrinsic exponent) against the intrinsic on the CPU, for
+#! zeros, subnormals, normals, Inf and NaN.
 #!
-#! Until the GPU build exists (Phase 8, CMake option MUSCLE_GPU) the library carries no
-#! `declare target` (@:DEVICE() is empty without the fypp define MUSCLE_GPU), so this test is compiled
-#! with host fallback only (-foffload=disable with gfortran, tests/math/CMakeLists.txt): the target
-#! region runs on the initial device and the comparison is exact. With MUSCLE_GPU (Phase 8) the
-#! same test is meant to run on the device: the host check and the exact equality then become a
-#! measured tolerance (other math library, FMA; eigenvectors of repeated roots are arbitrary).
-#:set NOUT = 3 + 3 + 9 + 18 + 6 + 6
+#! Without MUSCLE_GPU the library carries no `declare target` (@:DEVICE() is empty), so this test is
+#! compiled with host fallback only (-foffload=disable with gfortran, tests/math/CMakeLists.txt): the
+#! target region runs on the initial device and the comparison is exact. With MUSCLE_GPU the region
+#! runs on the device (OMP_TARGET_OFFLOAD) and `check_target` compares each point within
+#! TOL_DEVICE_<k> (other math library, FMA).
+#:set NOUT = 3 + 3 + 9 + 18 + 6 + 6 + 1
 
 module test_math_kernels_funcs
     !! Point procedures (kernels) that call the math kernel routines, for every kind.
@@ -29,7 +31,7 @@ module test_math_kernels_funcs
     integer, parameter, public :: NOUT = ${NOUT}$
         !! Size of the packed output of a point.
 #:for k in REAL_KINDS
-    public :: point_kernel_${k}$
+    public :: point_kernel_${k}$, eig_kernel_${k}$
 #:endfor
 
 contains
@@ -44,16 +46,27 @@ contains
         res = (s .ddot. s) + exp(0.1_${k}$*(s%vals(1) + s%vals(2) + s%vals(3)))
     end function phi_${k}$
 
+    pure subroutine eig_kernel_${k}$(x, lam)
+        !! eigenvals alone of the `${T2}$` with Voigt `x`.
+        @:DEVICE()
+        real(${k}$), intent(in) :: x(6)
+        real(${k}$), intent(out) :: lam(3)
+        type(${T2}$) :: t
+
+        t%vals = x
+        lam = eigenvals(t)
+    end subroutine eig_kernel_${k}$
+
     pure subroutine point_kernel_${k}$(x, out, ok)
         !! Everything a constitutive kernel point would call from the math modules, in `real(${k}$)`;
         !! results packed in `out` (eigenvals, decomposition lam and V, dEigenvalues_dTensor, FD_GRAD of
-        !! phi, solution of a 6x6 system built from x).
+        !! phi, solution of a 6x6 system built from x and its condition number).
         @:DEVICE()
         real(${k}$), intent(in) :: x(6)
         real(${k}$), intent(out) :: out(NOUT)
         logical, intent(out) :: ok
         type(${T2}$) :: t, h(3), g
-        real(${k}$) :: lam_e(3), lam(3), v(3,3), a(6,6), sol(6)
+        real(${k}$) :: lam_e(3), lam(3), v(3,3), a(6,6), sol(6), kappa
         integer :: i, j
 
         t%vals = x
@@ -67,7 +80,7 @@ contains
             end do
             a(j, j) = a(j, j) + 4.0_${k}$ + x(j)
         end do
-        call LU6SOLVE(a, x, sol, ok)
+        call LU6SOLVE(a, x, sol, ok, kappa)
         out(1:3) = lam_e
         out(4:6) = lam
         out(7:15) = reshape(v, [9])
@@ -76,6 +89,7 @@ contains
         out(28:33) = h(3)%vals
         out(34:39) = g%vals
         out(40:45) = sol
+        out(46) = kappa
     end subroutine point_kernel_${k}$
 #:endfor
 
@@ -85,9 +99,11 @@ program test_math_kernels_target
     !! Runs the point kernels in a target region and on the CPU; the results must be identical.
     use omp_lib, only : omp_is_initial_device
     use muscle_kinds, only : sp, dp
-    use muscle_test_utils, only : check_approx, check_true
+    use muscle_test_utils, only : check_true, check_target, check_target_ran, ${', '.join('TOL_DEVICE_' + k for k in REAL_KINDS)}$
+    use muscle_kinds, only : ${', '.join('FD_STEP_CEN_' + k + ', FD_STEP_ZERO_' + k for k in REAL_KINDS)}$
     use muscle_test_helpers, only : park_miller, rnd, record
     use test_math_kernels_funcs
+    use muscle_math_spectral_derivs, only : fp_exponent
     implicit none
 
     integer, parameter :: NPTS = 64
@@ -96,11 +112,95 @@ program test_math_kernels_target
     code = 0
 #:for i, k in enumerate(REAL_KINDS)
     call record(test_target_${k}$(), ${i + 1}$, 'math kernels in a target region ${k}$', code)
+    call record(test_fp_exponent_${k}$(), ${i + 3}$, 'fp_exponent = exponent ${k}$', code)
+    call record(test_eig_repeated_${k}$(), ${i + 5}$, 'eigenvals with repeated roots in a target region ${k}$', code)
 #:endfor
     if (code /= 0) stop code
 
 contains
 #:for k in REAL_KINDS
+
+    function test_fp_exponent_${k}$() result(passed)
+        !! fp_exponent = the intrinsic exponent (CPU) in `real(${k}$)`: +-0, the smallest subnormal and
+        !! subnormals of every bit length, tiny, normals around 1 and up to huge, +-Inf and NaN.
+        use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_positive_inf, ieee_negative_inf, ieee_quiet_nan
+        use, intrinsic :: iso_fortran_env, only : int32, int64
+        logical :: passed
+        real(${k}$) :: x(16 + 2*digits(1.0_${k}$))
+        integer :: i, n
+
+        passed = .true.
+        x(1:10) = [0.0_${k}$, -0.0_${k}$, tiny(1.0_${k}$), -tiny(1.0_${k}$), 1.0_${k}$, 0.75_${k}$, -3.0_${k}$, &
+                   huge(1.0_${k}$), -huge(1.0_${k}$), epsilon(1.0_${k}$)]
+        x(11:13) = [ieee_value(1.0_${k}$, ieee_positive_inf), ieee_value(1.0_${k}$, ieee_negative_inf), &
+                    ieee_value(1.0_${k}$, ieee_quiet_nan)]
+        x(14:16) = [nearest(0.0_${k}$, 1.0_${k}$), nearest(tiny(1.0_${k}$), -1.0_${k}$), 123.456_${k}$]
+        n = 16
+        do i = 1, 2*digits(1.0_${k}$)
+            n = n + 1
+            x(n) = scale(tiny(1.0_${k}$), -i/2)*merge(1.0_${k}$, 1.375_${k}$, mod(i, 2) == 0)
+        end do
+        do i = 1, n
+            ! A subnormal that compares equal to zero: the CPU treats denormals as zero (DAZ, the default
+            ! of ifx), and so does its intrinsic (0); fp_exponent reads the bits (still exact)
+            if (transfer(x(i), 0_${'int32' if k == 'sp' else 'int64'}$) /= 0 .and. .not. (abs(x(i)) > 0.0_${k}$)) cycle
+            call check_true(passed, '${k}$ fp_exponent = exponent', fp_exponent(x(i)) == exponent(x(i)))
+        end do
+    end function test_fp_exponent_${k}$
+
+    function test_eig_repeated_${k}$() result(passed)
+        !! eigenvals in a target region = CPU, `real(${k}$)`: largest or smallest root exactly repeated
+        !! (on the axes and in a shear block of each plane), nearly repeated (delta = 2^-p down to the
+        !! epsilon of the kind), triple and nearly triple roots (one root moved by 2^-p).
+        integer, parameter :: NEIG = 6 + 3*9 + 9
+        logical :: passed
+        real(${k}$) :: x(6, NEIG), lam_t(3, NEIG), lam_c(3, NEIG), delta
+        logical :: host
+        integer :: i, ip, p, n
+
+        passed = .true.
+        x = 0.0_${k}$
+        n = 0
+        do ip = 1, 3
+            n = n + 1
+            x(1:3, n) = 3.0_${k}$
+            x(ip, n) = -1.5_${k}$
+            n = n + 1
+            x(1:3, n) = -1.5_${k}$
+            x(ip, n) = 3.0_${k}$
+        end do
+        do ip = 1, 3
+            do p = 0, 8
+                ! Shear block [[2, 1 - delta], [1 - delta, 2]] in plane ip, 3 on the third axis
+                delta = merge(0.0_${k}$, 2.0_${k}$**(-(p*(digits(1.0_${k}$) - 1))/8), p == 0)
+                n = n + 1
+                x(1:3, n) = 2.0_${k}$
+                x(mod(ip + 1, 3) + 1, n) = 3.0_${k}$
+                x(3 + ip, n) = 1.0_${k}$ - delta
+            end do
+        end do
+        do p = 0, 8
+            n = n + 1
+            x(1:3, n) = 2.0_${k}$
+            x(3, n) = x(3, n) + merge(0.0_${k}$, 2.0_${k}$**(-3*p), p == 0)
+        end do
+
+        host = .true.
+        !$omp target teams distribute parallel do map(to: x) map(from: lam_t) map(tofrom: host)
+        do i = 1, NEIG
+            if (i == 1) host = omp_is_initial_device()
+            call eig_kernel_${k}$(x(:, i), lam_t(:, i))
+        end do
+        !$omp end target teams distribute parallel do
+
+        do i = 1, NEIG
+            call eig_kernel_${k}$(x(:, i), lam_c(:, i))
+        end do
+
+        call check_true(passed, '${k}$ eigenvals with repeated roots: no NaN', all(lam_t == lam_t) .and. all(lam_c == lam_c))
+        call check_target_ran(passed, '${k}$ eigenvals with repeated roots', host)
+        call check_target(passed, '${k}$ eigenvals with repeated roots: target region = CPU', lam_t, lam_c, .not. host)
+    end function test_eig_repeated_${k}$
 
     function test_target_${k}$() result(passed)
         !! `real(${k}$)` points: random tensors (scale 1e2), plus a double, a triple and a zero root.
@@ -128,7 +228,6 @@ contains
             call point_kernel_${k}$(x(:, i), out_t(:, i), ok_t(i))
         end do
         !$omp end target teams distribute parallel do
-        print '(a, l1)', ' ${k}$ target region ran on the initial (host) device: ', host
 
         do i = 1, NPTS
             call point_kernel_${k}$(x(:, i), out_c(:, i), ok_c(i))
@@ -136,10 +235,16 @@ contains
 
         call check_true(passed, '${k}$ LU6SOLVE ok flags: target = CPU, all solved', &
                         all(ok_t .eqv. ok_c) .and. all(ok_c))
-        ! Exact on the host; a device run (Phase 8) needs a measured tolerance instead
-        call check_true(passed, '${k}$ target region ran on the host (no offload in this build)', host)
-        call check_approx(passed, '${k}$ kernel outputs: target region = CPU (bit for bit)', out_t, out_c, &
-                          0.0_${k}$)
+        call check_target_ran(passed, '${k}$ math kernels', host)
+        call check_target(passed, '${k}$ eigenvalues, eigenvectors and their derivatives: target region = CPU', &
+                          out_t(1:33, :), out_c(1:33, :), .not. host)
+        ! The LU solution (and kappa, from the inverse) within kappa_inf(A) times the tolerance
+        call check_target(passed, '${k}$ LU6SOLVE: target region = CPU', out_t(40:46, :), out_c(40:46, :), .not. host, &
+                          amp=out_c(46, :))
+        ! FD_GRAD amplifies the rounding of phi (relative eps on a device) by |phi|/(h |grad|) ~ 1/rel,
+        ! up to 1/FD_STEP_ZERO at a zero argument
+        call check_target(passed, '${k}$ FD_GRAD: target region = CPU', out_t(34:39, :), out_c(34:39, :), .not. host, &
+                          TOL_DEVICE_${k}$/min(FD_STEP_CEN_${k}$, FD_STEP_ZERO_${k}$))
     end function test_target_${k}$
 #:endfor
 

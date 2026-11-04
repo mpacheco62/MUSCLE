@@ -1129,14 +1129,14 @@ class TestModelFamilies(unittest.TestCase):
         # No parameters and no family arguments: every function takes the state or F as `extra`
         self.assertEqual(mm.model_family('kin').models, mm.KINEMATICS_MODELS)
         self.assertEqual(mm.model_family('kin').args, ())
-        self.assertEqual(mm.model_procs('kin'), ['update', 'corot_update', 'to_cauchy', 'to_spatial_tangent',
+        self.assertEqual(mm.model_procs('kin'), ['update', 'update_norot', 'corot_update', 'to_cauchy', 'to_spatial_tangent',
                                                  'geometric_tangent', 'is_finite_strain'])
         # Functions of only some models (ModelFunc.models): the corotational kinematics is updated
         # from a strain and an optional rotation (opts), the others from F
         self.assertEqual(mm.model_procs('kin', 'corotational'),
                          ['corot_update', 'to_cauchy', 'to_spatial_tangent', 'geometric_tangent', 'is_finite_strain'])
         self.assertEqual(mm.model_procs('kin', 'total_lagrangian'),
-                         ['update', 'to_cauchy', 'to_spatial_tangent', 'geometric_tangent', 'is_finite_strain'])
+                         ['update', 'update_norot', 'to_cauchy', 'to_spatial_tangent', 'geometric_tangent', 'is_finite_strain'])
         self.assertNotIn('kin_update_corotational_dp', mm.model_specifics('kin', 'corotational', ['dp']))
         self.assertNotIn('kin_corot_update_total_lagrangian_dp', mm.model_specifics('kin', 'total_lagrangian', ['dp']))
         self.assertIn('kin_corot_update_corotational_dp', mm.model_specifics('kin', 'corotational', ['dp']))
@@ -1180,7 +1180,8 @@ class TestModelFamilies(unittest.TestCase):
         # First family with a state (D-017.13): no family arguments, procedures with outputs are
         # subroutines (`outs`, no result), derived types per kind, 3D only (no dimension in names)
         names = lambda args: [a.name for a in args]
-        self.assertEqual(mm.model_procs('visco'), ['step_coefficients', 'freeze', 'update', 'n_branches'])
+        self.assertEqual(mm.model_procs('visco'), ['step_coefficients', 'freeze', 'update', 'n_branches',
+                                                   'freeze_branches', 'update_branches'])
         self.assertEqual(mm.model_specific('visco', 'update', 'maxwell', 'sp'), 'visco_update_maxwell_sp')
         co = mm.model_func('visco', 'step_coefficients')
         self.assertIsNone(co.result)

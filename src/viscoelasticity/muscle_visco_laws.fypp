@@ -20,7 +20,12 @@ module muscle_visco_laws
     !! - `call visco_update(prm, coefs, state_n, strain_e, state_np1)`: state at t_n+1 from the
     !!   converged state and the elastic strain at t_n+1 (`state_n` intent(in), `state_np1`
     !!   intent(out));
-    !! - `visco_n_branches(prm)`: number of history tensors (`visco_state_init`).
+    !! - `visco_n_branches(prm)`: number of history tensors (`visco_state_init`);
+    !! - `visco_freeze_branches(prm, coefs, strain_e_n, nb, h_n)` and
+    !!   `call visco_update_branches(prm, coefs, strain_e_n, nb, h_n, strain_e, h_np1)`: the same two
+    !!   kernels on the components of a state with `nb` history tensors `h_n(6, nb)` (at least
+    !!   `visco_n_branches(prm)`; the caller stores the elastic strain), for a state smaller than
+    !!   `visco_state_<k>` (the state of a declared material keeps `visco_branches` tensors, D-019.7b).
     !!
     !! A step at a point, as a solver does it:
     !!

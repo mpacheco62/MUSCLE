@@ -102,7 +102,16 @@ contains
         select case (n)
 #:for n in LU_SIZES
         case (${n}$)
-            call LU${n}$SOLVE_${k}$(A, b, x, OK_FLAG, KAPPA)
+            ! Copies of fixed size: passing the assumed-shape arrays packs them into heap temporaries
+            ! in device code (malloc, tools/audit_kernels.sh)
+            block
+                real(${k}$) :: a_n(${n}$, ${n}$), b_n(${n}$), x_n(${n}$)
+
+                a_n = A
+                b_n = b
+                call LU${n}$SOLVE_${k}$(a_n, b_n, x_n, OK_FLAG, KAPPA)
+                x = x_n
+            end block
 #:endfor
         case (1)
             if (abs(A(1,1)) > 0.0_${k}$) then      ! also .false. for NaN

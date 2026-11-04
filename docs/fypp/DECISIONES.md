@@ -977,3 +977,186 @@ solvers de return mapping se reescriben en la Fase 7 (materiales declarados, D-0
         usa la derivada por la derecha sólo para la dirección de Newton (decisión del usuario).
         - Iteraciones: jc1 124–129 → 7–8, jc3 130–178 → 7.
         - jc2 sube de 4–9 a 6–11 iteraciones; aceptado.
+
+## D-019 — Fase 8: build GPU
+**Estado:** Aceptada (2026-11-03, decisiones del usuario)
+**Contexto:** el único hardware disponible es una Intel UHD 770 (ifx/spir64): sp nativo, dp emulado,
+que falla con kernels grandes. No hay GPU NVIDIA ni AMD. Los backends de offload de gfortran 15
+(`gcc-15-offload-nvptx`/`amdgcn`) ya están instalados.
+**Decisión:**
+1. **Verificación:**
+   - En la Intel se ejecutan los tests target vs CPU en sp, y en dp sólo en los kernels chicos que
+     la emulación soporta.
+   - Para nvptx y amdgcn se exige compilar y enlazar.
+   - La ejecución en NVIDIA/AMD la hace el usuario en otra máquina.
+2. El prototipo FFT → MUSCLE → iFFT pasa a la Fase 9.
+3. `tools/check.sh` compila **siempre** los tres targets (nvptx y amdgcn con enlace; ifx spir64 con
+   build y ctest de los tests target en la GPU, con `systemd-run` y límites de memoria y tiempo).
+4. **Paso 1 (2026-11-03):**
+   - (a) Flags (`cmake/MuscleGpu.cmake`, PUBLIC en `muscle`):
+     - NVPTX: `-fopenmp -foffload=nvptx-none`.
+     - AMDGCN: `-foffload=amdgcn-amdhsa -foffload-options=amdgcn-amdhsa=-march=gfx90a`, con
+       `MUSCLE_GPU_ARCH` en caché.
+     - gfortran enlaza también `-lgomp` con `--no-as-needed`.
+     - SPIR64: `-fiopenmp -fopenmp-targets=spir64`.
+   - (b) `check.sh` en los builds GPU construye sólo la librería y los tests target, con NVPTX y AMDGCN
+     en paralelo (decisión del usuario). El enlace completo de todos los tests queda en
+     `check.sh --gpu-full`.
+   - (c) El `matmul` vector×matriz de `2Osym : 4O2sym` se escribe como sumas explícitas **siempre**,
+     porque ifx genera código de dispositivo roto. Es un cambio aprobado en dp: ≤ 2.2e-16 relativo a la
+     componente mayor de cada resultado (no ≤ 1 ulp por componente: en una componente chica de 2D llega
+     a 144 ulp de esa componente). Cambian 6 registros del golden de contracciones.
+   - (d) fypp corre con `--line-numbering-mode=nocontlines`, porque ifx rechaza un `#line` entre las
+     mitades de un literal partido. Enmienda D-009; el código CPU no cambia.
+   - (e) Pendientes del paso 2:
+     - ifx con fallback en host da NaN en las regiones target de `kin_kinds`;
+     - los `mat_batch*` necesitan datos ya mapeados (`map(present)`);
+     - `math_kernels_target` no carga con dp emulado (`__isinfd`/`__isnand` sin resolver).
+   - (f) ifx 2026.2 da un error interno al compilar 5 tests `tensors-types-*_kinds`: `call p%init`
+     sobre un tipo exportado con dos nombres por `muscle_tensors`. Documentado en PROBLEMAS.md.
+5. **Paso 2 (2026-11-03):**
+   - (a) Tolerancia en dispositivo `TOL_DEVICE_<k>` = 64 ε por punto, multiplicada por la amplificación
+     del punto cuando el kernel la tiene:
+     - κ∞ en LU;
+     - κ(C) en cinemáticas;
+     - 1/h en diferencias finitas.
+     En host fallback se exigen los mismos bits. Errores medidos en la Intel:
+     - eigen 1.7/2.0 ε;
+     - LU 0.1 ε·κ∞;
+     - cinemáticas ≤ 7.4/19 ε·κ(C).
+   - (b) `exponent()` se reemplaza por `fp_exponent`, leído de los bits IEEE. Da los mismos bits en CPU.
+     ifx implementa `exponent` con `for_exponent8_v`, que no existe con dp emulado. Un lint lo prohíbe.
+   - (c) `mat_batch*` se excluyen en la GPU Intel y se documentan (decisión del usuario): IGC compila mal
+     closest_point/closest_point_2 con más de un work item. NVIDIA/AMD los corre el usuario.
+   - (d) `mat_kernels_target` se divide en un test por material, porque la imagen de 12 materiales
+     supera los 4 GB / 300 s del JIT.
+   - (e) Se agregan tests target directos, generados por fypp, para las funciones libres de tensores y
+     los genéricos de familia (decisión del usuario).
+   - (f) Aplicación de (d) y (e):
+     - `tests/gpu/target_cases.py` define los casos y genera una imagen chica por test, con label
+       `target` en ctest y target `build_target_tests`.
+     - Tests target generados: 20 de tensores (5 familias × 2 dims × 2 kinds), 12 de genéricos de
+       familia y 24 de materiales (12 materiales × kind). En CPU son 172 tests, y en host fallback los
+       target dan los mismos bits.
+     - En la GPU Intel corren 38 tests, dentro de 64 ε. Se excluyen por IGC:
+       - los materiales closest_point, cp2 y time en sp (device lost u otros iterados);
+       - todos los materiales en dp (fallos no reproducibles con dp emulado).
+       NVIDIA/AMD sólo compilan y enlazan.
+6. **Pasos 3–4 (2026-11-03):**
+   - (a) `eigenvals` con raíz repetida: si `n2 <= n1/huge` va al límite sin dividir. Mismos bits; hay
+     test con trampas de división por cero, overflow e invalid.
+   - (b) `tools/audit_kernels.sh` busca símbolos de runtime host en las imágenes de dispositivo:
+     PTX/GCN con `-save-temps`, y `llvm-nm` en spir64. `check.sh` lo corre siempre, incluido un build
+     Release dp nvptx (estricto). Reemplazos sin cambio de bits:
+     - `reshape` por `VEC9_TO_MAT33`/`MAT33_TO_VEC9`;
+     - el frente de `lu_solve` y los resultados anidados de `kin_*_tangent` por locales (sin
+       `malloc`/`free`);
+     - `leadz` por un bucle (lint `fortran-rt`).
+   - (c) Permitidos:
+     - en Debug, `_gfortran_runtime_error_at` (`-fcheck`) y `_gfortran_matmul_*` (sin inlining en
+       -O0);
+     - en SPIR64, `for_scale4_v/8_v` (`scale()`): su reemplazo provoca device lost en IGC.
+7. **Paso 5 (2026-11-03, decisiones del usuario):**
+   - (a) Hay una variante `muscle_update_<name>_dev` para memoria de dispositivo pura
+     (`omp_target_alloc`, cuFFT). Usa el mismo cuerpo de lote con `has_device_addr`/`is_device_ptr` en
+     lugar de `map(present)`, y la API actual no cambia.
+   - (b) Cada material tiene su propio tipo de estado visco, con NB = `visco_branches`, en lugar de
+     `h(6, MAX_VISCO_BRANCHES)`. Mismos bits.
+   - (c) También entran:
+     - TL/UL sin la polar, cuando el kernel no usa R (mismos bits en las salidas usadas, o se reporta);
+     - medir registros/spills donde la cadena lo permita (amdgcn: metadatos `.vgpr_count`; spir64:
+       dumps de IGC). En nvptx sin `ptxas` de CUDA no se puede.
+     - `present`/`storage` (OpenMP 6): sólo se documenta mientras los compiladores no acepten
+       `storage`.
+   - (d) Etapa A aplicada:
+     - `muscle_update_<name>_dev` usa `has_device_addr` en los arrays y `map(present, alloc:)` sólo
+       en `mat`, sin `is_device_ptr` (ifx lo depreca en arrays que no son `c_ptr`). En CPU llama a los
+       bucles normales.
+     - El nombre más largo de material baja de 48 a 45 caracteres.
+     - En la Intel corren sólo los casos `_dev` de cutting plane en sp. Perzyna sp y todo dp quedan
+       excluidos (IGC, dp emulado).
+   - (e) Etapa B aplicada. Cada material visco tiene:
+     - `mat_state_<name>_<k>` (`plastic` + `visco`);
+     - `mat_vstate_<name>_<k>` (`strain_e`, `h(6, visco_branches)`).
+     La familia visco agrega `visco_freeze_branches`/`visco_update_branches` (`h(6, nb)` de forma
+     explícita), y los `freeze`/`update` de Maxwell y Kelvin pasan a llamarlas, con los mismos bits.
+     Se borran `muscle_material_state` y `visco_plastic_state_<k>`: el estado ya no tiene
+     `n_branches`. Esto reemplaza D-018.14b.
+   - (f) Etapa C aplicada, sólo TL: UL y log espacial necesitan R para la rotación ΔR de `strain_p`,
+     y log material la usa en `kin_to_cauchy`.
+     - Hay una función de familia nueva, `kin_update_norot`. TL/UL/SL la implementan con
+       `kin_finite_update_norot`, que deja R = I; log material y pequeñas deformaciones la reenvían a
+       `kin_update`.
+     - Los autovalores salen de `sym_eigenvalues`, que va por el mismo camino que `sym_eigen`, así que
+       `status` y el resto del estado dan los mismos bits.
+     - El kernel usa `kin_update_norot` salvo que `material_kin_rotation(mat)` sea verdadero.
+   - (g) Aclaración de D-018.16b (decisión del usuario): los argumentos `optional` están prohibidos sólo
+     en las rutinas host que lanzan regiones target (API por lotes), donde se resuelven en el host. Los
+     procedimientos `@:DEVICE()` llamados desde dispositivo pueden tenerlos: hay 20 hoy y pasan en los
+     tres targets. No se agrega lint.
+   - (h) Etapa D: `tools/kernel_resources.sh` mide los recursos por kernel de material, en amdgcn a
+     partir del asm GCN y en spir64 a partir de los dumps de IGC. Resultados del 2026-11-03:
+     - amdgcn: VGPR 48 / AGPR 24 / SGPR 62 en todos los kernels de lote. Las funciones de punto no se
+       inlinean y llevan pila de 9.5–27 KB por work item.
+     - spir64: spill sp 0–4.2 KB y dp 9.9–37.7 KB, con dp emulado.
+     - nvptx no se mide porque falta el `ptxas` de CUDA. La lista de exclusiones de GPU pasa a
+       `tools/gpu_skip_tests.sh`.
+8. **Paso 6, benchmark (2026-11-03):** `benchmarks/gpu/bench_batch_gpu.fypp`, en sp y con
+   `muscle_update_<m>_dev` sobre datos residentes. La tabla está en `benchmarks/README.md`.
+   - Sólo cut_vm_bilinear y cut_yld2004_ludwik corren en Release en la UHD 770:
+     - cut_vm: 2–3e8 puntos/s, ~33–41× el CPU de 32 hilos;
+     - cut_yld2004: ~2.2e6 puntos/s, 0.5–0.8× el CPU de 32 hilos.
+   - Las transferencias de 1e6 puntos tardan ~12 veces el kernel de cut_vm: con datos residentes no se
+     transfieren por paso (D-008).
+   - El chequeo de GPU contra host se hace dentro de 43 ε, `TOL_DEVICE_sp` = 64. Los puntos que en GPU
+     hacen una iteración de Newton más o menos (≤ 0.4 %) se cuentan aparte, sin fallar: el benchmark
+     no reemplaza a los tests target.
+9. **Cierre de la Fase 8 (2026-11-04):** los tests target de materiales y familias comparan cada bloque
+   (tensión, tangente, strain_p, ep, strain_e, h, f, gradiente, hessiana) con su propia escala.
+   Antes, la escala común era la del tangente (~2e5), que en sp dejaba sin comprobar la tensión y la
+   deformación plástica.
+   - Para strain_p y ep la escala es max(|εp|, |ε total|) del punto (decisión del usuario), porque
+     εp = ε − C⁻¹:σ cancela. En la GPU Intel daba 84–113 ε contra 64 ε en un punto apenas plástico.
+
+## D-020 — Fase 9: legibilidad y mantenibilidad («FYPP mínimo»)
+**Estado:** Aceptada (2026-11-04, decisión del usuario)
+**Contexto:** al cerrar la Fase 8, el usuario observó que se abusó de FYPP y se perdió la esencia de
+Fortran: macros como `MODEL_FUNCTION`, `MODEL_PARAMS_TYPE` o `MODEL_INIT` generan las cabeceras de las
+funciones, los tipos y sus cierres a partir de metadatos de Python (`muscle_meta.py`), de modo que una
+plantilla de 48 líneas no muestra el tipo, las firmas, los `intent` ni los `end ...`. Para entender un
+modelo hay que leer tres archivos, y los errores de compilación apuntan a líneas que el autor nunca
+escribió. Es sobreingeniería respecto de lo que se necesitaba (sp/dp, 2D/3D y despacho estático).
+**Decisión:**
+1. FYPP se usa sólo para lo que Fortran no puede hacer: instanciar por kind y dimensión,
+   interruptores de build, código idéntico sin lógica (`@:DEVICE()`) y la generación de un módulo por
+   material del registro. Tipos, firmas, declaraciones, cuerpos y cierres se escriben en Fortran.
+2. El criterio está en `.claude/rules/fypp-templates.md` («FYPP mínimo»). El código nuevo lo cumple desde
+   ya. El existente se reescribe en la Fase 9.
+3. Los metadatos van en la dirección contraria: el Fortran es la fuente y el registro de Python se
+   comprueba contra lo que el Fortran declara (test), y se usa sólo donde hace falta generar algo.
+4. **La Fase 9 pasa a ser sólo de legibilidad y mantenibilidad**, sin funcionalidad nueva. Los
+   pendientes de las Fases 7–8 (FFT, ejecución en NVIDIA/AMD, spill, 2D, etc.) quedan como «Pendientes
+   fuera del plan» en PLAN.md, a pedido del usuario.
+5. Se itera con el usuario: se parte por un piloto (`muscle_hard_swift`), se revisa cómo quedó y se
+   ajusta el criterio antes de seguir con las demás familias.
+6. Red de seguridad: los goldens (mismos bits en dp) y los tests target. Un cambio de bits es una
+   decisión aparte.
+**Consecuencias:** se pierde parte de la unificación automática (por ejemplo, el orden de props de
+`mat_init` deja de generarse de una tabla única y pasa a comprobarse con un test). A cambio, un modelo
+se escribe y se lee en un solo archivo.
+
+**Enmienda (2026-11-04, tras revisar los puntos estrictos con el usuario):**
+- La regla se afloja en cuatro puntos, que están en `.claude/rules/fypp-templates.md`:
+  1. se permite el texto fijo con sustitución de nombres, aunque contenga funciones completas
+     (`TENSOR_COMMON_PROCEDURES`), y se prohíbe armar declaraciones a partir de metadatos o lógica
+     (`MODEL_FUNCTION`): el criterio es dónde vive la información;
+  2. se permiten expresiones como argumento de macro (`FD_*`), porque reemplazan a los closures;
+     las sentencias y bloques siguen prohibidos;
+  3. se permite un nivel de `#:include` para el cuerpo de un solver compartido por materiales, porque
+     Fortran no instancia un cuerpo para tipos distintos sin plantillas y el despacho dinámico está
+     prohibido en GPU;
+  4. no se exige un test que lea Fortran desde Python: el compilador verifica los nombres que asigna
+     `mat_init`, y «el Fortran es la fuente» pasa a «sin información duplicada que el compilador no
+     pueda verificar».
+- El alcance de la Fase 9 incluye tensores, operadores y math (decisión del usuario), con el criterio
+  laxo: lo que sea texto fijo con sustitución de nombres se conserva.

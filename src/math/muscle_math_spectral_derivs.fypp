@@ -10,6 +10,10 @@
 #:set EPS_TOL = {'sp': '1.0e-5', 'dp': '1.0e-11'}
 #:set EPS_TOL_SECOND = {'sp': '2.0e-3', 'dp': '1.0e-6'}
 #:set REPEATED_TOL = {'sp': '1.0e-4', 'dp': '1.0e-9'}
+#! IEEE binary layout per kind for fp_exponent: integer kind of the bits, exponent field width,
+#! fraction width, bias - 1 (exponent of a normal x = biased exponent - (bias - 1)) and
+#! 1 - (bias - 1) - fraction width (exponent of a subnormal x = bit length of its fraction + that)
+#:set FP_BITS = {'sp': ('int32', 8, 23, 126, -149), 'dp': ('int64', 11, 52, 1022, -1074)}
 
 module muscle_math_spectral_derivs
     !! # Module mod_muscle_math_spectral_derivs
@@ -51,13 +55,14 @@ module muscle_math_spectral_derivs
     public :: spectral_decomposition
     public :: spectral_gradient
     public :: spectral_hessian
+    public :: fp_exponent
 #:for k in REAL_KINDS
     public :: dEigenvalues_dTensor_${k}$, d2Eigenvalues_dTensor2_${k}$, spectral_decomposition_${k}$
-    public :: spectral_gradient_${k}$, spectral_hessian_${k}$
+    public :: spectral_gradient_${k}$, spectral_hessian_${k}$, fp_exponent_${k}$
 #:endfor
 
 #:for name in ['dEigenvalues_dTensor', 'd2Eigenvalues_dTensor2', 'spectral_decomposition', &
-    & 'spectral_gradient', 'spectral_hessian']
+    & 'spectral_gradient', 'spectral_hessian', 'fp_exponent']
     interface ${name}$
         module procedure ${kspecifics('{0}_{1}', name)}$
     end interface ${name}$
@@ -280,7 +285,7 @@ contains
         ! Scale the rows by a power of 2 so that their largest entry is O(1): otherwise |c|**2 of a
         ! nearly isotropic T (rows ~1e-11) underflows into subnormals in sp and ca/sqrt(na) is not
         ! a unit vector. The scaling is exact, so without under/overflow the result is bit-identical.
-        e = exponent(max(maxval(abs(r1)), maxval(abs(r2)), maxval(abs(r3))))
+        e = fp_exponent(max(maxval(abs(r1)), maxval(abs(r2)), maxval(abs(r3))))
         r1 = scale(r1, -e)
         r2 = scale(r2, -e)
         r3 = scale(r3, -e)
@@ -439,6 +444,39 @@ contains
 
         res = [x(2)*y(3) - x(3)*y(2), x(3)*y(1) - x(1)*y(3), x(1)*y(2) - x(2)*y(1)]
     end function cross_${k}$
+
+#:set IK, NE, NF, B1, SUB = FP_BITS[k]
+    pure function fp_exponent_${k}$(x) result(e)
+        !! The intrinsic `exponent(x)` of a `real(${k}$)` value from its IEEE bits: 0 for a zero,
+        !! `huge(0)` for an Inf or a NaN (the value of gfortran and ifx), the exact exponent of a
+        !! subnormal. Device code cannot use the intrinsic: ifx implements it with a runtime routine
+        !! that calls `__isinfd`/`__isnand`, which the emulated FP64 of Intel GPUs does not provide
+        !! (the device image fails to load).
+        use, intrinsic :: iso_fortran_env, only : ${IK}$
+        @:DEVICE()
+        real(${k}$), intent(in) :: x
+        integer :: e
+        integer(${IK}$) :: bits, frac
+        integer :: biased
+
+        bits = transfer(x, 0_${IK}$)
+        biased = int(ibits(bits, ${NF}$, ${NE}$))
+        frac = ibits(bits, 0, ${NF}$)
+        if (biased == ${2**NE - 1}$) then
+            e = huge(0)
+        else if (biased > 0) then
+            e = biased - ${B1}$
+        else if (frac == 0_${IK}$) then
+            e = 0
+        else
+            ! Bit length of the fraction (the intrinsic leadz is a runtime routine of ifx in device code)
+            e = ${SUB}$
+            do while (frac /= 0_${IK}$)
+                frac = shiftr(frac, 1)
+                e = e + 1
+            end do
+        end if
+    end function fp_exponent_${k}$
 #:endfor
 
 end module muscle_math_spectral_derivs

@@ -26,4 +26,32 @@ endfunction()
 # registry (-DMUSCLE_MATERIALS)
 if(NOT MUSCLE_MATERIALS)
     add_muscle_benchmark(closest_point_scalability solvers/bench_closest_point_scalability.f90)
+
+    # Batch API GPU vs CPU (Phase 8, D-019): one executable bench_batch_gpu_<material>_<kind> per case of
+    # gpu/bench_cases.py, so that each device image stays small. The template takes the sample inputs of
+    # tests/materials/props_samples.py and the device tolerance of muscle_test_utils. They are programs
+    # without modules of their own (no module directory per case, unlike the target tests).
+    set(_bench_dir "${CMAKE_CURRENT_SOURCE_DIR}/gpu")
+    execute_process(
+        COMMAND ${CMAKE_COMMAND} -E env PYTHONDONTWRITEBYTECODE=1
+                ${Python3_EXECUTABLE} "${_bench_dir}/bench_cases.py" "${MUSCLE_REAL_KINDS}"
+        OUTPUT_VARIABLE _bench_cases
+        RESULT_VARIABLE _bench_result
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(NOT _bench_result EQUAL 0)
+        message(FATAL_ERROR "MUSCLE: ${_bench_dir}/bench_cases.py failed")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_bench_dir}/bench_cases.py")
+    _muscle_fypp_source("${_bench_dir}/bench_batch_gpu.fypp" _bench_abs _bench_rel)
+    foreach(_case IN LISTS _bench_cases)
+        set(_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/gpu/bench_batch_gpu_${_case}.f90")
+        _muscle_fypp_command("${_bench_abs}" "${_out}" "FYPP ${_bench_rel} (${_case})"
+                             FLAGS "-DBENCH_CASE='${_case}'"
+                             DEPENDS "${_bench_dir}/bench_cases.py"
+                                     "${BASE_TESTS_DIR}/materials/props_samples.py"
+                                     "${BASE_TESTS_DIR}/materials/golden_params.py")
+        set_source_files_properties("${_out}" PROPERTIES Fortran_PREPROCESS ON)
+        add_muscle_benchmark(batch_gpu_${_case} "${_out}")
+        target_link_libraries(bench_batch_gpu_${_case} PRIVATE muscle_test_utils)
+    endforeach()
 endif()

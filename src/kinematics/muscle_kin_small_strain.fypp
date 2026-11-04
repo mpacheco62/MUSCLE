@@ -49,6 +49,11 @@ contains
         status = STATUS_OK
     end subroutine kin_update_small_strain_${k}$
 
+    $:MODEL_FUNCTION('kin', 'small_strain', 'update_norot', k, doc=r'The same as `kin_update` (no polar decomposition).')
+
+        call kin_update_small_strain_${k}$(prm, F, state, status)
+    end subroutine kin_update_norot_small_strain_${k}$
+
     $:MODEL_FUNCTION('kin', 'small_strain', 'to_cauchy', k, doc=r'The identity.')
 
         res = stress

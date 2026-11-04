@@ -16,6 +16,7 @@ the pieces an adapter needs, in single (`_sp`) and double (`_dp`) precision:
 | `mat_step(mat, dt, coefs, status)` | Only materials with a viscoelastic (frozen) elasticity: coefficients of a time step. |
 | `mat_rotate_hsv_<name>(hsv, drot)` | Only materials with a strain input: rotates the tensorial parts of the state. |
 | `muscle_update_<name>(...)` | Batch API over SoA arrays (OpenMP / GPU), not used by the examples below. |
+| `muscle_update_<name>_dev(...)` | The same batch API on arrays in device memory (see *Batch API on a GPU*). |
 
 The point API takes the **total** strain at \( t_{n+1} \) (or the deformation gradients at \( t_n \)
 and \( t_{n+1} \) for a finite strain material) and the converged state, and returns the stress,
@@ -117,6 +118,48 @@ strain and the tensors of a viscoelastic state stored in the history array must 
   variables) to call the point API with `F_n` and `F_np1`.
 
 A finite strain material (input F) keeps its state objective by itself: do not rotate its history.
+
+## Batch API on a GPU
+
+`muscle_update_<name>(mat, eps | F_n, F_np1, dt, hsv_n, hsv_np1, sig, status, iters [, ddsdde][, idx])`
+runs the point kernel on every row of SoA arrays (`sig(npts, 6)`, `hsv_n(npts, MAT_<NAME>_NSTATE)`,
+...) in an OpenMP parallel loop. In a library built with `MUSCLE_GPU` (NVPTX, AMDGCN or SPIR64) the loop
+is a target region on data already on the device: the library never transfers anything except the
+coefficients of the time step of a viscoelastic material. Two variants:
+
+- `muscle_update_<name>`: every array argument and the material are **mapped** by the caller beforehand
+  (`map(present, alloc: ...)` in the library):
+
+  ```fortran
+  !$omp target enter data map(to: mat)                       ! once
+  !$omp target enter data map(to: eps, hsv_n) map(alloc: hsv_np1, sig, status, iters)
+  call muscle_update_<name>(mat, eps, dt, hsv_n, hsv_np1, sig, status, iters)
+  !$omp target update from(sig, hsv_np1, status)
+  ```
+
+- `muscle_update_<name>_dev` (D-019.7a): the same arguments, but every array is **device memory not in
+  the present table** (`omp_target_alloc`, or a buffer of a device library such as cuFFT), passed as a
+  Fortran array with `c_f_pointer`; the library takes them with `has_device_addr` (OpenMP 5.1). The
+  host only reads their extents. The material is still mapped by the caller:
+
+  ```fortran
+  use, intrinsic :: iso_c_binding, only : c_ptr, c_f_pointer, c_size_t
+  use omp_lib, only : omp_target_alloc, omp_get_default_device
+  type(c_ptr) :: c_sig
+  real(dp), pointer :: sig(:, :)
+  c_sig = omp_target_alloc(8_c_size_t*npts*6, omp_get_default_device())   ! c_size_t: no overflow
+  call c_f_pointer(c_sig, sig, [npts, 6])                    ! never dereferenced on the host
+  ! ... the same for eps, hsv_n, hsv_np1, status, iters (and ddsdde, idx)
+  !$omp target enter data map(to: mat)
+  call muscle_update_<name>_dev(mat, eps, dt, hsv_n, hsv_np1, sig, status, iters)
+  ```
+
+  Without `MUSCLE_GPU` (CPU build) `muscle_update_<name>_dev` is `muscle_update_<name>` (host memory).
+
+Verified: gfortran 15 NVPTX and AMDGCN compile and link both variants; ifx 2026.2 SPIR64 runs them on an
+Intel GPU (test `materials-mat_batch_dev_<material>_<kind>`: same results as the mapped variant within
+the device tolerance). OpenMP 6.0 deprecates the `alloc` modifier of `map(present, alloc: ...)` in
+favour of `storage`; the library keeps `alloc` while the compilers do not accept `storage`.
 
 ## Abaqus (UMAT)
 

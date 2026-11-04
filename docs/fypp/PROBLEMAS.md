@@ -33,7 +33,7 @@ Estados:
 | Umbrales de las derivadas espectrales absolutos (unidades de tensión²): en sp, \|H\| hasta 32 con escala 1000 | `muscle_math_spectral_derivs` | Corregido: relativos a max λ² | D-016.6 |
 | `spectral_decomposition` sp pierde la normalización con cortes ~1e-11 (\|c\|² subnormal) | `muscle_math_spectral_derivs` | Corregido: escalado exacto por potencia de 2 | D-016.11 |
 | Umbral absoluto 1e-10 de `eigenvals`: descarta cortantes chicos sobre una hidrostática | `eigenvals` (afecta a CPB06, CPB06ex2, Yld2004) | Documentado | D-017.9 |
-| `eigenvals` divide por cero (1/0 = Inf, resultado correcto) con la raíz mayor repetida; aborta con trampa de división por cero | `eigenvals` | Pendiente (Fase 8, GPU) | PLAN Fase 5 |
+| `eigenvals` divide por cero (1/0 = Inf, resultado correcto) con la raíz mayor repetida; aborta con trampa de división por cero | `eigenvals` | Corregido (Fase 8): con `n2 <= n1/huge` va directo al límite, sin dividir; mismos bits. Test con trampas FPE | D-019.6 |
 | Un argumento no nulo pero diminuto conserva el paso mínimo histórico de las diferencias finitas | `include/muscle_fd.fypp` | Documentado | D-016.4 |
 | Macros FD vs API host: los últimos bits cambian si el compilador integra la función (≈4e-11 con -O3) | `include/muscle_fd.fypp` | Documentado (comparar con tolerancia en la Fase 6) | D-016.9 |
 | Golden de `mklsolve` depende de la LAPACK enlazada | `tests/reference/math` | Documentado (la cabecera anota la librería) | — |
@@ -135,6 +135,23 @@ se conservan como historia.
 | det F ≤ 0 sin validar (J negativo, R impropia); `ok` de `inverse` no propagado (F singular → NaN) | cinemáticas finitas | Corregido en kernel (`status`); OO igual | D-017.14a |
 | R pierde precisión cerca de C ≈ I (\|RᵀR − I\| ≈ 3.3e-11 con F ≈ I + 1e-3) | polar (vía `dEigenvalues_dTensor`) | Documentado | D-017.14b |
 | Tangentes ignoran `stress_spatial`/`stress_material`; logarítmica material sin derivada de ln C en el tangente espacial; `update_incremental` aditivo e ignora dt | cinemáticas | Documentado | D-017.14b |
+
+## GPU / compiladores (Fase 8)
+
+| Problema | Dónde | Estado | Ref. |
+|---|---|---|---|
+| ifx 2026.2: código de dispositivo roto (LLVM «Instruction does not dominate all uses») para `matmul` vector×matriz en `declare target` | `muscle_tensor_ops_contraction_double.fypp:108` | Corregido: sumas explícitas en todos los builds | D-019.4c |
+| ifx rechaza `#line` entre las mitades de un literal partido por fypp | plantillas | Corregido: `--line-numbering-mode=nocontlines` | D-019.4d |
+| ifx 2026.2: error interno en `call p%init(...)` si el tipo llega por `muscle_tensors` con dos nombres (`ten_3D2Osym` y `ten_3D2Osym_dp`) | 5 tests `tensors-types-*_kinds` | Pendiente (reproductor para Intel) | D-019.4f |
+| ifx con fallback en host: NaN en las regiones target de `kin_kinds`. Causa: en el código host de un procedimiento `declare target`, un constructor `[x, y]` con x de tipo array conserva sólo el último elemento de x. El código de dispositivo está bien | tests (`pack_state`); `src/` no usa el patrón | Rodeado en el test; lint `arrayctor`; reproductor en el scratchpad (`r6.f90`) | D-019.4e |
+| dp emulado en la UHD 770 deja `__isinfd`/`__isnand` sin resolver. Causa: `exponent()` → `for_exponent8_v` | spectral, cpb06/cpb06ex2/yld2004 | Corregido: `fp_exponent` con los mismos bits; lint `exponent` | D-019.5b |
+| IGC (JIT de la UHD 770) compila mal closest_point y closest_point_2 con más de un work item: tensiones erróneas, status 104 o DEVICE_LOST. Bien con 1 work item o `-ze-opt-disable` (salvo la rampa); cutting_plane bien; valgrind limpio | `mat_batch*` en SPIR64 | Excluido y documentado; reproductor `c3b.f90` en el scratchpad | D-019.5c |
+| IGC/UHD 770 con kernels de material: closest_point, cp2 y time en sp pierden el dispositivo o dan otros iterados; en dp (emulado) hay fallos no reproducibles entre corridas. Sólo pasan en GPU 4 materiales sp (pz_cha_yld2004, pz_cpb06ex2, cut_yld2004, tm_jc_cpb06) | `materials-mat_kernels_target_*` en SPIR64 | Excluidos en `tools/gpu_skip_tests.sh`; validar en NVIDIA/AMD | D-019.5f |
+| `scale()` en ifx/spir64 llama a `for_scale4_v/8_v`. Reemplazarlo por `fp_scale` (o por `x*2**n`) hace que IGC pierda el dispositivo en 3 materiales sp que hoy pasan | cpb06, cpb06ex2, yld2004, `spectral_decomposition` | Se mantiene `scale()`; permitido por nombre en la auditoría SPIR64 | D-019.6 |
+| ifx/IGC Release (-O2) en la UHD 770: las imágenes de `pz_cpb06ex2_bilinear` y `tm_jc_cpb06_ludwik` cargan sin los kernels de lote (segfault); sólo dan resultados correctos en Debug (-O0). Sin dp emulado: «Double type is not supported» (sp y dp comparten imagen); con `-ze-opt-disable`, device lost | benchmark GPU | Documentado (validar en NVIDIA/AMD) | D-019.8 |
+| `pz_cha_yld2004_ludwik` no corre en la GPU ni en Release ni en Debug fuera del test target | benchmark GPU | Documentado | D-019.8 |
+| Un build de CPU con ifx del benchmark no enlaza (`omp_target_alloc` sin definir con `-fiopenmp` y sin target de offload) | benchmark | Documentado; las filas de CPU usan gfortran | D-019.8 |
+| La regla de lint `quote` nunca corría (error de sintaxis en perl) | `tools/check.sh` | Corregido | D-019.4 |
 
 ## Tests
 

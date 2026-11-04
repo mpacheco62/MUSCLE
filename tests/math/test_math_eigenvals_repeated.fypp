@@ -1,0 +1,129 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#!
+#! eigenvals with repeated, triple and nearly repeated roots, every kind, built so that the exact
+#! eigenvalues are known (no dp reference needed):
+#! - diag(c, c, e) and its permutations (largest or smallest root repeated): d2 = 0 (or d1 = 0)
+#!   exactly in the closed form, the case that divided by zero (PROBLEMAS.md);
+#! - a shear block [[a, b], [b, a]] in each plane plus c on the third axis: eigenvalues a + b, a - b,
+#!   c; with a = 2, b = 1, c = 3 the largest root is repeated off the axes, and with b = 1 - delta,
+#!   delta = 2^-p down to the epsilon of the kind, it is nearly repeated;
+#! - diag(c, c, c) (triple) and diag(c, c, c + delta) around the threshold of eigenvals on
+#!   s = sqrt(J2/3) (1e-9 sp, 1e-10 dp).
+#! At the scales 1e-3, 1 and 2.1e5 (powers of 2 would keep every input exact; these do not need to:
+#! the tensor is rounded once and the reference eigenvalues are those of the exact inputs scaled).
+#! The test aborts on a division by zero, overflow or invalid operation (gfortran traps,
+#! tests/math/CMakeLists.txt) and also checks that no result is NaN.
+#! Tolerance: |lam - lam_ref| <= C_TOL eps max|lam_ref| plus, near the threshold of the triple root,
+#! the threshold itself (eigenvals returns the mean there). Measured (gfortran Debug): printed by the
+#! test.
+#:set C_TOL = 64
+#:set EIG_EPS = {'sp': '1.0e-9', 'dp': '1.0e-10'}
+
+program test_math_eigenvals_repeated
+    !! Closed-form eigenvalues with exactly and nearly repeated roots, `real(sp)` and `real(dp)`.
+    use muscle_kinds, only : sp, dp
+    use muscle_tensors
+    use muscle_math_operations, only : eigenvals
+    use muscle_test_utils, only : check_true
+    use muscle_test_helpers, only : record
+    implicit none
+
+    real(dp), parameter :: SCALES(3) = [1.0e-3_dp, 1.0_dp, 2.1e5_dp]
+    integer :: code
+
+    code = 0
+#:for i, k in enumerate(REAL_KINDS)
+    call record(test_repeated_${k}$(), ${i + 1}$, 'eigenvals with repeated roots ${k}$', code)
+#:endfor
+    if (code /= 0) stop code
+
+contains
+#:for k in REAL_KINDS
+#:set T2 = tname('3D2Osym', k)
+
+    subroutine check_case_${k}$(passed, worst, label, vals, ref, extra)
+        !! eigenvals of the `${T2}$` with Voigt `vals` against the descending `ref` (dp).
+        logical, intent(inout) :: passed
+        real(dp), intent(inout) :: worst
+            !! Largest error found, in units of eps max|ref|.
+        character(len=*), intent(in) :: label
+        real(dp), intent(in) :: vals(6), ref(3)
+        real(dp), intent(in), optional :: extra
+            !! Absolute error allowed on top of the relative tolerance.
+        real(dp), parameter :: EPS = real(epsilon(1.0_${k}$), dp)
+        type(${T2}$) :: t
+        real(${k}$) :: lam(3)
+        real(dp) :: err, allowed
+
+        t%vals = real(vals, ${k}$)
+        lam = eigenvals(t)
+        call check_true(passed, '${k}$ no NaN: ' // label, all(lam == lam))
+        call check_true(passed, '${k}$ descending: ' // label, lam(1) >= lam(2) .and. lam(2) >= lam(3))
+        err = maxval(abs(real(lam, dp) - ref))/(EPS*maxval(abs(ref)))
+        allowed = ${C_TOL}$.0_dp
+        if (present(extra)) allowed = allowed + extra/(EPS*maxval(abs(ref)))
+        if (err > allowed) print '(a, 3es24.15, a, 3es24.15)', '  ${k}$ ' // label // ': got', lam, ' expected', ref
+        call check_true(passed, '${k}$ eigenvalues: ' // label, err <= allowed)
+        if (.not. present(extra)) worst = max(worst, err)
+    end subroutine check_case_${k}$
+
+    function test_repeated_${k}$() result(passed)
+        !! Every case at every scale in `real(${k}$)`.
+        logical :: passed
+        real(dp), parameter :: EPS = real(epsilon(1.0_${k}$), dp)
+        real(dp), parameter :: EIG_EPS = ${EIG_EPS[k]}$_dp
+        integer, parameter :: PLANE(2, 3) = reshape([1, 2, 2, 3, 1, 3], [2, 3])
+            !! Axes of the shear components 4 (12), 5 (23) and 6 (13).
+        real(dp) :: sc, v(6), delta, worst, c
+        character(len=64) :: lab
+        integer :: isc, ip, p, axis
+
+        passed = .true.
+        worst = 0.0_dp
+        do isc = 1, size(SCALES)
+            sc = SCALES(isc)
+            ! diag(c, c, e), every position of the single root; largest and smallest repeated
+            do ip = 1, 3
+                v = 0.0_dp
+                v(1:3) = 3.0_dp*sc
+                v(ip) = -1.5_dp*sc
+                write(lab, '(a, i0, a, es7.1)') 'double top, single at ', ip, ' s=', sc
+                call check_case_${k}$(passed, worst, trim(lab), v, sc*[3.0_dp, 3.0_dp, -1.5_dp])
+                v(1:3) = -1.5_dp*sc
+                v(ip) = 3.0_dp*sc
+                write(lab, '(a, i0, a, es7.1)') 'double bottom, single at ', ip, ' s=', sc
+                call check_case_${k}$(passed, worst, trim(lab), v, sc*[3.0_dp, -1.5_dp, -1.5_dp])
+            end do
+            ! Shear block in each plane: exactly and nearly repeated largest root, off the axes
+            do ip = 1, 3
+                axis = 6 - PLANE(1, ip) - PLANE(2, ip)
+                do p = 0, digits(1.0_${k}$) - 1, 3
+                    delta = merge(0.0_dp, 2.0_dp**(-p), p == 0)
+                    v = 0.0_dp
+                    v(PLANE(:, ip)) = 2.0_dp*sc
+                    v(3 + ip) = (1.0_dp - delta)*sc
+                    v(axis) = 3.0_dp*sc
+                    write(lab, '(a, i0, a, es8.2, a, es7.1)') 'shear plane ', ip, ' delta=', delta, ' s=', sc
+                    call check_case_${k}$(passed, worst, trim(lab), v, sc*[3.0_dp, 3.0_dp - delta, 1.0_dp + delta])
+                end do
+            end do
+            ! Triple root, and one root moved by delta around the threshold on s = delta/3
+            c = 2.0_dp*sc
+            do p = 0, 4
+                delta = merge(0.0_dp, 3.0_dp*EIG_EPS*2.0_dp**(p - 2), p == 0)
+                v = 0.0_dp
+                v(1:3) = c
+                v(3) = c + delta
+                write(lab, '(a, es8.2, a, es7.1)') 'near triple, delta=', delta, ' s=', sc
+                ! Below the threshold eigenvals returns the mean (error <= delta), above it the closed
+                ! form on a deviator of size delta (cancellation: error ~ eps c)
+                call check_case_${k}$(passed, worst, trim(lab), v, [c + delta, c, c], extra=delta + 8.0_dp*EPS*c)
+            end do
+        end do
+        print '(a, f6.1, a)', '  ${k}$: largest error ', worst, ' eps max|lam| (tolerance ${C_TOL}$)'
+    end function test_repeated_${k}$
+#:endfor
+
+end program test_math_eigenvals_repeated

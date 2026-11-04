@@ -49,7 +49,7 @@ program test_mat_solver_checks
     use muscle_vp_laws, only : vp_flow_stress
     use muscle_mat_cp_vm_swift, only : muscle_point_cp_vm_swift
     use muscle_test_utils, only : check_scaled
-    use muscle_visco_laws, only : visco_freeze
+    use muscle_visco_laws, only : visco_freeze_branches
     use muscle_visco_frozen, only : ${', '.join('elas_frozen_' + k for k in REAL_KINDS)}$
     use muscle_yield_criteria, only : yield_stress_eq
     use muscle_kinds, only : ${', '.join('TOL_APPROX_' + k for k in REAL_KINDS)}$
@@ -437,7 +437,7 @@ $:MAT_CASE_PROCS(MATS, fd_check=[u[0] for u in UNIAXIAL] + [c[0] for c in COUPLE
         strain%vals = [2.0e-2_${k}$, -5.0e-3_${k}$, -5.0e-3_${k}$, 4.0e-3_${k}$, 2.0e-3_${k}$, 1.0e-3_${k}$]
         call mat_update(stiff, strain, DT, coefs, s0, sn, stress, tangent, status, iters)
         call check_true(passed, '${m}$ coupling first step elastic (${k}$)', status == STATUS_OK .and. iters == 0)
-        frozen = visco_freeze(mat%visco, coefs, sn%visco)
+        frozen = visco_freeze_branches(mat%visco, coefs, sn%visco%strain_e, size(sn%visco%h, 2), sn%visco%h)
         call check_true(passed, '${m}$ coupling history stress is non-zero (${k}$)', any(frozen%stress_hist%vals /= 0.0_${k}$))
         ! Plastic step from that state
         strain%vals = [0.15_${k}$, -0.05_${k}$, -0.05_${k}$, 1.0e-2_${k}$, -6.0e-3_${k}$, 4.0e-3_${k}$]

@@ -488,11 +488,26 @@ Diseño y alcance: D-018. Pasos (cada uno un commit con el ciclo completo):
     - convergencia de Chaboche n=0.5 + DP en compresión (PROBLEMAS).
 
 ### Fase 8 — Build GPU
-- [ ] Opción CMake `MUSCLE_GPU={OFF,NVPTX,AMDGCN,SPIR64}` → flags de offload de gfortran
+Alcance y verificación: D-019. Pasos (cada uno un commit con el ciclo completo):
+1. Opción CMake `MUSCLE_GPU` + flags (gfortran nvptx/amdgcn, ifx spir64); `@:DEVICE()` y `BATCH_LOOP`
+   con el define; los tests enlazan con offload; `check.sh` construye los 3 targets.
+2. Tests target vs CPU por kernel en ambos kinds (tensores, math, familias, materiales y lote con
+   `BATCH_LOOP`), ejecutados en la Intel (sp; dp donde aguante la emulación).
+3. Bugs de kernel: `eigenvals` divide por cero con una raíz repetida, y los que salgan del paso 2.
+4. Auditoría de la ruta de kernel (`tools/audit_kernels.sh`: símbolos de runtime host en las imágenes
+   de offload y patrones prohibidos).
+5. Traspasos de la Fase 7:
+   - camino `is_device_ptr`;
+   - `present`/`storage` (OpenMP 6);
+   - achicar `visco_state` por material;
+   - TL/UL sin polar;
+   - registros/spills por kernel.
+6. Benchmark de N puntos GPU vs CPU (Intel sp) y cierre.
+- [x] Opción CMake `MUSCLE_GPU={OFF,NVPTX,AMDGCN,SPIR64}` → flags de offload de gfortran
       (`-foffload=nvptx-none|amdgcn-amdhsa`) e ifx (`-fopenmp-targets=spir64`).
-- [ ] Instalar los compiladores de offload de gfortran (paquetes `gcc-15-offload-nvptx` /
+- [x] Instalar los compiladores de offload de gfortran (ya instalados al empezar la Fase 8) (paquetes `gcc-15-offload-nvptx` /
       `gcc-15-offload-amdgcn`): gfortran 15.2 está configurado con offload pero faltan los backends.
-- [ ] `@:DEVICE()` expande a la directiva correspondiente.
+- [x] `@:DEVICE()` expande a la directiva correspondiente.
 - [x] Verificar `ieee_value` (usado por `QUIET_NAN_<k>`) en offload: funciona con ifx/spir64,
       pero con gfortran nvptx/amdgcn el enlace falla (`_gfortran_ieee_procedure_entry/exit` no
       existen en el dispositivo). Con `transfer(int(z'7FC00000', int32), 1.0_sp)` /
@@ -509,12 +524,139 @@ Diseño y alcance: D-018. Pasos (cada uno un commit con el ciclo completo):
   - **NVIDIA (nvptx-none) y AMD (amdgcn-amdhsa), gfortran 15.2:** todos los módulos compilan; el
     programa enlaza en sp y dp tras el cambio de `QUIET_NAN`. Sin hardware para ejecutar.
   - Pendiente: uso de registros por kernel (PTX/GCN) y ejecución en GPU con FP64 nativo.
-- [ ] Test/benchmark: N puntos de integración en un `parallel loop` en GPU vs CPU.
-- [ ] Prototipo FFT → MUSCLE → iFFT (cuFFT primero) con datos residentes: medir tráfico
+- [x] Test/benchmark: N puntos de integración en un `parallel loop` en GPU vs CPU.
+- [→] (Pasa a la Fase 9, D-019.2) Prototipo FFT → MUSCLE → iFFT (cuFFT primero) con datos residentes: medir tráfico
       host↔device (sólo escalares) y rendimiento por vóxel; registros/spills por kernel.
-- [ ] Auditoría automática (`tools/audit_kernels.sh`): grep de patrones prohibidos en la ruta de kernel.
+- [x] Auditoría automática (`tools/audit_kernels.sh`): grep de patrones prohibidos en la ruta de kernel.
+- [x] Pasos 1–6 (2026-11-03):
+  - 1: build GPU (45c1336);
+  - 2: tests target (460fc99, 7c082dc);
+  - 3–4: `eigenvals` y auditoría (70d1051);
+  - 5: `_dev`, estado visco por material, TL sin polar y recursos por kernel (b3eb490, e565aa8,
+    d6bff03, 7206dd7);
+  - 6: benchmark (c9515ef).
+- [x] Revisión final de la fase (2026-11-03); correcciones menores aplicadas. **Fase 8 cerrada.**
+  Pasan a la Fase 9:
+  - el prototipo FFT;
+  - la ejecución en NVIDIA/AMD por parte del usuario;
+  - volver a habilitar la lista de exclusiones de GPU cuando se actualice IGC;
+  - el error interno de ifx en `p%init` (D-019.4f);
+  - `storage` de OpenMP 6;
+  - UL/SL sin polar (haría falta ΔR sin R);
+  - el benchmark de CPU con ifx (`omp_target_alloc`);
+  - el fallo en Release de `pz_*`/`tm_jc` en la GPU Intel (D-019.8);
+  - reducir el spill.
 
-### Fase 9 — Documentación y cierre
+### Fase 9 — Legibilidad y mantenibilidad (D-020)
+Objetivo: que el código se lea como Fortran. **No agrega funcionalidad.** FYPP queda en lo que Fortran
+no puede hacer; tipos, firmas, declaraciones, cuerpos y cierres se escriben en Fortran. Criterio:
+`.claude/rules/fypp-templates.md` («FYPP mínimo», con las relajaciones de la enmienda de D-020).
+Rama `fypp/f9-readability` desde `fypp/f8-gpu`. Alcance: todo `src/`, `include/`, `tools/fypp/`,
+tests y la infraestructura de build.
+
+**Tamaño de partida (2026-11-04):**
+
+| Área | Plantillas | Líneas | Con macros |
+|---|---|---|---|
+| tensors/types, operators | 12 | 2283 | 12 |
+| tensors (fachada, io, funciones) | 3 | 446 | 0 |
+| math | 7 | 1532 | 5 |
+| hard, vp/os, yield (+ plastic_state) | 24 | 2843 | 24 |
+| elasticity, visco | 7 | 775 | 7 |
+| kinematics | 8 | 1467 | 8 |
+| solvers (cuerpos) | 6 | 1054 | 6 |
+| materials | 4 | 1174 | 3 |
+| tests `.fypp` | 73 | 22075 | — |
+
+Macros más usadas: `@:DEVICE` 152 (se queda), `MODEL_FUNCTION` 115, `MODEL_PUBLIC` y
+`MODEL_PARAMS_TYPE` 28 cada una, `YIELD_ZERO_AT_NULL` 10, `FAMILY_USES`/`FAMILY_EXPORTS`/`MODEL_INIT`
+7 cada una. `include/*.fypp` suma ~1190 líneas y `muscle_meta.py` 2467 (111 funciones, 5 tests Python).
+
+**Método de cada paso** (el ciclo del proyecto, con una red de seguridad extra):
+1. Línea base: guardar el `.f90` generado de las plantillas que se tocan.
+2. Reescribir la plantilla a mano.
+3. **Comparar el generado antes/después**, normalizado (sin comentarios, `#line`, espacios, ni el orden de
+   las declaraciones): se espera el mismo código; lo que cambie se revisa a mano. Además, la tabla de
+   símbolos públicos (`nm`) de la librería debe ser idéntica.
+4. `tools/check.sh` completo: goldens dp bit a bit, tests target, los tres builds GPU, auditoría.
+5. `migration-reviewer` mira legibilidad (¿se entiende leyendo sólo ese archivo?) y deriva de diseño.
+6. Aprobación del usuario → commit local. Un commit por unidad (familia, solver, etc.).
+Nada de cambios de bits: si el generado difiere y hay cambio numérico, se detiene y se pregunta.
+
+**Etapas:**
+- [ ] **E0. Preparación.** Rama; script `tools/gen_snapshot.sh` (guarda y compara el `.f90`
+      normalizado y la tabla de símbolos); `tools/fypp_metrics.sh` (nº de macros, líneas de
+      `include/` y `muscle_meta.py`, plantillas con macros) para ver el avance de cada etapa.
+- [ ] **E1. Piloto: `muscle_hard_swift` y `muscle_hard_bilinear`** (216 líneas en total las 5 leyes).
+      Se escriben tipo, funciones y cierres en Fortran con `${k}$`. Preguntas de diseño a resolver
+      aquí y a registrar: cómo se declaran a mano los genéricos de familia (`hard_stress`...) y
+      `public`; dónde va `@:DEVICE()`; formato de la doc FORD; cómo se escribe el `*_init`.
+      **Pausa: se revisa con el usuario cómo quedó y se ajusta la regla antes de seguir.**
+- [ ] **E2. Inventario de macros y metadatos.** Tabla con cada macro de `include/*.fypp` y cada
+      función de `muscle_meta.py`: usos, veredicto (se queda, se reescribe en Fortran, pasa a ser un
+      dato, o la comprueba el compilador o un test). Se registra en DECISIONES.
+- [ ] **E3. Familias, una por commit** (de menor a mayor riesgo):
+      hard (5, 216 líneas) → elas (2) → vp/os (10, 927) → visco (5, 621) → yield (8, 1607; el más
+      grande y con la normalización por exponente y el cero en nulo) → kin (8, 1467).
+      Al terminar una familia se borran sus macros de contrato ya sin uso.
+- [ ] **E4. Cuerpos de solver** (cp, cp2, perzyna, time, cutting plane; 6 plantillas, 1054 líneas):
+      subrutinas Fortran legibles con `${k}$`, un nivel de `#:include`. Se elimina `SOLVE_DUMMIES` y
+      lo que arme declaraciones; el tangente compartido queda como texto fijo.
+- [ ] **E5. Plantilla de material y APIs** (`muscle_material*.fypp`, 1174 líneas): separar lo que es
+      generación por material (justificada: tipos, `mat_init`, lote, punto) del esqueleto, que se
+      escribe en Fortran. `mat_init` asigna por nombre y el compilador verifica los nombres.
+- [ ] **E6. Tensores, operadores y math** (21 plantillas, 4261 líneas): con el criterio laxo,
+      `TENSOR_COMMON_*` se conserva si pasa la prueba de «texto fijo con sustitución de nombres»;
+      se revisan `ops_common`, las listas de específicos y las plantillas de math caso a caso.
+- [ ] **E7. `muscle_meta.py` e `include/`.** Borrar lo que quedó sin uso, pasar a datos lo que sea
+      lista de nombres, y reducir los tests Python a lo que queda. Se mide con `fypp_metrics.sh`.
+- [ ] **E8. Tests.** Reemplazar los tests generados por macros por tests escritos a mano cuando sean
+      más legibles (73 plantillas, ~22 000 líneas); los drivers de goldens y `tests/gpu/target_cases.py`
+      se quedan donde evitan duplicación real.
+- [ ] **E9. Infraestructura.** Simplificar `tools/check.sh` (lint, builds GPU) y `cmake/` donde la
+      complejidad haya sobrado, sin perder cobertura; documentar en `check.sh --help`.
+- [ ] **E10. Documentación y cierre.** `pages/contributing.md` (cómo se escribe un modelo con el
+      criterio nuevo, con un ejemplo completo), `pages/tensors.md`, README, reglas de `.claude/` y
+      CLAUDE.md; revisión final de la fase; cifras antes/después.
+
+**Riesgos:**
+- *Deriva de bits.* Mitigación: el generado normalizado y los goldens; ningún paso se aprueba con
+  diferencias sin explicar.
+- *Regresión en GPU.* Mitigación: `check.sh` construye siempre nvptx, amdgcn y spir64 y corre los
+  tests target en la Intel.
+- *Duplicación a mano entre sp y dp.* Se evita con `#:for k`: se escribe una vez, con `${k}$`.
+- *Cansancio de reescritura.* Se trabaja por familias pequeñas, con pausa en el piloto.
+- *Pérdida de unificación.* Algunas tablas únicas dejan de generarse (p. ej. orden de props); queda
+  documentado y verificado por el compilador y por un test (D-020).
+**Criterios de salida:** mismos bits en todos los goldens, mismos símbolos públicos, tests target y los
+tres builds GPU en verde; ninguna macro prohibida por la regla; un modelo nuevo se escribe y se lee en
+un solo archivo; y cifras de «macros, líneas de `include/` y de `muscle_meta.py`» antes y después.
+
+## Pendientes fuera del plan
+Ya no pertenecen a una fase. Se retoman a pedido del usuario, y cada uno con su decisión:
+- Prototipo FFT → MUSCLE → iFFT (cuFFT primero) con datos residentes, midiendo el tráfico
+  host↔device (D-019.2).
+- Ejecución en NVIDIA/AMD por parte del usuario; volver a habilitar los tests excluidos de
+  `tools/gpu_skip_tests.sh` cuando Intel actualice IGC; error interno de ifx en `p%init` (D-019.4f);
+  `storage` de OpenMP 6; benchmark de CPU con ifx (`omp_target_alloc`); fallo en Release de
+  `pz_*`/`tm_jc` en la GPU Intel (D-019.8).
+- UL y logarítmica espacial sin la descomposición polar (haría falta ΔR sin R).
+- Reducir registros/spill de los kernels de material, midiendo en hardware real NVIDIA/AMD con
+  `tools/kernel_resources.sh` (D-019.7h). Opciones, de más barata a más cara:
+  1. flags: Intel `-ze-opt-large-register-file`, NVIDIA `maxrregcount`/`launch_bounds`, tamaño de
+     bloque en AMD;
+  2. menos estado vivo, por ejemplo sin tangente cuando no se pide o con el Jacobiano 7×7 de cp2;
+  3. recalcular C en lugar de guardarlo;
+  4. separar el return mapping del cálculo del tangente;
+  5. controlar el inlining de las funciones de punto en amdgcn.
+- Materiales 2D (D-018.11g); validar los esqueletos Abaqus/ANSYS/LS-DYNA contra los programas reales
+  (D-018.17); composición múltiple en `ModelFamily` (endurecimiento cinemático); unificar el status
+  de los `*_init`; unión etiquetada opcional (D-008.4).
+- Reescribir los usuarios externos de la API OO (guía: `pages/migration.md`).
+- Convergencia de Chaboche n=0.5 + DP en compresión y de `tm_nnl_vm` ×40 (PROBLEMAS).
+- Opcionales de la Fase 6: forma estable de `stress_eq` y del gradiente de Drucker-Prager en sp,
+  borrar `finite_get_E_log` y `finite_get_b`, medir con benchmarks el `.ddot.` 3D4O3sym:4O3sym.
+Hecho en su día (se conserva como historia):
 - [x] FORD sobre las plantillas (2026-10-30, adelantado a la Fase 4 a pedido del usuario):
       `my_project.md` añade `fypp` a `fpp_extensions` y `preprocessor: fypp -I include -M tools/fypp
       -m muscle_meta`. FORD 7.0.13 preprocesa los `.fypp` con todas las dimensiones y kinds: la doc
@@ -528,8 +670,6 @@ Diseño y alcance: D-018. Pasos (cada uno un commit con el ciclo completo):
       docstrings antiguos que FORD leía como metadatos corregidos. Entorno conda `ford`
       (`environment.yml`, sin `gfortran` para no tapar el compilador del sistema): FORD 7.0.13, fypp
       3.3 y Graphviz → grafos de dependencias, 0 warnings, ~40 s.
-- [ ] Actualizar `pages/tensors.md` (README, `pages/contributing.md` y `pages/migration.md` se actualizaron en la Fase 7, E6).
-- [ ] Reescribir los usuarios externos de la API OO contra la nueva API (guía: `pages/migration.md`).
 
 ## 5. Riesgos
 

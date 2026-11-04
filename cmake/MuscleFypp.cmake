@@ -75,11 +75,14 @@ string(REPLACE ";" "','" _muscle_kinds_py "${MUSCLE_REAL_KINDS}")
 # template, and keep the command identical across configurations so multi-config generators
 # share one generated file. Only the `#line` (std) format survives CMake's separate Fortran
 # preprocessing step without "linemarker ignored due to incorrect nesting" warnings (D-009).
+# No markers inside a continued statement (nocontlines): fypp folds long lines and a `#line`
+# between the two halves of a folded character literal is an "unterminated character constant"
+# for ifx (gfortran accepts it).
 set(MUSCLE_FYPP_FLAGS
     "-I${MUSCLE_FYPP_INCLUDE_DIR}"
     "-M${MUSCLE_FYPP_META_DIR}" "-mmuscle_meta"
     "-DMUSCLE_REAL_KINDS=['${_muscle_kinds_py}']"
-    "--line-numbering" "--line-marker-format=std")
+    "--line-numbering" "--line-marker-format=std" "--line-numbering-mode=nocontlines")
 
 
 # Material registry (D-018.9): empty = the test registry tools/fypp/muscle_materials.py

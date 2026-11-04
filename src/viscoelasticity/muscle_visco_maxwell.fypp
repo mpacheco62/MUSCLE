@@ -195,32 +195,43 @@ contains
         end do
     end subroutine visco_step_coefficients_maxwell_${k}$
 
-    $:MODEL_FUNCTION('visco', 'maxwell', 'freeze', k, doc=r'\( K^{alg} = K \), \( G^{alg} \) of the coefficients and \( \boldsymbol\sigma^{hist}_n = \sum_k (a_k \mathbf{s}_k^n - 2 G_k \gamma_k \mathbf{e}^n) \).')
+    $:MODEL_FUNCTION('visco', 'maxwell', 'freeze', k, doc=r'\( K^{alg} = K \), \( G^{alg} \) of the coefficients and \( \boldsymbol\sigma^{hist}_n = \sum_k (a_k \mathbf{s}_k^n - 2 G_k \gamma_k \mathbf{e}^n) \) (`visco_freeze_branches`).')
+
+        elas = visco_freeze_branches_maxwell_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h)
+    end function visco_freeze_maxwell_${k}$
+
+    $:MODEL_FUNCTION('visco', 'maxwell', 'update', k, doc=r'\( \mathbf{s}_k^{n+1} = a_k \mathbf{s}_k^n + 2 G_k \gamma_k (\mathbf{e}^{n+1} - \mathbf{e}^n) \) (`visco_update_branches`); the other components of `state_n` are carried over.')
+
+        state_np1%n_branches = prm%n
+        call visco_update_branches_maxwell_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h, strain_e, &
+            state_np1%h)
+        state_np1%strain_e = strain_e
+    end subroutine visco_update_maxwell_${k}$
+
+    $:MODEL_FUNCTION('visco', 'maxwell', 'freeze_branches', k, doc=r'\( \boldsymbol\sigma^{hist}_n = \sum_k (a_k \mathbf{s}_k^n - 2 G_k \gamma_k \mathbf{e}^n) \) over the branches of the model (at most `nb`).')
         type(${T2(k)}$) :: e_n, hist
         integer :: i
 
-        e_n = .dev. state_n%strain_e
+        e_n = .dev. strain_e_n
         hist%vals = 0.0_${k}$
-        do i = 1, prm%n
-            hist%vals = hist%vals + coefs%decay(i)*state_n%h(:, i) - coefs%weight(i)*e_n%vals
+        do i = 1, min(prm%n, nb)
+            hist%vals = hist%vals + coefs%decay(i)*h_n(:, i) - coefs%weight(i)*e_n%vals
         end do
         elas%k_alg = coefs%k_alg
         elas%g_alg = coefs%g_alg
         elas%stress_hist = hist
-    end function visco_freeze_maxwell_${k}$
+    end function visco_freeze_branches_maxwell_${k}$
 
-    $:MODEL_FUNCTION('visco', 'maxwell', 'update', k, doc=r'\( \mathbf{s}_k^{n+1} = a_k \mathbf{s}_k^n + 2 G_k \gamma_k (\mathbf{e}^{n+1} - \mathbf{e}^n) \); the other components of `state_n` are carried over.')
+    $:MODEL_FUNCTION('visco', 'maxwell', 'update_branches', k, doc=r'\( \mathbf{s}_k^{n+1} = a_k \mathbf{s}_k^n + 2 G_k \gamma_k (\mathbf{e}^{n+1} - \mathbf{e}^n) \) for the branches of the model (at most `nb`).')
         type(${T2(k)}$) :: de
         integer :: i
 
-        de = (.dev. strain_e) - (.dev. state_n%strain_e)
-        state_np1 = state_n
-        state_np1%n_branches = prm%n
-        do i = 1, prm%n
-            state_np1%h(:, i) = coefs%decay(i)*state_n%h(:, i) + coefs%weight(i)*de%vals
+        de = (.dev. strain_e) - (.dev. strain_e_n)
+        h_np1 = h_n
+        do i = 1, min(prm%n, nb)
+            h_np1(:, i) = coefs%decay(i)*h_n(:, i) + coefs%weight(i)*de%vals
         end do
-        state_np1%strain_e = strain_e
-    end subroutine visco_update_maxwell_${k}$
+    end subroutine visco_update_branches_maxwell_${k}$
 
     $:MODEL_FUNCTION('visco', 'maxwell', 'n_branches', k)
 

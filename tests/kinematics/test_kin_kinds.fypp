@@ -16,9 +16,9 @@
 #!   of the same constitutive ones) or rotates a spatial strain (and the Cauchy stress and tangent of
 #!   the rotated constitutive ones);
 #! - a `pure`, `@:DEVICE()` point procedure that updates the kinematics and converts a stress and a
-#!   tangent, run inside an `!$omp target` region (host fallback, as math-math_kernels_target) and on
-#!   the CPU, bit for bit.
-#! Tolerances: target vs CPU exact (same code); sp vs dp relative to the largest value
+#!   tangent, run inside an `!$omp target` region and on the CPU (`check_target`: bit for bit on the
+#!   host, TOL_DEVICE_<k> relative to each point on a device).
+#! Tolerances: target vs CPU exact on the host (same code); sp vs dp relative to the largest value
 #! of each group within max(4 TOL_APPROX_sp, 8 eps_sp kappa(C)) (see test_sp_vs_dp); objectivity
 #! 10 TOL_APPROX_<k> relative to the largest component (measured: dp 4.2e-14, sp 2.7e-5, both on the
 #! rotated spatial tangent).
@@ -61,7 +61,16 @@ contains
         @:DEVICE()
         type(kin_state_${k}$), intent(in) :: st
         real(${k}$) :: v(NSTATE)
-        v = [st%F%vals, st%F_inv%vals, st%R%vals, st%J, st%C%vals, st%b%vals, st%b_inv%vals, st%strain%vals]
+        ! Section by section: ifx 2026.2 loses all but the last element of a leading array item of an
+        ! array constructor in the host code of a `declare target` procedure (PROBLEMAS.md)
+        v(1:9) = st%F%vals
+        v(10:18) = st%F_inv%vals
+        v(19:27) = st%R%vals
+        v(28) = st%J
+        v(29:34) = st%C%vals
+        v(35:40) = st%b%vals
+        v(41:46) = st%b_inv%vals
+        v(47:52) = st%strain%vals
     end function pack_state_${k}$
 #:for m in ALL
 
@@ -111,7 +120,8 @@ module test_kin_cases
     use muscle_status, only : STATUS_OK, STATUS_INVALID_DEFORMATION
     use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2O', '2Osym', '4O2sym') for k in REAL_KINDS)}$, &
         operator(*), operator(.transform.), assignment(=)
-    use muscle_kin_laws, only : kin_update, kin_corot_update, kin_to_cauchy, kin_to_spatial_tangent, kin_is_finite_strain, &
+    use muscle_kin_laws, only : kin_update, kin_update_norot, kin_corot_update, kin_to_cauchy, kin_to_spatial_tangent, &
+        kin_is_finite_strain, &
         kin_green_lagrange, kin_euler_almansi, kin_material_log, kin_spatial_log, kin_pk2_to_cauchy, &
         kin_cauchy_to_pk2, kin_pk2_to_kirchhoff, kin_kirchhoff_to_pk2, kin_cauchy_to_kirchhoff, &
         kin_kirchhoff_to_cauchy, kin_pk2_to_pk1, kin_pk1_to_pk2, kin_cauchy_to_pk1, kin_pk1_to_cauchy, &
@@ -121,7 +131,7 @@ module test_kin_cases
     use muscle_math_operations, only : eigenvals
     use test_kin_point, only : NSTATE, NOUT, ${', '.join('pack_state_' + k for k in REAL_KINDS)}$, &
         ${', '.join('point_{0}_{1}'.format(m, k) for m in ALL for k in REAL_KINDS)}$
-    use muscle_test_utils, only : check_approx, check_true
+    use muscle_test_utils, only : check_approx, check_true, check_target, check_target_ran
     use muscle_test_helpers, only : park_miller, rotation_ref
     implicit none
     private
@@ -271,13 +281,16 @@ contains
 
     subroutine test_status(passed)
         !! Status of kin_update (D-017.14a) in every kind, also with det F < 0, a singular or nearly
-        !! singular F and a NaN component.
+        !! singular F and a NaN component. `kin_update_norot` (D-019.7c): the same
+        !! status and the same bits in every component but R (NaN = NaN), which is the identity (except in
+        !! the material logarithmic kinematics, which always computes it).
         logical, intent(inout) :: passed
         real(dp) :: f9(9)
-        integer :: ic, status
+        integer :: ic, status, status_nr
         character(len=40) :: label
 #:for k in REAL_KINDS
-        type(kin_state_${k}$) :: st_${k}$
+        type(kin_state_${k}$) :: st_${k}$, st_nr_${k}$, st_id_${k}$
+        real(${k}$) :: v_${k}$(NSTATE), v_nr_${k}$(NSTATE)
         type(${tname('3D2O', k)}$) :: F_${k}$
 #:for m in ALL
         type(kin_${m}$_${k}$) :: k_${m}$_${k}$
@@ -321,6 +334,14 @@ contains
                 call check_true(passed, '${k}$ ${m}$ STATUS_INVALID_DEFORMATION: ' // trim(label), &
                                 status == STATUS_INVALID_DEFORMATION)
             end if
+            call kin_update_norot(k_${m}$_${k}$, F_${k}$, st_nr_${k}$, status_nr)
+#:if m != 'material_logarithmic'
+            st_${k}$%R = st_id_${k}$%R
+#:endif
+            v_${k}$ = pack_state_${k}$(st_${k}$)
+            v_nr_${k}$ = pack_state_${k}$(st_nr_${k}$)
+            call check_true(passed, '${k}$ ${m}$ without the rotation, same status and state: ' // trim(label), &
+                status_nr == status .and. all(v_nr_${k}$ == v_${k}$ .or. (v_nr_${k}$ /= v_nr_${k}$ .and. v_${k}$ /= v_${k}$)))
 #:endfor
             ! Small strain does not validate
             call kin_update(k_small_strain_${k}$, F_${k}$, st_${k}$, status)
@@ -416,8 +437,8 @@ contains
 #:endfor
 
     subroutine test_point_target(passed)
-        !! The point procedures inside an `!$omp target` region (host fallback in this build) and on
-        !! the CPU, bit for bit, every kind and kinematics.
+        !! The point procedures inside an `!$omp target` region and on the CPU, every kind and
+        !! kinematics (`check_target`).
         use omp_lib, only : omp_is_initial_device
         logical, intent(inout) :: passed
         integer, parameter :: NPTS = 16
@@ -425,6 +446,8 @@ contains
         real(dp) :: f9(9, NPTS)
         integer :: i
         logical :: host
+        real(dp) :: lam(3), fm(3, 3), amp(NPTS)
+        type(ten_3D2Osym_dp) :: Cd
 #:for k in REAL_KINDS
         real(${k}$) :: f_${k}$(9, NPTS), s_${k}$(6), c_${k}$(6, 6), out_t_${k}$(NOUT, NPTS), out_c_${k}$(NOUT, NPTS)
         integer :: st_t_${k}$(NPTS), st_c_${k}$(NPTS)
@@ -433,6 +456,12 @@ contains
         rng = park_miller(20261102)
         do i = 1, NPTS
             f9(:, i) = mm9(reshape(rotation_ref(rng), [9]), case_F(mod(i - 1, NCASES) + 1))
+            ! On a device the rounding is amplified by up to kappa(C) (rotation, logarithmic strains and
+            ! their tangents, as in test_sp_vs_dp)
+            fm = matmul(transpose(reshape(f9(:, i), [3, 3])), reshape(f9(:, i), [3, 3]))
+            Cd%vals = [fm(1, 1), fm(2, 2), fm(3, 3), fm(1, 2), fm(2, 3), fm(1, 3)]
+            lam = eigenvals(Cd)
+            amp(i) = lam(1)/lam(3)
         end do
 #:for k in REAL_KINDS
         f_${k}$ = real(f9, ${k}$)
@@ -450,10 +479,10 @@ contains
         do i = 1, NPTS
             call point_${m}$_${k}$(f_${k}$(:, i), s_${k}$, c_${k}$, out_c_${k}$(:, i), st_c_${k}$(i))
         end do
-        call check_true(passed, '${k}$ ${m}$ target region ran on the host (no offload in this build)', host)
+        call check_target_ran(passed, '${k}$ ${m}$', host)
         call check_true(passed, '${k}$ ${m}$ target = CPU status, all OK', &
                         all(st_t_${k}$ == st_c_${k}$) .and. all(st_c_${k}$ == STATUS_OK))
-        call check_approx(passed, '${k}$ ${m}$ target = CPU (bit for bit)', out_t_${k}$, out_c_${k}$, 0.0_${k}$)
+        call check_target(passed, '${k}$ ${m}$ target = CPU', out_t_${k}$, out_c_${k}$, .not. host, amp=real(amp, ${k}$))
 #:endfor
 #:endfor
     end subroutine test_point_target

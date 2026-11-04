@@ -31,7 +31,7 @@ module muscle_kin_spatial_logarithmic
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D2O', k) + ', ' + S2(k) + ', ' + C4(k) for k in REAL_KINDS)}$, &
         operator(/)
-    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_spatial_log, &
+    use muscle_kin_finite, only : ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, kin_finite_update, kin_finite_update_norot, kin_spatial_log, &
         kin_spatial_log_tangent
     implicit none
     private
@@ -49,6 +49,12 @@ contains
         call kin_finite_update(F, state, status)
         state%strain = kin_spatial_log(state)
     end subroutine kin_update_spatial_logarithmic_${k}$
+
+    $:MODEL_FUNCTION('kin', 'spatial_logarithmic', 'update_norot', k, doc=r'`kin_update` with `kin_finite_update_norot` (R not computed).')
+
+        call kin_finite_update_norot(F, state, status)
+        state%strain = kin_spatial_log(state)
+    end subroutine kin_update_norot_spatial_logarithmic_${k}$
 
     $:MODEL_FUNCTION('kin', 'spatial_logarithmic', 'to_cauchy', k, doc=r'Kirchhoff stress to Cauchy, \( J^{-1}\boldsymbol\tau \).')
 
