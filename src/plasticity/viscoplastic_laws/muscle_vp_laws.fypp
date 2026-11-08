@@ -3,9 +3,9 @@
 #:include "muscle_common.fypp"
 
 module muscle_vp_laws
-    !! Viscoplastic flow stress laws for kernels (D-007, D-017): the parameter types of every
+    !! Viscoplastic flow stress laws for kernels: the parameter types of every
     !! law (`vp_<name>_<k>`) and the
-    !! family generics (prefix `vp_`, D-017.5b), with the same names for every law and kind:
+    !! family generics (prefix `vp_`), with the same names for every law and kind:
     !!
     !! - `vp_flow_stress(prm, ep, epd[, sy])`: flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \);
     !! - `vp_dflow_dep(prm, ep, epd[, sy, dsy_dep])`: \( \partial\sigma/\partial\epsilon_p \);
@@ -17,11 +17,11 @@ module muscle_vp_laws
     !!
     !! `prm` is the parameter type of a law, `ep` the equivalent plastic strain and `epd` its rate,
     !! of the same kind. The laws that compose a hardening law (`VISCOPLASTIC_COMPOSED`, e.g.
-    !! Johnson-Cook) also take its values already evaluated (D-017.6b): `sy` = `hard_stress(h, ep)`
+    !! Johnson-Cook) also take its values already evaluated: `sy` = `hard_stress(h, ep)`
     !! and `dsy_dep` = `hard_dstress_dep(h, ep)`; the self-contained ones (Rusinek-Klepaczko) do not.
     !! Example: `s = vp_flow_stress(jc, ep, epd, hard_stress(h, ep))`.
     !!
-    !! To add a law: write `muscle_vp_<name>.fypp`, then add its names to the `use` lines and to the
+    !! To add a law: write `muscle_vp_<name>.fypp`, then add a `use` statement of its own and its names to the
     !! interfaces below (the compiler rejects a name that does not exist).
 #:for k in REAL_KINDS
     use muscle_vp_jc, only : vp_jc_${k}$, vp_flow_stress_jc_${k}$, vp_dflow_dep_jc_${k}$, &

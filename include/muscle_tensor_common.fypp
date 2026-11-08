@@ -1,10 +1,9 @@
 #! SPDX-License-Identifier: GPL-3.0-or-later
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #!
-#! Pieces shared by the tensor family templates (src/tensors/types/muscle_tensor_<family>.fypp,
-#! pattern of D-011, D-012): the operations whose code does not depend on the family or on the
-#! layout (they act on the whole `vals` array), their generic interfaces and the type-bound
-#! wrappers of the historical API. Include after muscle_common.fypp:
+#! Pieces shared by the tensor family templates (src/tensors/types/muscle_tensor_<family>.fypp):
+#! the operations whose code does not depend on the family or on the layout (they act on the whole
+#! `vals` array), their generic interfaces and the type-bound wrappers of the historical API. Include after muscle_common.fypp:
 #!
 #!   #:include "muscle_common.fypp"
 #!   #:include "muscle_tensor_common.fypp"
@@ -75,7 +74,7 @@
 #! `*` and `/` by a scalar (all component-wise on `vals`) and `.inv.` (calls the family's
 #! `inverse_<d><F>_<k>`). Expand it inside the `contains` part of the module.
 #! tol_default: Fortran constant used as the default tolerance of `is_approx` (default
-#! `TOL_APPROX_<k>`); a family with its own default (D-010, 4O2sym) passes it here.
+#! `TOL_APPROX_<k>`); a family with its own default (4O2sym) passes it here.
 #:def TENSOR_COMMON_PROCEDURES(d, F, k, tol_default=None)
 #:set S = d + F
 #:set tol_def = tol_default if tol_default else 'TOL_APPROX_' + k

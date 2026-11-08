@@ -9,3 +9,4 @@ dependencies:
   - pip:
     - ford
     - fypp>=3.1
+    - fortls

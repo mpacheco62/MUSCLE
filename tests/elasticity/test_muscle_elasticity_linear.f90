@@ -32,16 +32,20 @@ subroutine test_tensile_nu0_3D(passed)
     use muscle_tensors
     use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
     type(elas_linear_dp) :: el
+    integer :: status
     type(ten_3D2Osym) :: expected_result, result 
     type(ten_3D2Osym) :: strain 
 
-    call elas_linear_init(el, young=1D0, poisson=0D0)
+    call elas_linear_init(el, young=1D0, poisson=0D0, status=status)
+    passed = status == STATUS_OK
+    if (.not. passed) return
     
     
     call expected_result%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
@@ -110,16 +114,20 @@ subroutine test_tensile_nu0_2D(passed)
     use muscle_tensors
     use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
     type(elas_linear_dp) :: el
+    integer :: status
     type(ten_2D2Osym) :: expected_result, result 
     type(ten_2D2Osym) :: strain 
 
-    call elas_linear_init(el, young=1D0, poisson=0D0)
+    call elas_linear_init(el, young=1D0, poisson=0D0, status=status)
+    passed = status == STATUS_OK
+    if (.not. passed) return
     
     
     call expected_result%init((/1D0, 0D0, 0D0, 0D0/))
@@ -169,16 +177,20 @@ subroutine test_tensile_3D(passed)
     use muscle_tensors
     use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
     type(elas_linear_dp) :: el
+    integer :: status
     type(ten_3D2Osym) :: expected_result, result 
     type(ten_3D2Osym) :: strain 
 
-    call elas_linear_init(el, young=1D0, poisson=0.3D0)
+    call elas_linear_init(el, young=1D0, poisson=0.3D0, status=status)
+    passed = status == STATUS_OK
+    if (.not. passed) return
     
     call expected_result%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     call strain%init((/1D0, -0.3D0, -0.3D0, 0D0, 0D0, 0D0/))
@@ -233,16 +245,20 @@ subroutine test_tensile_2D(passed)
     use muscle_tensors
     use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
     type(elas_linear_dp) :: el
+    integer :: status
     type(ten_2D2Osym) :: expected_result, result 
     type(ten_2D2Osym) :: strain 
 
-    call elas_linear_init(el, young=1D0, poisson=0.3D0)
+    call elas_linear_init(el, young=1D0, poisson=0.3D0, status=status)
+    passed = status == STATUS_OK
+    if (.not. passed) return
     
     
     call expected_result%init((/1D0, 0D0, 0D0, 0D0/))
@@ -277,16 +293,20 @@ subroutine test_dsigma_dstrain_3D(passed)
     use muscle_tensors
     use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
     type(elas_linear_dp) :: el
+    integer :: status
     type(ten_3D4O3sym) :: expected_result, result 
     type(ten_3D2Osym) :: strain
 
-    call elas_linear_init(el, young=1D0, poisson=0.0D0)
+    call elas_linear_init(el, young=1D0, poisson=0.0D0, status=status)
+    passed = status == STATUS_OK
+    if (.not. passed) return
 
     call expected_result%init(xxxx=1D0, yyyy=1D0, zzzz=1D0,       & 
                               xyxy=0.5D0, yzyz=0.5D0, xzxz=0.5D0, &
@@ -300,7 +320,9 @@ subroutine test_dsigma_dstrain_3D(passed)
     if (.not. passed) return
 
 
-    call elas_linear_init(el, young=1D0, poisson=0.2D0)
+    call elas_linear_init(el, young=1D0, poisson=0.2D0, status=status)
+    passed = status == STATUS_OK
+    if (.not. passed) return
 
     call expected_result%init(xxxx=1.111111111111111D0, yyyy=1.111111111111111D0, zzzz=1.111111111111111D0,   & 
                               xyxy=0.4166666666666666D0, yzyz=0.4166666666666666D0, xzxz=0.4166666666666666D0, &
@@ -321,16 +343,20 @@ subroutine test_dsigma_dstrain_2D(passed)
     use muscle_tensors
     use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     implicit none
     
     real(real64), parameter :: EPS=1e-10
     logical, intent(out) :: passed
 
     type(elas_linear_dp) :: el
+    integer :: status
     type(ten_2D4O3sym) :: expected_result, result 
     type(ten_2D2Osym) :: strain
 
-    call elas_linear_init(el, young=1D0, poisson=0.0D0)
+    call elas_linear_init(el, young=1D0, poisson=0.0D0, status=status)
+    passed = status == STATUS_OK
+    if (.not. passed) return
 
     call expected_result%init(xxxx=1D0, yyyy=1D0, zzzz=1D0,       & 
                               xyxy=0.5D0, xxyy=0D0, yyzz=0D0,     &
@@ -342,7 +368,9 @@ subroutine test_dsigma_dstrain_2D(passed)
     if (.not. passed) return
 
 
-    call elas_linear_init(el, young=1D0, poisson=0.2D0)
+    call elas_linear_init(el, young=1D0, poisson=0.2D0, status=status)
+    passed = status == STATUS_OK
+    if (.not. passed) return
 
     call expected_result%init(xxxx=1.111111111111111D0, yyyy=1.111111111111111D0, zzzz=1.111111111111111D0,    & 
                               xyxy=0.4166666666666666D0, xxyy=0.2777777777777777D0, xxzz=0.2777777777777777D0, &

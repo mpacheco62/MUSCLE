@@ -84,14 +84,14 @@ program test_math_golden_operations
     !! `procedure(...)` API, D-018.18b), now `FD_GRAD` of `tests/common/muscle_fd.fypp` with its step
     !! `rel = FD_STEP_CEN`; the keys keep the former names. The forward differences of a 3x3
     !! matrix (`derivative_escalar_tensor3x3`, `..._3x3sym2`) have no kernel equivalent: their
-    !! records were removed (header of the reference). Results are compared bit for bit with
+    !! records were removed (header of the reference). Results are compared, within the tolerance of their category (D-021), with
     !! `tests/reference/math/math_operations_dp.txt`, captured from the original code
     !! (`tests/reference/math/regenerate.sh`); compiled with -fno-inline (D-016.9).
     use muscle_kinds, only : dp
     use muscle_tensors, only : ten_3D2Osym
     use muscle_math_operations, only : eigenvals
     use muscle_test_helpers, only : park_miller, rnd
-    use muscle_test_golden, only : golden_init, golden_check, golden_finish
+    use muscle_test_golden, only : golden_init, golden_check, golden_finish, GOLDEN_TOL_FD
     use math_golden_operations_funcs
     implicit none
 
@@ -144,7 +144,7 @@ program test_math_golden_operations
         call golden_check('input ten_3D2Osym' // trim(c), s%vals)
 #:for f in ['hsym_1', 'hsym_2']
         @:FD_GRAD(g, ${f}$({x}), s, dp, 3D, rel=FD_STEP_CEN)
-        call golden_check('derivative(${f}$, ten_3D2Osym)' // trim(c), g%vals)
+        call golden_check('derivative(${f}$, ten_3D2Osym)' // trim(c), g%vals, tol=GOLDEN_TOL_FD)
 #:endfor
         ! Former 3x3 matrix input (its records were removed): still drawn, so that the inputs of
         ! the next cases do not change
@@ -158,7 +158,7 @@ program test_math_golden_operations
     s%vals = 0.0_dp
 #:for f in ['hsym_0', 'hsym_2']
     @:FD_GRAD(g, ${f}$({x}), s, dp, 3D, rel=FD_STEP_CEN, indent=4)
-    call golden_check('derivative(${f}$, zero)', g%vals)
+    call golden_check('derivative(${f}$, zero)', g%vals, tol=GOLDEN_TOL_FD)
 #:endfor
     call golden_finish()
 

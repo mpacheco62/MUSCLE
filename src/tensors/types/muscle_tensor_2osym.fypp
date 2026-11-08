@@ -2,16 +2,16 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_common.fypp"
-#! Symmetric second-order tensors, one type per dimension and kind (pattern of D-011):
+#! Symmetric second-order tensors, one type per dimension and kind:
 #! - everything that depends on the component layout comes from layout('2Osym', dim); the few
 #!   formulas that are genuinely different per dimension (square, det) are written explicitly
 #!   to keep the evaluation order (and the bits) of the original code;
 #! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
 #! - the operations common to every family (+, -, *, /, =, .approx., .inv., is_approx and the
-#!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp (D-012);
+#!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp;
 #! - formatted output lives in muscle_tensor_io (host only);
-#! - the historical names (ten_3D2Osym, ten_2D2Osym = dp) come from muscle_tensors (D-003).
+#! - the historical names (ten_3D2Osym, ten_2D2Osym = dp) come from muscle_tensors.
 
 module muscle_tensor_2osym
     !! Module muscle_tensor_2osym

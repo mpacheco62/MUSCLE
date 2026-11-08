@@ -3,7 +3,7 @@
 #:include "muscle_common.fypp"
 
 module muscle_kin_laws
-    !! Kinematics for kernels (D-007, D-017.14): the (empty) parameter types of every registered
+    !! Kinematics for kernels: the (empty) parameter types of every registered
     !! kinematics (`kin_<name>_<k>`, `KINEMATICS_MODELS` of tools/fypp/muscle_meta.py), the family
     !! generics (prefix `kin_`, same names for every kinematics and kind; 3D only) and, re-exported
     !! from muscle_kin_finite, the state and its functions common to every kinematics. A kinematics
@@ -12,10 +12,10 @@ module muscle_kin_laws
     !! - `call kin_update(prm, F, state, status)`: kinematic state of the deformation gradient
     !!   (`kin_state_<k>`: F, F^-1, R, J, C, b, b^-1 and the strain of the kinematics); the only
     !!   procedure that validates: `STATUS_INVALID_DEFORMATION` (muscle_status) when det F <= 0,
-    !!   F is singular or an eigenvalue of C is at or below `KIN_EIG_MIN_<k>` (D-017.14a); every
+    !!   F is singular or an eigenvalue of C is at or below `KIN_EIG_MIN_<k>`; every
     !!   kinematics but the corotational one;
-    !! - `call kin_corot_update(prm, strain, state, status [, R])`: the corotational kinematics
-    !!   (D-017.14d): strain in the unrotated frame, \( J = \exp(\operatorname{tr}\boldsymbol\varepsilon) \)
+    !! - `call kin_corot_update(prm, strain, state, status [, R])`: the corotational kinematics:
+    !!   strain in the unrotated frame, \( J = \exp(\operatorname{tr}\boldsymbol\varepsilon) \)
     !!   and the rotation (the identity if absent); no validation;
     !! - `sig = kin_to_cauchy(prm, state, stress)`: Cauchy stress from the constitutive stress (work
     !!   conjugate of `state%strain`);
@@ -26,7 +26,7 @@ module muscle_kin_laws
     !!   over J for \( \delta\mathbf{F} = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (Abaqus UMAT,
     !!   ANSYS USERMAT; D-018.15f);
     !! - `kin_is_finite_strain(prm)`;
-    !! - with a status other than `STATUS_OK` the outputs must not be used (D-017.14f): the state
+    !! - with a status other than `STATUS_OK` the outputs must not be used: the state
     !!   is still computed (same bits as the historical OO kinematics);
     !! - common (muscle_kin_finite): `kin_finite_update`, `kin_log_measure`, the strain measures
     !!   `kin_green_lagrange`, `kin_euler_almansi`, `kin_material_log`, `kin_spatial_log`, the stress
@@ -42,6 +42,9 @@ module muscle_kin_laws
     !! S = elas_stress(elas, st%strain)             ! constitutive model in the strain of kin
     !! sig = kin_to_cauchy(kin, st, S)
     !! ```
+    !!
+    !! To add a kinematics: write `muscle_kin_<name>.fypp`, then add a `use` statement of its own and its names to the
+    !! interfaces and the `public` list below (the compiler rejects a name that does not exist).
 #:for k in REAL_KINDS
     use muscle_kin_small_strain, only : &
         kin_update_small_strain_${k}$, &
@@ -151,7 +154,7 @@ module muscle_kin_laws
     end interface kin_update
 
     interface kin_update_norot
-        !! `kin_update` without the polar decomposition (D-019.7c): the rotation R of the state is the identity, unless the
+        !! `kin_update` without the polar decomposition: the rotation R of the state is the identity, unless the
         !! functions of the kinematics read it (`KINEMATICS_ROTATION`: then the same state as `kin_update`); every other component
         !! and `status` are the same bits (every applicable model, kind of the family).
 #:for k in REAL_KINDS
@@ -187,7 +190,7 @@ module muscle_kin_laws
     interface kin_to_spatial_tangent
         !! Spatial tangent from the constitutive tangent: the part of \(
         !! J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) through the constitutive stress, for \( \delta\mathbf{F}
-        !! = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (with the derivative of the strain measure, D-018.15f; without the
+        !! = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (with the derivative of the strain measure; without the
         !! geometric term) (every model, kind of the family).
 #:for k in REAL_KINDS
         module procedure kin_to_spatial_tangent_small_strain_${k}$
@@ -201,7 +204,7 @@ module muscle_kin_laws
 
     interface kin_geometric_tangent
         !! Geometric term of the spatial tangent: the part of \( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) at
-        !! a fixed constitutive stress (D-018.15f); `to_spatial_tangent` plus this is the tangent of the Jaumann rate of the
+        !! a fixed constitutive stress; `to_spatial_tangent` plus this is the tangent of the Jaumann rate of the
         !! Kirchhoff stress (every model, kind of the family).
 #:for k in REAL_KINDS
         module procedure kin_geometric_tangent_small_strain_${k}$

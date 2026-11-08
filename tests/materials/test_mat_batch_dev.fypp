@@ -152,9 +152,9 @@ contains
         real(${k}$) :: a
         integer :: i, step
         logical :: plastic
+        integer :: st
 #:if extra == 'maxwell'
         type(visco_coefs_${k}$) :: coefs
-        integer :: st
 #:endif
 
 #:if extra == 'maxwell'
@@ -162,7 +162,8 @@ contains
             shear=[20000.0_${k}$, 10000.0_${k}$], tau=[0.05_${k}$, 1.0_${k}$], status=st)
         call check_true(passed, '${L}$: Maxwell init', st == STATUS_OK)
 #:else
-        call elas_linear_init(mat%elas, young=210000.0_${k}$, poisson=0.3_${k}$)
+        call elas_linear_init(mat%elas, young=210000.0_${k}$, poisson=0.3_${k}$, status=st)
+        call check_true(passed, '${L}$: elastic init', st == STATUS_OK)
 #:endif
         mat%hard%y0 = 200.0_${k}$
         mat%hard%K = 1000.0_${k}$

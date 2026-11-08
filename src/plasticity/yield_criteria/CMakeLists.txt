@@ -1,4 +1,4 @@
-# Criteria and the family module with the generics yield_* (D-017); muscle_anisotropic_yield: linear transformations
+# Criteria and the family module with the generics yield_*; muscle_anisotropic_yield: linear transformations
 # and principal-value terms shared by the anisotropic criteria
 muscle_add_fypp_sources(muscle
                  muscle_anisotropic_yield.fypp

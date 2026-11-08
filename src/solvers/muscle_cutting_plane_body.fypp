@@ -1,15 +1,16 @@
 #! SPDX-License-Identifier: GPL-3.0-or-later
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#! Body of the explicit cutting plane return mapping of a declared material (D-018.1, D-018.5), written
+#! Body of the explicit cutting plane return mapping of a declared material, written
 #! once against the family generics `elas_*`, `yield_*` and `hard_*`. Port of the historical solver
-#! (muscle_solver_cutting_plane, removed in Phase 7 step 9) operation by operation, so that both
-#! give the same bits in double precision; relative tolerance (D-018.3) and no output in both.
+#! (muscle_solver_cutting_plane, now removed) operation by operation, so that both
+#! give the same bits in double precision; relative tolerance and no output in both.
 #!
 #! Included by src/materials/muscle_material.fypp inside its `#:for k` loop (contained procedures of
-#! the material module), with the variables listed in muscle_closest_point_body.fypp set (also for the
-#! argument `elas`). 3D only. The material type has the components `yield` and `hard`
+#! the material module), with these variables set: `k` (kind), `MAT` (the `muscle_meta.Material`),
+#! `MAT_T`, `ELAS_T`, `SOLVE` (specific procedure name) and `S2` / `C4` / `T4` (see
+#! muscle_closest_point_body.fypp, also for the argument `elas`). 3D only. The material type has the components `yield` and `hard`
 #! (MATERIAL_SOLVERS['cutting_plane']), `iter_nw` (default 100, the historical limit) and `tol`.
-#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver, D-018.12c).
+#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver).
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
 
@@ -21,9 +22,9 @@
         !! Corrections \( \delta\gamma = f/(\mathbf{n}:\mathbb{C}:\mathbf{n} + d\sigma_y/d\epsilon_p) \)
         !! of the plastic strain (\( \delta\gamma\,\mathbf{n} \)) and of the equivalent plastic strain,
         !! with the elastic tangent \( \mathbb{C} \) of the start of the step, until
-        !! \( f < tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \) (D-018.3; the same check decides an
+        !! \( f < tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \) (the same check decides an
         !! elastic step, `iters` = 0). `iters`: number of corrections. With `STATUS_NOT_CONVERGED`
-        !! (`mat%iter_nw` corrections) the outputs must not be used (D-017.14f): the stress is that
+        !! (`mat%iter_nw` corrections) the outputs must not be used: the stress is that
         !! before the last correction, as the historical solver.
         !!
         !! `tangent`: the continuum elastoplastic tangent at the final state (the historical solver has
@@ -65,7 +66,7 @@
         real(${k}$) :: strain_pf, hard, dhard, f, ddgamma
         integer :: i
 
-        ! dt: argument of the common kernel signature of the materials (D-018.12c), not used here
+        ! dt: argument of the common kernel signature of the materials, not used here
         associate (unused_dt => dt)
         end associate
 

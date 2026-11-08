@@ -2,7 +2,7 @@
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #!
 #! Pieces shared by the operator templates (src/tensors/operators/muscle_tensor_ops_<m>.fypp,
-#! one module per operation, D-015). The pairs of operands of each generic come from the table
+#! one module per operation). The pairs of operands of each generic come from the table
 #! OP_TABLE of tools/fypp/muscle_meta.py, never from lists written in the templates:
 #! op_entries(generic, dim, kind) gives the specific procedures (OpEntry: name, concrete types and
 #! the table tags tag_a/tag_b/tag_res that select the body). Include after muscle_common.fypp:

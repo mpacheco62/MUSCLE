@@ -1,5 +1,5 @@
 # Kernel state and common functions, the kinematics and the family module
-# with the generics kin_* (D-017.14)
+# with the generics kin_*
 muscle_add_fypp_sources(muscle
                  muscle_kin_finite.fypp
                  muscle_kin_small_strain.fypp

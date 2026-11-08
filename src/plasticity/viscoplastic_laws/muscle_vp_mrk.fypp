@@ -19,7 +19,7 @@ module muscle_vp_mrk
     !! F^{1/\chi_2} \partial\sigma_{0a}/\partial\dot\epsilon_p \), evaluated with \( L \ge 10^{-10} \) and
     !! \( F \ge 10^{-10} \).
     !!
-    !! Known issues, kept with the same results as the original code (D-017.7, not fixed in Phase 6):
+    !! Known issues, kept with the same results as the original code (D-017.7):
     !!
     !! - `flow_stress` jumps at \( \dot\epsilon_p = 0^+ \): it is \( \sigma_u \) for
     !!   \( \dot\epsilon_p \le 0 \); it is Inf at \( \dot\epsilon_p = \dot\epsilon_{max} \) and NaN above.

@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_ops_common.fypp"
-#! Dyadic products `.tdot.` and `.tdotsym.` (D-015): the pairs come from OP_TABLE (muscle_meta);
+#! Dyadic products `.tdot.` and `.tdotsym.`: the pairs come from OP_TABLE (muscle_meta);
 #! the bodies are written once in index notation over the layout of the result:
 #! - `.tdot.`: C_ijkl = a_ij b_kl, one row (a_I b_J for every J) of the Voigt matrix per line;
 #!   with the identity, a (x) I fills the normal columns and I (x) a the normal rows;

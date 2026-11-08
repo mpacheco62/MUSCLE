@@ -10,7 +10,7 @@ module muscle_vp_rk
     !!    B = B_0 \left[\log_{10}(\dot\epsilon_{max}/\dot\epsilon_p)\right]^{-\nu}, \quad
     !!    \sigma^* = \sigma_0^* \langle 1 - D_1 \log_{10}(\dot\epsilon_{max}/\dot\epsilon_p) \rangle^m \]
     !!
-    !! Known issues, kept with the same results as the original code (D-017.7, not fixed in Phase 6):
+    !! Known issues, kept with the same results as the original code (D-017.7):
     !!
     !! - `flow_stress` is 0 for \( \dot\epsilon_p \le 0 \); it is Inf at \( \dot\epsilon_p =
     !!   \dot\epsilon_{max} \) and NaN above.
@@ -117,7 +117,7 @@ contains
         & result(res)
         !! Partial derivative \( \partial\sigma/\partial\epsilon_p \) (at constant \( \dot\epsilon_p \)) of the
         !! Rusinek-Klepaczko model in `real(${k}$)`.
-        !! Always 0: the original derivative omits this term (D-017.7).
+        !! Always 0: the original derivative omits this term.
         implicit none
         @:DEVICE()
         type(vp_rk_${k}$), intent(in) :: prm
@@ -153,7 +153,7 @@ contains
         & result(res)
         !! Derivative of the flow stress with respect to the plastic strain increment, \( \partial\sigma/\partial\epsilon_p
         !! + \partial\sigma/\partial\dot\epsilon_p/\Delta t \) of the Rusinek-Klepaczko model in `real(${k}$)`.
-        !! Only the rate term, with the time step inside (D-017.7).
+        !! Only the rate term, with the time step inside.
         implicit none
         @:DEVICE()
         type(vp_rk_${k}$), intent(in) :: prm

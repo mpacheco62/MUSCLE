@@ -154,10 +154,42 @@ se conservan como historia.
 | La regla de lint `quote` nunca corría (error de sintaxis en perl) | `tools/check.sh` | Corregido | D-019.4 |
 | IGC (UHD 770): SIGSEGV intermitente dentro de libigc al compilar en el JIT `mat_kernels_target_pz_cha_yld2004_ludwik_sp` durante `check.sh` (con carga de CPU); pasa 3/3 al repetirlo solo. Código generado idéntico (Fase 9, E3) | tests target SPIR64 | Documentado: repetir el test; no es un cambio de código | D-020 |
 
+## Registro de soluciones provisionales de compiladores (vigentes)
+
+Cada fila es código o configuración que existe sólo por un defecto de un compilador o driver. «Verifica»: qué
+detecta si se rompe o si se puede quitar. Revisar esta tabla al cambiar de versión de compilador.
+
+| Solución provisional | Compilador / versión | Dónde | Verifica | Retirar cuando |
+|---|---|---|---|---|
+| Sumas explícitas en lugar de `matmul` vector×matriz | ifx 2026.2 (código de dispositivo) | `muscle_tensor_ops_contraction_double.fypp` | build SPIR64 y tests target de `check.sh` | ifx compile bien `matmul` en `declare target`; el usuario decidió mantener las sumas en todos los builds (D-019.4c), así que retirarla es opcional |
+| `--line-numbering-mode=nocontlines` de fypp | ifx (rechaza `#line` dentro de un literal continuado) | `cmake/MuscleFypp.cmake` | build SPIR64 | ifx acepte marcadores entre líneas continuadas |
+| `fp_exponent` en lugar de `exponent()`; regla de lint `exponent` | ifx con dp emulado en GPU Intel (`for_exponent8_v` no existe en el dispositivo) | `muscle_math_spectral_derivs`, cpb06, cpb06ex2, yld2004 | lint y auditoría SPIR64 | el runtime de dispositivo de ifx tenga la rutina, o GPU con FP64 nativo |
+| Se mantiene `scale()` (permitido por nombre en la auditoría SPIR64) | ifx/IGC (reemplazarlo hace perder el dispositivo) | cpb06, cpb06ex2, yld2004, `spectral_decomposition` | auditoría SPIR64 y tests target | IGC no pierda el dispositivo con el reemplazo, o `for_scale*_v` exista en el dispositivo |
+| Regla de lint `arrayctor` (sin constructor `[x, y]` encabezado por un array en código host de `declare target`) | ifx 2026.2 (conserva sólo el último elemento) | todo el código | lint de `check.sh` | ifx corrija el constructor (reproductor `r6.f90`) |
+| Módulo `muscle_tensor_minus` (fusiona sólo `operator(-)`) | ifx 2026.2 (error #6549: se pierde el `-` unario) | `src/tensors/muscle_tensor_minus.fypp`, fachada | build con ifx | ifx resuelva la fusión de genéricos |
+| Tipos derivados como locales de un procedimiento `declare target`, nunca en `private(...)` | ifx (error interno) | `BATCH_LOOP` y kernels de lote | build SPIR64 | ifx compile tipos derivados en `private` |
+| Asignar componentes (`t%vals = x(1:6)`) en lugar de un constructor con una sección de argumento de forma asumida | IGC (recursión infinita del JIT) | kernels | tests target en la GPU Intel (con límite de memoria) | IGC corregido |
+| Exclusiones de `tools/gpu_skip_tests.sh` (4 patrones) | IGC del driver 26.05 de la UHD 770 | tests target de materiales | `check.sh` lista lo excluido | driver nuevo de Intel, o validación en NVIDIA/AMD |
+| NaN con `transfer` del patrón de bits (sin módulos IEEE en kernels) | gfortran nvptx/amdgcn (llamadas IEEE sin implementación en el dispositivo) | `QUIET_NAN` | builds NVPTX/AMDGCN y auditoría | probablemente permanente (regla GPU) |
+| `VEC9_TO_MAT33` / `MAT33_TO_VEC9` en lugar de `reshape` | gfortran (llama a `_gfortran_reshape_*` en el dispositivo) | `include/muscle_common.fypp` y usuarios | auditoría de imágenes | probablemente permanente |
+| `MUSCLE_UDTIO=AUTO` desactiva la salida formateada | gfortran < 16.3 (locales estáticos con UDTIO y OpenMP) | `src/CMakeLists.txt` | `check.sh` compila el camino `MUSCLE_UDTIO=ON` | se retira solo: con gfortran ≥ 16.3 `AUTO` la activa |
+| Temporales tipados en lugar de `associate` con resultados de función de tipo derivado | gfortran | código de tensores | compilación | gfortran corregido |
+| Ejecutar programas GPU con `systemd-run` (límite de memoria) y `timeout`; nunca `ulimit -s unlimited` | IGC (un bug llegó a usar 26 GB) | `check.sh`, reglas de tests | — | práctica permanente |
+
+Abierto, sin solución provisional: error interno de ifx en `call p%init(...)` con dos nombres del mismo tipo
+(D-019.4f).
+
 ## Tests
 
 | Problema | Dónde | Estado | Ref. |
 |---|---|---|---|
+| Goldens bit a bit fallaban con otros flags (`Profile_unittests`: `kin_golden`, `math_golden_derivatives`) | `tests/common/muscle_test_golden.f90` | Corregido: tolerancia por categoría y modo estricto opcional | D-021 |
+| El target `coverage_report` fallaba con lcov 2.x (marcadores `#line`: «mismatched end line») y medía también los tests | `CMakeLists.txt` | Corregido: `--ignore-errors inconsistent` con lcov ≥ 2 y extracción de `src/` e `include/` | ESTADO_OPTIMO 1.4 |
+| Con FMA (`-march=native -O3`): registros cuyo valor exacto es 0 dan un error relativo enorme (escala ~0): `elas_golden` (`volumetric \| stress_dev`), `yield_golden` (yld2004 `s31`) | goldens de elasticidad y yield | Pendiente: piso absoluto por test o escala explícita del registro | D-021 |
+| Con FMA: `math_golden_spectral_derivs` compara autovectores de autovalores repetidos (no únicos; error 1.57 con una base válida distinta) | `tests/math/test_math_golden_spectral_derivs.f90` | Pendiente: comparar invariantes (V Λ Vᵀ, proyectores) | D-021 |
+| Con FMA: `kin_golden` `nearly singular general \| pull_back_tangent` 2.7e-8 (mal condicionado) | `tests/kinematics/test_kin_golden.fypp` | Pendiente: tolerancia escalada con el condicionamiento del caso | D-021 |
+| Con FMA: tangente numérica de `closest_point_time` (jcfull + vocemod) cambia 1e3 relativo y aparece NaN: diferencias finitas en un punto no suave (piso de JC) | `tests/materials/test_mat_closest_point_time.fypp` | Pendiente: revisar el caso (paso de las diferencias o punto de evaluación) | D-021 |
+| Con FMA: diferencias finitas de math 1.4e-9 (> 1e-9) y `math_golden_operations` (derivadas por diferencias en la categoría álgebra) 2.6e-10 | goldens de math | `math_golden_operations`: corregido (sus derivadas por diferencias usan `GOLDEN_TOL_FD`). Pendiente: el margen de la categoría de diferencias finitas con FMA (1.4e-9) | D-021 |
 | Los tests de compilación fallida (parámetros privados) pasaban con cualquier error porque la ruta del archivo contiene "private" | `tests/plasticity/yield_criteria`, `tests/elasticity` | Corregido: se exige "PRIVATE component" y fallan con "Cannot open module/Fatal Error" (sólo gfortran) | — |
 
 ## Compiladores y herramientas (Externo)

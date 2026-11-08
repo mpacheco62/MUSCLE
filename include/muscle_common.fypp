@@ -6,7 +6,7 @@
 #:mute
 
 #! Every kind MUSCLE knows, and the subset to instantiate. CMake passes MUSCLE_REAL_KINDS
-#! (cache variable of the same name); dp is required by the historical aliases (D-003).
+#! (cache variable of the same name); dp is required by the historical aliases.
 #:set ALL_KINDS = list(muscle_meta.KINDS)
 #:if defined('MUSCLE_REAL_KINDS')
 #:set REAL_KINDS = MUSCLE_REAL_KINDS
@@ -60,7 +60,7 @@ ${', '.join(fmt.format(name, k) for k in REAL_KINDS)}$
 #:enddef
 
 #! Marks a procedure as callable from OpenMP target regions. Expands to nothing unless the
-#! build defines MUSCLE_GPU (Phase 8). Use `@:DEVICE()` instead of writing the directive.
+#! build defines MUSCLE_GPU. Use `@:DEVICE()` instead of writing the directive.
 #:def DEVICE()
 #:if defined('MUSCLE_GPU')
 !$omp declare target
@@ -81,7 +81,7 @@ ${dst}$(4:6) = ${src}$(:, 2)
 ${dst}$(7:9) = ${src}$(:, 3)
 #:enddef
 
-#! Parallel loop over the points of a batch (D-008.2): put it right before the `do`. On the CPU an
+#! Parallel loop over the points of a batch: put it right before the `do`. On the CPU an
 #! OpenMP `parallel do`; with the define MUSCLE_GPU a `target teams distribute parallel do` on data
 #! already resident on the device: `present` lists the variables the caller must have mapped
 #! (`map(present, alloc: ...)`, OpenMP 5.1: never transferred), `dev` the arrays given by their device

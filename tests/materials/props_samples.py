@@ -57,7 +57,8 @@ def sample_inputs(mm, prefix, model):
     for i in inputs:
         val = res.get(i.name, defaults.get(i.name))
         if val is None:
-            raise ValueError(f'no sample value for input {i.name!r} of {prefix} {model}')
+            raise ValueError(f'no sample value for input {i.name!r} of {prefix} {model}: add the entry '
+                             f'({prefix!r}, {model!r}) to GOLDEN_PARAMS in tests/materials/golden_params.py')
         out[i.name] = val
     return out
 

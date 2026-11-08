@@ -27,7 +27,7 @@ formatted output of `muscle_tensor_io`) is unchanged.
 | `type(Plastic_material_history)`: `%init`, `%unpack_from_fea`, `%pack_to_fea` | History array of `MAT_<NAME>_NSTATE` reals per point (`hsv_n`, `hsv_np1`), `mat_pack_<name>` / `mat_unpack_<name>` for the kernel states; the stress is not part of it |
 | `history%commit()` / `history%rollback()` | None: the caller (FE code) keeps the converged `hsv_n`; the update writes only `hsv_np1` |
 | `Viscoelastic_history`, `Visco_coefficients` | State inside the material history; `call mat_step(mat, dt, coefs, status)` once per step for materials with `elas='frozen'` |
-| `type(Elasticity_linear)` + `%set_parameters(young=, poisson=)` | `type(elas_linear_dp)` + `call elas_linear_init(prm, young, poisson)` (`muscle_elasticity_linear`) |
+| `type(Elasticity_linear)` + `%set_parameters(young=, poisson=)` | `type(elas_linear_dp)` + `call elas_linear_init(prm, young, poisson, status)` (`muscle_elasticity_linear`) |
 | `elasticity%stress(strain)`, `%dstress_dstrain(...)`, `%stress_3D` / `%stress_2D` | `elas_stress(prm, strain)`, `elas_dstress_dstrain(prm, strain)`, ... (`muscle_elasticity_laws`; generic over 3D/2D and kind) |
 | `Elasticity_frozen`, Maxwell / `Kelvin_voigt` objects | `elas_frozen_<k>`, `visco_maxwell_<k>`, `visco_kelvin_<k>`, functions `visco_step_coefficients`, `visco_freeze`, `visco_update` (`muscle_visco_laws`) |
 | `type(Swift_hardening)` (and the other `Base_hardening_laws` extensions), `%stress(ep)`, `%dstress_dep(ep)` | `type(hard_swift_dp)` with public components (`k`, `e0`, `n`), `hard_stress(prm, ep)`, `hard_dstress_dep(prm, ep)`, `hard_ddstress_ddep(prm, ep)` (`muscle_hard_laws`) |

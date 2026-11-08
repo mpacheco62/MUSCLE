@@ -1,6 +1,6 @@
 #! SPDX-License-Identifier: GPL-3.0-or-later
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#! Batch API of a declared material (D-008.2, D-018.7): `BATCH` (public generic `muscle_update_<name>`)
+#! Batch API of a declared material: `BATCH` (public generic `muscle_update_<name>`)
 #! runs the point kernel `UPDATE` on every point of a batch stored in SoA arrays (`eps(npts, 6)`), or
 #! on the points of an index list (multiphase). Included by src/materials/muscle_material.fypp after
 #! muscle_material_kernel.fypp with its variables set (`k`, `MAT`, `MAT_T`, `STATE_T`, `COEFS_T`,
@@ -12,7 +12,7 @@
 #! (muscle_common.fypp: OpenMP `parallel do`, or `target teams distribute parallel do` over data
 #! already on the device with MUSCLE_GPU) whose body calls a point procedure (`@:DEVICE()`, the per
 #! point locals live there): load the point to local tensors, `UNPACK`, `UPDATE`, `PACK`, store.
-#! `BATCH_DEV` (public generic `muscle_update_<name>_dev`, D-019.7a) is the same API on arrays given by
+#! `BATCH_DEV` (public generic `muscle_update_<name>_dev`) is the same API on arrays given by
 #! their device addresses: with MUSCLE_GPU it calls four more loops whose `BATCH_LOOP` takes the arrays
 #! with `has_device_addr` instead of `map(present, alloc: ...)`; without it, the loops of `BATCH`.
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
@@ -24,7 +24,7 @@
 #:set XARGS = ', '.join(XS)
 #:set VARGS = 'coefs, step_status, ' if VISCO else ''
 #:set OUTS = 'hsv_n, hsv_np1, sig, status, iters'
-#! Loops on device addresses (`_dev` suffix, D-019.7a): only with MUSCLE_GPU (on the CPU the `_dev` API
+#! Loops on device addresses (`_dev` suffix): only with MUSCLE_GPU (on the CPU the `_dev` API
 #! calls the loops of `BATCH`)
 #:set DEVS = [False, True] if defined('MUSCLE_GPU') else [False]
 #:for TAN in [False, True]
@@ -172,7 +172,7 @@
     subroutine ${API}$(mat, ${XARGS}$, dt, ${OUTS}$, ddsdde, idx)
 #:if DEV
 #:set GEN = muscle_meta.material_batch(MAT.name)
-        !! Batch API of material `${MAT.name}$`, `real(${k}$)`, on device memory (D-019.7a): `${GEN}$` with
+        !! Batch API of material `${MAT.name}$`, `real(${k}$)`, on device memory: `${GEN}$` with
         !! every array argument (`${XARGS}$`, `hsv_n`, `hsv_np1`, `sig`, `status`, `iters`, `ddsdde`, `idx`) given by
         !! its device address, not mapped (memory of `omp_target_alloc` or of a device library such as
         !! cuFFT, seen as a Fortran array with `c_f_pointer`). Only the target region reads and writes them
@@ -182,12 +182,12 @@
         !! Otherwise as `${GEN}$`:
         !!
 #:endif
-        !! Batch API of material `${MAT.name}$`, `real(${k}$)` (D-008.2, D-018.7): the point kernel
+        !! Batch API of material `${MAT.name}$`, `real(${k}$)`: the point kernel
         !! `mat_update` on every point `p` of the SoA arrays (first dimension: `npts = size(sig, 1)`), or
         !! only on the points `idx(:)` (multiphase: the other rows are not touched). Bit for bit the same
         !! as calling `mat_unpack_${MAT.name}$`, `mat_update` and `mat_pack_${MAT.name}$` point by point.
 #:if VISCO
-        !! The coefficients of the time step (`mat_step`) are computed once for the batch (D-018.14d); if
+        !! The coefficients of the time step (`mat_step`) are computed once for the batch; if
         !! their status is an error, it is the status of every point to compute (iterations 0), and nothing
         !! else is written.
 #:endif
@@ -239,7 +239,7 @@
             !! Stresses at \( t_{n+1} \), `(npts, 6)`.
         integer, intent(inout), contiguous :: status(:)
             !! `STATUS_OK` or an error code of muscle_status per point (outputs of that point not to be
-            !! used, D-017.14f), `(npts)`.
+            !! used), `(npts)`.
         integer, intent(inout), contiguous :: iters(:)
             !! Iterations of the return mapping per point (0 in an elastic step), `(npts)`.
         real(${k}$), intent(inout), contiguous, optional :: ddsdde(:, :, :)

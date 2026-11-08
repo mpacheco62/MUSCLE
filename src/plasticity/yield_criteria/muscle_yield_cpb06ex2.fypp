@@ -21,8 +21,8 @@ module muscle_yield_cpb06ex2
     !! overflows (in sp the sum was subnormal or zero for small stresses with a large a).
     !!
     !! At a null equivalent stress (zero or hydrostatic stress) both derivatives are 0 (D-017.9; the
-    !! original code gave NaN). Known limits, kept with the same results as the original code
-    !! (D-017.9): `eigenvals` uses an absolute threshold (1e-10 in dp) that discards small shears on a
+    !! original code gave NaN). Known limits, kept with the same results as the original code:
+    !! `eigenvals` uses an absolute threshold (1e-10 in dp) that discards small shears on a
     !! hydrostatic stress; with \( k = \pm 1 \) and a null principal value the Hessian takes the
     !! value chosen in `yield_cpb_curvature_<k>` of `muscle_anisotropic_yield` (for
     !! \( 1 \le a < 2 \) the second derivative is not bounded there).
@@ -34,6 +34,7 @@ module muscle_yield_cpb06ex2
     !! `yield_stress_eq_and_derivatives_cpb06ex2_3D_<k>(prm, sigma, f, df[, ddf])` (the three in turn)
     !! for each real kind, also through the generics `yield_*` of `muscle_yield_criteria`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
 #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
 #:endfor
@@ -87,7 +88,7 @@ contains
 #:for k in REAL_KINDS
 
     pure subroutine yield_cpb06ex2_init_${k}$(prm, c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k, cp11, &
-            & cp12, cp13, cp21, cp22, cp23, cp31, cp32, cp33, cp44, cp55, cp66, kp, a)
+            & cp12, cp13, cp21, cp22, cp23, cp31, cp32, cp33, cp44, cp55, cp66, kp, a, status)
         !! Parameters of the CPB06ex2 model in `real(${k}$)`: the maps of Plunkett et al. (2008),
         !! Eqs. (9)-(10), and the normalization B of Eq. (8) to unit uniaxial tension in RD, as in
         !! Eq. (11), so that they are not computed in every call.
@@ -149,6 +150,9 @@ contains
             !! Strength differential parameter of Sigmap.
         real(${k}$), intent(in) :: a
             !! Degree of homogeneity.
+        integer, intent(out) :: status
+            !! Always `STATUS_OK` (no input is validated): the argument exists so that every model
+            !! initializer is called the same way.
         type(ten_3D2Osym_${k}$) :: rd
         real(${k}$) :: blk(3, 3)
 
@@ -169,6 +173,7 @@ contains
         rd%vals(1) = 1.0_${k}$
         prm%B = 1.0_${k}$
         prm%B = 1.0_${k}$/yield_stress_eq_cpb06ex2_3D_${k}$(prm, rd)
+        status = STATUS_OK
     end subroutine yield_cpb06ex2_init_${k}$
 
     pure subroutine yield_cpb06ex2_principal_${k}$(prm, lam, lamp, phi, df, dfp, d2f, d2fp, cross)
@@ -176,9 +181,9 @@ contains
         !! df/dlam_i = (f/Psi) psi_i**(a-1) (sgn(lam_i) - k), with Psi = Phi + Phip the sum over Sigma
         !! and Sigmap; the second derivatives as two diagonal blocks (`yield_cpb_hessian`, with the
         !! total Psi) and the coefficient (1-a)/f of the mixed block. Evaluated on the six principal
-        !! values divided by 2**e (D-017.10c): df (degree 0) is the same, d2f, d2fp and cross (degree
+        !! values divided by 2**e: df (degree 0) is the same, d2f, d2fp and cross (degree
         !! -1) are scaled back by 2**(-e); `phi` is Psi of the scaled values. With Psi = 0 (null
-        !! equivalent stress) every derivative is 0 (D-017.9).
+        !! equivalent stress) every derivative is 0.
         implicit none
         @:DEVICE()
         type(yield_cpb06ex2_${k}$), intent(in) :: prm
@@ -246,7 +251,7 @@ contains
         real(${k}$) :: res
             !! \( \sigma_{eq} \).
         ! Equivalent stress B Psi**(1/a), Plunkett et al. (2008), Eq. (8), on the principal values
-        ! scaled by 2**(-e) (homogeneity of degree 1, D-017.10c)
+        ! scaled by 2**(-e) (homogeneity of degree 1)
         real(${k}$) :: lam(3), lamp(3)
         integer :: e
 
@@ -283,7 +288,7 @@ contains
         call spectral_decomposition(yield_lin_apply(prm%Lp, prm%cp_shear, sigma), lamp, Vp)
         call yield_cpb06ex2_principal_${k}$(prm, lam, lamp, phi, df, dfp)
         if (phi == 0.0_${k}$) then
-            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative (D-017.9)
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
             return
         end if
         res = yield_lin_pull_back(prm%L, prm%c_shear, spectral_gradient(V, df)) &
@@ -309,7 +314,7 @@ contains
         call spectral_decomposition(yield_lin_apply(prm%Lp, prm%cp_shear, sigma), lamp, Vp)
         call yield_cpb06ex2_principal_${k}$(prm, lam, lamp, phi, df, dfp, d2f, d2fp, cross)
         if (phi == 0.0_${k}$) then
-            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative (D-017.9)
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
             return
         end if
         g = yield_lin_pull_back(prm%L, prm%c_shear, spectral_gradient(V, df))

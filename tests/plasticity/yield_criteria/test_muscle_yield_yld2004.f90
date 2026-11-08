@@ -31,18 +31,22 @@ subroutine Yld2004_test_materials(yld)
     use muscle_yield_yld2004
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     type(yield_yld2004_dp), intent(out) :: yld(2)
 
     call yield_yld2004_init_dp(yld(1), cp12=1D0, cp13=1D0, cp21=1D0, cp23=1D0, cp31=1D0, cp32=1D0, &
                      cp44=1D0, cp55=1D0, cp66=1D0, &
                      cpp12=1D0, cpp13=1D0, cpp21=1D0, cpp23=1D0, cpp31=1D0, cpp32=1D0, &
-                     cpp44=1D0, cpp55=1D0, cpp66=1D0, a=2D0)
+                     cpp44=1D0, cpp55=1D0, cpp66=1D0, a=2D0, status=status)
+    if (status /= STATUS_OK) error stop 'yield_yld2004_init failed'
     call yield_yld2004_init_dp(yld(2), cp12=-0.069888D0, cp13=0.936408D0, cp21=0.079143D0, cp23=1.003060D0, &
                      cp31=0.524741D0, cp32=1.363180D0, cp44=0.954322D0, cp55=1.023770D0, cp66=1.069060D0, &
                      cpp12=0.981171D0, cpp13=0.476741D0, cpp21=0.575316D0, cpp23=0.866827D0, &
                      cpp31=1.145010D0, cpp32=-0.079294D0, cpp44=1.404620D0, cpp55=1.051660D0, &
-                     cpp66=1.147100D0, a=8D0)
+                     cpp66=1.147100D0, a=8D0, status=status)
+    if (status /= STATUS_OK) error stop 'yield_yld2004_init failed'
 end subroutine Yld2004_test_materials
 
 subroutine test_Yld2004_stresseq_1(passed)
@@ -156,7 +160,9 @@ subroutine Yld2004_derivative_materials(yld)
     use muscle_yield_yld2004
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     type(yield_yld2004_dp), intent(out) :: yld(4)
 
     call Yld2004_test_materials(yld(1:2))
@@ -164,12 +170,14 @@ subroutine Yld2004_derivative_materials(yld)
                      cp44=1D0, cp55=1D0, cp66=1D0, &
                      cpp12=1D0, cpp13=1D0, cpp21=0.575316D0, cpp23=0.866827D0, &
                      cpp31=1.145010D0, cpp32=-0.079294D0, cpp44=1.404620D0, cpp55=1.051660D0, &
-                     cpp66=1.147100D0, a=2D0)
+                     cpp66=1.147100D0, a=2D0, status=status)
+    if (status /= STATUS_OK) error stop 'yield_yld2004_init failed'
     call yield_yld2004_init_dp(yld(4), cp12=-0.069888D0, cp13=0.936408D0, cp21=0.079143D0, cp23=1.003060D0, &
                      cp31=0.524741D0, cp32=1.363180D0, cp44=0.954322D0, cp55=1.023770D0, cp66=1.069060D0, &
                      cpp12=0.981171D0, cpp13=0.476741D0, cpp21=0.575316D0, cpp23=0.866827D0, &
                      cpp31=1.145010D0, cpp32=-0.079294D0, cpp44=1.404620D0, cpp55=1.051660D0, &
-                     cpp66=1.147100D0, a=6D0)
+                     cpp66=1.147100D0, a=6D0, status=status)
+    if (status /= STATUS_OK) error stop 'yield_yld2004_init failed'
 end subroutine Yld2004_derivative_materials
 
 subroutine Yld2004_test_states(s)

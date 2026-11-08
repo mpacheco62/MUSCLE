@@ -46,7 +46,9 @@ subroutine test_CPB06_stresseq_hydrostatic_1(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     
     ! Analytical value of the isotropic limit (C = I, k = 0, a = 2: von Mises). Measured: exact;
     ! the relative tolerance 1e-12 (~5000 eps) leaves margin for the eigenvalue round-off
@@ -64,8 +66,13 @@ subroutine test_CPB06_stresseq_hydrostatic_1(passed)
                   c21=0D0, c22=1D0, c23=0D0, &
                   c31=0D0, c32=0D0, c33=1D0, &
                   c44=1D0, c55=1D0, c66=1D0, &
-                  k=0D0, a=2D0               &
+                  k=0D0, a=2D0, status=status &
                   )
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06_init failed"
+        return
+    end if
 
 
     call to_test1%init((/5D0, 5D0, 5D0, 0D0, 0D0, 0D0/))
@@ -82,7 +89,9 @@ subroutine test_CPB06_stresseq_simple_tensile_2(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     
     ! Analytical value of the isotropic limit (C = I, k = 0, a = 2: von Mises). Measured: exact;
     ! the relative tolerance 1e-12 (~5000 eps) leaves margin for the eigenvalue round-off
@@ -100,8 +109,13 @@ subroutine test_CPB06_stresseq_simple_tensile_2(passed)
                   c21=0D0, c22=1D0, c23=0D0, &
                   c31=0D0, c32=0D0, c33=1D0, &
                   c44=1D0, c55=1D0, c66=1D0, &
-                  k=0D0, a=2D0               &
+                  k=0D0, a=2D0, status=status &
                   )
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06_init failed"
+        return
+    end if
 
     call to_test2%init((/5D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     
@@ -118,7 +132,9 @@ subroutine test_CPB06_stresseq_biaxial_3(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     
     ! Analytical value of the isotropic limit (C = I, k = 0, a = 2: von Mises). Measured: exact;
     ! the relative tolerance 1e-12 (~5000 eps) leaves margin for the eigenvalue round-off
@@ -136,8 +152,13 @@ subroutine test_CPB06_stresseq_biaxial_3(passed)
                   c21=0D0, c22=1D0, c23=0D0, &
                   c31=0D0, c32=0D0, c33=1D0, &
                   c44=1D0, c55=1D0, c66=1D0, &
-                  k=0D0, a=2D0               &
+                  k=0D0, a=2D0, status=status &
                   )
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06_init failed"
+        return
+    end if
 
 
     call to_test3%init((/5D0, 5D0, 0D0, 0D0, 0D0, 0D0/))
@@ -154,7 +175,9 @@ subroutine test_CPB06_stresseq_shear_4(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     
     ! Analytical value of the isotropic limit (C = I, k = 0, a = 2: von Mises). Measured: exact;
     ! the relative tolerance 1e-12 (~5000 eps) leaves margin for the eigenvalue round-off
@@ -172,8 +195,13 @@ subroutine test_CPB06_stresseq_shear_4(passed)
                   c21=0D0, c22=1D0, c23=0D0, &
                   c31=0D0, c32=0D0, c33=1D0, &
                   c44=1D0, c55=1D0, c66=1D0, &
-                  k=0D0, a=2D0               &
+                  k=0D0, a=2D0, status=status &
                   )
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06_init failed"
+        return
+    end if
 
     call to_test4%init((/0D0, 0D0, 0D0, 1D0, 0D0, 0D0/))
     result = yield_stress_eq(cpb, to_test4)
@@ -188,7 +216,9 @@ subroutine test_CPB06_stresseq_derivates_5(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     
     ! Gradient against central differences (yield_test_numeric) (step h = 1e-6 ||sigma||, h/2 on
     ! the shears): the rounding error eps*f/(h/2) is ~4e-10 and the truncation O(h**2) ~1e-12.
@@ -206,8 +236,13 @@ subroutine test_CPB06_stresseq_derivates_5(passed)
                   c21=0D0, c22=1D0, c23=0D0, &
                   c31=0D0, c32=0D0, c33=1D0, &
                   c44=1D0, c55=1D0, c66=1D0, &
-                  k=0D0, a=2D0               &
+                  k=0D0, a=2D0, status=status &
                   )
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06_init failed"
+        return
+    end if
 
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = yield_dstress_eq(cpb, to_test)
@@ -267,7 +302,9 @@ subroutine test_CPB06_stresseq_derivates2_6(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     
     ! Hessian against central second differences (yield_test_numeric) (step h = 1e-4 ||sigma||,
     ! h/2 on the shears): the rounding error eps*f/h**2 is ~2e-8 and the truncation O(h**2)
@@ -285,8 +322,13 @@ subroutine test_CPB06_stresseq_derivates2_6(passed)
                   c21=0D0, c22=1D0, c23=0D0, &
                   c31=0D0, c32=0D0, c33=1D0, &
                   c44=1D0, c55=1D0, c66=1D0, &
-                  k=0D0, a=2D0               &
+                  k=0D0, a=2D0, status=status &
                   )
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06_init failed"
+        return
+    end if
 
     call to_test%init((/1D0, 0D0, 0D0, 0D0, 0D0, 0D0/))
     result1 = yield_ddstress_eq(cpb, to_test)
@@ -345,7 +387,9 @@ subroutine CPB06_test_materials(cpb)
     use muscle_yield_cpb06
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     type(yield_cpb06_dp), intent(out) :: cpb(6)
 
     ! 1: isotropic limit (C = I, k = 0, a = 2), equal to von Mises
@@ -353,44 +397,50 @@ subroutine CPB06_test_materials(cpb)
                      c21=0D0, c22=1D0, c23=0D0, &
                      c31=0D0, c32=0D0, c33=1D0, &
                      c44=1D0, c55=1D0, c66=1D0, &
-                     k=0D0, a=2D0               &
+                     k=0D0, a=2D0, status=status &
                      )
+    if (status /= STATUS_OK) error stop 'yield_cpb06_init failed'
     ! 2: Ti-6Al-4V (Tuninetti et al., 2013, Table 2, row Wp = 1.857)
     call yield_cpb06_init_dp(cpb(2), c11=1.000D0, c12=-2.373D0, c13=-2.364D0, &
                      c21=-2.373D0, c22=-1.838D0, c23=1.196D0, &
                      c31=-2.364D0, c32=1.196D0, c33=-2.444D0, &
                      c44=3.607D0, c55=3.607D0, c66=3.607D0,   &
-                     k=-0.136D0, a=2D0                        &
+                     k=-0.136D0, a=2D0, status=status         &
                      )
+    if (status /= STATUS_OK) error stop 'yield_cpb06_init failed'
     ! 3: material 2 with a non-symmetric C1 (c21 and c32 changed) and three different shear
     !    coefficients: the derivatives need C1^T and the C2 entry of each shear
     call yield_cpb06_init_dp(cpb(3), c11=1.000D0, c12=-2.373D0, c13=-2.364D0, &
                      c21=-1.500D0, c22=-1.838D0, c23=1.196D0, &
                      c31=-2.364D0, c32=0.800D0, c33=-2.444D0, &
                      c44=3.607D0, c55=2.900D0, c66=4.100D0,   &
-                     k=-0.136D0, a=2D0                        &
+                     k=-0.136D0, a=2D0, status=status         &
                      )
+    if (status /= STATUS_OK) error stop 'yield_cpb06_init failed'
     ! 4: material 2 with a = 8: the powers psi**(a-1) and psi**(a-2) are not trivial
     call yield_cpb06_init_dp(cpb(4), c11=1.000D0, c12=-2.373D0, c13=-2.364D0, &
                      c21=-2.373D0, c22=-1.838D0, c23=1.196D0, &
                      c31=-2.364D0, c32=1.196D0, c33=-2.444D0, &
                      c44=3.607D0, c55=3.607D0, c66=3.607D0,   &
-                     k=-0.136D0, a=8D0                        &
+                     k=-0.136D0, a=8D0, status=status         &
                      )
+    if (status /= STATUS_OK) error stop 'yield_cpb06_init failed'
     ! 5: isotropic with k = 1: psi = |lam| - lam vanishes for the positive principal values
     call yield_cpb06_init_dp(cpb(5), c11=1D0, c12=0D0, c13=0D0, &
                      c21=0D0, c22=1D0, c23=0D0, &
                      c31=0D0, c32=0D0, c33=1D0, &
                      c44=1D0, c55=1D0, c66=1D0, &
-                     k=1D0, a=2D0               &
+                     k=1D0, a=2D0, status=status &
                      )
+    if (status /= STATUS_OK) error stop 'yield_cpb06_init failed'
     ! 6: isotropic with k = -1: psi = |lam| + lam vanishes for the negative principal values
     call yield_cpb06_init_dp(cpb(6), c11=1D0, c12=0D0, c13=0D0, &
                      c21=0D0, c22=1D0, c23=0D0, &
                      c31=0D0, c32=0D0, c33=1D0, &
                      c44=1D0, c55=1D0, c66=1D0, &
-                     k=-1D0, a=2D0              &
+                     k=-1D0, a=2D0, status=status &
                      )
+    if (status /= STATUS_OK) error stop 'yield_cpb06_init failed'
 end subroutine CPB06_test_materials
 
 subroutine test_CPB06_gradient_numeric_7(passed)

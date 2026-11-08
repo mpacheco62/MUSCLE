@@ -227,10 +227,12 @@ $:MAT_CASE_PROCS(MATS, fd_check=[u[0] for u in UNIAXIAL] + [c[0] for c in COUPLE
             !! Material.
         integer, intent(in) :: iter_nw
             !! Newton iteration limit.
+        integer :: status
 
         call make_cp_vm_swift_${k}$(golden_case(0, 'cp_vm_swift', 'lin1000', '', 'swift_li', 'vonmises', iter_nw, &
             0.0_dp, 0.0_dp), mat)
-        call elas_linear_init(mat%elas, young=70000.0_${k}$, poisson=0.33_${k}$)
+        call elas_linear_init(mat%elas, young=70000.0_${k}$, poisson=0.33_${k}$, status=status)
+        call check_true(passed, 'elastic init (${k}$)', status == STATUS_OK)
     end subroutine make_al_${k}$
 
     pure function mixed_strain_${k}$(eps_y, f) result(strain)
@@ -253,7 +255,8 @@ $:MAT_CASE_PROCS(MATS, fd_check=[u[0] for u in UNIAXIAL] + [c[0] for c in COUPLE
 
         call make_cp_vm_bilinear_${k}$(golden_case(0, 'cp_vm_bilinear', 'lin1000', '', 'bilinear', 'vonmises', 200, &
             0.0_dp, 0.0_dp), mat)
-        call elas_linear_init(mat%elas, young=70000.0_${k}$, poisson=0.33_${k}$)
+        call elas_linear_init(mat%elas, young=70000.0_${k}$, poisson=0.33_${k}$, status=status)
+        call check_true(passed, 'elastic init (${k}$)', status == STATUS_OK)
         sn = ${state_t('cp_vm_bilinear', k)}$()
         strain%vals = [2.0e-4_${k}$, -6.0e-5_${k}$, -1.0e-4_${k}$, 8.0e-5_${k}$, -4.0e-5_${k}$, 6.0e-5_${k}$]
         call mat_update(mat, strain, 0.0_${k}$, sn, snp1, stress, tangent, status, iters)
@@ -273,7 +276,8 @@ $:MAT_CASE_PROCS(MATS, fd_check=[u[0] for u in UNIAXIAL] + [c[0] for c in COUPLE
 
         call make_cp_vm_bilinear_${k}$(golden_case(0, 'cp_vm_bilinear', 'lin1000', '', 'bilinear', 'vonmises', 1, &
             0.0_dp, 0.0_dp), mat)
-        call elas_linear_init(mat%elas, young=70000.0_${k}$, poisson=0.33_${k}$)
+        call elas_linear_init(mat%elas, young=70000.0_${k}$, poisson=0.33_${k}$, status=status)
+        call check_true(passed, 'elastic init (${k}$)', status == STATUS_OK)
         sn = ${state_t('cp_vm_bilinear', k)}$()
         strain%vals = 20.0_${k}$*[2.0e-4_${k}$, -6.0e-5_${k}$, -1.0e-4_${k}$, 8.0e-5_${k}$, -4.0e-5_${k}$, 6.0e-5_${k}$]
         g = 70000.0_${k}$/(2.0_${k}$*(1.0_${k}$ + 0.33_${k}$))

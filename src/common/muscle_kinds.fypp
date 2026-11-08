@@ -10,7 +10,7 @@
 #! Tolerance of `.approx.` of the scaled identities (D-014): dp keeps the historical 1e-10, sp
 #! uses the general sp tolerance.
 #:set TOL_APPROX_IDEN = {'sp': '1.0e-5', 'dp': '1.0e-10'}
-#! Finite-difference steps (D-016.2, D-016.4, D-016.7). dp keeps the values of each
+#! Finite-difference steps. dp keeps the values of each
 #! historical finite-difference routine (the macros of tests/common/muscle_fd.fypp). sp: central first
 #! derivatives ~epsilon**(1/3) ~ 5e-3; central second derivatives ~epsilon**(1/4) ~ 2e-2. The
 #! steps are relative to the size of the argument
@@ -64,13 +64,13 @@ module muscle_kinds
     real(${k}$), parameter, public :: TOL_APPROX_4O2SYM_${k}$ = ${TOL_APPROX_4O2SYM[k]}$_${k}$
         !! Default relative tolerance of `.approx.`/`is_approx` of the fourth-order tensors with
         !! minor symmetries (`4O2sym`) in `real(${k}$)`: looser than `TOL_APPROX_${k}$` (historical
-        !! 1e-8 in dp, 1e-4 in sp; D-010). In sp it covers inverses with \(\kappa_\infty \lesssim
+        !! 1e-8 in dp, 1e-4 in sp). In sp it covers inverses with \(\kappa_\infty \lesssim
         !! 10^3\) (measured); to compare inverses of worse-conditioned tensors pass an explicit
         !! `tol` of about \(2\,\kappa_\infty\,\epsilon\).
     real(${k}$), parameter, public :: TOL_APPROX_IDEN_${k}$ = ${TOL_APPROX_IDEN[k]}$_${k}$
         !! Tolerance of `.approx.` of the scaled identities in `real(${k}$)`: \( |a - b| \le
         !! tol \cdot \max(1, |a|, |b|) \) (absolute below 1, relative above); 1e-10 in dp (the
-        !! historical value, formerly a default-real literal) and 1e-5 in sp (D-014).
+        !! historical value, formerly a default-real literal) and 1e-5 in sp.
     real(${k}$), parameter, public :: EPS_ABS_${k}$ = 1.0e-30_${k}$
         !! Lower bound of the scale of relative comparisons in `real(${k}$)` (avoids a zero
         !! threshold when both operands vanish; normal in both kinds).
@@ -96,13 +96,13 @@ module muscle_kinds
     real(${k}$), parameter, public :: FD_STEP_MIN_${k}$ = ${FD_STEP_MIN[k]}$_${k}$
         !! Minimum step of the central finite differences at a non-zero argument in `real(${k}$)`
         !! (1e-40 in dp, the historical value; 1e-30 in sp). A zero argument uses the relative
-        !! step itself (D-016.4).
+        !! step itself.
     real(${k}$), parameter, public :: FD_STEP_MIN_JAC_${k}$ = ${FD_STEP_MIN_JAC[k]}$_${k}$
         !! Minimum step of the central jacobian (`FD_JAC`) at a non-zero argument in `real(${k}$)`
         !! (1e-35 in dp, the historical value; 1e-30 in sp).
     real(${k}$), parameter, public :: NEWTON_TOL_${k}$ = ${NEWTON_TOL[k]}$_${k}$
         !! Default relative tolerance of the Newton iterations of the return mappings in
-        !! `real(${k}$)` (D-018.3): converged when \( |f| < tol\,\sigma_y \) (1e-10 in dp, 1e-5 in
+        !! `real(${k}$)`: converged when \( |f| < tol\,\sigma_y \) (1e-10 in dp, 1e-5 in
         !! sp, ~84 ulp); each material may set its own. The plastic strain residual (dimensionless)
         !! is checked against the same tolerance.
     real(${k}$), parameter, public :: TOL_ELASTIC_${k}$ = ${TOL_ELASTIC[k]}$_${k}$
@@ -115,12 +115,12 @@ module muscle_kinds
         !! the historical value of the elastic predictor, in both kinds).
     real(${k}$), parameter, public :: KIN_JACOBI_GAP_LO_${k}$ = ${KIN_JACOBI_GAP_LO[k]}$
         !! Lower end of the band of relative eigenvalue gaps where the finite strain kinematics
-        !! decompose C (or b) with Jacobi rotations, `real(${k}$)` (D-018.19a): a gap
+        !! decompose C (or b) with Jacobi rotations, `real(${k}$)`: a gap
         !! \( (\lambda_a - \lambda_{a+1})/\max|\lambda| \) below it is rounding (repeated
         !! eigenvalues, exact in the closed form). 1e-12 in dp; 0 in sp (always Jacobi).
     real(${k}$), parameter, public :: KIN_JACOBI_GAP_HI_${k}$ = ${KIN_JACOBI_GAP_HI[k]}$
-        !! Upper end (excluded) of the Jacobi band of `KIN_JACOBI_GAP_LO_${k}$`, `real(${k}$)`
-        !! (D-018.19a): above it the closed form (eigenvalues and Cayley-Hamilton eigenprojections)
+        !! Upper end (excluded) of the Jacobi band of `KIN_JACOBI_GAP_LO_${k}$`, `real(${k}$)`:
+        !! above it the closed form (eigenvalues and Cayley-Hamilton eigenprojections)
         !! is accurate (~1e-12 relative at 1e-2 in dp). 1e-2 in dp; `huge` in sp (always Jacobi).
 #:endfor
 end module muscle_kinds

@@ -12,10 +12,13 @@
 # ONLY run it on code whose behaviour IS the reference: these files were captured from the original
 # (pre-FYPP, OO) solvers (HEAD c27dba7, Phase 7 step 1, D-018; removed in Phase 7 step 9, D-018.18),
 # composed with the model families of src/ (golden-tested themselves), and the kernels of the
-# materials reproduce them bit for bit; the tests exist to detect any change against them.
+# materials reproduce them bit for bit; the tests exist to detect a change beyond the tolerance of their category (D-021).
 # Regenerating after a change would hide it. The tests run by ctest never write these files. Only the
 # records changed by an approved decision (e.g. D-018.3) may be updated afterwards, with a line in the
 # header.
+#
+# Adding the records of a NEW material of the test registry is the normal use (pages/contributing.md): the
+# existing records must not change; check with `git diff` that only lines were added.
 #
 # Usage: tests/reference/solvers/regenerate.sh BUILD_DIR
 #   BUILD_DIR: a Debug build (no -ffast-math) of the test registry of materials (no

@@ -9,7 +9,7 @@ add_muscle_fypp_test(math_lu_solve test_math_lu_solve.fypp)
 add_muscle_fypp_test(math_fd_macros test_math_fd_macros.fypp)
 
 # Golden (characterization) tests of the public routines of the math modules, double precision,
-# bit for bit against references captured from the original code (tests/reference/math/,
+# within the tolerance of their category (D-021) against references captured from the original code (tests/reference/math/,
 # regenerate.sh there). The finite differences (derivatives, operations) are the macros of
 # tests/common/muscle_fd.fypp, which call the test functions directly: the references were captured
 # through a procedure argument, so the test functions must not be inlined into the macro stencils

@@ -60,6 +60,14 @@ if(CMAKE_BUILD_TYPE STREQUAL "Profile_unittests")
 
     if(LCOV_PATH AND GENHTML_PATH)
         message(STATUS "** Se encontro lcov y genhtml: configurando target de cobertura **")
+        # lcov >= 2 reports the line markers of the templates (#line, D-009) as inconsistent function
+        # end lines and stops: tolerate that category (lcov 1.x does not know it)
+        execute_process(COMMAND ${LCOV_PATH} --version OUTPUT_VARIABLE _lcov_version_out ERROR_QUIET)
+        string(REGEX MATCH "[0-9]+\\.[0-9]+" _lcov_version "${_lcov_version_out}")
+        set(LCOV_IGNORE)
+        if(_lcov_version VERSION_GREATER_EQUAL 2.0)
+            set(LCOV_IGNORE --ignore-errors inconsistent,inconsistent,unused,unused)
+        endif()
         
         add_custom_target(coverage_report
             # # PASO 0: Limpiar contadores antiguos para evitar datos basura
@@ -72,15 +80,16 @@ if(CMAKE_BUILD_TYPE STREQUAL "Profile_unittests")
 
             # PASO 1: Capturar datos brutos
             COMMAND ${CMAKE_COMMAND} -E echo " *** PASO 1: Capturando datos de cobertura (.gcda)..."
-            COMMAND ${LCOV_PATH} --directory . --capture --output-file coverage.info --rc lcov_branch_coverage=1
+            COMMAND ${LCOV_PATH} --directory . --capture --output-file coverage.info --rc lcov_branch_coverage=1 ${LCOV_IGNORE}
             
-            # PASO 2: Filtrar para dejar solo tu librería
-            COMMAND ${CMAKE_COMMAND} -E echo " *** PASO 2: Filtrando archivos externos..."
-            COMMAND ${LCOV_PATH} --extract coverage.info "${CMAKE_SOURCE_DIR}/*" --output-file coverage_cleaned.info
+            # PASO 2: Filtrar para dejar solo la librería (src/ e include/; sin los tests)
+            COMMAND ${CMAKE_COMMAND} -E echo " *** PASO 2: Filtrando archivos externos y tests..."
+            COMMAND ${LCOV_PATH} --extract coverage.info "${CMAKE_SOURCE_DIR}/src/*" "${CMAKE_SOURCE_DIR}/include/*"
+                    --output-file coverage_cleaned.info --rc lcov_branch_coverage=1 ${LCOV_IGNORE}
             
             # PASO 3: Generar el reporte HTML
             COMMAND ${CMAKE_COMMAND} -E echo " *** PASO 3: Generando reporte HTML final..."
-            COMMAND ${GENHTML_PATH} coverage_cleaned.info --output-directory html_report --legend
+            COMMAND ${GENHTML_PATH} coverage_cleaned.info --output-directory html_report --legend ${LCOV_IGNORE}
             
             COMMAND ${CMAKE_COMMAND} -E echo " *** EXITO: Reporte generado en ${CMAKE_BINARY_DIR}/html_report/index.html"
             

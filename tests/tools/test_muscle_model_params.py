@@ -140,6 +140,15 @@ class TestModelInits(unittest.TestCase):
     def test_initializers_are_registered_models(self):
         self.assertTrue(set(mm.MODEL_INITS) <= set(registered_models()))
 
+    def test_every_initializer_returns_a_status(self):
+        # Decision of 2026-11-08: all the model initializers end with `integer, intent(out) :: status`.
+        for key, init in mm.MODEL_INITS.items():
+            with self.subTest(model=key):
+                self.assertTrue(init.status)
+                self.assertTrue(init.status.endswith('.'))
+        call = mm.material_init_call(mm.material('cp_dp_ludwik'), 'yield', 'dp')
+        self.assertIn('status=status', call)
+
     def test_inputs(self):
         for p, m in registered_models():
             with self.subTest(model=(p, m)):

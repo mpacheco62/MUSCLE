@@ -44,7 +44,9 @@ class TestDefaultRegistry(unittest.TestCase):
             for prefix in spec.families:
                 supported = set(mm.MODEL_FAMILIES[prefix].models) - set(spec.unsupported.get(prefix, ()))
                 covered = {getattr(m, mm.MATERIAL_FIELDS[prefix]) for m in used}
-                self.assertEqual(covered, supported, f'{solver}: {prefix} models not covered')
+                self.assertEqual(covered, supported,
+                                 f'{solver}: {prefix} models not covered: add a Material(...) with solver '
+                                 f'{solver!r} for each missing model to tools/fypp/muscle_materials.py')
 
     def test_material_lookup(self):
         m = mm.material('cp_vm_swift')

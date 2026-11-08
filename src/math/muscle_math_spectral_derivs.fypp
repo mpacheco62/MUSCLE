@@ -37,7 +37,7 @@ module muscle_math_spectral_derivs
     !! the historical generic name. The thresholds of the double precision routines are the
     !! historical ones; the single precision ones keep the same fraction of the significant
     !! digits, \( tol_{sp} \approx tol_{dp}^{\ln\epsilon_{sp}/\ln\epsilon_{dp}} = tol_{dp}^{0.442} \).
-    !! All thresholds are relative to the scale of the eigenvalues (D-016.6), so the results do not
+    !! All thresholds are relative to the scale of the eigenvalues, so the results do not
     !! depend on the units of the tensor.
     use muscle_kinds, only : sp, dp
 #:for k in REAL_KINDS

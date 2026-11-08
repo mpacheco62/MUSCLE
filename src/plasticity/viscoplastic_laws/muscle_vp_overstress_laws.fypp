@@ -3,19 +3,19 @@
 #:include "muscle_common.fypp"
 
 module muscle_vp_overstress_laws
-    !! Overstress viscoplastic laws for kernels (D-007, D-017): the parameter types of every
+    !! Overstress viscoplastic laws for kernels: the parameter types of every
     !! law (`os_<name>_<k>`) and the
-    !! family generics (prefix `os_`, D-017.5b), with the same names for every law and kind:
+    !! family generics (prefix `os_`), with the same names for every law and kind:
     !!
     !! - `os_flow_rate(prm, sigma_eq, ep[, sy])`: plastic multiplier rate \( g(\sigma_{eq}, \epsilon_p) \);
     !! - `os_dflow_dsigma(prm, sigma_eq, ep[, sy])`: \( \partial g/\partial\sigma_{eq} \);
     !! - `os_dflow_dep(prm, sigma_eq, ep[, sy, dsy_dep])`: \( \partial g/\partial\epsilon_p \).
     !!
     !! The laws that compose a hardening law (`OVERSTRESS_COMPOSED`, e.g. Perzyna) also take its
-    !! values already evaluated (D-017.6b): `sy` = `hard_stress(h, ep)` and `dsy_dep` =
+    !! values already evaluated: `sy` = `hard_stress(h, ep)` and `dsy_dep` =
     !! `hard_dstress_dep(h, ep)`.
     !!
-    !! To add a law: write `muscle_vp_<name>.fypp`, then add its names to the `use` lines and to the
+    !! To add a law: write `muscle_vp_<name>.fypp`, then add a `use` statement of its own and its names to the
     !! interfaces below (the compiler rejects a name that does not exist).
 #:for k in REAL_KINDS
     use muscle_vp_chaboche, only : os_chaboche_${k}$, os_flow_rate_chaboche_${k}$, &

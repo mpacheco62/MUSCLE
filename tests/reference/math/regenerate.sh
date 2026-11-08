@@ -8,7 +8,7 @@
 #
 # ONLY run it on code whose behaviour IS the reference: these files were captured from the
 # original (pre-FYPP) modules src/math/muscle_math_{derivatives,operations,spectral_derivs,
-# linsolvers}.f90, and the tests exist to detect any change against them. Regenerating after a
+# linsolvers}.f90, and the tests exist to detect a change beyond the tolerance of their category (D-021). Regenerating after a
 # change would hide it. The test run by ctest never writes these files.
 # The mklsolve records of math_linsolvers_dp.txt also depend on the LAPACK library linked.
 #

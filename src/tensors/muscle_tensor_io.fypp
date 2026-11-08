@@ -3,15 +3,15 @@
 #:include "muscle_common.fypp"
 ! lint: host-only
 #! Formatted output (UDTIO `write(formatted)`) of the templated tensor types, generated from
-#! their layouts. Host-only: kept out of the kernel modules (D-011). Families are added here as
-#! they are migrated (Phase 3).
+#! their layouts. Host-only: kept out of the kernel modules. Families are added here as
+#! they are templated.
 #:set IO_FAMILIES = ['2Osym', '2O', '4O3sym', '4O2sym', '4O']
 #! Families that keep their historical output: the matrix whatever the edit descriptor (no list
 #! mode), one write per row with the entries separated by 1X. Their storage is the matrix itself.
 #:set IO_MATRIX_ONLY = ['4O']
-#! Identities (muscle_tensor_iden, D-014): unscaled `I` (factor 1, printed with dp literals as the
+#! Identities (muscle_tensor_iden): unscaled `I` (factor 1, printed with dp literals as the
 #! original iden_2O) and scaled `S` of each kind. Output of iden_2O/iden_2OS kept character for
-#! character, including its default width 10; the error message names its own routine (D-014).
+#! character, including its default width 10; the error message names its own routine.
 
 module muscle_tensor_io
     !! Formatted output of tensors (only with `ENABLE_UDTIO`):

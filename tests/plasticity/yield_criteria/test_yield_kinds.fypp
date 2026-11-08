@@ -329,6 +329,7 @@ module test_yield_cases
         DP_HARDENING_SHEAR
     use muscle_yield_cpb06ex2, only : yield_cpb06ex2_init
     use muscle_yield_yld2004, only : yield_yld2004_init
+    use muscle_status, only : STATUS_OK
     use muscle_yield_fdhill, only : ${', '.join('yield_fdhill_' + k for k in REAL_KINDS)}$, &
         ${', '.join('yield_joint_evaluation_fdhill_' + k for k in REAL_KINDS)}$
     use test_yield_eval, only : ev, ev_joint, ev_joint_noddf
@@ -496,17 +497,21 @@ contains
         integer, intent(in) :: i
         type(yield_cpb06_${k}$) :: p
         real(${k}$) :: c(14)
+        integer :: status
         c = real(CPBV(:, i), ${k}$)
         call yield_cpb06_init(p, c11=c(1), c12=c(2), c13=c(3), c21=c(4), c22=c(5), c23=c(6), c31=c(7), &
-                              c32=c(8), c33=c(9), c44=c(10), c55=c(11), c66=c(12), k=c(13), a=c(14))
+                              c32=c(8), c33=c(9), c44=c(10), c55=c(11), c66=c(12), k=c(13), a=c(14), status=status)
+        if (status /= STATUS_OK) error stop 'yield_cpb06_init failed'
     end function cpb_${k}$
 
     function dpr_${k}$(i) result(p)
         !! i-th Drucker-Prager parameter set in `real(${k}$)` (initializer of the kernel API).
         integer, intent(in) :: i
         type(yield_druckerprager_${k}$) :: p
+        integer :: status
         call yield_druckerprager_init(p, beta_deg=real(DPV(1, i), ${k}$), K=real(DPV(2, i), ${k}$), &
-                                      hardening_mode=DPMODE(i))
+                                      hardening_mode=DPMODE(i), status=status)
+        if (status /= STATUS_OK) error stop 'yield_druckerprager_init failed'
     end function dpr_${k}$
 
     function dp_i1_${k}$(i) result(r)
@@ -530,10 +535,12 @@ contains
         integer, intent(in) :: i
         type(yield_cpb06ex2_${k}$) :: p
         real(${k}$) :: c(27)
+        integer :: status
         c = real(EX2V(:, i), ${k}$)
         call yield_cpb06ex2_init(p, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), c(12), &
                                  c(13), c(14), c(15), c(16), c(17), c(18), c(19), c(20), c(21), c(22), c(23), &
-                                 c(24), c(25), c(26), c(27))
+                                 c(24), c(25), c(26), c(27), status)
+        if (status /= STATUS_OK) error stop 'yield_cpb06ex2_init failed'
     end function ex2_${k}$
 
     function yld_${k}$(i) result(p)
@@ -541,11 +548,13 @@ contains
         integer, intent(in) :: i
         type(yield_yld2004_${k}$) :: p
         real(${k}$) :: c(19)
+        integer :: status
         c = real(YLDV(:, i), ${k}$)
         call yield_yld2004_init(p, cp12=c(1), cp13=c(2), cp21=c(3), cp23=c(4), cp31=c(5), cp32=c(6), &
                                 cp44=c(7), cp55=c(8), cp66=c(9), cpp12=c(10), cpp13=c(11), cpp21=c(12), &
                                 cpp23=c(13), cpp31=c(14), cpp32=c(15), cpp44=c(16), cpp55=c(17), cpp66=c(18), &
-                                a=c(19))
+                                a=c(19), status=status)
+        if (status /= STATUS_OK) error stop 'yield_yld2004_init failed'
     end function yld_${k}$
 
     function test_null_${k}$() result(passed)
@@ -889,11 +898,12 @@ contains
             type(yield_cpb06ex2_dp) :: xd
             type(yield_yld2004_dp) :: yd
             real(dp) :: c(27)
-            integer :: i
+            integer :: i, status
             if (e < -8 .or. e > 12) return
             do i = 1, size(DPV, 2)
                 c(1:2) = real(real(DPV(:, i), ${k}$), dp)
-                call yield_druckerprager_init(pd, beta_deg=c(1), K=c(2), hardening_mode=DPMODE(i))
+                call yield_druckerprager_init(pd, beta_deg=c(1), K=c(2), hardening_mode=DPMODE(i), status=status)
+                call check_true(passed, 'Drucker-Prager dp init status', status == STATUS_OK)
                 call compare('Drucker-Prager' // suffix, ev(dpr_${k}$(i), s), ev(pd, sd))
             end do
             if (e < -7 .or. e > 5) return
@@ -901,13 +911,15 @@ contains
                 c = real(real(EX2V(:, i), ${k}$), dp)
                 call yield_cpb06ex2_init(xd, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), &
                                          c(12), c(13), c(14), c(15), c(16), c(17), c(18), c(19), c(20), c(21), &
-                                         c(22), c(23), c(24), c(25), c(26), c(27))
+                                         c(22), c(23), c(24), c(25), c(26), c(27), status)
+                call check_true(passed, 'CPB06ex2 dp init status', status == STATUS_OK)
                 call compare('CPB06ex2' // suffix, ev(ex2_${k}$(i), s), ev(xd, sd))
             end do
             do i = 1, size(YLDV, 2)
                 c(1:19) = real(real(YLDV(:, i), ${k}$), dp)
                 call yield_yld2004_init(yd, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), &
-                                        c(12), c(13), c(14), c(15), c(16), c(17), c(18), c(19))
+                                        c(12), c(13), c(14), c(15), c(16), c(17), c(18), c(19), status)
+                call check_true(passed, 'Yld2004 dp init status', status == STATUS_OK)
                 call compare('Yld2004' // suffix, ev(yld_${k}$(i), s), ev(yd, sd))
             end do
         end subroutine compare_new
@@ -926,9 +938,11 @@ contains
             integer, intent(in) :: i
             type(yield_cpb06_dp), intent(out) :: cd
             real(dp) :: c(14)
+            integer :: status
             c = real(real(CPBV(:, i), ${k}$), dp)
             call yield_cpb06_init(cd, c11=c(1), c12=c(2), c13=c(3), c21=c(4), c22=c(5), c23=c(6), c31=c(7), &
-                                  c32=c(8), c33=c(9), c44=c(10), c55=c(11), c66=c(12), k=c(13), a=c(14))
+                                  c32=c(8), c33=c(9), c44=c(10), c55=c(11), c66=c(12), k=c(13), a=c(14), status=status)
+            call check_true(passed, 'CPB06 dp init status', status == STATUS_OK)
         end subroutine cpb_from_${k}$
     end function test_vs_dp_${k}$
 #:endif

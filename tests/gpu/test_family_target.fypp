@@ -8,8 +8,9 @@
 #! an `!$omp target teams distribute parallel do` region and on the CPU (testing.md, GPU): bit for bit on
 #! the host, `check_target` on a device (TOL_DEVICE_<k> relative to each point, each result on its own:
 #! target_cases.family_output_blocks). The calls are generated
-#! from the family metadata (muscle_meta.MODEL_FAMILIES: arguments, results, models of each function, the
-#! composed hardening values, the joint evaluation of the criteria); the parameters are the first golden
+#! from the signatures of target_cases.FAMILY_SIGNATURES (arguments, results) and the family metadata
+#! (muscle_meta.MODEL_FAMILIES: models of each function, the composed hardening values, the joint
+#! evaluation of the criteria); the parameters are the first golden
 #! set of each model (tests/materials/golden_params.py; linear elasticity E = 210000, nu = 0.3). The
 #! viscoelastic family runs a two-step history at a point (step coefficients, update, frozen elasticity
 #! and its `elas_*` generics, i.e. the `frozen` elastic model, update again).
@@ -149,7 +150,7 @@ contains
 #:if typ == 'logical'
         out(${s}$) = merge(1.0_${K}$, 0.0_${K}$, ${P}$_${n}$(prm))
 #:elif typ == 'joint'
-        call ${P}$_${n}$(prm, ${', '.join(a.name for a in FAM.args)}$, f, r_2Osym, r_4O3sym)
+        call ${P}$_${n}$(prm, ${', '.join(a.name for a in TC.family_args(P))}$, f, r_2Osym, r_4O3sym)
         out(${s}$) = f
         out(${s + 1}$:${s + len(layout('2Osym', d).comps)}$) = r_2Osym%vals
         out(${s + len(layout('2Osym', d).comps) + 1}$:${s + z - 1}$) = r_4O3sym%vals
@@ -225,7 +226,8 @@ contains
         logical :: host
 
 #:if P == 'elas'
-        call elas_linear_init(prm, young=210000.0_${K}$, poisson=0.3_${K}$)
+        call elas_linear_init(prm, young=210000.0_${K}$, poisson=0.3_${K}$, status=status)
+        if (status /= STATUS_OK) error stop 'elas_linear_init failed'
 #:else
 #:set gs = GOLDEN.GOLDEN_PARAMS[(P, m)]
         ${golden_set(P, m, list(gs)[0], 'prm', K, 8)}$

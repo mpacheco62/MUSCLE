@@ -12,7 +12,7 @@ module muscle_vp_jc
     !! \[ \frac{\partial\sigma}{\partial\epsilon_p} = \frac{d\sigma_y}{d\epsilon_p} (1 + C \ln x), \quad
     !!    \frac{\partial\sigma}{\partial\dot\epsilon_p} = \sigma_y \frac{C}{x \dot\epsilon_{p0}} \]
     !!
-    !! Composed law (D-017.6b): the free functions receive \( \sigma_y \) (`sy`) and
+    !! Composed law: the free functions receive \( \sigma_y \) (`sy`) and
     !! \( d\sigma_y/d\epsilon_p \) (`dsy_dep`) already evaluated, e.g. with `hard_stress` and
     !! `hard_dstress_dep` of `muscle_hard_laws`; `ep` is part of the family contract but unused.
     !!
@@ -166,9 +166,9 @@ contains
         & result(res)
         !! Derivative `dstress_dep` for the Newton direction of a rate-dependent return mapping: on the rate floor of a law
         !! with one, the right-hand rate derivative at the floor instead of the 0 of the constant part, so that an iteration
-        !! started at a zero rate sees the rate sensitivity (D-018.19b; elsewhere `dstress_dep`) of the Johnson-Cook model
+        !! started at a zero rate sees the rate sensitivity (elsewhere `dstress_dep`) of the Johnson-Cook model
         !! in `real(${k}$)`.
-        !! dstress_dep with the right-hand rate derivative on the floor (D-018.19b).
+        !! dstress_dep with the right-hand rate derivative on the floor.
         implicit none
         @:DEVICE()
         type(vp_jc_${k}$), intent(in) :: prm

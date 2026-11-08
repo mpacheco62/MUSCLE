@@ -138,6 +138,7 @@ subroutine test_time_step_limit(passed)
     use muscle_test_utils
     use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     use muscle_visco_laws, only : visco_freeze, visco_kelvin_dp, visco_state_dp, visco_coefs_dp, elas_frozen_dp
     use muscle_visco_kelvin, only : visco_kelvin_init
     use visco_test_steps, only : step_coefs, new_state, advance
@@ -163,7 +164,8 @@ subroutine test_time_step_limit(passed)
 
     young = 9.0_dp*K*G/(3.0_dp*K + G)
     poisson = (3.0_dp*K - 2.0_dp*G)/(2.0_dp*(3.0_dp*K + G))
-    call elas_linear_init(lin, young=young, poisson=poisson)
+    call elas_linear_init(lin, young=young, poisson=poisson, status=status)
+    call check_true(passed, "linear elastic reference: init status", status == STATUS_OK)
 
     ! Measured: 1.9e-15 or less
     coefs = step_coefs(model, DT_INF)

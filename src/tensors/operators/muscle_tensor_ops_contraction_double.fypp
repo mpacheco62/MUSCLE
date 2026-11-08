@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_ops_common.fypp"
-#! Double contraction `.ddot.` (D-015): the pairs come from OP_TABLE['.ddot.'] (muscle_meta); the
+#! Double contraction `.ddot.`: the pairs come from OP_TABLE['.ddot.'] (muscle_meta); the
 #! bodies are written once over the layouts, in Voigt storage with the shear weights (Comp.mult):
 #! - with I: the trace; with I^S: the symmetric part (A_ij + A_ji)/2; 2O : 2Osym: sum of
 #!   A_ij B_ij with the shear pairs (A_ij + A_ji) B_ij;

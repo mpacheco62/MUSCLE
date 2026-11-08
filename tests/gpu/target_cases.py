@@ -18,6 +18,7 @@ of a group once per case with the fypp define ``TARGET_CASE='<case>'``:
   ``BATCH_DEV_MATERIALS`` (tests/materials/test_mat_batch_dev.fypp).
 """
 import sys
+from collections import namedtuple
 
 import muscle_meta
 
@@ -28,6 +29,28 @@ TENSOR_FUNCTIONS = (('2Osym', ('norm', 'det', 'square')), ('2O', ('norm', 'det',
 
 #: Model families with a generated target test.
 FAMILY_PREFIXES = ('hard', 'vp', 'os', 'yield', 'elas', 'visco')
+
+#: Signatures of the family functions called by ``test_family_target`` (a copy of the hand-written
+#: Fortran; the viscoelastic family is called by hand): prefix -> (family arguments, {function: result
+#: type}). The models of each function and the composed values (``sy``, ``dsy_dep``) come from
+#: ``muscle_meta`` (``model_procs``, ``model_comp_values``); the joint evaluation returns the results of
+#: ``ModelJoint.funcs``.
+FAMILY_SIGNATURES = {
+    'hard': (('ep',), {'stress': 'real', 'dstress_dep': 'real', 'ddstress_ddep': 'real'}),
+    'vp': (('ep', 'epd'), {'flow_stress': 'real', 'dflow_dep': 'real', 'dflow_depd': 'real',
+                           'dstress_dep': 'real', 'newton_dstress_dep': 'real'}),
+    'os': (('sigma_eq', 'ep'), {'flow_rate': 'real', 'dflow_dsigma': 'real', 'dflow_dep': 'real'}),
+    'yield': (('sigma',), {'stress_eq': 'real', 'dstress_eq': '2Osym', 'ddstress_eq': '4O3sym'}),
+    'elas': (('strain',), {'stress': '2Osym', 'stress_dev': '2Osym', 'dstress_dstrain': '4O3sym',
+                           'dstress_dstrain_dev': '4O3sym'}),
+}
+#: Arguments of a function after the family arguments (before the composed values).
+FAMILY_EXTRA_ARGS = {('vp', 'dstress_dep'): ('dt',), ('vp', 'newton_dstress_dep'): ('dt',)}
+#: Type of the tensor arguments of the family functions (the others are `real`).
+FAMILY_ARG_TYPES = {'sigma': '2Osym', 'strain': '2Osym'}
+
+#: Argument of a family function: name and type (`real` or a tensor family).
+Arg = namedtuple('Arg', 'name type')
 
 #: Materials with a target test and the golden case of each (test_mat_<solver>.fypp): (material,
 #: elasticity, overstress or viscoplastic law, hardening, criterion, dt, yield strain a_y, first factor
@@ -72,20 +95,30 @@ def _size(typ, dim):
     return 1 if typ in ('real', 'integer', 'logical') else len(muscle_meta.layout(typ, dim).comps)
 
 
+def family_args(prefix):
+    """Family arguments of the functions of a family (``FAMILY_SIGNATURES``), as ``Arg``."""
+    return [Arg(n, FAMILY_ARG_TYPES.get(n, 'real')) for n in FAMILY_SIGNATURES[prefix][0]]
+
+
+def _func_arg_names(prefix, model, func):
+    """Names of the arguments of a function after the parameters: family arguments, extra arguments and,
+    for a composed model, the composed values (D-017.6b)."""
+    names = list(FAMILY_SIGNATURES[prefix][0]) + list(FAMILY_EXTRA_ARGS.get((prefix, func), ()))
+    if muscle_meta.model_composed(prefix, model):
+        names += [v.name for v in muscle_meta.model_comp_values(prefix, func)]
+    return names
+
+
 def family_inputs(prefix, model, dim):
-    """Inputs of the point procedure of a model in ``test_family_target``: every argument of its functions
-    (family arguments, extra arguments, composed values of a composed model, D-017.6b), in order of first
-    use, as (``ModelArg``, first position in the input array, size)."""
-    fam = muscle_meta.model_family(prefix)
-    args = {}
-    for f in fam.funcs:
-        if f.models is not None and model not in f.models:
-            continue
-        comp = [c.arg for c in fam.composition.values if c.arg.name in f.comp] if model in fam.composed else []
-        for a in list(fam.args) + list(f.extra) + comp:
-            args.setdefault(a.name, a)
+    """Inputs of the point procedure of a model in ``test_family_target``: every argument of its functions,
+    in order of first use, as (``Arg``, first position in the input array, size)."""
+    names = {}
+    for f in FAMILY_SIGNATURES[prefix][1]:
+        if f in muscle_meta.model_procs(prefix, model):
+            names.update(dict.fromkeys(_func_arg_names(prefix, model, f)))
     res, pos = [], 1
-    for a in args.values():
+    for n in names:
+        a = Arg(n, FAMILY_ARG_TYPES.get(n, 'real'))
         res.append((a, pos, _size(a.type, dim)))
         pos += _size(a.type, dim)
     return res
@@ -95,20 +128,17 @@ def family_outputs(prefix, model, dim):
     """Outputs of the point procedure of a model in ``test_family_target``: (procedure of
     ``model_procs``, the call (``None`` for the joint evaluation and its flag), result type, first
     position in the output array, size)."""
-    fam = muscle_meta.model_family(prefix)
+    joint = muscle_meta.model_family(prefix).joint
+    results = FAMILY_SIGNATURES[prefix][1]
     res, pos = [], 1
     for n in muscle_meta.model_procs(prefix, model):
-        if fam.joint and n == fam.joint.flag:
+        if joint and n == joint.flag:
             call, typ, size = None, 'logical', 1
-        elif fam.joint and n == fam.joint.name:
+        elif joint and n == joint.name:
             call, typ = None, 'joint'
-            size = sum(_size(muscle_meta.model_func(prefix, f).result.type, dim) for f in fam.joint.funcs)
+            size = sum(_size(results[f], dim) for f in joint.funcs)
         else:
-            f = muscle_meta.model_func(prefix, n)
-            names = [a.name for a in fam.args] + [a.name for a in f.extra]
-            if model in fam.composed:
-                names += list(f.comp)
-            call, typ = f'{prefix}_{n}(prm, {", ".join(names)})', f.result.type
+            call, typ = f'{prefix}_{n}(prm, {", ".join(_func_arg_names(prefix, model, n))})', results[n]
             size = _size(typ, dim)
         res.append((n, call, typ, pos, size))
         pos += size

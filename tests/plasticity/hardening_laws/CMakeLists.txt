@@ -4,7 +4,7 @@ add_muscle_test(swift test_muscle_hard_swift.f90)
 add_muscle_test(vocemod test_muscle_hard_vocemod.f90)
 
 # Golden (characterization) test of every hardening law (stress, dstress_dep, ddstress_ddep
-# through the kernel API, parameter types), double precision, bit for bit against
+# through the kernel API, parameter types), double precision, within the tolerance of its category (D-021) against
 # tests/reference/plasticity/hardening_laws/ (regenerate.sh there), captured from the original OO code.
 add_muscle_fypp_test(hard_golden test_hard_golden.fypp)
 set_tests_properties(plasticity-hardening_laws-hard_golden PROPERTIES

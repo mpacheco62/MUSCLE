@@ -4,13 +4,15 @@
 #
 # Verification gate of the FYPP migration (docs/fypp/PLAN.md).
 #
-#   tools/check.sh [--lint-only] [--gpu-full] [BUILD_DIR]
+#   tools/check.sh [--lint-only | --quick] [--gpu-full] [BUILD_DIR]
 #
 # 1. Lint: mechanical rules from .claude/rules/ on the migrated sources (*.fypp) and tab
 #    checks on every Fortran source.
 # 2. Configure BUILD_DIR (default: build-check) as Debug with every real kind, build
 #    `build_all_tests`, check the operator signatures (tools/fypp/ops_signatures.py) and run
 #    ctest; build the FORD documentation if FORD is installed. Skipped with --lint-only.
+#    With --quick, stop after ctest: no UDTIO build, no FORD and none of the GPU stages below
+#    (the everyday check; run the full gate before closing a stage).
 # 3. GPU builds (D-019.3, D-019.4b), library and target tests (GPU_TARGET_TESTS): BUILD_DIR-nvptx and
 #    BUILD_DIR-amdgcn (gfortran, compiled and linked with offload, both at once) and BUILD_DIR-spir64
 #    (ifx, the target tests run on the Intel GPU with memory and time limits). With --gpu-full,
@@ -31,12 +33,14 @@ set -u
 cd "$(dirname "$0")/.."
 
 lint_only=0
+quick=0
 gpu_full=0
 while [[ "${1:-}" == --* ]]; do
     case "$1" in
         --lint-only) lint_only=1 ;;
+        --quick) quick=1 ;;
         --gpu-full) gpu_full=1 ;;
-        *) echo "usage: $0 [--lint-only] [--gpu-full] [BUILD_DIR]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--lint-only | --quick] [--gpu-full] [BUILD_DIR]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -264,6 +268,7 @@ python3 tools/fypp/ops_signatures.py --check tools/fypp/ref/ops_signatures_dp.tx
     exit 1
 }
 
+if (( ! quick )); then
 # Formatted output (UDTIO) is disabled for gfortran < 16.3: compile that path anyway
 # (library and tests; only the tensor tests run there: the OpenMP tests hit the gfortran bug)
 echo "== build: ${build_dir}-udtio (MUSCLE_UDTIO=ON, tensor tests)"
@@ -284,8 +289,14 @@ if command -v ford > /dev/null; then
 else
     echo "== doc: FORD not installed, skipped"
 fi
+fi
 
 ctest --test-dir "$build_dir" --output-on-failure -j "$(nproc)" || failures=$((failures + 1))
+if (( quick )); then
+    (( failures > 0 )) && { echo "== check --quick: ctest failed"; exit 1; }
+    echo "== check --quick: OK (UDTIO, FORD and GPU stages skipped)"
+    exit 0
+fi
 
 # GPU builds (D-019.3, D-019.4b), each in its own directory, every real kind, of the library and the
 # target tests (ctest label `target`, built by the target build_target_tests: the tests that run kernels

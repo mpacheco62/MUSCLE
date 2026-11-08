@@ -17,7 +17,16 @@ A guide on using the optimized tensor engine, custom operators (`.ddot.`, `.tdot
 How to call a declared material from the user subroutines of Abaqus (UMAT), ANSYS (USERMAT) and LS-DYNA (umat41).
 
 ### [Developer Guide](contributing.html)
-How to add a model (FYPP template + `muscle_meta` registries) or a solver, and make it available to the declared materials.
+How to add a model, a material or a solver, with checklists.
+
+### [Conventions](conventions.html)
+The rules every contribution follows: code style, `sp`/`dp`, 2D/3D, minimal FYPP, GPU-safe code and tests.
+
+### [Architecture](architecture.html)
+How a declared material is generated from the registry, the solver bodies and the model families.
+
+### [Glossary](glossary.html)
+Abbreviations of the names of materials, models and solvers (`cp`, `pz`, `vm`, `hsv`, ...).
 
 ### [Migration from the OO API](migration.html)
 Equivalence table from the former object-oriented API (`Elasticity_linear`, `Closest_point`, `Plastic_material_history`, ...) to the declared materials, and what is no longer available.

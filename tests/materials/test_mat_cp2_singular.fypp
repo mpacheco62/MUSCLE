@@ -10,7 +10,7 @@ program test_mat_cp2_singular
     !! state (no NaN propagated to the state), in every kind.
     use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-    use muscle_status, only : STATUS_NOT_CONVERGED
+    use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
     use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
     use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
     use muscle_elasticity_linear, only : elas_linear_init
@@ -42,7 +42,8 @@ contains
         type(${tname('3D4O2sym', k)}$) :: tangent
         integer :: status, iters
 
-        call elas_linear_init(mat%elas, young=210000.0_${k}$, poisson=0.3_${k}$)
+        call elas_linear_init(mat%elas, young=210000.0_${k}$, poisson=0.3_${k}$, status=status)
+        call check_true(passed, 'elastic init (${k}$)', status == STATUS_OK)
         mat%hard%y0 = 200.0_${k}$
         mat%hard%K = 1000.0_${k}$
         mat%iter_nw = ITER_NW

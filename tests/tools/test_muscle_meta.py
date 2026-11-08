@@ -961,6 +961,9 @@ class TestModelFamilies(unittest.TestCase):
 
     ROOT = pathlib.Path(__file__).resolve().parents[2]
 
+    #: Templates of a family that follow ``ModelFamily.module`` but are not models (shared types).
+    SUPPORT = {'visco': {'muscle_visco_types'}, 'kin': {'muscle_kin_finite'}}
+
     def test_registry_matches_family_files(self):
         # Every model template of a family is registered, and every registered model has one
         # (families may share the module pattern: viscoplastic and overstress laws; a model may
@@ -973,12 +976,12 @@ class TestModelFamilies(unittest.TestCase):
             others = {mm.model_module(o.prefix, m) for o in fams if o is not fam for m in o.models}
             files = {p.stem for p in (self.ROOT / 'src').rglob(pattern)} - family_modules - others
             own = {fam.module.format(m) for m in fam.models if (fam.prefix, m) not in mm.MODEL_MODULES}
-            self.assertEqual(files, own | set(fam.support), fam.prefix)
+            self.assertEqual(files, own | self.SUPPORT.get(fam.prefix, set()), fam.prefix)
             for m in fam.models:
                 self.assertTrue(list((self.ROOT / 'src').rglob(mm.model_module(fam.prefix, m) + '.fypp')),
                                 (fam.prefix, m))
             self.assertTrue(set(fam.composed) <= set(fam.models), fam.prefix)
-            self.assertEqual(fam.composition is None, not fam.composed, fam.prefix)
+            self.assertEqual(not fam.composition, not fam.composed, fam.prefix)
         self.assertEqual(mm.model_family('hard').models, mm.HARDENING_MODELS)
         self.assertEqual(mm.model_family('vp').models, mm.VISCOPLASTIC_MODELS)
         self.assertEqual(mm.model_family('os').models, mm.OVERSTRESS_MODELS)
@@ -998,26 +1001,13 @@ class TestModelFamilies(unittest.TestCase):
 
     def test_families_are_consistent(self):
         for fam in mm.MODEL_FAMILIES.values():
-            names = [a.name for a in fam.args]
-            self.assertNotIn(fam.par, names)
             funcs = [f.name for f in fam.funcs]
+            self.assertEqual(len(set(funcs)), len(funcs), fam.prefix)
             for f in fam.funcs:
                 self.assertIs(mm.model_func(fam.prefix, f.name), f)
-                if f.deriv is not None:
-                    self.assertIn(f.deriv[0], funcs)
-                    self.assertIn(f.deriv[1], names)
-                self.assertNotIn(fam.par, [a.name for a in f.extra])
-                if f.comp:
-                    self.assertIsNotNone(fam.composition)
-                    self.assertTrue(set(f.comp) <= {v.arg.name for v in fam.composition.values})
-            if fam.composition is not None:
-                # the composed values are functions of the composed family (hardening laws)
-                self.assertTrue({v.func for v in fam.composition.values}
-                                <= set(mm.model_procs('hard')), fam.prefix)
-                self.assertIn(fam.composition.arg, names)
-            for v in (fam.fd_scale, fam.fd_lower):
-                self.assertTrue(v is None or mm.literal_value(v) is not None)
-            self.assertTrue(fam.fd_scale is None or mm.literal_value(fam.fd_scale) > 0)
+                self.assertTrue(set(f.comp) <= {v.name for v in fam.composition}, (fam.prefix, f.name))
+            # the composed values are functions of the composed family (hardening laws)
+            self.assertTrue({v.func for v in fam.composition} <= set(mm.model_procs('hard')), fam.prefix)
         with self.assertRaises(KeyError):
             mm.model_func('hard', 'nope')
 
@@ -1044,7 +1034,6 @@ class TestModelFamilies(unittest.TestCase):
         self.assertEqual(mm.model_procs('yield'), ['stress_eq', 'dstress_eq', 'ddstress_eq',
                                                    'stress_eq_and_derivatives', 'joint_evaluation'])
         self.assertEqual(mm.model_procs('hard'), ['stress', 'dstress_dep', 'ddstress_ddep'])
-        self.assertEqual(mm.model_family('yield').joint.optional, ('ddf',))
         # private parameters (6th element), public by default
         p = mm.model_params([('a', 'real', '', 'A.', None), ('B', 'real', '', 'B.', None, True)])
         self.assertEqual([x.private for x in p], [False, True])
@@ -1054,32 +1043,23 @@ class TestModelFamilies(unittest.TestCase):
             funcs = [f.name for f in fam.funcs]
             if fam.dims is not None:
                 self.assertTrue(set(fam.dims) <= set(mm.DIMS), fam.prefix)
-            else:
-                # a family without dimensions has no tensor arguments
-                self.assertTrue(all(a.type not in mm.FAMILIES for a in fam.args), fam.prefix)
             if fam.joint is not None:
                 j = fam.joint
                 self.assertTrue(set(j.funcs) <= set(funcs), fam.prefix)
-                self.assertEqual(len(j.funcs), len(j.outs), fam.prefix)
-                self.assertTrue(set(j.models) <= set(fam.models), fam.prefix)
-                self.assertTrue(set(j.models).isdisjoint(fam.composed), fam.prefix)
                 self.assertNotIn(j.name, funcs)
                 self.assertNotIn(j.flag, funcs)
-                self.assertTrue(set(j.optional) <= set(j.outs), fam.prefix)
+        self.assertTrue(set(mm.YIELD_JOINT) <= set(mm.YIELD_MODELS))
 
     def test_kinematics_family(self):
-        # No parameters and no family arguments: every function takes the state or F as `extra`
         self.assertEqual(mm.model_family('kin').models, mm.KINEMATICS_MODELS)
-        self.assertEqual(mm.model_family('kin').args, ())
         self.assertEqual(mm.model_procs('kin'), ['update', 'update_norot', 'corot_update', 'to_cauchy', 'to_spatial_tangent',
                                                  'geometric_tangent', 'is_finite_strain'])
         # Functions of only some models (ModelFunc.models): the corotational kinematics is updated
-        # from a strain and an optional rotation (opts), the others from F
+        # from a strain and a rotation, the others from F
         self.assertEqual(mm.model_procs('kin', 'corotational'),
                          ['corot_update', 'to_cauchy', 'to_spatial_tangent', 'geometric_tangent', 'is_finite_strain'])
         self.assertEqual(mm.model_procs('kin', 'total_lagrangian'),
                          ['update', 'update_norot', 'to_cauchy', 'to_spatial_tangent', 'geometric_tangent', 'is_finite_strain'])
-        self.assertEqual([o.name for o in mm.model_func('kin', 'corot_update').opts], ['R'])
         self.assertEqual(mm.model_procs('hard', 'bilinear'), mm.model_procs('hard'))
         # Newton derivative of the viscoplastic laws with a rate floor only (D-018.19b)
         self.assertEqual(mm.model_procs('vp', 'jc')[-1], 'newton_dstress_dep')
@@ -1087,10 +1067,8 @@ class TestModelFamilies(unittest.TestCase):
         for fam in mm.MODEL_FAMILIES.values():
             for f in fam.funcs:
                 self.assertTrue(f.models is None or set(f.models) <= set(fam.models), (fam.prefix, f.name))
-                self.assertTrue(f.outs or not f.opts, (fam.prefix, f.name))
         self.assertEqual(mm.model_specific('kin', 'update', 'total_lagrangian', 'sp'),
                          'kin_update_total_lagrangian_sp')
-        self.assertEqual([o.name for o in mm.model_func('kin', 'update').outs], ['state', 'status'])
         self.assertEqual(mm.model_params([]), ())
 
     def test_elastic_family(self):
@@ -1103,24 +1081,28 @@ class TestModelFamilies(unittest.TestCase):
             mm.model_params([('t', '4D4O3sym', '', 'T.', None)])
 
     def test_viscoelastic_family(self):
-        # First family with a state (D-017.13): no family arguments, procedures with outputs are
-        # subroutines (`outs`, no result), derived types per kind, 3D only (no dimension in names)
-        names = lambda args: [a.name for a in args]
+        # First family with a state (D-017.13): 3D only (no dimension in names)
         self.assertEqual(mm.model_procs('visco'), ['step_coefficients', 'freeze', 'update', 'n_branches',
                                                    'freeze_branches', 'update_branches'])
         self.assertEqual(mm.model_specific('visco', 'update', 'maxwell', 'sp'), 'visco_update_maxwell_sp')
-        co = mm.model_func('visco', 'step_coefficients')
-        self.assertIsNone(co.result)
-        self.assertEqual(names(co.outs), ['coefs', 'status'])
-        up = mm.model_func('visco', 'update')
-        self.assertEqual(names(up.outs), ['state_np1'])
-        for f in mm.model_family('visco').funcs:   # a function or a subroutine, never both
-            self.assertNotEqual(f.result is None, not f.outs, f.name)
-            self.assertIsNone(f.deriv)
+        self.assertEqual(mm.model_dims('visco'), [None])
         # The frozen elasticity is an elastic model in the historical viscoelastic module
         self.assertIn('frozen', mm.model_family('elas').models)
         self.assertEqual(mm.model_module('elas', 'frozen'), 'muscle_visco_frozen')
         self.assertEqual(mm.model_module('visco', 'kelvin'), 'muscle_visco_kelvin')
+
+    def test_target_case_signatures(self):
+        # The signatures of the generated family target tests (tests/gpu/target_cases.py) cover the
+        # functions of each family they call, and nothing else
+        sys.path.insert(0, str(self.ROOT / 'tests' / 'gpu'))
+        import target_cases as tc
+        for prefix, (args, results) in tc.FAMILY_SIGNATURES.items():
+            fam = mm.model_family(prefix)
+            self.assertEqual(list(results), [f.name for f in fam.funcs], prefix)
+            self.assertTrue(set(results.values()) <= {'real'} | set(mm.FAMILIES), prefix)
+            self.assertEqual(fam.dims is None, all(tc.FAMILY_ARG_TYPES.get(a, 'real') == 'real' for a in args), prefix)
+        self.assertEqual(set(tc.FAMILY_SIGNATURES), set(tc.FAMILY_PREFIXES) - {'visco'})
+        self.assertTrue({p for p, _ in tc.FAMILY_EXTRA_ARGS} <= set(tc.FAMILY_SIGNATURES))
 
     def test_literal_value(self):
         self.assertEqual(mm.literal_value('1.0'), 1.0)

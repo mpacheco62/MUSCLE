@@ -23,11 +23,11 @@ module muscle_yield_yld2004
     !! under- or overflows (in sp \( \phi \) was subnormal or zero for small stresses with a = 8).
     !!
     !! At a null equivalent stress (\( \phi = 0 \)) both derivatives are 0 (D-017.9; the original
-    !! code gave NaN). Known limits, kept with the same results as the original code (D-017.9): the
+    !! code gave NaN). Known limits, kept with the same results as the original code: the
     !! criterion is not exactly insensitive to the pressure (Lp and Lpp act on the three normal
     !! stresses, so their zero row sums cancel a hydrostatic stress only up to rounding: e.g.
-    !! \( \bar\sigma \approx 7 \cdot 10^{-17} p \) with AA2090-T3; then \( \phi \ne 0 \) and the 0 of
-    !! D-017.9 does not apply: the gradient is O(1) in an arbitrary direction, set by the rounding,
+    !! \( \bar\sigma \approx 7 \cdot 10^{-17} p \) with AA2090-T3; then \( \phi \ne 0 \) and the zero
+    !! derivatives above do not apply: the gradient is O(1) in an arbitrary direction, set by the rounding,
     !! and the Hessian is finite); `eigenvals` uses an absolute
     !! threshold (1e-10 in dp) that discards small shears on a hydrostatic stress.
     !!
@@ -40,6 +40,7 @@ module muscle_yield_yld2004
     !! three functions) for each real kind, also through the generics `yield_*` of
     !! `muscle_yield_criteria` (`yield_joint_evaluation` is true).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
 #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
 #:endfor
@@ -86,7 +87,7 @@ contains
 #:for k in REAL_KINDS
 
     pure subroutine yield_yld2004_init_${k}$(prm, cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66, cpp12, cpp13, &
-            & cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66, a)
+            & cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66, a, status)
         !! Parameters of the Yld2004-18p model in `real(${k}$)`: Lp = Cp P_dev and Lpp = Cpp P_dev
         !! (Barlat et al., 2005, Eqs. 11 and 15), so that each call applies them to the stress
         !! without forming the deviator. cpIJ = cp_IJ and cppIJ = cpp_IJ; the shears follow the
@@ -133,6 +134,9 @@ contains
             !! Coefficient \( C^{\prime\prime}_{66} \) (shear xz).
         real(${k}$), intent(in) :: a
             !! Exponent.
+        integer, intent(out) :: status
+            !! Always `STATUS_OK` (no input is validated): the argument exists so that every model
+            !! initializer is called the same way.
 
         prm%Lp = yield_yld2004_deviatoric_block_${k}$(cp12, cp13, cp21, cp23, cp31, cp32)
         prm%cp_shear(1) = cp44
@@ -143,6 +147,7 @@ contains
         prm%cpp_shear(2) = cpp55
         prm%cpp_shear(3) = cpp66
         prm%a = a
+        status = STATUS_OK
     end subroutine yield_yld2004_init_${k}$
 
     pure function yield_yld2004_deviatoric_block_${k}$(c12, c13, c21, c23, c31, c32) result(L)
@@ -168,7 +173,7 @@ contains
 
     pure subroutine yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
         !! Principal values of Sp and Spp divided by the power of two of their largest magnitude,
-        !! x = lp/2**e and y = lpp/2**e (exact), in `real(${k}$)` (D-017.10c).
+        !! x = lp/2**e and y = lpp/2**e (exact), in `real(${k}$)`.
         implicit none
         @:DEVICE()
         real(${k}$), intent(in) :: lp(3)
@@ -191,7 +196,7 @@ contains
     pure function yield_yld2004_equivalent_${k}$(prm, x, y, e) result(res)
         !! (phi/4)**(1/a) in `real(${k}$)` from the principal values of Sp and Spp (Barlat et al.,
         !! 2005, Eq. 14), evaluated on the scaled values of `yield_yld2004_scaled` (homogeneity of
-        !! degree 1, D-017.10c).
+        !! degree 1).
         implicit none
         @:DEVICE()
         type(yield_yld2004_${k}$), intent(in) :: prm
@@ -222,10 +227,10 @@ contains
         !! Second derivatives, over x, y in (lp, lpp) (lam with one and two primes):
         !! d2f/dx dy = c d2phi/dx dy + (1 - a) (df/dx) (df/dy)/f, with d2phi/dlp_i dlpp_j = -d2h(d_ij),
         !! d2h = a (a-1) p the second derivative of h, and the sums of d2h on the diagonal blocks.
-        !! Evaluated on the scaled values of `yield_yld2004_scaled` (D-017.10c): the first derivatives
+        !! Evaluated on the scaled values of `yield_yld2004_scaled`: the first derivatives
         !! (degree 0) are the same, the second ones (degree -1) are scaled back by 2**(-e); `phi` is
         !! phi of the scaled values.
-        !! With phi = 0 (null equivalent stress) every derivative is 0 (D-017.9).
+        !! With phi = 0 (null equivalent stress) every derivative is 0.
         implicit none
         @:DEVICE()
         type(yield_yld2004_${k}$), intent(in) :: prm
@@ -389,7 +394,7 @@ contains
         call yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
         call yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp)
         if (phi == 0.0_${k}$) then
-            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative (D-017.9)
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
             return
         end if
         res = yield_yld2004_gradient_3D_${k}$(prm, Vp, Vpp, dfp, dfpp)
@@ -419,7 +424,7 @@ contains
         call yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
         call yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp, d2fp, d2fpp, d2fx)
         if (phi == 0.0_${k}$) then
-            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative (D-017.9)
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
             return
         end if
         res = yield_yld2004_hessian_3D_${k}$(prm, lp, lpp, Vp, Vpp, dfp, dfpp, d2fp, d2fpp, d2fx)
@@ -459,7 +464,7 @@ contains
 
         call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, sigma), lp, Vp)
         call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, sigma), lpp, Vpp)
-        ! One scaling of the principal values for the three (D-017.10c)
+        ! One scaling of the principal values for the three
         call yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
         f = yield_yld2004_equivalent_${k}$(prm, x, y, e)
         if (present(ddf)) then
@@ -468,7 +473,7 @@ contains
             call yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp)
         end if
         if (phi == 0.0_${k}$) then
-            df%vals = 0.0_${k}$  ! null equivalent stress: zero derivatives (D-017.9)
+            df%vals = 0.0_${k}$  ! null equivalent stress: zero derivatives
             if (present(ddf)) ddf%vals = 0.0_${k}$
             return
         end if
@@ -479,7 +484,7 @@ contains
     pure function yield_yld2004_linear_transform_3D_${k}$(L, c_shear, stress) result(res)
         !! S = L : stress in `real(${k}$)` (3D) with L = C P_dev (Barlat et al., 2005, Eq. 11): Sp
         !! from (Lp, cp_shear), Spp from (Lpp, cpp_shear). The 3x3 block acts on the three normal
-        !! components (not on their differences: the pressure cancels only up to rounding, D-017.9)
+        !! components (not on their differences: the pressure cancels only up to rounding)
         !! and each factor on its tensorial shear.
         implicit none
         @:DEVICE()

@@ -5,7 +5,7 @@ add_muscle_fypp_test(vp_chaboche test_muscle_vp_chaboche.fypp)
 
 # Golden (characterization) test of every viscoplastic law (flow_stress/dstress_dep and
 # flow_rate/dflow_dsigma/dflow_dep through the kernel API, parameter types), composed with
-# bilinear/Swift/modified Voce hardening, double precision, bit for bit against
+# bilinear/Swift/modified Voce hardening, double precision, within the tolerance of its category (D-021) against
 # tests/reference/plasticity/viscoplastic_laws/ (regenerate.sh there), captured from the original
 # OO code. Includes ep = 0 and epd = 0 (first plastic increment).
 add_muscle_fypp_test(vp_golden test_vp_golden.fypp)

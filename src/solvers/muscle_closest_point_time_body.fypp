@@ -1,12 +1,12 @@
 #! SPDX-License-Identifier: GPL-3.0-or-later
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#! Body of the rate-dependent (consistency-type) closest point return mapping of a declared material
-#! (D-018.5), written once against the family generics `elas_*`, `yield_*`, `vp_*` and, for a
-#! viscoplastic law that composes a hardening law (Johnson-Cook), `hard_*` (Phase 6): they resolve at
+#! Body of the rate-dependent (consistency-type) closest point return mapping of a declared material,
+#! written once against the family generics `elas_*`, `yield_*`, `vp_*` and, for a
+#! viscoplastic law that composes a hardening law (Johnson-Cook), `hard_*`: they resolve at
 #! compile time by the parameter types of the components of the material. Port of the historical OO
-#! solver (muscle_solver_closest_point_time, removed in Phase 7 step 9) operation by operation, so
-#! that both give the same bits in double precision (D-018.2), with the relative Newton tolerance
-#! (D-018.3) and the elastic check without a division (D-018.10b) in both. Known issues kept
+#! solver (muscle_solver_closest_point_time, now removed) operation by operation, so
+#! that both give the same bits in double precision, with the relative Newton tolerance
+#! and the elastic check without a division in both (D-018.10b). Known issues kept
 #! (D-018.2, PROBLEMAS.md): the plastic strain does not take the relaxation factor; the elastic check
 #! evaluates the flow stress at a zero plastic strain rate.
 #!
@@ -16,10 +16,10 @@
 #! (see muscle_closest_point_body.fypp, also for the argument `elas`). 3D only. The material type has
 #! the components `yield`, `vp` and, if the viscoplastic law composes one, `hard`
 #! (MATERIAL_SOLVERS['closest_point_time']), `iter_nw` and `tol`.
-#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver, D-018.12c).
+#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver).
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
-#! Values of the composed hardening law (if any) the viscoplastic function `f` receives at `ep` (D-017.6b)
+#! Values of the composed hardening law (if any) the viscoplastic function `f` receives at `ep`
 #:set HARD = lambda f, ep: muscle_meta.material_comp_args(MAT, 'vp', f, ep)
 #:set COMPOSED = muscle_meta.material_composed(MAT, 'vp') is not None
 #! Derivative of the flow stress for the Newton direction: the right-hand rate derivative on the rate
@@ -33,12 +33,12 @@
         !! \)) from the converged state `state_n`.
         !!
         !! Elastic step when \( f_{trial} = \sigma_{eq} - \sigma(\epsilon_{p,n}, 0) \le \)
-        !! `TOL_ELASTIC_${k}$` \( \max(\sigma, 10^{-10}) \) (D-018.10b); otherwise Newton iterations on
+        !! `TOL_ELASTIC_${k}$` \( \max(\sigma, 10^{-10}) \); otherwise Newton iterations on
         !! \( \Delta\lambda \) with under-relaxation (factor 0.75 when \( \Delta\lambda \) is clipped at 0
         !! and after iterations 10, 20, 30, 40) until \( |f| < tol\,\max(\sigma, 10^{-10}) \) and the
-        !! plastic strain residual is below `tol` (D-018.3). An elastic and a converged plastic step
+        !! plastic strain residual is below `tol`. An elastic and a converged plastic step
         !! return `STATUS_OK` (`iters` = 0 in an elastic step); with `STATUS_NOT_CONVERGED` the outputs
-        !! hold the last iterate and must not be used (D-017.14f).
+        !! hold the last iterate and must not be used.
         use muscle_kinds, only : TOL_ELASTIC_${k}$, SY_MIN_${k}$
         use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
         use muscle_tensors, only : operator(-), assignment(=)
@@ -113,7 +113,7 @@
     pure subroutine ${ITER}$(mat, elas, strain, dt, state_n, iter, state, dlambda, omega, converged)
         !! One Newton-Raphson iteration of the rate-dependent closest point return mapping of material
         !! `${MAT.name}$`, `real(${k}$)`, with under-relaxation `omega` of \( \Delta\lambda \) (not of the
-        !! plastic strain, D-018.2).
+        !! plastic strain).
         use muscle_kinds, only : SY_MIN_${k}$
         use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
             operator(.inv.)
@@ -169,7 +169,7 @@
         residual = residual1%vals**2
         norm_res = (residual(1) + residual(2) + residual(3) + residual(4) + residual(5) + residual(6))**0.5_${k}$
 
-        ! Convergence: |f| relative to the current flow stress (D-018.3); the plastic strain residual
+        ! Convergence: |f| relative to the current flow stress; the plastic strain residual
         ! (dimensionless) against the same tolerance
         state%stress = stress
         if (abs(f) < mat%tol*max(hard, SY_MIN_${k}$) .and. norm_res < mat%tol) then

@@ -2,16 +2,31 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 
 module muscle_test_golden
-    !! Bit-for-bit golden (characterization) checks of double precision results against a
-    !! reference file captured from the original code (`tests/reference/<area>/<name>_dp.txt`).
+    !! Golden checks of double precision results against reference values stored in
+    !! `tests/reference/<area>/<name>_dp.txt` from a validated version (D-021). The goldens were
+    !! captured to migrate the code bit for bit (Phases 0-9); they are now regression checks of the
+    !! behaviour, compared within the tolerance of their category:
     !!
-    !! A golden test program calls `golden_init(relpath)`, then `golden_check(key, x)` for every
-    !! result (a `real(dp)` array; integers are recorded converted to `real(dp)`, which is exact),
-    !! and finally `golden_finish()`, which stops with the first failure code:
+    !! - `GOLDEN_TOL_ALGEBRA` (default): direct computations (tensors, laws, kinematics), rounding only;
+    !! - `GOLDEN_TOL_FD`: finite differences, which amplify the rounding by eps/h;
+    !! - `GOLDEN_TOL_SOLVER`: iterative return mappings (a different rounding may change the Newton path:
+    !!   10 times NEWTON_TOL_dp);
+    !! - with `status_iters`, the last two values of a record are the status (exact) and the number of
+    !!   iterations (within 1).
     !!
-    !! - `stop 1`: a result differs from its reference (every differing component is printed with
-    !!   its relative error; <= 1e-14 is reported as approvable, testing.md, but still fails). Bit
-    !!   for bit, except that a NaN matches any NaN (sign and payload are not results);
+    !! The error of a value is relative to the largest magnitude of the real values of its record. A NaN
+    !! matches any NaN (sign and payload are not results). With the environment variable
+    !! `MUSCLE_GOLDEN_STRICT=1` every value must match bit for bit (the migration check, only meaningful
+    !! with the reference configuration: gfortran, Debug); with `MUSCLE_GOLDEN_REPORT=1` the largest
+    !! relative error of every record that is not bit-identical is printed (to calibrate tolerances).
+    !!
+    !! A golden test program calls `golden_init(relpath[, tol])` (`tol`: the default tolerance of its
+    !! records), then `golden_check(key, x[, tol][, status_iters])` for every result (a `real(dp)` array;
+    !! integers are recorded converted to `real(dp)`, which is exact), and finally `golden_finish()`,
+    !! which stops with the first failure code:
+    !!
+    !! - `stop 1`: a result is outside the tolerance of its category (every differing component is
+    !!   printed with its relative error);
     !! - `stop 2`: a result has no reference record;
     !! - `stop 3`: a reference record was not produced by the test (with `golden_finish(partial=.true.,
     !!   expected=n)`: fewer or more than `n` distinct records matched);
@@ -29,6 +44,7 @@ module muscle_test_golden
     private
 
     public :: golden_init, golden_check, golden_finish
+    public :: GOLDEN_TOL_ALGEBRA, GOLDEN_TOL_FD, GOLDEN_TOL_SOLVER
 
     integer, parameter :: MAXV = 512
         !! Largest number of values of a record.
@@ -36,8 +52,20 @@ module muscle_test_golden
         !! Largest number of records of a reference file.
     integer, parameter :: KEYLEN = 160
         !! Largest length of a key.
-    real(dp), parameter :: ACCEPTABLE_REL = 1.0e-14_dp
-        !! Relative error reported as "within the approvable bound" of testing.md (still a failure).
+    real(dp), parameter :: GOLDEN_TOL_ALGEBRA = 1.0e-13_dp
+        !! Tolerance of direct computations (rounding only).
+    real(dp), parameter :: GOLDEN_TOL_FD = 1.0e-9_dp
+        !! Tolerance of finite differences (rounding amplified by eps/h).
+    real(dp), parameter :: GOLDEN_TOL_SOLVER = 1.0e-9_dp
+        !! Tolerance of iterative return mappings (10 times NEWTON_TOL_dp).
+
+    real(dp) :: default_tol = GOLDEN_TOL_ALGEBRA
+        !! Tolerance of the records checked without `tol` (set by `golden_init`).
+    logical :: strict = .false.
+        !! Bit-for-bit mode (`MUSCLE_GOLDEN_STRICT=1`).
+    logical :: report = .false.
+        !! Print the largest relative error of every record that is not bit-identical
+        !! (`MUSCLE_GOLDEN_REPORT=1`).
 
     logical :: writing = .false.
         !! Regeneration mode (`--write FILE`).
@@ -60,15 +88,22 @@ module muscle_test_golden
 
 contains
 
-    subroutine golden_init(relpath)
+    subroutine golden_init(relpath, tol)
         !! Reads the reference `$MUSCLE_TEST_REFERENCE_DIR/<relpath>`, or opens the output file in
         !! regeneration mode (`--write FILE`).
         character(len=*), intent(in) :: relpath
             !! Reference path relative to `tests/reference`, e.g. `math/math_derivatives_dp.txt`.
+        real(dp), intent(in), optional :: tol
+            !! Default tolerance of the records of the test (default `GOLDEN_TOL_ALGEBRA`).
         character(len=4096) :: arg, dir
         character(len=16384) :: line
         integer :: u, ios, p1, p2, n
 
+        if (present(tol)) default_tol = tol
+        call get_environment_variable('MUSCLE_GOLDEN_STRICT', arg, status=ios)
+        strict = ios == 0 .and. trim(arg) == '1'
+        call get_environment_variable('MUSCLE_GOLDEN_REPORT', arg, status=ios)
+        report = ios == 0 .and. trim(arg) == '1'
         allocate(ref_key(MAXREC), ref_n(MAXREC), ref_bits(MAXV, MAXREC), ref_used(MAXREC))
         ref_used = .false.
         if (command_argument_count() >= 2) then
@@ -129,16 +164,20 @@ contains
         end if
     end subroutine golden_init
 
-    subroutine golden_check(key, x)
-        !! Writes (regeneration) or checks bit for bit (test) the values of one result.
+    subroutine golden_check(key, x, tol, status_iters)
+        !! Writes (regeneration) or checks (test) the values of one result.
         character(len=*), intent(in) :: key
             !! Unique key of the result (routine, test function, case).
         real(dp), intent(in) :: x(:)
             !! Values of the result.
+        real(dp), intent(in), optional :: tol
+            !! Relative tolerance of the record (default: that of `golden_init`).
+        logical, intent(in), optional :: status_iters
+            !! The last two values are the status (exact) and the number of iterations (within 1).
         integer(int64) :: bits(size(x))
-        integer :: i, j
-        real(dp) :: expected(size(x)), scale, rel, maxrel
-        logical :: same(size(x))
+        integer :: i, j, nr
+        real(dp) :: expected(size(x)), scale, rel(size(x)), maxrel, t
+        logical :: same(size(x)), ok(size(x)), tail
 
         if (len_trim(key) > KEYLEN .or. size(x) > MAXV .or. size(x) < 1) then
             print '(a)', ' FAIL: key too long or bad record size: ' // trim(key)
@@ -183,22 +222,44 @@ contains
         same = bits == ref_bits(1:size(x), j) .or. (ieee_is_nan(x) .and. ieee_is_nan(expected))
         if (all(same)) return
 
-        scale = max(maxval(abs(expected)), tiny(1.0_dp))
-        maxrel = 0.0_dp
-        print '(a)', ' FAIL: ' // trim(key) // ' differs from the golden value (bit-for-bit check)'
+        t = default_tol
+        if (present(tol)) t = tol
+        tail = .false.
+        if (present(status_iters)) tail = status_iters .and. size(x) >= 3
+        nr = size(x)
+        if (tail) nr = size(x) - 2
+        scale = max(maxval(abs(expected(1:nr)), mask=.not. ieee_is_nan(expected(1:nr))), tiny(1.0_dp))
+        rel = 0.0_dp
+        where (.not. same) rel = abs(x - expected)/scale
+        ! A NaN on one side only is never within a tolerance
+        where (.not. same .and. (ieee_is_nan(x) .neqv. ieee_is_nan(expected))) rel = huge(1.0_dp)
+        if (strict) then
+            ok = same
+        else
+            ok(1:nr) = same(1:nr) .or. rel(1:nr) <= t
+            if (tail) then
+                ok(nr+1) = same(nr+1)
+                ok(nr+2) = abs(x(nr+2) - expected(nr+2)) <= 1.0_dp
+            end if
+        end if
+        maxrel = maxval(rel(1:nr))
+        if (report) print '(a, es9.2, a)', ' REPORT: ' // trim(key) // ': max relative error ', maxrel, &
+            merge(' (status/iters differ)', '                      ', tail .and. .not. all(same(nr+1:)))
+        if (all(ok)) return
+
+        if (strict) then
+            print '(a)', ' FAIL: ' // trim(key) // ' differs from the golden value (bit-for-bit check, ' // &
+                'MUSCLE_GOLDEN_STRICT=1)'
+        else
+            print '(a, es9.2, a)', ' FAIL: ' // trim(key) // ' is outside the tolerance of its category (rel. ', &
+                t, ')'
+        end if
         print '(a)', '   comp   got                        expected                   |diff|/max|expected|'
         do i = 1, size(x)
-            if (same(i)) cycle
-            rel = abs(x(i) - expected(i))/scale
-            maxrel = max(maxrel, rel)
-            print '(3x, i4, 2x, es25.17, 2x, es25.17, 2x, es9.2)', i, x(i), expected(i), rel
+            if (ok(i)) cycle
+            print '(3x, i4, 2x, es25.17, 2x, es25.17, 2x, es9.2)', i, x(i), expected(i), rel(i)
         end do
-        if (maxrel <= ACCEPTABLE_REL) then
-            print '(a, es9.2, a)', '   max relative error ', maxrel, &
-                ' <= 1e-14: acceptable only with explicit approval (testing.md)'
-        else
-            print '(a, es9.2, a)', '   max relative error ', maxrel, ' > 1e-14: behaviour change'
-        end if
+        print '(a, es9.2)', '   max relative error ', maxrel
         flush(output_unit)
         if (code == 0) code = 1
         n_bad = n_bad + 1

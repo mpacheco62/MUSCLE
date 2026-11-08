@@ -33,7 +33,7 @@ module muscle_visco_maxwell
     !! (D-017.13c): negative moduli and \( \nu = 1/2 \) in `visco_maxwell_init_normalized` are not
     !! validated; 3D only.
     !!
-    !! Kernel API (D-017.13): parameter types `visco_maxwell_<k>` (private components, built with
+    !! Kernel API: parameter types `visco_maxwell_<k>` (private components, built with
     !! `visco_maxwell_init(prm, bulk, shear_inf, shear, tau, status)` or
     !! `visco_maxwell_init_normalized(prm, young, poisson, g, tau, status)`: `STATUS_INVALID_PARAMETER`
     !! if `shear` and `tau` differ in size, have more than `MAX_VISCO_BRANCHES` branches, a
@@ -82,7 +82,7 @@ module muscle_visco_maxwell
 #:set GAMMA_SERIES = {'sp': '1.0e-2', 'dp': '1.0e-4'}
 #:for k in REAL_KINDS
     real(${k}$), parameter :: MAXWELL_GAMMA_SERIES_${k}$ = ${GAMMA_SERIES[k]}$_${k}$
-        !! Below this \( x = \Delta t/\tau_k \), \( \gamma_k \) is its series (`real(${k}$)`, D-017.13a).
+        !! Below this \( x = \Delta t/\tau_k \), \( \gamma_k \) is its series (`real(${k}$)`).
 #:endfor
 
 #:for k in REAL_KINDS
@@ -225,7 +225,7 @@ contains
         !! Coefficients of a time step (algorithmic moduli and the factors of each branch; the time step is
         !! validated) of the generalized Maxwell model in `real(${k}$)`.
         !! \( a_k = e^{-x} \), \( \gamma_k = (1 - a_k)/x \), \( x = \Delta t/\tau_k \); \( \Delta t = 0 \) is valid,
-        !! \( \Delta t < 0 \) gives `STATUS_INVALID_TIME_STEP` (D-017.13b).
+        !! \( \Delta t < 0 \) gives `STATUS_INVALID_TIME_STEP`.
         implicit none
         @:DEVICE()
         type(visco_maxwell_${k}$), intent(in) :: prm

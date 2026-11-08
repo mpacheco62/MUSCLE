@@ -1,20 +1,21 @@
 #! SPDX-License-Identifier: GPL-3.0-or-later
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#! Body of the closest point return mapping with a monolithic Newton system of a declared material
-#! (D-018.1, D-018.5), written once against the family generics `elas_*`, `yield_*` and `hard_*`. Port
-#! of the historical OO solver (muscle_solver_closest_point_2, removed in Phase 7 step 9) operation
+#! Body of the closest point return mapping with a monolithic Newton system of a declared material,
+#! written once against the family generics `elas_*`, `yield_*` and `hard_*`. Port
+#! of the historical OO solver (muscle_solver_closest_point_2, now removed) operation
 #! by operation, so that both give the same bits in double precision: the 7x7 system of each iteration
-#! is solved by the own LU `LU7SOLVE` of muscle_math_lu_solve (D-016.10) instead of LAPACK dgesv
-#! (D-018.1), the Newton tolerance and the elastic check are relative as in `closest_point` (D-018.3,
-#! D-018.13) and there is no output. No constraint
+#! is solved by the own LU `LU7SOLVE` of muscle_math_lu_solve instead of LAPACK dgesv
+#! (D-016.10), the Newton tolerance and the elastic check are relative as in `closest_point`
+#! (D-018.13) and there is no output. No constraint
 #! \( \Delta\gamma \ge 0 \) (D-018.10c). The consistent tangent is that of `closest_point`
 #! (muscle_closest_point_tangent.fypp, included by muscle_material.fypp): both solve the same residual equations.
 #!
 #! Included by src/materials/muscle_material.fypp inside its `#:for k` loop (contained procedures of
-#! the material module), with the variables listed in muscle_closest_point_body.fypp set (also for the
-#! argument `elas`). 3D only. The material type has the components `yield` and `hard`
-#! (MATERIAL_SOLVERS['closest_point_2']), `iter_nw` and `tol`.
-#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver, D-018.12c).
+#! the material module), with these variables set: `k` (kind), `MAT` (the `muscle_meta.Material`),
+#! `MAT_T`, `ELAS_T`, `SOLVE` / `ITER` / `TANGENT` (specific procedure names) and `S2` / `C4` / `T4`
+#! (see muscle_closest_point_body.fypp, also for the argument `elas`). 3D only. The material type has
+#! the components `yield` and `hard` (MATERIAL_SOLVERS['closest_point_2']), `iter_nw` and `tol`.
+#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver).
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
 
@@ -25,12 +26,12 @@
         !! the time step `dt` of the common kernel signature is not used.
         !!
         !! Elastic predictor \( f_{trial}/\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \le \) `TOL_ELASTIC_${k}$`
-        !! (as `closest_point`, D-018.13); otherwise Newton iterations on the plastic strain and \( \Delta\gamma \) together (a 7x7 linear system
-        !! per iteration) until \( |f| < tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \) and the plastic
-        !! strain residual is below `tol` (D-018.3). \( \Delta\gamma \) is not constrained to be
-        !! non-negative (D-018.10c). An elastic and a converged plastic step return `STATUS_OK`
+        !! (as `closest_point`); otherwise Newton iterations on the plastic strain and \( \Delta\gamma \) together (a 7x7 linear
+        !! system per iteration) until \( |f| < tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \) and the plastic
+        !! strain residual is below `tol`. \( \Delta\gamma \) is not constrained to be
+        !! non-negative. An elastic and a converged plastic step return `STATUS_OK`
         !! (`iters` = 0 in an elastic step); with `STATUS_NOT_CONVERGED` the outputs hold the last
-        !! iterate and must not be used (D-017.14f).
+        !! iterate and must not be used.
         use muscle_kinds, only : TOL_ELASTIC_${k}$, SY_MIN_${k}$
         use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
         use muscle_tensors, only : operator(-)
@@ -65,7 +66,7 @@
         logical :: converged
         integer :: i
 
-        ! dt: argument of the common kernel signature of the materials (D-018.12c), not used here
+        ! dt: argument of the common kernel signature of the materials, not used here
         associate (unused_dt => dt)
         end associate
 
@@ -161,7 +162,7 @@
         norm_res = sqrt(sum(residual%vals**2))
         state%stress = stress
 
-        ! Convergence: |f| relative to the current yield stress (D-018.3), the plastic strain residual
+        ! Convergence: |f| relative to the current yield stress, the plastic strain residual
         ! (dimensionless) against the same tolerance
         if (abs(f) < mat%tol*max(hard, SY_MIN_${k}$) .and. norm_res < mat%tol) then
             converged = .true.

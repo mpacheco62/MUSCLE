@@ -273,7 +273,7 @@ end module kin_golden_cases
 
 
 program test_kin_golden
-    !! Golden (characterization) test of the kinematics family, double precision, bit for bit against
+    !! Golden (characterization) test of the kinematics family, double precision, within the tolerance of its category (D-021) against
     !! tests/reference/kinematics/kinematics_dp.txt (captured from the original OO code; see
     !! regenerate.sh there), reproduced by the kernel API (D-018.18f). Exit codes: those of
     !! `golden_finish` (1-4); 5 if a kernel status is not STATUS_OK.

@@ -1,12 +1,12 @@
 #! SPDX-License-Identifier: GPL-3.0-or-later
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #! Body of the closest point return mapping for overstress viscoplasticity (Perzyna, Chaboche) of a
-#! declared material (D-018.5), written once against the family generics `elas_*`, `yield_*`, `os_*`
-#! and `hard_*` (Phase 6): they resolve at compile time by the parameter types of the components of
+#! declared material, written once against the family generics `elas_*`, `yield_*`, `os_*`
+#! and `hard_*`: they resolve at compile time by the parameter types of the components of
 #! the material. Port of the historical OO solver
-#! (muscle_solver_closest_point_perzyna, removed in Phase 7 step 9) operation by operation, so that
+#! (muscle_solver_closest_point_perzyna, now removed) operation by operation, so that
 #! both give the same bits in double precision; relative Newton tolerance on the residuals in stress
-#! units in both (D-018.3, D-018.12a).
+#! units in both (D-018.12a).
 #!
 #! Included by src/materials/muscle_material.fypp inside its `#:for k` loop (contained procedures of
 #! the material module), with these variables set: `k` (kind), `MAT` (the `muscle_meta.Material`),
@@ -14,10 +14,10 @@
 #! / `T4` (see muscle_closest_point_body.fypp, also for the argument `elas`). 3D only. The material type
 #! has the components `yield`, `os` and `hard` (the hardening law the overstress law composes,
 #! MATERIAL_SOLVERS['closest_point_perzyna']), `iter_nw` and `tol`.
-#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver, D-018.12c).
+#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver).
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
-#! Values of the composed hardening law the overstress function `f` receives at `ep` (D-017.6b)
+#! Values of the composed hardening law the overstress function `f` receives at `ep`
 #:set HARD = lambda f, ep: muscle_meta.material_comp_args(MAT, 'os', f, ep)
 #:set COMPOSED = muscle_meta.material_composed(MAT, 'os') is not None
 
@@ -33,10 +33,10 @@
         !! \epsilon_p + \Delta\lambda\,\partial f/\partial\boldsymbol\sigma \) and \( R_\lambda = \Delta\lambda
         !! - \Delta t\, g \) with a backtracking line search, until both in stress units,
         !! \( |\mathbb{C}:R_{\epsilon_p}| \) and \( |R_\lambda|/(\Delta t\,\partial g/\partial\sigma_{eq}) \),
-        !! are below \( tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \) (D-018.3, D-018.12a; the first one
+        !! are below \( tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \) (the first one
         !! with a floor at its rounding). An elastic and a converged plastic step return `STATUS_OK`
         !! (`iters` = 0 in an elastic step); with `STATUS_NOT_CONVERGED` the outputs hold the last iterate and must not be
-        !! used (D-017.14f).
+        !! used.
         use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
         use muscle_tensors, only : operator(-)
         use muscle_elasticity_laws, only : elas_stress
@@ -176,7 +176,7 @@
         integer, parameter :: MAX_BACKTRACK = 10
             ! Maximum number of halvings of the line search (historical value)
         real(${k}$), parameter :: RES_FLOOR_ROUNDINGS = 8.0_${k}$
-            ! Roundings of margin of the floor of the plastic strain residual (D-018.12a)
+            ! Roundings of margin of the floor of the plastic strain residual
         type(${S2}$) :: strain_p, strain_p_new, df, residual1, dstrain_p, stress
         type(${C4}$) :: elas_tan, elas_inv, hess, ddf
         real(${k}$) :: strain_pf, dgamma, dgamma_new, ddgamma, stress_eq, g, c, gp
@@ -212,7 +212,7 @@
         norm_res = sqrt(sum(residual1%vals**2))
 
         ! Convergence: both residuals in stress units through the elastic tangent, relative to the
-        ! current yield stress of the composed hardening law (D-018.3, D-018.12a)
+        ! current yield stress of the composed hardening law
 #:if not COMPOSED
 #:stop ('closest_point_perzyna body: the overstress law of {} composes no hardening law: no yield stress ' &
     & + 'for the Newton criterion').format(MAT.name)

@@ -38,7 +38,9 @@ subroutine test_CPB06ex2_reduces_to_CPB06(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
     ! Same eigenvalues and powers in both models: round-off only. Measured: 1.6e-16
     real(real64), parameter :: TOL = 1D-12
@@ -47,11 +49,21 @@ subroutine test_CPB06ex2_reduces_to_CPB06(passed)
     type(ten_3D2Osym) :: s
     passed = .true.
     call yield_cpb06_init_dp(cpb, 1D0,-0.2D0,0.3D0,0.15D0,0.8D0,-0.4D0,-0.1D0,0.2D0,1.2D0, &
-                  1.3D0,0.7D0,1.1D0,0.25D0,4D0)
+                  1.3D0,0.7D0,1.1D0,0.25D0,4D0, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06_init failed"
+        return
+    end if
     call yield_cpb06ex2_init_dp(yld, 1D0,-0.2D0,0.3D0,0.15D0,0.8D0,-0.4D0,-0.1D0,0.2D0,1.2D0, &
                   1.3D0,0.7D0,1.1D0,0.25D0, &
                   1D0,-0.2D0,0.3D0,0.15D0,0.8D0,-0.4D0,-0.1D0,0.2D0,1.2D0, &
-                  1.3D0,0.7D0,1.1D0,0.25D0,4D0)
+                  1.3D0,0.7D0,1.1D0,0.25D0,4D0, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06ex2_init failed"
+        return
+    end if
     call s%init((/120.5D0,-35.25D0,60.75D0,42.5D0,-28D0,33.25D0/))
     call check_approx(passed, 'CPB06 reduction coupled', yield_stress_eq(yld, s), yield_stress_eq(cpb, s), &
                       tol=TOL)
@@ -70,7 +82,9 @@ subroutine test_CPB06ex2_isotropic_vonmises(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
     ! Closed form against eigenvalues: round-off only. Measured: 1.7e-16
     real(real64), parameter :: TOL = 1D-12
@@ -79,7 +93,12 @@ subroutine test_CPB06ex2_isotropic_vonmises(passed)
     type(ten_3D2Osym) :: s
     passed = .true.
     call yield_cpb06ex2_init_dp(yld, 1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0, &
-                  1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0,2D0)
+                  1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0,2D0, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06ex2_init failed"
+        return
+    end if
     call s%init((/120.5D0,-35.25D0,60.75D0,42.5D0,-28D0,33.25D0/))
     call check_approx(passed, 'VonMises coupled', yield_stress_eq(yld, s), yield_stress_eq(vm, s), tol=TOL)
 end subroutine test_CPB06ex2_isotropic_vonmises
@@ -93,23 +112,28 @@ subroutine CPB06ex2_test_materials(yld)
     use muscle_yield_cpb06ex2
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     type(yield_cpb06ex2_dp), intent(out) :: yld(3)
     call yield_cpb06ex2_init_dp(yld(1), 1.283D0,0.208D0,-0.421D0,0.208D0,0.535D0,-0.791D0,-0.421D0,-0.791D0,0.746D0, &
                      1.156D0,1.418D0,1.329D0,0.030D0, &
                      1.283D0,0.380D0,-0.001D0,0.380D0,2.145D0,0.792D0,-0.001D0,0.792D0,0.218D0, &
-                     1.721D0,1.418D0,1.329D0,-0.027D0,5D0)
+                     1.721D0,1.418D0,1.329D0,-0.027D0,5D0, status=status)
+    if (status /= STATUS_OK) error stop 'yield_cpb06ex2_init failed'
     call yield_cpb06ex2_init_dp(yld(2), 0.250D0,-1.399D0,-0.971D0,-1.399D0,-0.375D0,-2.254D0, &
                      -0.971D0,-2.254D0,-0.831D0, &
                      1.316D0,1.403D0,1.101D0,0D0, &
                      0.250D0,-0.840D0,-1.330D0,-0.840D0,0.780D0,-0.565D0, &
                      -1.330D0,-0.565D0,0.479D0, &
-                     1.413D0,1.094D0,1.448D0,0D0,12D0)
+                     1.413D0,1.094D0,1.448D0,0D0,12D0, status=status)
+    if (status /= STATUS_OK) error stop 'yield_cpb06ex2_init failed'
     call yield_cpb06ex2_init_dp(yld(3), 0.771D0,-0.914D0,-1.312D0,-0.914D0,0.654D0,-1.209D0, &
                      -1.312D0,-1.209D0,-0.293D0, &
                      1.617D0,1D0,1D0,0.295D0, &
                      0.771D0,0.337D0,-0.764D0,0.337D0,0.646D0,-0.401D0,-0.764D0,-0.401D0,-0.022D0, &
-                     0.499D0,1D0,1D0,0.900D0,4D0)
+                     0.499D0,1D0,1D0,0.900D0,4D0, status=status)
+    if (status /= STATUS_OK) error stop 'yield_cpb06ex2_init failed'
 end subroutine CPB06ex2_test_materials
 
 subroutine test_CPB06ex2_paper_tables(passed)
@@ -311,7 +335,9 @@ subroutine test_CPB06ex2_hessian_analytical(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
     ! Exact references: round-off only. Measured: 8.8e-16 or less
     real(real64), parameter :: TOL = 1D-12
@@ -340,7 +366,12 @@ subroutine test_CPB06ex2_hessian_analytical(passed)
     ! Isotropic limit with a = 2, pure shear xy: one principal value is exactly zero, where
     ! the curvature has a finite limit
     call yield_cpb06ex2_init_dp(iso, 1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0, &
-                  1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0,2D0)
+                  1D0,0D0,0D0,0D0,1D0,0D0,0D0,0D0,1D0,1D0,1D0,1D0,0D0,2D0, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06ex2_init failed"
+        return
+    end if
     call s%init((/0D0,0D0,0D0,50D0,0D0,0D0/))
     call check_approx(passed, 'Hessian vs von Mises: isotropic, zero principal value', &
                       yield_ddstress_eq(iso, s), yield_ddstress_eq(vm, s), tol=TOL)
@@ -352,7 +383,12 @@ subroutine test_CPB06ex2_hessian_analytical(passed)
                  -1.312D0,-1.209D0,-0.293D0, &
                  1.617D0,1D0,1D0,0.295D0, &
                  0.771D0,0.337D0,-0.764D0,0.337D0,0.646D0,-0.401D0,-0.764D0,-0.401D0,-0.022D0, &
-                 0.499D0,1D0,1D0,0.900D0,2D0)
+                 0.499D0,1D0,1D0,0.900D0,2D0, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_cpb06ex2_init failed"
+        return
+    end if
     call expected%init((/1.607067269481341886D-02, 1.104520186736500050D-02, &
                          1.654252201683665822D-02, 0D0, &
                          8.379554812243580838D-03, 8.379554812243580838D-03, &

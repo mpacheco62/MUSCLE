@@ -17,22 +17,28 @@ set(MUSCLE_FYPP_DEFINES "${_defines}")
 # Point kernels of the materials of the test registry (tools/fypp/muscle_materials.py). With a user
 # registry (-DMUSCLE_MATERIALS) these modules do not exist and the tests are not built.
 if(NOT MUSCLE_MATERIALS)
-    # Golden tests of the return mapping solvers, one per solver: dp bit for bit against every record of
+    # Golden tests of the return mapping solvers, one per solver: dp within the tolerance of its category (D-021) against every record of
     # tests/reference/solvers/<solver>_dp.txt (captured from the historical OO solvers; `--write`
     # regenerates it, regenerate.sh there), sp against dp, analytic vs FD tangent; the common part is
     # mat_golden_common.fypp, the parameter sets golden_params.py. Each `mat_<solver>_golden_mutation`
-    # test runs it with `--mutate 1` (one parameter perturbed by one ulp) and passes only if the golden
-    # comparison reports the difference.
+    # test runs it with `--mutate rel` (one parameter perturbed by 1e-6 relative, above every golden
+    # tolerance) and passes only if the golden comparison reports it; `*_golden_mutation_strict` runs
+    # `--mutate ulp` (one ulp) under MUSCLE_GOLDEN_STRICT=1 and must report the bit-for-bit difference.
     foreach(solver IN ITEMS closest_point closest_point_perzyna closest_point_time closest_point_2 cutting_plane)
         add_muscle_fypp_test(mat_${solver} test_mat_${solver}.fypp
                              DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mat_golden_common.fypp
                                      ${CMAKE_CURRENT_SOURCE_DIR}/golden_params.py)
         set_tests_properties(materials-mat_${solver} PROPERTIES
                              ENVIRONMENT "MUSCLE_TEST_REFERENCE_DIR=${BASE_TESTS_DIR}/reference")
-        add_test(NAME materials-mat_${solver}_golden_mutation COMMAND test_mat_${solver} --mutate 1)
+        add_test(NAME materials-mat_${solver}_golden_mutation COMMAND test_mat_${solver} --mutate rel)
         set_tests_properties(materials-mat_${solver}_golden_mutation PROPERTIES
                              ENVIRONMENT "MUSCLE_TEST_REFERENCE_DIR=${BASE_TESTS_DIR}/reference"
-                             PASS_REGULAR_EXPRESSION "differs from the golden value"
+                             PASS_REGULAR_EXPRESSION "outside the tolerance of its category"
+                             FAIL_REGULAR_EXPRESSION "no reference for|not produced by the test|cannot open|malformed")
+        add_test(NAME materials-mat_${solver}_golden_mutation_strict COMMAND test_mat_${solver} --mutate ulp)
+        set_tests_properties(materials-mat_${solver}_golden_mutation_strict PROPERTIES
+                             ENVIRONMENT "MUSCLE_TEST_REFERENCE_DIR=${BASE_TESTS_DIR}/reference;MUSCLE_GOLDEN_STRICT=1"
+                             PASS_REGULAR_EXPRESSION "differs from the golden value \\(bit-for-bit"
                              FAIL_REGULAR_EXPRESSION "no reference for|not produced by the test|cannot open|malformed")
     endforeach()
     # Physical checks of the anisotropic yield criteria with closest_point (Lankford coefficients,

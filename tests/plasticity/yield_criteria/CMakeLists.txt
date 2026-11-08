@@ -17,7 +17,7 @@ endforeach()
 
 # Golden (characterization) test of every yield criterion (stress_eq, dstress_eq, ddstress_eq,
 # stress_eq_and_derivatives, joint_evaluation through the kernel API, constructors), double precision,
-# bit for bit against tests/reference/plasticity/yield_criteria/ (regenerate.sh there), captured from
+# within the tolerance of its category (D-021) against tests/reference/plasticity/yield_criteria/ (regenerate.sh there), captured from
 # the original OO code. Includes the zero tensor and states with repeated principal values.
 add_muscle_fypp_test(yield_golden test_yield_golden.fypp)
 set_tests_properties(plasticity-yield_criteria-yield_golden PROPERTIES

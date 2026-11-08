@@ -10,8 +10,8 @@ module muscle_yield_vonmises
     !!    - \frac{9}{4\sigma_{eq}} \mathbf{n} \otimes \mathbf{n} - \frac{1}{2\sigma_{eq}} \mathbf{I} \otimes \mathbf{I} \]
     !! with \( \mathbf{s} = \operatorname{dev}\boldsymbol\sigma \) and \( \mathbf{n} = \mathbf{s}/\sigma_{eq} \)
     !! (the Hessian is written with \( \mathbf{n} \), not \( \mathbf{s} \otimes \mathbf{s}/\sigma_{eq}^3 \), so
-    !! that no power of \( \sigma_{eq} \) under- or overflows: D-017.10d). At a null equivalent stress
-    !! (zero or hydrostatic stress) both derivatives are 0 (D-017.9; the original code gave NaN).
+    !! that no power of \( \sigma_{eq} \) under- or overflows; D-017.10d). At a null equivalent stress
+    !! (zero or hydrostatic stress) both derivatives are 0 (the original code gave NaN; D-017.9).
     !!
     !! Kernel API: parameter types `yield_vonmises_<k>` (empty) and `pure` functions
     !! `yield_stress_eq_vonmises_3D_<k>(prm, sigma)`, `yield_dstress_eq_vonmises_3D_<k>(prm, sigma)`,
@@ -73,7 +73,7 @@ contains
 
         seq = yield_stress_eq_vonmises_3D_${k}$(prm, sigma)
         if (seq == 0.0_${k}$) then
-            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative (D-017.9)
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
             return
         end if
         dev = .dev. sigma
@@ -90,13 +90,13 @@ contains
             !! Stress tensor \( \boldsymbol\sigma \).
         type(ten_3D4O3sym_${k}$) :: res
             !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \).
-        ! n = dev/seq is O(1): no power of seq beyond the first (D-017.10d)
+        ! n = dev/seq is O(1): no power of seq beyond the first
         type(ten_3D2Osym_${k}$) :: n
         real(${k}$) :: seq
 
         seq = yield_stress_eq_vonmises_3D_${k}$(prm, sigma)
         if (seq == 0.0_${k}$) then
-            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative (D-017.9)
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
             return
         end if
         n = (.dev. sigma)/seq

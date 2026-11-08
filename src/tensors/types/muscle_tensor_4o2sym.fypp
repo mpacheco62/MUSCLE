@@ -2,8 +2,8 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_common.fypp"
-#! Fourth-order tensors with minor symmetries, one type per dimension and kind (pattern of D-011,
-#! D-012):
+#! Fourth-order tensors with minor symmetries, one type per dimension and kind (pattern of
+#! muscle_tensor_2osym.fypp):
 #! - everything that depends on the component layout comes from layout('4O2sym', dim): the
 #!   storage is the full (generally unsymmetric) Voigt matrix of the base 2Osym layout, vals(n,n);
 #!   the only per-dimension differences are the size of the inverted matrix (M66INV in 3D,
@@ -13,7 +13,7 @@
 #!   tolerance of is_approx is TOL_APPROX_4O2SYM_<k> (D-010);
 #! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
-#! - the historical names (ten_3D4O2sym, ten_2D4O2sym = dp) come from muscle_tensors (D-003).
+#! - the historical names (ten_3D4O2sym, ten_2D4O2sym = dp) come from muscle_tensors.
 
 module muscle_tensor_4o2sym
     !! Module muscle_tensor_4o2sym

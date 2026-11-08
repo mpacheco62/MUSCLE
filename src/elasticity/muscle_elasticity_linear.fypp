@@ -25,15 +25,17 @@ module muscle_elasticity_linear
     !! `elas_dstress_dstrain_linear_<d>_<k>` and `elas_dstress_dstrain_dev_linear_<d>_<k>` for each
     !! real kind and dimension (3D, 2D), also through the generics `elas_*` of
     !! `muscle_elasticity_laws`. The tangents do not depend on the strain and are assembled on the
-    !! fly (D-017.12e).
+    !! fly.
     !!
     !! ```fortran
     !! type(elas_linear_dp) :: prm
     !! type(ten_3D2Osym_dp) :: eps, sig
-    !! call elas_linear_init(prm, young=200000.0_dp, poisson=0.3_dp)
+    !! integer :: status
+    !! call elas_linear_init(prm, young=200000.0_dp, poisson=0.3_dp, status=status)  ! always STATUS_OK
     !! sig = elas_stress(prm, eps)
     !! ```
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
     use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in DIMS for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
     implicit none
     private
@@ -68,10 +70,10 @@ module muscle_elasticity_linear
 contains
 #:for k in REAL_KINDS
 
-    pure subroutine elas_linear_init_${k}$(prm, young, poisson)
+    pure subroutine elas_linear_init_${k}$(prm, young, poisson, status)
         !! Parameters of the linear elastic model in `real(${k}$)` from the Young modulus and the Poisson
         !! ratio: the Lamé parameters \( \lambda \), \( \mu \) and \( e_1 = \lambda + 2\mu \).
-        !! Needs \( \nu < 1/2 \) (D-017.12b).
+        !! Needs \( \nu < 1/2 \).
         implicit none
         @:DEVICE()
         type(elas_linear_${k}$), intent(out) :: prm
@@ -80,10 +82,14 @@ contains
             !! Young modulus \( E > 0 \).
         real(${k}$), intent(in) :: poisson
             !! Poisson ratio \( -1 < \nu < 1/2 \).
+        integer, intent(out) :: status
+            !! Always `STATUS_OK` (no input is validated): the argument exists so that every model
+            !! initializer is called the same way.
 
         prm%lambda = young * poisson / ((1.0_${k}$ + poisson) * (1.0_${k}$ - 2.0_${k}$ * poisson))
         prm%mu     = 0.5_${k}$ * young / (1.0_${k}$ + poisson)
         prm%e1     = prm%lambda + 2.0_${k}$ * prm%mu
+        status = STATUS_OK
     end subroutine elas_linear_init_${k}$
 
     pure function elas_stress_linear_3D_${k}$(prm, strain) result(res)
@@ -113,7 +119,7 @@ contains
 
     pure function elas_stress_dev_linear_3D_${k}$(prm, strain) result(res)
         !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model in `real(${k}$)` (3D).
-        !! Analytic, also in 2D (D-017.12a): \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
+        !! Analytic, also in 2D: \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
         implicit none
         @:DEVICE()
         type(elas_linear_${k}$), intent(in) :: prm
@@ -236,7 +242,7 @@ contains
 
     pure function elas_stress_dev_linear_2D_${k}$(prm, strain) result(res)
         !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model in `real(${k}$)` (2D).
-        !! Analytic, also in 2D (D-017.12a): \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
+        !! Analytic, also in 2D: \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
         implicit none
         @:DEVICE()
         type(elas_linear_${k}$), intent(in) :: prm

@@ -3,9 +3,9 @@
 #:include "muscle_common.fypp"
 
 module muscle_yield_criteria
-    !! Yield criteria for kernels (D-007, D-017): the parameter types of every registered criterion
+    !! Yield criteria for kernels: the parameter types of every registered criterion
     !! (`yield_<name>_<k>`, `YIELD_MODELS` of tools/fypp/muscle_meta.py) and the family generics
-    !! (prefix `yield_`, D-017.5b), with the same names for every criterion, kind and dimension
+    !! (prefix `yield_`), with the same names for every criterion, kind and dimension
     !! (only 3D so far):
     !!
     !! - `yield_stress_eq(prm, sigma)`: equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \);
@@ -20,8 +20,11 @@ module muscle_yield_criteria
     !!   functions one by one, the second derivative only when needed).
     !!
     !! `prm` is the parameter type of a criterion and `sigma` the stress tensor of the same kind.
-    !! At a null equivalent stress the derivatives are 0 (D-017.9). Example:
+    !! At a null equivalent stress the derivatives are 0. Example:
     !! `f = yield_stress_eq(h, sigma) - hard_stress(law, ep)`.
+    !!
+    !! To add a criterion: write `muscle_yield_<name>.fypp`, then add a `use` statement of its own and its names to the
+    !! interfaces and the `public` list below (the compiler rejects a name that does not exist).
 #:for k in REAL_KINDS
     use muscle_yield_vonmises, only : yield_vonmises_${k}$, &
         & yield_stress_eq_vonmises_3D_${k}$, &

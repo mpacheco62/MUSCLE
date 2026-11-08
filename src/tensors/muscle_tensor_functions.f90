@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 
 module muscle_tensor_functions
-    !! Free (non type-bound) tensor functions of every family, in one `use` (D-011).
+    !! Free (non type-bound) tensor functions of every family, in one `use`.
     !!
     !! These generics are the kernel-friendly API: `type` arguments, `pure`, callable from GPU
     !! regions. They are not exported by [[muscle_tensors]] so that they do not clash with user

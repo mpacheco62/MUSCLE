@@ -19,18 +19,19 @@ module muscle_test_solver_golden
     !! `result` = [strain(6), stress(6), ep, strain_p(6), status, iters] (status and iters converted
     !! to real(dp), exact), and `tangent` / `tangent_num` = the 6x6 Voigt matrix (column major).
     !!
-    !! Mutation hook: `<test> --mutate 1` perturbs by one ulp the parameter named by the test (see
-    !! `mutate_name`) when its component is built; the ctest `*_golden_mutation` checks that the
-    !! golden comparison detects it.
+    !! Mutation hook: `<test> --mutate rel` perturbs the parameter named by the test (see `mutate_name`)
+    !! by MUTATE_REL relative when its component is built, and `<test> --mutate ulp` by one ulp; the
+    !! ctest `*_golden_mutation` checks that the golden comparison detects the first one (larger than any
+    !! tolerance, D-021) and `*_golden_mutation_strict` the second one with MUSCLE_GOLDEN_STRICT=1.
     use muscle_kinds, only : dp
     use muscle_tensors, only : ten_3D2Osym, ten_3D4O2sym
-    use muscle_test_golden, only : golden_check
+    use muscle_test_golden, only : golden_check, GOLDEN_TOL_FD
     implicit none
     private
 
     public :: NSTEP, FIRST_FACTOR, seq_strain, first_strain, step_key
     public :: record_result, record_tangent, compare_tangents, n_tangent_notes
-    public :: mutation_requested, scales_requested, mutate_name, bump
+    public :: mutation_requested, mutation_ulp, scales_requested, mutate_name, MUTATE_REL
 
     integer, parameter :: NSTEP = 8
         !! Steps of the sequence (0..NSTEP-1).
@@ -46,12 +47,16 @@ module muscle_test_solver_golden
         !! Factor of D1 of the single first increment.
     real(dp), parameter :: TANGENT_NOTE_TOL = 1.0e-5_dp
         !! Relative difference analytic vs numerical tangent above which a note is printed
-        !! (information only: the golden records both tangents bit for bit).
+        !! (information only: the golden records both tangents).
 
     integer :: n_tangent_notes = 0
         !! Notes printed by `compare_tangents`.
     character(len=32) :: mutate_name = ''
-        !! Parameter set perturbed by one ulp (empty: none). Set by the test with `--mutate`.
+        !! Parameter set perturbed by `--mutate` (empty: none). Set by the test.
+    real(dp), parameter :: TOL_TANGENT_NUM = GOLDEN_TOL_FD
+        !! Golden tolerance of the numerical tangents (finite differences of a return mapping).
+    real(dp), parameter :: MUTATE_REL = 1.0e-6_dp
+        !! Relative perturbation of `--mutate rel`: far above the golden tolerances.
 
 contains
 
@@ -91,14 +96,19 @@ contains
         real(dp), intent(in) :: ep
         integer, intent(in) :: status, iters
         call golden_check(key // ' | result', [strain%vals, stress%vals, ep, strain_p%vals, &
-            real(status, dp), real(iters, dp)])
+            real(status, dp), real(iters, dp)], status_iters=.true.)
     end subroutine record_result
 
     subroutine record_tangent(key, what, t)
         !! Golden record of a tangent (6x6 Voigt matrix, column major).
         character(len=*), intent(in) :: key, what
         type(ten_3D4O2sym), intent(in) :: t
-        call golden_check(key // ' | ' // what, reshape(t%vals, [36]))
+        if (what == 'tangent_num') then
+            ! Finite differences of the return mapping
+            call golden_check(key // ' | ' // what, reshape(t%vals, [36]), tol=TOL_TANGENT_NUM)
+        else
+            call golden_check(key // ' | ' // what, reshape(t%vals, [36]))
+        end if
     end subroutine record_tangent
 
     subroutine compare_tangents(key, ta, tn)
@@ -124,6 +134,16 @@ contains
         end if
     end function mutation_requested
 
+    logical function mutation_ulp()
+        !! `--mutate ulp`: the perturbation is one ulp (strict mode check) instead of MUTATE_REL.
+        character(len=64) :: arg
+        mutation_ulp = .false.
+        if (command_argument_count() >= 2) then
+            call get_command_argument(2, arg)
+            mutation_ulp = trim(arg) == 'ulp'
+        end if
+    end function mutation_ulp
+
     logical function scales_requested()
         !! `--scales` given as first argument (prints the yield strain of every case, used once to
         !! write the A_Y tables of the tests; never run by ctest).
@@ -134,14 +154,5 @@ contains
             scales_requested = trim(arg) == '--scales'
         end if
     end function scales_requested
-
-    pure function bump(name, x) result(y)
-        !! `x` perturbed by one ulp when `name` is the mutated parameter set.
-        character(len=*), intent(in) :: name
-        real(dp), intent(in) :: x
-        real(dp) :: y
-        y = x
-        if (len_trim(mutate_name) > 0 .and. name == mutate_name) y = nearest(x, 1.0_dp)
-    end function bump
 
 end module muscle_test_solver_golden

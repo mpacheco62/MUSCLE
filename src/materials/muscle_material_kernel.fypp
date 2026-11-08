@@ -6,23 +6,23 @@
 #! `COEFS_T`, `VISCO`, `KIN`, `COROT`, `SPATIAL_KIN`, `ROTATED`, `UPDATE`, `STEP`, `SOLVE`, `PACK`, `UNPACK`, `NSTATE`, `S2`, `T4`,
 #! `G2`).
 #!
-#! A finite strain material (`KIN`, D-018.15) has its own `UPDATE`: the deformation gradients at t_n
+#! A finite strain material (`KIN`) has its own `UPDATE`: the deformation gradients at t_n
 #! and t_n+1, the return mapping in the strain measure of the kinematics and the Cauchy stress and
 #! spatial tangent (`tangent_rate`); with a spatial measure (`SPATIAL_KIN`) the converged plastic strain
-#! is rotated with the rotation increment of the polar decompositions (D-018.15f); without a spatial
+#! is rotated with the rotation increment of the polar decompositions; without a spatial
 #! measure nor a kinematics that reads R (`material_kin_rotation`), `kin_update` skips the polar
 #! decomposition (D-019.7c). The corotational
 #! kinematics (`COROT`) takes the strain already rotated by the FE code (small strain signature).
 #!
 #! `UPDATE` calls the body (`SOLVE`) with the elasticity of the step: the component `elas` of the
-#! material, or, with a viscoelastic elasticity (`VISCO`, D-017.13d), the frozen elasticity of the
+#! material, or, with a viscoelastic elasticity (`VISCO`), the frozen elasticity of the
 #! viscoelastic model from the coefficients of the time step and the converged viscoelastic state, whose
 #! state it then updates with the elastic strain of the return mapping (the sequence of the historical
 #! solvers with a frozen elasticity: coefficients and freeze before the step, update with
 #! strain - strain_p after it). The coefficients are computed once per step for all the points
 #! (`STEP`, which validates the time step and the number of branches) and passed to `UPDATE`.
 #!
-#! History layout (D-018.7, D-018.11d; without the stress): hsv(1:6) plastic strain (xx, yy, zz, xy,
+#! History layout (without the stress, D-018.7): hsv(1:6) plastic strain (xx, yy, zz, xy,
 #! yz, xz), hsv(7) equivalent plastic strain and, with a viscoelastic elasticity, hsv(8:13) elastic
 #! strain and hsv(8 + 6 i : 13 + 6 i) history tensor i = 1 .. visco_branches. The viscoelastic state of the
 #! material keeps `visco_branches` tensors (D-019.7b; an upper bound: the model kernels use their own
@@ -35,7 +35,7 @@
 
     pure subroutine ${STEP}$(mat, dt, coefs, status)
         !! Coefficients of a time step of material `${MAT.name}$`, `real(${k}$)`: once per step for every
-        !! point (D-017.13d), before the point kernel `mat_update`, which takes them. `status`:
+        !! point, before the point kernel `mat_update`, which takes them. `status`:
         !! `STATUS_INVALID_PARAMETER` when the ${muscle_meta.model_label(VISCO, getattr(MAT, VISCO))}$ model
         !! has more than ${NB}$ branches (the history tensors of the material), else that of
         !! `visco_step_coefficients` (`STATUS_INVALID_TIME_STEP` for an invalid `dt`); with an error the
@@ -64,7 +64,7 @@
 #:if KIN and not COROT
     pure subroutine ${UPDATE}$(mat, F_n, F_np1, dt, state_n, state_np1, stress, tangent, status, iters)
         !! Point kernel of material `${MAT.name}$` with the ${muscle_meta.model_label('kin', KIN)}$ kinematics,
-        !! `real(${k}$)` (D-018.15): the `${MAT.solver}$` return mapping (`${SOLVE}$`) in the strain measure of
+        !! `real(${k}$)`: the `${MAT.solver}$` return mapping (`${SOLVE}$`) in the strain measure of
         !! the kinematics (`kin_update` of `F_np1`: `state%strain`) from the converged state `state_n`,
         !! whose plastic strain is in that measure; the Cauchy stress (`kin_to_cauchy`) and the spatial
 #:if MAT.tangent_rate == 'jaumann'
@@ -76,7 +76,7 @@
 #:endif
 #:if SPATIAL_KIN
         !!
-        !! Spatial strain measure (D-018.15f): the converged plastic strain is first rotated with the
+        !! Spatial strain measure: the converged plastic strain is first rotated with the
         !! rotation increment \( \Delta\mathbf{R} = \mathbf{R}_{n+1}\mathbf{R}_n^T \) of the polar
         !! decompositions of `F_np1` and `F_n` (objective); the tangent includes the derivative of that
         !! rotation (`kin_spin_tangent` of the rotated plastic strain).
@@ -114,7 +114,7 @@
         type(${T4}$), intent(out) :: tangent
             !! Spatial tangent at \( t_{n+1} \) (see above).
         integer, intent(out) :: status
-            !! `STATUS_OK` or an error code of muscle_status (outputs not to be used, D-017.14f).
+            !! `STATUS_OK` or an error code of muscle_status (outputs not to be used).
         integer, intent(out) :: iters
             !! Iterations of the return mapping (0 in an elastic step).
 
@@ -141,7 +141,7 @@
 #:if muscle_meta.material_kin_rotation(MAT)
         call kin_update(mat%kin, F_np1, ks, status)
 #:else
-        ! The polar rotation is not used (D-019.7c)
+        ! The polar rotation is not used
         call kin_update_norot(mat%kin, F_np1, ks, status)
 #:endif
 #:if SPATIAL_KIN
@@ -201,7 +201,7 @@
     end subroutine ${UPDATE}$
 #:elif COROT
     pure subroutine ${UPDATE}$(mat, strain, dt, state_n, state_np1, stress, tangent, status, iters)
-        !! Point kernel of material `${MAT.name}$` with the corotational kinematics, `real(${k}$)` (D-018.15f):
+        !! Point kernel of material `${MAT.name}$` with the corotational kinematics, `real(${k}$)`:
         !! the FE code (Abaqus, ANSYS) gives the strain already rotated to the corotational frame and
         !! rotates the stored plastic strain (adapter job); the `${MAT.solver}$` return mapping (`${SOLVE}$`)
         !! on it gives the stress in that frame (`kin_corot_update` without a rotation, `kin_to_cauchy`)
@@ -231,7 +231,7 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
         type(${T4}$), intent(out) :: tangent
             !! Tangent at \( t_{n+1} \) (see above).
         integer, intent(out) :: status
-            !! `STATUS_OK` or `STATUS_NOT_CONVERGED` (outputs not to be used, D-017.14f).
+            !! `STATUS_OK` or `STATUS_NOT_CONVERGED` (outputs not to be used).
         integer, intent(out) :: iters
             !! Iterations of the return mapping (0 in an elastic step).
 
@@ -260,7 +260,7 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
 #:if VISCO
         !!
         !! Elasticity of the step: the frozen elasticity of the ${muscle_meta.model_label(VISCO, getattr(MAT, VISCO))}$
-        !! model (D-017.13d) from the coefficients of the step (`coefs`, of `mat_step` with the same `dt`;
+        !! model from the coefficients of the step (`coefs`, of `mat_step` with the same `dt`;
         !! not validated here) and the converged viscoelastic state (`visco_freeze`). The viscoelastic
         !! state at \( t_{n+1} \) follows from the elastic strain
         !! \( \boldsymbol\varepsilon - \boldsymbol\varepsilon^p_{n+1} \) of the return mapping
@@ -289,7 +289,7 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
         type(${T4}$), intent(out) :: tangent
             !! Tangent \( d\boldsymbol\sigma/d\boldsymbol\varepsilon \) at \( t_{n+1} \) (see `${SOLVE}$`).
         integer, intent(out) :: status
-            !! `STATUS_OK` or an error code of muscle_status (outputs not to be used, D-017.14f).
+            !! `STATUS_OK` or an error code of muscle_status (outputs not to be used).
         integer, intent(out) :: iters
             !! Iterations of the return mapping (0 in an elastic step).
 #:if VISCO
@@ -297,7 +297,7 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
         type(${ELAS_T}$) :: elas
         type(${S2}$) :: strain_e
 
-        ! The ${NB}$ history tensors of the material (D-019.7b): the model uses its own number, at most ${NB}$
+        ! The ${NB}$ history tensors of the material: the model uses its own number, at most ${NB}$
         elas = visco_freeze_branches(mat%${VISCO}$, coefs, state_n%visco%strain_e, ${NB}$, state_n%visco%h)
         call ${SOLVE}$(mat, elas, strain, dt, state_n%plastic, state_np1%plastic, stress, tangent, &
             status, iters)
@@ -317,10 +317,10 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
         !! history array, `real(${k}$)`: hsv(1:6) plastic strain (xx, yy, zz, xy, yz, xz), hsv(7)
 #:if VISCO
         !! equivalent plastic strain, hsv(8:13) elastic strain and hsv(8 + 6 i : 13 + 6 i) the history
-        !! tensor i = 1 .. ${NB}$ of the viscoelastic state. The stress is not part of it (D-018.7: it
+        !! tensor i = 1 .. ${NB}$ of the viscoelastic state. The stress is not part of it (it
         !! goes in `sig`).
 #:else
-        !! equivalent plastic strain. The stress is not part of it (D-018.7: it goes in `sig`).
+        !! equivalent plastic strain. The stress is not part of it (it goes in `sig`).
 #:endif
         implicit none
         @:DEVICE()

@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_ops_common.fypp"
-#! Single contraction `*` between second-order tensors and identities (D-015): the pairs come from
+#! Single contraction `*` between second-order tensors and identities: the pairs come from
 #! OP_TABLE['*'] (muscle_meta); the tensor products are written once in index notation,
 #! C_ij = A_ik B_kj with k = 1, 2, 3 in order, and the layouts drop the structural zeros of 2D.
 #:set MODULE = 'contraction_single'

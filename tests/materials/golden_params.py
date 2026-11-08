@@ -9,34 +9,42 @@ test_perzyna_golden.f90, test_time_golden.f90; removed in Phase 7 step 9), plus 
 
 ``GOLDEN_PARAMS[(family prefix, model)][golden name]``: the Fortran statements that set the
 parameters of a model to that set, with ``{v}`` = the parameter variable, ``{k}`` = the kind and
-``@@`` = a Fortran line break (continuation).
+``@@`` = a Fortran line break (continuation). An initializer call passes ``status=status`` (a local
+integer of the caller) and is followed by its check (``_checked``).
 """
+import re
 
 # Long initializer calls, split in Fortran lines with '@@'
 _CPB06 = ('call yield_cpb06_init({v}, c11=1.0_{k}, c12=-2.373_{k}, c13=-2.364_{k}, c21=-2.373_{k}, @@'
           'c22=-1.838_{k}, c23=1.196_{k}, c31=-2.364_{k}, c32=1.196_{k}, c33=-2.444_{k}, c44=3.607_{k}, @@'
-          'c55=3.607_{k}, c66=3.607_{k}, k=-0.136_{k}, a={a}_{k})')
+          'c55=3.607_{k}, c66=3.607_{k}, k=-0.136_{k}, a={a}_{k}, status=status)')
 _CPB06EX2 = ('call yield_cpb06ex2_init({v}, 1.283_{k}, 0.208_{k}, -0.421_{k}, 0.208_{k}, 0.535_{k}, @@'
              '-0.791_{k}, -0.421_{k}, -0.791_{k}, 0.746_{k}, 1.156_{k}, 1.418_{k}, 1.329_{k}, 0.030_{k}, @@'
              '1.283_{k}, 0.380_{k}, -0.001_{k}, 0.380_{k}, 2.145_{k}, 0.792_{k}, -0.001_{k}, 0.792_{k}, @@'
-             '0.218_{k}, 1.721_{k}, 1.418_{k}, 1.329_{k}, -0.027_{k}, 5.0_{k})')
+             '0.218_{k}, 1.721_{k}, 1.418_{k}, 1.329_{k}, -0.027_{k}, 5.0_{k}, status=status)')
 _CPB06_3 = ('call yield_cpb06_init({v}, c11=1.0_{k}, c12=-2.373_{k}, c13=-2.364_{k}, c21=-1.5_{k}, @@'
            'c22=-1.838_{k}, c23=1.196_{k}, c31=-2.364_{k}, c32=0.8_{k}, c33=-2.444_{k}, c44=3.607_{k}, @@'
-           'c55=2.9_{k}, c66=4.1_{k}, k=0.25_{k}, a=2.0_{k})')
+           'c55=2.9_{k}, c66=4.1_{k}, k=0.25_{k}, a=2.0_{k}, status=status)')
 _CPB06EX2_3 = ('call yield_cpb06ex2_init({v}, 0.771_{k}, -0.914_{k}, -1.312_{k}, -0.914_{k}, 0.654_{k}, @@'
                '-1.209_{k}, -1.312_{k}, -1.209_{k}, -0.293_{k}, 1.617_{k}, 1.0_{k}, 1.0_{k}, 0.295_{k}, @@'
                '0.771_{k}, 0.337_{k}, -0.764_{k}, 0.337_{k}, 0.646_{k}, -0.401_{k}, -0.764_{k}, -0.401_{k}, @@'
-               '-0.022_{k}, 0.499_{k}, 1.0_{k}, 1.0_{k}, 0.900_{k}, 4.0_{k})')
+               '-0.022_{k}, 0.499_{k}, 1.0_{k}, 1.0_{k}, 0.900_{k}, 4.0_{k}, status=status)')
 _CPB06_LI = ('call yield_cpb06_init({v}, c11=1.0_{k}, c12=-2.428_{k}, c13=-2.920_{k}, c21=-2.428_{k}, @@'
              'c22=1.652_{k}, c23=-2.236_{k}, c31=-2.920_{k}, c32=-2.236_{k}, c33=1.003_{k}, c44=-3.996_{k}, @@'
-             'c55=-3.996_{k}, c66=-3.996_{k}, k=-0.165_{k}, a=2.0_{k})')
+             'c55=-3.996_{k}, c66=-3.996_{k}, k=-0.165_{k}, a=2.0_{k}, status=status)')
 _YLD2004 = ('call yield_yld2004_init({v}, cp12=-0.069888_{k}, cp13=0.936408_{k}, cp21=0.079143_{k}, @@'
             'cp23=1.003060_{k}, cp31=0.524741_{k}, cp32=1.363180_{k}, cp44=0.954322_{k}, cp55=1.023770_{k}, @@'
             'cp66=1.069060_{k}, cpp12=0.981171_{k}, cpp13=0.476741_{k}, cpp21=0.575316_{k}, @@'
             'cpp23=0.866827_{k}, cpp31=1.145010_{k}, cpp32=-0.079294_{k}, cpp44=1.404620_{k}, @@'
-            'cpp55=1.051660_{k}, cpp66=1.147100_{k}, a={a}_{k})')
+            'cpp55=1.051660_{k}, cpp66=1.147100_{k}, a={a}_{k}, status=status)')
 _DP = ('call yield_druckerprager_init({v}, beta_deg={beta}_{k}, K={K}_{k}, @@'
-       'hardening_mode=DP_HARDENING_{mode})')
+       'hardening_mode=DP_HARDENING_{mode}, status=status)')
+
+
+def _checked(call):
+    """Statements of an initializer call (with ``status=status``) followed by the check of its status."""
+    name = re.match(r'call (\w+)\(', call).group(1)
+    return [call, f"if (status /= STATUS_OK) error stop '{name} failed'"]
 
 
 def _sub(text, **kw):
@@ -66,18 +74,18 @@ GOLDEN_PARAMS = {
                      '{v}%h = 0.2115_{k}/(1.0_{k} + 0.2115_{k})', '{v}%l = 1.25_{k}', '{v}%m = 1.75_{k}',
                      '{v}%n = (0.2115_{k} + 0.6923_{k})*(1.0_{k} + 2.0_{k}*1.5769_{k})/(2.0_{k}*0.6923_{k}*(1.0_{k} + 0.2115_{k}))']},
     ('yield', 'druckerprager'): {
-        'dp-1': [_sub(_DP, beta='20.0', K='0.8', mode='TENSION')],
-        'dp-2': [_sub(_DP, beta='20.0', K='0.8', mode='COMPRESSION')],
-        'dp-3': [_sub(_DP, beta='30.0', K='1.0', mode='SHEAR')]},
-    ('yield', 'cpb06'): {'cpb06-2': [_sub(_CPB06, a='2.0')], 'cpb06-3': [_CPB06_3],
-                         'cpb06-4': [_sub(_CPB06, a='8.0')],
+        'dp-1': _checked(_sub(_DP, beta='20.0', K='0.8', mode='TENSION')),
+        'dp-2': _checked(_sub(_DP, beta='20.0', K='0.8', mode='COMPRESSION')),
+        'dp-3': _checked(_sub(_DP, beta='30.0', K='1.0', mode='SHEAR'))},
+    ('yield', 'cpb06'): {'cpb06-2': _checked(_sub(_CPB06, a='2.0')), 'cpb06-3': _checked(_CPB06_3),
+                         'cpb06-4': _checked(_sub(_CPB06, a='8.0')),
                          # Shear factors 3.607, 2.9, 4.1 (shears of test_mat_cp_anisotropic)
-                         'cpb06-2s': [_sub(_CPB06, a='2.0').replace('c55=3.607_{k}, c66=3.607_{k}',
-                                                                    'c55=2.9_{k}, c66=4.1_{k}')],
+                         'cpb06-2s': _checked(_sub(_CPB06, a='2.0').replace('c55=3.607_{k}, c66=3.607_{k}',
+                                                                          'c55=2.9_{k}, c66=4.1_{k}')),
                          # Ti-6Al-4V at Wp = 48.66 (Tuninetti et al. 2013, Table 2; large increments)
-                         'cpb06-li': [_CPB06_LI]},
-    ('yield', 'cpb06ex2'): {'cpb06ex2-1': [_CPB06EX2], 'cpb06ex2-3': [_CPB06EX2_3]},
-    ('yield', 'yld2004'): {'yld2004-2': [_sub(_YLD2004, a='8.0')], 'yld2004-4': [_sub(_YLD2004, a='6.0')]},
+                         'cpb06-li': _checked(_CPB06_LI)},
+    ('yield', 'cpb06ex2'): {'cpb06ex2-1': _checked(_CPB06EX2), 'cpb06ex2-3': _checked(_CPB06EX2_3)},
+    ('yield', 'yld2004'): {'yld2004-2': _checked(_sub(_YLD2004, a='8.0')), 'yld2004-4': _checked(_sub(_YLD2004, a='6.0'))},
     ('os', 'perzyna'): {'per1': ['{v}%eta = 1.0e-2_{k}', '{v}%n = 1.0_{k}'],
                         'per2': ['{v}%eta = 1.0_{k}', '{v}%n = 0.5_{k}'],
                         'per3': ['{v}%eta = 1.0e-4_{k}', '{v}%n = 5.0_{k}']},

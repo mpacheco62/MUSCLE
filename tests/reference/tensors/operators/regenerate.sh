@@ -7,7 +7,7 @@
 # tests/tensors/operators/test_ops_golden_<module>.fypp with `--write FILE`.
 #
 # ONLY run it on code whose behaviour IS the reference: these files were captured from the
-# original (pre-FYPP) operator modules, and the tests exist to detect any change against them.
+# original (pre-FYPP) operator modules, and the tests exist to detect a change beyond the tolerance of their category (D-021).
 # Regenerating after a change would hide it. The test run by ctest never writes these files.
 #
 # Usage: tests/reference/tensors/operators/regenerate.sh BUILD_DIR

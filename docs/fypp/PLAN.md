@@ -483,7 +483,7 @@ Diseño y alcance: D-018. Pasos (cada uno un commit con el ciclo completo):
     - validar los esqueletos Abaqus/ANSYS/LS-DYNA contra los programas reales (D-018.17d/g, los
       `ustatev` de ANSYS);
     - composición múltiple en `ModelFamily` (endurecimiento cinemático);
-    - unificar el status de los `*_init`;
+    - unificar el status de los `*_init` (hecho, D-022);
     - unión etiquetada opcional para elegir el modelo en tiempo de ejecución (D-008.4);
     - convergencia de Chaboche n=0.5 + DP en compresión (PROBLEMAS).
 
@@ -651,7 +651,7 @@ Ya no pertenecen a una fase. Se retoman a pedido del usuario, y cada uno con su 
   5. controlar el inlining de las funciones de punto en amdgcn.
 - Materiales 2D (D-018.11g); validar los esqueletos Abaqus/ANSYS/LS-DYNA contra los programas reales
   (D-018.17); composición múltiple en `ModelFamily` (endurecimiento cinemático); unificar el status
-  de los `*_init`; unión etiquetada opcional (D-008.4).
+  de los `*_init` (hecho, D-022); unión etiquetada opcional (D-008.4).
 - Reescribir los usuarios externos de la API OO (guía: `pages/migration.md`).
 - Convergencia de Chaboche n=0.5 + DP en compresión y de `tm_nnl_vm` ×40 (PROBLEMAS).
 - Opcionales de la Fase 6: forma estable de `stress_eq` y del gradiente de Drucker-Prager en sp,

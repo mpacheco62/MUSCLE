@@ -58,7 +58,7 @@ endif()
 # Shared assertions (muscle_test_utils: check_approx, check_true, check_scaled) and helpers
 # (muscle_test_helpers: random generator, reference matrix operations, record) of the tests
 muscle_fypp_preprocess(MUSCLE_TEST_UTILS_SRC common/muscle_test_utils.fypp common/muscle_test_helpers.fypp)
-# muscle_test_golden: bit-for-bit golden checks against tests/reference/ (set the test property
+# muscle_test_golden: golden checks (tolerance by category, D-021) against tests/reference/ (set the test property
 # ENVIRONMENT MUSCLE_TEST_REFERENCE_DIR=${BASE_TESTS_DIR}/reference); muscle_test_solver_golden: strain
 # sequence and record layout of the golden tests of the return mapping solvers
 add_library(muscle_test_utils STATIC ${MUSCLE_TEST_UTILS_SRC} common/muscle_test_golden.f90

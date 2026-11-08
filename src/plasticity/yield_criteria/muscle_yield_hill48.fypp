@@ -91,7 +91,7 @@ contains
 
         seq = yield_stress_eq_hill48_3D_${k}$(prm, sigma)
         if (seq == 0.0_${k}$) then
-            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative (D-017.9)
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
             return
         end if
         sxx = sigma%vals(1)
@@ -123,7 +123,7 @@ contains
 
         seq = yield_stress_eq_hill48_3D_${k}$(prm, sigma)
         if (seq == 0.0_${k}$) then
-            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative (D-017.9)
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
             return
         end if
         grad = yield_dstress_eq_hill48_3D_${k}$(prm, sigma)

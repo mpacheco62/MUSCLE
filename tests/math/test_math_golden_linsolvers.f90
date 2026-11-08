@@ -7,7 +7,7 @@ program test_math_golden_linsolvers
     !! well-conditioned systems of order 1..20 (diagonally dominant, and general ones that need
     !! row pivoting), plus the error paths (size mismatch, singular matrix, zero diagonal, no
     !! convergence within `maxit`). Solutions, iteration counts and `info` (integers recorded as
-    !! `real(dp)`) are compared bit for bit with `tests/reference/math/math_linsolvers_dp.txt`,
+    !! `real(dp)`) are compared, within the tolerance of their category (D-021), with `tests/reference/math/math_linsolvers_dp.txt`,
     !! captured from the original code (`tests/reference/math/regenerate.sh`).
     !!
     !! Note: the `mklsolve` records depend on the LAPACK implementation linked (reference LAPACK

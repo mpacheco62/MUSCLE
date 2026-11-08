@@ -42,7 +42,9 @@ subroutine test_dp_tension_uniaxial(passed)
     use muscle_yield_druckerprager
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
 
     type(yield_druckerprager_dp) :: dp
@@ -54,7 +56,12 @@ subroutine test_dp_tension_uniaxial(passed)
     K_ratio = 0.8D0   ! (0.778 <= K <= 1.0)
     expected = 150.0D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
 
     call stress%init(xx=expected, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
@@ -78,7 +85,9 @@ subroutine test_dp_compression_uniaxial(passed)
     use muscle_yield_druckerprager
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
 
     type(yield_druckerprager_dp) :: dp
@@ -91,7 +100,12 @@ subroutine test_dp_compression_uniaxial(passed)
     applied_stress = -150.0D0
     expected = 150.0D0 
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
 
     call stress%init(xx=applied_stress, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
@@ -115,7 +129,9 @@ subroutine test_dp_shear_calibration(passed)
     use muscle_yield_druckerprager
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
 
     type(yield_druckerprager_dp) :: dp
@@ -127,7 +143,12 @@ subroutine test_dp_shear_calibration(passed)
     K_ratio = 0.8D0
     tau = 80.0D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
 
     call stress%init(xx=0.0D0, yy=0.0D0, zz=0.0D0, xy=tau, yz=0.0D0, xz=0.0D0)
 
@@ -154,7 +175,9 @@ subroutine test_dp_pure_hydrostatic(passed)
     use muscle_yield_druckerprager
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
 
     type(yield_druckerprager_dp) :: dp
@@ -167,7 +190,12 @@ subroutine test_dp_pure_hydrostatic(passed)
     K_ratio = 1.0D0
     p_hydro = 100.0D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
 
     call stress%init(xx=p_hydro, yy=p_hydro, zz=p_hydro, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
@@ -194,7 +222,9 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_hard_laws, only : hard_stress, hard_bilinear_dp
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
 
     type(yield_druckerprager_dp) :: dp
@@ -212,7 +242,12 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
     expected = hard_stress(bilinear, 0.09344D0)
     expected_tan = -2.581929D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=393.4D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     res = yield_stress_eq(dp, stress)
@@ -250,7 +285,12 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
     expected = hard_stress(bilinear, 0.06688D0)
     expected_tan = -2.58221D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=260.8D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     res = yield_stress_eq(dp, stress)
@@ -288,7 +328,12 @@ subroutine test_dp_tension_uniaxial_comp_abaqus(passed)
     expected = hard_stress(bilinear, 0.08032D0)
     expected_tan = -2.58221D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=299.0D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     res = yield_stress_eq(dp, stress)
@@ -325,7 +370,9 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_hard_laws, only : hard_stress, hard_bilinear_dp
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
 
     type(yield_druckerprager_dp) :: dp
@@ -343,7 +390,12 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
     expected = hard_stress(bilinear, 0.0112D0)
     expected_tan = -1.5180952
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=-437.7D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     res = yield_stress_eq(dp, stress)
@@ -378,7 +430,12 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
     expected = hard_stress(bilinear, 0.00858D0)
     expected_tan = -1.518584D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=-308.58D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     res = yield_stress_eq(dp, stress)
@@ -413,7 +470,12 @@ subroutine test_dp_compression_uniaxial_comp_abaqus(passed)
     expected = hard_stress(bilinear, 0.01013D0)
     expected_tan = -1.5198555
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=-342.9D0, yy=0.0D0, zz=0.0D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     res = yield_stress_eq(dp, stress)
@@ -460,7 +522,9 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_hard_laws, only : hard_stress, hard_bilinear_dp
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
 
     type(yield_druckerprager_dp) :: dp
@@ -482,7 +546,12 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
     expected_tan1 = -0.471306D0
     expected_tan2 = 0.55486D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_TENSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=-994.63D0, yy=-1711.35D0, zz=-901.47D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     res = yield_stress_eq(dp, stress)
@@ -534,7 +603,12 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
     expected_tan1 = -0.472822D0
     expected_tan2 = 0.55775577D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_COMPRESSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=-1048.47D0, yy=-1647.97D0, zz=-970.69D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     res = yield_stress_eq(dp, stress)
@@ -586,7 +660,12 @@ subroutine test_dp_biaxial_comp_abaqus(passed)
     expected_tan1 = -0.4724789D0
     expected_tan2 = 0.55682D0
 
-    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=beta, K=K_ratio, hardening_mode=DP_HARDENING_SHEAR, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=-1033.74D0, yy=-1665.32D0, zz=-951.75D0, xy=0.0D0, yz=0.0D0, xz=0.0D0)
 
     res = yield_stress_eq(dp, stress)
@@ -643,7 +722,9 @@ subroutine test_DruckerPrager_hessian_vs_numeric(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
 
     ! Central second differences (yield_test_numeric): truncation and rounding, largest with the
@@ -657,7 +738,12 @@ subroutine test_DruckerPrager_hessian_vs_numeric(passed)
 
     ! K = 0.78 (lower bound) makes the third-invariant term largest; tension-like Lode angle
     ! (r^3 > 0)
-    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_TENSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=300.0D0, yy=40.0D0, zz=-20.0D0, xy=45.0D0, yz=-30.0D0, xz=55.0D0)
     hess = yield_ddstress_eq(dp, stress)
     hess_num = num_ddstress_eq(dp, stress)
@@ -666,7 +752,12 @@ subroutine test_DruckerPrager_hessian_vs_numeric(passed)
 
     ! Compression-like Lode angle (r^3 < 0) on top of a large hydrostatic part, as in the
     ! biaxial case, with shears added
-    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=0.85D0, hardening_mode=DP_HARDENING_COMPRESSION)
+    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=0.85D0, hardening_mode=DP_HARDENING_COMPRESSION, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=-1048.47D0, yy=-1647.97D0, zz=-970.69D0, xy=-120.0D0, yz=85.0D0, xz=40.0D0)
     hess = yield_ddstress_eq(dp, stress)
     hess_num = num_ddstress_eq(dp, stress)
@@ -674,7 +765,12 @@ subroutine test_DruckerPrager_hessian_vs_numeric(passed)
                       hess, hess_num, tol=TOL)
 
     ! Shear calibration with K < 1: the third-invariant term that the K = 1 check of STOP 9 misses
-    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=0.78D0, hardening_mode=DP_HARDENING_SHEAR, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=300.0D0, yy=40.0D0, zz=-20.0D0, xy=45.0D0, yz=-30.0D0, xz=55.0D0)
     hess = yield_ddstress_eq(dp, stress)
     hess_num = num_ddstress_eq(dp, stress)
@@ -693,7 +789,9 @@ subroutine test_DruckerPrager_hessian_analytical(passed)
     use muscle_yield_criteria
     use yield_test_numeric, only : num_dstress_eq, num_ddstress_eq
     use muscle_test_utils
+    use muscle_status, only : STATUS_OK
     implicit none
+    integer :: status
     logical, intent(out) :: passed
 
     ! Exact reference: round-off only. Measured: identical to Von Mises (difference 0)
@@ -707,7 +805,12 @@ subroutine test_DruckerPrager_hessian_analytical(passed)
 
     ! K = 1 removes the third-invariant term and the shear calibration gives f = 1, so the
     ! Hessian must equal the Von Mises one; normal and shear components together
-    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=1.0D0, hardening_mode=DP_HARDENING_SHEAR)
+    call yield_druckerprager_init_dp(dp, beta_deg=16.0D0, K=1.0D0, hardening_mode=DP_HARDENING_SHEAR, status=status)
+    if (status /= STATUS_OK) then
+        passed = .false.
+        print *, "yield_druckerprager_init failed"
+        return
+    end if
     call stress%init(xx=210.0D0, yy=-45.0D0, zz=80.0D0, xy=60.0D0, yz=-35.0D0, xz=25.0D0)
     call check_approx(passed, "DP Hessian vs Von Mises: K = 1, shear calibration", &
                       yield_ddstress_eq(dp, stress), yield_ddstress_eq(vm, stress), tol=TOL)

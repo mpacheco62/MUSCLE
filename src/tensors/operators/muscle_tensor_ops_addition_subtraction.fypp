@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_ops_common.fypp"
-#! Mixed-type `+` and `-`, generated from the pair table of muscle_meta (OP_TABLE['+'/'-'], D-015)
+#! Mixed-type `+` and `-`, generated from the pair table of muscle_meta (OP_TABLE['+'/'-'])
 #! for every dimension and kind. The body depends on which operands are identities (op_iden):
 #! - tensor +- tensor (2O +- 2Osym): component by component over the layout of the result;
 #! - tensor +- identity: copy of the tensor (negated for `I - T`), then the non-zero components
@@ -24,7 +24,7 @@ module muscle_tensor_ops_${MODULE}$
     !!   \(c/2\) on the normal and shear diagonals for \(c\,\mathbb{I}^S\)).
     !! - `ten_<d>2O +- ten_<d>2Osym` (both orders): result `ten_<d>2O`.
     !! - Sums and differences of one `iden_4O3T(S)` and one `iden_4O4T(S)` (both orders): result
-    !!   `ten_3D4O3sym` (only 3D). Between unscaled identities it is double precision (D-015).
+    !!   `ten_3D4O3sym` (only 3D). Between unscaled identities it is double precision.
 $:OP_USES(MODULE)
     implicit none
     private

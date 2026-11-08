@@ -3,7 +3,7 @@
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_common.fypp"
 #! Fourth-order tensors with major and minor symmetries, one type per dimension and kind
-#! (pattern of D-011, D-012):
+#! (pattern of muscle_tensor_2osym.fypp):
 #! - everything that depends on the component layout comes from layout('4O3sym', dim): the
 #!   storage is the upper triangle of the symmetric Voigt matrix of the base 2Osym layout, stored
 #!   diagonal by diagonal (D-004); the only per-dimension difference is the size of the inverted
@@ -12,7 +12,7 @@
 #!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp;
 #! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
-#! - the historical names (ten_3D4O3sym, ten_2D4O3sym = dp) come from muscle_tensors (D-003).
+#! - the historical names (ten_3D4O3sym, ten_2D4O3sym = dp) come from muscle_tensors.
 
 module muscle_tensor_4o3sym
     !! Module muscle_tensor_4o3sym

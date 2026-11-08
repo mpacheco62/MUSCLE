@@ -130,7 +130,7 @@ program test_math_golden_derivatives
     !! (scalar-scalar), `FD_GRAD` (scalar-ten_3D2O, scalar-ten_3D2Osym), `FD_JAC`
     !! (ten_3D2Osym-ten_3D2Osym) and `FD_HESS` (scalar-ten_3D2Osym), with the default and an
     !! explicit step, and `dsquare`. The keys keep the names of the former `procedure(...)` API
-    !! (`derivative`, `derivative2O`, removed). Results are compared bit for bit with
+    !! (`derivative`, `derivative2O`, removed). Results are compared, within the tolerance of their category (D-021), with
     !! `tests/reference/math/math_derivatives_dp.txt`, captured from the original code
     !! (`tests/reference/math/regenerate.sh`); the test is compiled with -fno-inline
     !! (tests/math/CMakeLists.txt, D-016.9).
@@ -141,7 +141,7 @@ program test_math_golden_derivatives
     use muscle_tensors, only : ten_3D2O, ten_3D2Osym, ten_3D4O2sym, ten_3D4O3sym
     use muscle_math_derivatives, only : dsquare
     use muscle_test_helpers, only : park_miller, rnd
-    use muscle_test_golden, only : golden_init, golden_check, golden_finish
+    use muscle_test_golden, only : golden_init, golden_check, golden_finish, GOLDEN_TOL_FD
     use math_golden_derivatives_funcs
     implicit none
 
@@ -160,7 +160,7 @@ program test_math_golden_derivatives
     character(len=16) :: c
     integer :: icase, i
 
-    call golden_init('math/math_derivatives_dp.txt')
+    call golden_init('math/math_derivatives_dp.txt', tol=GOLDEN_TOL_FD)
     rng = park_miller(20261031)
     do icase = 1, NCASES
         write(c, '(" | case ", i0)') icase

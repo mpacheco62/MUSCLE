@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #! Identity tensors, in one module because they are tiny, independent of the dimension and their
-#! operations mix the unscaled and the scaled type (D-014):
+#! operations mix the unscaled and the scaled type:
 #! - IDENTITIES (muscle_meta): 2O, 4O3T, 4O4T. The unscaled type (iden_2O, ...) has no kind and no
 #!   components; the scaled one has a type per kind (iden_2OS_sp, iden_2OS_dp, ...) storing `val`;
 #! - every identity has `*` and `/` by a scalar; the kind of the scalar fixes the kind of the result
@@ -12,7 +12,7 @@
 #!   scalar to fix the kind and return dp, as before (D-014);
 #! - every operation is a free `type` procedure marked @:DEVICE(); `%init` is a `class` wrapper
 #!   (`*_tbp`) kept for the historical API; the formatted output is in muscle_tensor_io;
-#! - the historical names (iden_2OS = dp, ...) come from muscle_tensors (D-003).
+#! - the historical names (iden_2OS = dp, ...) come from muscle_tensors.
 #:set ALGEBRA = ['2O']
 #:set FORMULA = {'2O': r'\delta_{ij}', '4O3T': r'\delta_{ij}\delta_{kl}', &
     & '4O4T': r'\frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})'}
@@ -143,7 +143,7 @@ contains
 #:if X in ALGEBRA
 #:set S = iname(X + 'S', 'dp')
     ! ---------------------------------------------------------------------------------------
-    ! ${U}$ (op) ${U}$: no scalar fixes the kind, the result is double precision (D-014)
+    ! ${U}$ (op) ${U}$: no scalar fixes the kind, the result is double precision
     ! ---------------------------------------------------------------------------------------
 
     pure function sum_${I}$_${I}$(a, b) result(res)

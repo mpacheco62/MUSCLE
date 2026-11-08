@@ -3,13 +3,13 @@
 #! Common part of the golden tests of the return mapping solvers on the declared materials (Phase 7,
 #! D-018): test_mat_<solver>.fypp only declares its golden cases and tolerances.
 #!
-#! - dp: bit for bit against every record of tests/reference/solvers/<solver>_dp.txt (captured from
+#! - dp: within the tolerance of its category (D-021) against every record of tests/reference/solvers/<solver>_dp.txt (captured from
 #!   the historical OO solvers, which the kernels reproduce bit for bit; D-018.18f): strain sequence
 #!   and first increment of muscle_test_solver_golden, `result` (the OO result codes rebuilt from
 #!   status and iters), the analytic `tangent` and the numerical `tangent_num` (FD_JAC of the kernel
 #!   stress, the macro of the historical `derivative`). `<test> --write FILE` regenerates the file
-#!   (regenerate.sh there) and `<test> --mutate 1` perturbs one parameter set by one ulp (ctest
-#!   `*_golden_mutation`).
+#!   (regenerate.sh there); `<test> --mutate rel` perturbs one parameter set by MUTATE_REL (ctest
+#!   `*_golden_mutation`) and `<test> --mutate ulp` by one ulp (`*_golden_mutation_strict`, strict mode).
 #! - sp: the same sequences converge where dp converges and agree with dp within the per-kind
 #!   tolerances of the test.
 #! - Both kinds: the analytic tangent of every converged plastic step against central finite
@@ -65,10 +65,10 @@
 #:if viscos
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
 #:endif
-    use muscle_test_golden, only : golden_init, golden_finish
+    use muscle_test_golden, only : golden_init, golden_finish, GOLDEN_TOL_SOLVER
     use muscle_test_utils, only : check_approx, check_true
     use muscle_test_solver_golden, only : NSTEP, seq_strain, first_strain, step_key, record_result, record_tangent, &
-        mutation_requested, mutate_name
+        mutation_requested, mutation_ulp, mutate_name, MUTATE_REL
 #:enddef
 
 #! Declarations of a test: result codes of the OO solvers, the golden case type and the result of the
@@ -120,7 +120,7 @@
 
     passed = .true.
     if (mutation_requested()) mutate_name = '${mutate}$'
-    call golden_init('${reference}$')
+    call golden_init('${reference}$', tol=GOLDEN_TOL_SOLVER)
     do i = 1, size(CASES)
         select case (trim(CASES(i)%material))
 #:for m in mats
@@ -135,7 +135,9 @@
     call ${extra}$()
 #:endif
 #:for m in mats
-    call check_true(passed, 'material ${m}$ has a case', any(CASES%material == '${m}$'))
+    call check_true(passed, 'material ${m}$ has a case (add a golden_case for it to CASES in ${name}$.fypp, ' // &
+        'then regenerate tests/reference/${reference.rsplit('/', 1)[0]}$ with its regenerate.sh)', &
+        any(CASES%material == '${m}$'))
 #:endfor
     if (.not. passed) then
         print '(a)', ' FAIL: ${name}$ (sp, tangent or coverage checks)'
@@ -160,14 +162,17 @@
         !! Material `${m}$` with the parameters of the golden case `c`, `real(${k}$)`.
         type(golden_case), intent(in) :: c
         type(${muscle_meta.material_type(m, k)}$), intent(out) :: mat
-#:if mat.visco
         integer :: status
-#:else
+#:if not mat.visco
         call elas_linear_init(mat%elas, young=merge(210000.0_${k}$, 1000.0_${k}$, c%elas == 'steel'), &
-            poisson=0.3_${k}$)
+            poisson=0.3_${k}$, status=status)
+        if (status /= STATUS_OK) error stop 'elas_linear_init failed'
 #:endif
 #:for p, model in comps
 #:if p != 'elas'
+#:if (p, model) not in GOLDEN.GOLDEN_PARAMS
+#:stop 'no golden parameter sets for ' + p + ' ' + model + ': add the entry (' + repr(p) + ', ' + repr(model) + ') to GOLDEN_PARAMS in tests/materials/golden_params.py'
+#:endif
         select case (trim(c%${CASE_FIELD[p]}$))
 #:for name in GOLDEN.GOLDEN_PARAMS[(p, model)]
         case ('${name}$')
@@ -176,7 +181,13 @@
 #:endif
 #:set mf = golden_field(GOLDEN.GOLDEN_PARAMS[(p, model)][name])
 #:if mf
-            if (trim(mutate_name) == '${name}$') mat%${p}$%${mf}$ = nearest(mat%${p}$%${mf}$, 1.0_${k}$)
+            if (trim(mutate_name) == '${name}$') then
+                if (mutation_ulp()) then
+                    mat%${p}$%${mf}$ = nearest(mat%${p}$%${mf}$, 1.0_${k}$)
+                else
+                    mat%${p}$%${mf}$ = mat%${p}$%${mf}$*(1.0_${k}$ + real(MUTATE_REL, ${k}$))
+                end if
+            end if
 #:endif
 #:endfor
         case default

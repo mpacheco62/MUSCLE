@@ -4,7 +4,7 @@ add_muscle_test(kinematics test_muscle_kinematics.f90)
 
 # Golden (characterization) test of the kinematics family (the state and the family and
 # muscle_kin_finite functions of the six kinematics through the kernel API, on deterministic
-# deformation gradients and incremental sequences), double precision, bit for bit against
+# deformation gradients and incremental sequences), double precision, within the tolerance of its category (D-021) against
 # tests/reference/kinematics/ (regenerate.sh there), captured from the original OO code.
 add_muscle_fypp_test(kin_golden test_kin_golden.fypp)
 set_tests_properties(kinematics-kin_golden PROPERTIES

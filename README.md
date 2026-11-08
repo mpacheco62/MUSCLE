@@ -60,12 +60,27 @@ For each material of the registry, in `sp` and `dp`:
 
 ## Requirements
 
-*   **Compiler:** Fortran 2008 compiler (GFortran 9+, tested with 15.2; Intel oneAPI `ifx`).
+*   **Compiler:** a Fortran 2008 compiler with OpenMP (the GPU build needs OpenMP 5.1 offload). Older
+    versions than the tested ones below may work but are not verified.
 *   **Build:** CMake 3.20+ (Ninja recommended) and **FYPP 3.1+** (`pip install fypp`).
 *   **Python 3** (FYPP and the material registry).
-*   **BLAS & LAPACK** (or Intel MKL).
+*   **BLAS & LAPACK** (or Intel MKL), required by CMake.
 *   Optional: [FORD](https://forddocs.readthedocs.io) for the documentation. `environment.yml` installs
     FYPP and FORD.
+
+Tested toolchain (Linux):
+
+| Tool | Version | Scope |
+|------|---------|-------|
+| GNU Fortran | 15.2 | CPU build and every test (`sp;dp`, Debug); NVPTX and AMDGCN offload builds compile and link (not run on NVIDIA/AMD hardware) |
+| Intel `ifx` (oneAPI) | 2026.2 | SPIR64 offload build; target tests run on an Intel UHD 770 GPU (some cases excluded by IGC bugs, `tools/gpu_skip_tests.sh`) |
+| CMake | 4.2 (3.20+ required) | |
+| Ninja | 1.13 | |
+| FYPP | 3.1 and 3.3 | |
+| Python | 3.10 and 3.14 | |
+
+Formatted output of the tensors (UDTIO) is disabled by default with GNU Fortran < 16.3, whose UDTIO is
+not thread-safe under OpenMP (`MUSCLE_UDTIO=AUTO`).
 
 ---
 
@@ -92,6 +107,31 @@ Options:
 | `-DMUSCLE_MATERIALS=<path>` | Your material registry (default: the test registry `tools/fypp/muscle_materials.py`). |
 | `-DMUSCLE_REAL_KINDS=dp` | Generate only double precision (default `sp;dp`). |
 | `-DMUSCLE_BUILD_BENCHMARKS=ON` | Build the benchmarks (`benchmarks/`, target `build_all_benchmarks`). |
+| `-DMUSCLE_GPU=OFF\|NVPTX\|AMDGCN\|SPIR64` | OpenMP offload target of the kernels (default `OFF`, see below). |
+| `-DMUSCLE_GPU_ARCH=<arch>` | Device architecture (NVPTX: e.g. `sm_80`; AMDGCN: default `gfx90a`; not used with SPIR64). |
+| `-DMUSCLE_UDTIO=AUTO\|ON\|OFF` | Formatted output of the tensors (default `AUTO`, see Requirements). |
+
+### GPU build (OpenMP offload)
+
+| `MUSCLE_GPU` | Compiler | What you need installed |
+|--------------|----------|-------------------------|
+| `NVPTX` | GNU Fortran | GCC built with the nvptx offload backend (e.g. the distribution package `gcc-<version>-offload-nvptx`) |
+| `AMDGCN` | GNU Fortran | GCC built with the amdgcn offload backend (`gcc-<version>-offload-amdgcn`) |
+| `SPIR64` | Intel `ifx` | oneAPI with its environment loaded (`source /opt/intel/oneapi/setvars.sh`) and the Intel GPU driver (Level Zero) |
+
+```bash
+# NVIDIA (gfortran with nvptx offload)
+cmake -S . -B build-nvptx -G Ninja -DCMAKE_BUILD_TYPE=Release -DMUSCLE_GPU=NVPTX
+# Intel GPU (ifx)
+source /opt/intel/oneapi/setvars.sh
+cmake -S . -B build-spir64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DMUSCLE_GPU=SPIR64 \
+      -DCMAKE_Fortran_COMPILER=ifx -DCMAKE_C_COMPILER=icx
+```
+
+CMake checks the combination at configure time by linking a small program with a target region. Run
+GPU programs with `OMP_TARGET_OFFLOAD=MANDATORY` to fail instead of falling back to the host; on Intel GPUs
+without native double precision, `OverrideDefaultFP64Settings=1 IGC_EnableDPEmulation=1` enables the
+emulated FP64. The batch API on the device is described in [FEA integration](pages/integration.md).
 
 Documentation: `cmake --build build --target doc` (output in `build/doc`, when CMake finds `ford`), or
 `ford my_project.md` from the repository root.

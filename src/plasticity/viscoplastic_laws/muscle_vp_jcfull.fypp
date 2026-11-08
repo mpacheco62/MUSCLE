@@ -10,7 +10,7 @@ module muscle_vp_jcfull
     !!    T^* = \frac{T - T_{room}}{T_{melt} - T_{room}} \in [0, 1] \]
     !! (\( T^* = 0 \) if \( T_{melt} \le T_{room} \); no thermal factor if \( m = 0 \)). The temperature
     !! \( T \) is the parameter `T_current`, updated by the caller. Partial derivatives (new in the
-    !! kernel API, D-017.8):
+    !! kernel API):
     !! \[ \frac{\partial\sigma}{\partial\epsilon_p} = \frac{d\sigma_y}{d\epsilon_p}
     !!    \left[ 1 + C \ln \frac{\dot\epsilon_p}{\dot\epsilon_{p0}} \right] \left[ 1 - T^{*m} \right], \quad
     !!    \frac{\partial\sigma}{\partial\dot\epsilon_p} = \sigma_y \frac{C}{\dot\epsilon_p} \left[ 1 - T^{*m} \right] \]
@@ -20,14 +20,14 @@ module muscle_vp_jcfull
     !! the derivatives) are 0 for \( \dot\epsilon_p \le 0 \) (the rate is floored at `tiny` only for
     !! positive rates).
     !!
-    !! Composed law (D-017.6b): the free functions receive \( \sigma_y \) (`sy`) and
+    !! Composed law: the free functions receive \( \sigma_y \) (`sy`) and
     !! \( d\sigma_y/d\epsilon_p \) (`dsy_dep`) already evaluated; `ep` is part of the family contract
     !! but unused.
     !!
     !! Kernel API: parameter types `vp_jcfull_<k>` and `pure` functions `vp_flow_stress_jcfull_<k>`,
     !! `vp_dflow_dep_jcfull_<k>`, `vp_dflow_depd_jcfull_<k>` and `vp_dstress_dep_jcfull_<k>` for each
     !! real kind, also through the generics `vp_*` of `muscle_vp_laws`.
-    !! `dstress_dep` is analytic (D-018.12b; the original OO code used a finite difference, D-017.8).
+    !! `dstress_dep` is analytic (the original OO code used a finite difference; D-018.12b).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     implicit none
     private

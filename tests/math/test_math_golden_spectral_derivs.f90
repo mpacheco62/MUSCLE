@@ -8,7 +8,7 @@ program test_math_golden_spectral_derivs
     !! eigenvalues (exact and rotated), both branches of the decomposition (most separated
     !! eigenvalue first or last), the multiple of the identity, and the repeated-eigenvalue limit
     !! of the Hessian. `sym_outer` and `cross` are private (exercised only through
-    !! `spectral_hessian` and `spectral_decomposition`). Results are compared bit for bit with
+    !! `spectral_hessian` and `spectral_decomposition`). Results are compared, within the tolerance of their category (D-021), with
     !! `tests/reference/math/math_spectral_derivs_dp.txt`, captured from the original code
     !! (`tests/reference/math/regenerate.sh`).
     use muscle_kinds, only : dp

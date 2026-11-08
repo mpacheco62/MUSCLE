@@ -55,7 +55,7 @@ contains
 end module hard_golden_cases
 
 program test_hard_golden
-    !! Golden (characterization) test of the hardening laws in double precision, bit for bit
+    !! Golden (characterization) test of the hardening laws in double precision, within the tolerance of its category (D-021)
     !! against tests/reference/plasticity/hardening_laws/hard_laws_dp.txt, captured from the
     !! original OO code (regenerate.sh there) and reproduced by the kernel API (D-018.18f): the
     !! parameter types and the family generics of `muscle_hard_laws`.

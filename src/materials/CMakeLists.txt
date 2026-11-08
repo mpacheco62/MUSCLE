@@ -1,4 +1,4 @@
-# Declared materials (D-008, D-018): one module muscle_mat_<name> per entry of the material registry
+# Declared materials: one module muscle_mat_<name> per entry of the material registry
 # (tools/fypp/muscle_materials.py, or -DMUSCLE_MATERIALS=<path>) from the same template, which
 # includes the body of the return mapping of the material (src/solvers/muscle_<solver>_body.fypp,
 # one per muscle_meta.MATERIAL_SOLVERS: muscle_add_materials adds them as dependencies) and the

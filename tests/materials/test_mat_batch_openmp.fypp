@@ -56,11 +56,12 @@ contains
             got(:, :), ref(:, :)
         integer, allocatable :: str(:), stb(:), itr(:), itb(:)
         real(${k}$) :: hsv(NS)
-        integer :: i, it, load, active
+        integer :: i, it, load, active, st
 
         allocate(eps(N, 6), hn(N, NS), hr(N, NS), hb(N, NS), sr(N, 6), sb(N, 6), tr(N, 6, 6), tb(N, 6, 6), &
             str(N), stb(N), itr(N), itb(N))
-        call elas_linear_init(mat%elas, young=200000.0_${k}$, poisson=0.3_${k}$)
+        call elas_linear_init(mat%elas, young=200000.0_${k}$, poisson=0.3_${k}$, status=st)
+        call check_true(passed, 'elastic init (${k}$)', st == STATUS_OK)
         mat%hard%k = 500.0_${k}$
         mat%hard%e0 = 1.0e-3_${k}$
         mat%hard%n = 0.2_${k}$

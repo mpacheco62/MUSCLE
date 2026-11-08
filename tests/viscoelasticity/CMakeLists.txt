@@ -15,7 +15,7 @@ endforeach()
 
 # Golden (characterization) test of the viscoelasticity family (Maxwell with 0, 1, 2, 3 and
 # MAX_VISCO_BRANCHES branches, Kelvin-Voigt, the frozen elasticity in 3D and 2D), multi-step load
-# histories through the kernel API, double precision, bit for bit against
+# histories through the kernel API, double precision, within the tolerance of its category (D-021) against
 # tests/reference/viscoelasticity/ (regenerate.sh there), captured from the original OO code.
 add_muscle_fypp_test(visco_golden test_visco_golden.fypp)
 set_tests_properties(viscoelasticity-visco_golden PROPERTIES

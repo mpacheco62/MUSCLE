@@ -1202,3 +1202,57 @@ se escribe y se lee en un solo archivo.
   - Corregidos tras la revisión: include del tangente de closest point a un solo nivel, `muscle_fd` movido
     a `tests/common` (sólo lo usan tests), y el test de `MODEL_PARAMS` ahora compara también tipo y
     valor por defecto, las listas de las familias y `MAX_VISCO_BRANCHES`.
+- **Investigación de la alternativa D (tipos vacíos en lugar de condicionales de variante), 2026-11-04:**
+  aplicada de verdad a VISCO y a KIN en worktrees; goldens dp idénticos, 181/181, sin costo de compilación,
+  +8.6 % de librería; pero −34 % de `#:if` a cambio de +865 líneas, 64 específicos por pareja generados
+  desde metadatos (contrario a D-020) y funcionalidad nueva (kin + visco). **No se adopta por ahora**; el
+  parche queda en `build-snapshots/d_visco_kin.patch`. Análisis completo y plan de mejora de la
+  comprensión: `docs/fypp/ANALISIS_COMPRENSION.md`.
+
+## D-021 — Goldens con tolerancia por categoría (2026-11-08)
+**Contexto:** los goldens (`tests/reference/`) se capturaron para migrar el código OO a FYPP bit a bit. Con
+las Fases 0–9 cerradas ese objetivo se cumplió; la comparación bit a bit fallaba con otros flags
+(`Profile_unittests`: `kin_golden` 4e-16, `math_golden_derivatives` 2.4e-13) y bloquearía optimizaciones
+legítimas. Decisión del usuario: los goldens deben comprobar la funcionalidad, no los bits.
+**Decisión:**
+1. `golden_check` compara con tolerancia relativa por categoría, respecto del mayor valor real del
+   registro: álgebra directa 1e-13 (por defecto), diferencias finitas 1e-9, solvers iterativos 1e-9
+   (10 × `NEWTON_TOL_dp`); en los registros de solver, `status` exacto e iteraciones ±1. Un NaN coincide con
+   cualquier NaN; un NaN de un solo lado nunca está dentro de la tolerancia.
+2. Modo estricto opcional `MUSCLE_GOLDEN_STRICT=1` (bit a bit, sólo con sentido en gfortran Debug) y modo
+   informe `MUSCLE_GOLDEN_REPORT=1`.
+3. El nombre «golden» se mantiene por ahora; el renombre a «reference» y el reordenamiento de los tests
+   quedan para más adelante (ESTADO_OPTIMO, 3.8).
+4. Tests de mutación: `*_golden_mutation` perturba un parámetro en 1e-6 relativo y debe fallar;
+   `*_golden_mutation_strict` perturba 1 ulp con el modo estricto. (Antes: 1 ulp en modo normal.)
+5. El driver de los goldens de operadores (`ops_golden_cases.fypp`) usa la rutina central en lugar de su
+   copia propia de la lectura y la comparación.
+**Calibración (VERIFICADO, máximos medidos):** álgebra 2.0e-14 (tangente corotacional, cpb06ex2),
+diferencias finitas 3.1e-11, solver 4.7e-13, tangente numérica de solver 1.2e-12, status/iteraciones sin
+diferencias, en `Profile_unittests` y Release (-O3). Debug, Release y `Profile_unittests`: 186/186 tests;
+Debug con `MUSCLE_GOLDEN_STRICT=1`: los 23 tests de goldens pasan bit a bit.
+**Fuera de la configuración acordada:** con FMA (`-march=native -O3`) fallan tests por razones que la
+tolerancia no debe tapar (PROBLEMAS, «Tests»): registros cuyo valor exacto es 0 (sin escala), cantidades no
+únicas (autovectores con autovalores repetidos), casos mal condicionados y la tangente numérica en un punto
+no suave. Quedan documentados para rediseñar esos tests.
+- **Repetición aceptada y explicitud (decisión del usuario, 2026-11-08):** se mantienen escritas a mano, aunque se
+  repitan, la evaluación conjunta por defecto de los criterios de fluencia (5 copias de 36 líneas que sólo
+  cambian el nombre del modelo) y la firma de `SOLVE` con su preámbulo en cada cuerpo de solver: cada archivo
+  se lee completo. Los módulos de familia siguen listando los modelos de forma explícita (`use`, `public`,
+  `interface`), sin generarlos con `#:for`; la prueba del recién llegado mostró que agregar un modelo así es fácil.
+- **Hallazgo tardío de la Fase 9 (2026-11-08):** `muscle_kin_finite.fypp` seguía generando 24 funciones (medidas
+  de deformación, conversiones, tangentes, rotaciones) a partir de tablas de Python con expresiones Fortran como
+  datos, el patrón que D-020 prohíbe; no se detectó porque no usaba las macros `MODEL_*` que medía
+  `tools/fypp_metrics.sh`. Se reescribió a mano (929 → 1288 líneas; sólo quedan como `#:set` los umbrales por
+  kind `EIG_MIN` y `LOG_SERIES`, que son datos). Lección: la métrica de «macros prohibidas» no cubre la lógica
+  inline (`#:for` sobre tablas con código); revisar a ojo los `#:set` de las plantillas.
+
+## D-022 — Todos los inicializadores de modelos devuelven `status` (2026-11-08)
+**Contexto:** el inventario de convenciones (ESTADO_OPTIMO, 3.6) encontró que los inicializadores de visco
+devolvían `status` y los de elasticidad y fluencia no. **Decisión del usuario:** agregar `status` a todos.
+**Hecho:** `elas_linear_init`, `yield_cpb06_init`, `yield_cpb06ex2_init`, `yield_druckerprager_init` y
+`yield_yld2004_init` reciben `integer, intent(out) :: status` como último argumento (hoy siempre `STATUS_OK`:
+no validan nada; las validaciones quedan para la etapa de robustez). `MODEL_INITS` los marca con status, así que
+`mat_init_<name>` lo pasa y lo comprueba como con visco. Cambia la API pública: quien llame a estos cinco
+inicializadores debe pasar `status`. Sin cambio numérico (goldens iguales); los módulos generados cambian sólo en
+la firma, la asignación, el `use`, la llamada con `status=status` y la comprobación en `mat_init`.

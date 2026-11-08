@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #! Thresholds of the zero stress (absolute, on |sigma|) and of the hydrostatic axis (relative, q/|sigma|):
-#! see DP_TOL_ABS_<k> and DP_TOL_REL_<k> below (D-017.11b).
+#! see DP_TOL_ABS_<k> and DP_TOL_REL_<k> below.
 
 module muscle_yield_druckerprager
     !! Extended linear Drucker-Prager yield criterion matching the Abaqus formulation (Dassault
@@ -28,13 +28,13 @@ module muscle_yield_druckerprager
     !! \( q^3 \), \( q^4 \): D-017.11d), so it is correct over the whole range in sp and dp (before,
     !! in sp, \( q^4 \) overflowed for \( q \gtrsim 4.3 \cdot 10^{9} \)).
     !!
-    !! Guards (unchanged from the original code in dp; D-017.9 does not apply): at a zero stress
+    !! Guards (unchanged from the original code in dp): at a zero stress
     !! (\( |\boldsymbol\sigma| < 10^{-40} \) in dp, \( 10^{-30} \), i.e. exactly zero, in sp) and on
     !! the hydrostatic axis (\( q/|\boldsymbol\sigma| < 10^{-9} \) in dp, \( 10^{-5} \) in sp,
-    !! D-017.11b, so that a hydrostatic stress that is not exact in binary is detected in both kinds)
+    !! so that a hydrostatic stress that is not exact in binary is detected in both kinds)
     !! the equivalent stress is \( \tan(\beta) f p \) (0 at a zero
     !! stress), the gradient \( (\tan(\beta) f/3) \mathbf{I} \) and the Hessian 0. Known limits, kept
-    !! with the same results as the original code (D-017.9): the apex is not differentiable, so there
+    !! with the same results as the original code: the apex is not differentiable, so there
     !! the analytical gradient (a subgradient) and a numerical derivative differ; the kernel type left at its
     !! defaults (no `yield_druckerprager_init`) has \( K = 0 \): the equivalent stress off the
     !! hydrostatic axis and its numerical derivatives give NaN or Inf. The equivalent
@@ -50,6 +50,7 @@ module muscle_yield_druckerprager
     !! (the three in turn) for each real kind, also through the generics `yield_*` of
     !! `muscle_yield_criteria`, with the calibration modes `DP_HARDENING_*`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
 #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
 #:endfor
@@ -114,7 +115,7 @@ module muscle_yield_druckerprager
 contains
 #:for k in REAL_KINDS
 
-    pure subroutine yield_druckerprager_init_${k}$(prm, beta_deg, K, hardening_mode)
+    pure subroutine yield_druckerprager_init_${k}$(prm, beta_deg, K, hardening_mode, status)
         !! Parameters of the Drucker-Prager model in `real(${k}$)` matching the Abaqus material
         !! options: the calibration factor f of the hardening mode and the pressure coefficient
         !! tan(beta) f. An unknown mode keeps the previous f (as the original `init`; 0 for a
@@ -129,6 +130,9 @@ contains
             !! Yield stress ratio K (0.778 <= K <= 1).
         integer, intent(in) :: hardening_mode
             !! Hardening calibration mode (`DP_HARDENING_*`: 1 tension, 2 compression, 3 shear).
+        integer, intent(out) :: status
+            !! Always `STATUS_OK` (no input is validated): the argument exists so that every model
+            !! initializer is called the same way.
         real(${k}$), parameter :: PI = acos(-1.0_${k}$)
         real(${k}$) :: tanbeta
 
@@ -145,6 +149,7 @@ contains
         prm%I1_factor = tanbeta * prm%f_factor
         prm%K = K
         prm%hardening_mode = hardening_mode
+        status = STATUS_OK
     end subroutine yield_druckerprager_init_${k}$
 
     pure function yield_stress_eq_druckerprager_3D_${k}$(prm, sigma) result(res)
@@ -251,7 +256,7 @@ contains
         ! Derivative of N = f * (alpha1 * S + alpha2 * S^2) + alpha3 * I, from Dassault Systemes
         ! (2017), Abaqus Theory Guide, Eq. (3) (extended linear model, including K); 0 on the
         ! hydrostatic axis (constant gradient there), under the same conditions as the gradient
-        ! In the stable form (D-017.11d), with n = S/q and rho = r^3/q^3 = (9/2) n^2 : n, so that
+        ! In the stable form, with n = S/q and rho = r^3/q^3 = (9/2) n^2 : n, so that
         ! every coefficient is O(1/q) and no power of q under- or overflows
         type(ten_3D2Osym_${k}$) :: n, n2, u
         ! Mises stress, r^3/q^3, invariant coefficients, calibration factor, |sigma|

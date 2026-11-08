@@ -9,7 +9,7 @@
 #
 # ONLY run it on code whose behaviour IS the reference: this file was captured from the original
 # (pre-FYPP, OO) modules src/kinematics/*.f90 (HEAD 62b7c18), with the approved updates of the header;
-# the kernel API reproduces it bit for bit, and the test exists to detect any change against them.
+# the kernel API reproduces it bit for bit, and the test exists to detect a change beyond the tolerance of its category (D-021).
 # Regenerating after a change would hide it. The test run by ctest never writes this file.
 #
 # Usage: tests/reference/kinematics/regenerate.sh BUILD_DIR

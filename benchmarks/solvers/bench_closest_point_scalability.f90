@@ -64,7 +64,7 @@ program bench_closest_point_scalability
     type(mat_cp_vm_swift_dp) :: mat_vm
     type(mat_cp_dp_swift_dp) :: mat_dp
 
-    integer :: i, k, r, nth, max_threads, n_mismatch
+    integer :: i, k, r, nth, max_threads, n_mismatch, init_status
     real(dp) :: t0, t_seq, t_par, t_run, speedup, efficiency, karp_flatt, sgn
     real(dp) :: val_xx, val_yy, val_xy
     logical :: all_ok
@@ -75,13 +75,16 @@ program bench_closest_point_scalability
     ! -------------------------------------------------------------------------
     ! 1. Material and synthetic strain states
     ! -------------------------------------------------------------------------
-    call elas_linear_init(mat_vm%elas, young=200000.0_dp, poisson=0.3_dp)
+    call elas_linear_init(mat_vm%elas, young=200000.0_dp, poisson=0.3_dp, status=init_status)
+    if (init_status /= STATUS_OK) error stop 'elas_linear_init failed'
     mat_vm%hard%k = 100.0_dp
     mat_vm%hard%n = 0.1_dp
     mat_vm%hard%e0 = 1.0_dp
     mat_dp%elas = mat_vm%elas
     mat_dp%hard = mat_vm%hard
-    call yield_druckerprager_init(mat_dp%yield, beta_deg=16.0_dp, K=0.85_dp, hardening_mode=DP_HARDENING_TENSION)
+    call yield_druckerprager_init(mat_dp%yield, beta_deg=16.0_dp, K=0.85_dp, hardening_mode=DP_HARDENING_TENSION, &
+        status=init_status)
+    if (init_status /= STATUS_OK) error stop 'yield_druckerprager_init failed'
 
     sgn = merge(1.0_dp, -1.0_dp, trim(load_name) == 'tension')
     allocate(eps(n_points, 6), hsv_n(n_points, NSTATE), hsv_np1(n_points, NSTATE))

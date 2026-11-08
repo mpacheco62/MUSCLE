@@ -38,6 +38,7 @@ subroutine test_openmp_elasticity_linear_shared(passed)
     use muscle_tensors
     use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     implicit none
 
     logical, intent(out) :: passed
@@ -50,7 +51,7 @@ subroutine test_openmp_elasticity_linear_shared(passed)
     type(ten_3D2Osym)  :: ten_tmp
 
     type(elas_linear_dp) :: elas
-    integer :: i
+    integer :: i, status
     real(dp) :: t_start, t_seq, t_par
 
     passed = .FALSE.
@@ -58,7 +59,8 @@ subroutine test_openmp_elasticity_linear_shared(passed)
     allocate(strains(N), stress_seq(N), stress_par(N), tan_seq(N), tan_par(N))
 
     ! Configurar objeto elástico
-    call elas_linear_init(elas, young=210000.0D0, poisson=0.3D0)
+    call elas_linear_init(elas, young=210000.0D0, poisson=0.3D0, status=status)
+    if (status /= STATUS_OK) return
 
     ! Generar 100,000 deformaciones dinámicas
     do i = 1, N
@@ -124,6 +126,7 @@ subroutine test_openmp_elasticity_linear_private(passed)
     use muscle_tensors
     use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     implicit none
 
     logical, intent(out) :: passed
@@ -135,14 +138,16 @@ subroutine test_openmp_elasticity_linear_private(passed)
     type(ten_3D4O3sym), allocatable :: tan_seq(:), tan_par(:)
 
     type(elas_linear_dp) :: elas, elas_loc
-    integer :: i
+    integer :: i, status, status_loc
+    logical :: init_bad
     real(dp) :: t_start, t_seq, t_par
 
     passed = .FALSE.
 
     allocate(strains(N), stress_seq(N), stress_par(N), tan_seq(N), tan_par(N))
 
-    call elas_linear_init(elas, young=210000.0D0, poisson=0.3D0)
+    call elas_linear_init(elas, young=210000.0D0, poisson=0.3D0, status=status)
+    if (status /= STATUS_OK) return
 
     do i = 1, N
         call strains(i)%init(xx=0.001D0 * sin(dble(i)), &
@@ -165,8 +170,10 @@ subroutine test_openmp_elasticity_linear_private(passed)
     call omp_set_num_threads(NUM_THREADS)
     t_start = omp_get_wtime()
 
-!$OMP PARALLEL PRIVATE(i, elas_loc) SHARED(strains, stress_par, tan_par)
-    call elas_linear_init(elas_loc, young=210000.0D0, poisson=0.3D0)
+    init_bad = .false.
+!$OMP PARALLEL PRIVATE(i, elas_loc, status_loc) SHARED(strains, stress_par, tan_par) REDUCTION(.or.: init_bad)
+    call elas_linear_init(elas_loc, young=210000.0D0, poisson=0.3D0, status=status_loc)
+    init_bad = init_bad .or. status_loc /= STATUS_OK
 
     !$OMP DO
     do i = 1, N
@@ -175,6 +182,7 @@ subroutine test_openmp_elasticity_linear_private(passed)
     end do
     !$OMP END DO
 !$OMP END PARALLEL
+    if (init_bad) return
 
     t_par = omp_get_wtime() - t_start
 

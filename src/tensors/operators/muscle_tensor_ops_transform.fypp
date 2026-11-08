@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_ops_common.fypp"
-#! Congruence transformation `.transform.` (D-015): the pairs come from OP_TABLE (muscle_meta) and
+#! Congruence transformation `.transform.`: the pairs come from OP_TABLE (muscle_meta) and
 #! the bodies are written once, in index notation, from the layouts (the structural zeros of 2D
 #! drop out, which gives the sparse 2D kernels of the original code):
 #! - 2Osym: T = F S, R = T F^T (op_congruence);

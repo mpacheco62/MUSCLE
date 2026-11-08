@@ -3,16 +3,16 @@
 #:include "muscle_common.fypp"
 
 module muscle_visco_laws
-    !! Linear viscoelastic models for kernels (D-007, D-017.13): the parameter types of every
+    !! Linear viscoelastic models for kernels: the parameter types of every
     !! model (`visco_<name>_<k>`), the
     !! state and coefficient types (muscle_visco_types), the frozen elasticity `elas_frozen_<k>`
     !! (an elastic model, muscle_visco_frozen) and the family generics (prefix `visco_`), with the
-    !! same names for every model and kind (3D only, D-017.13c). The state is explicit and the
+    !! same names for every model and kind (3D only). The state is explicit and the
     !! converged state is never modified:
     !!
     !! - `call visco_step_coefficients(prm, dt, coefs, status)`: coefficients of the time step (once per
     !!   step and material); the only procedure that validates: `status` is `STATUS_OK` or
-    !!   `STATUS_INVALID_TIME_STEP` (muscle_status; D-017.13b: dt < 0 in every model, dt = 0 in a
+    !!   `STATUS_INVALID_TIME_STEP` (muscle_status: dt < 0 in every model, dt = 0 in a
     !!   Kelvin-Voigt solid);
     !! - `elas = visco_freeze(prm, coefs, state_n)`: frozen elasticity of the step at a point
     !!   (`elas_frozen_<k>`, used through the `elas_*` generics of muscle_elasticity_laws by the
@@ -25,7 +25,7 @@ module muscle_visco_laws
     !!   `call visco_update_branches(prm, coefs, strain_e_n, nb, h_n, strain_e, h_np1)`: the same two
     !!   kernels on the components of a state with `nb` history tensors `h_n(6, nb)` (at least
     !!   `visco_n_branches(prm)`; the caller stores the elastic strain), for a state smaller than
-    !!   `visco_state_<k>` (the state of a declared material keeps `visco_branches` tensors, D-019.7b).
+    !!   `visco_state_<k>` (the state of a declared material keeps `visco_branches` tensors).
     !!
     !! A step at a point, as a solver does it:
     !!
@@ -36,6 +36,9 @@ module muscle_visco_laws
     !! call visco_update(prm, coefs, state_n, eps_e, state_np1)
     !! ! global convergence: state_n = state_np1
     !! ```
+    !!
+    !! To add a model: write `muscle_visco_<name>.fypp`, then add a `use` statement of its own and its names to the
+    !! interfaces and the `public` list below (the compiler rejects a name that does not exist).
 #:for k in REAL_KINDS
     use muscle_visco_maxwell, only : visco_maxwell_${k}$, &
         & visco_step_coefficients_maxwell_${k}$, visco_freeze_maxwell_${k}$, &

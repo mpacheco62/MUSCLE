@@ -112,7 +112,7 @@ module muscle_tensors
     !! The following operators are overloaded for various combinations of the public tensor types
     !! and scalars of the same kind. Operations within a family come from its module
     !! (`muscle_tensor_<family>`); operators between types from the `muscle_tensor_ops_*` modules,
-    !! generated from the pair table of `tools/fypp/muscle_meta.py` (D-015).
+    !! generated from the pair table of `tools/fypp/muscle_meta.py`.
     !!
     !! - `+`: Addition (e.g., `tensor + tensor`).
     !! - `-`: Subtraction (e.g., `tensor - tensor`).
@@ -159,7 +159,7 @@ module muscle_tensors
     !! ```
 
     use, intrinsic :: iso_fortran_env
-    ! Types of every kind and the historical names, which are the double precision ones (D-003)
+    ! Types of every kind and the historical names, which are the double precision ones
 #:for F in FAMILIES
     use muscle_tensor_${F.lower()}$, only: ${', '.join(tname(d + F, k) for d in DIMS for k in REAL_KINDS)}$, &
         & ${', '.join('{0} => {1}'.format(tname(d + F, 'dp')[:-3], tname(d + F, 'dp')) for d in DIMS)}$
@@ -207,13 +207,13 @@ module muscle_tensors
     public :: iden_4O3T
     public :: iden_4O4TS
     public :: iden_4O4T
-    ! Types with an instance per kind (historical names above are the dp ones, D-003)
+    ! Types with an instance per kind (historical names above are the dp ones)
     public :: ${', '.join(tname(d + '2Osym', k) for d in DIMS for k in REAL_KINDS)}$
     public :: ${', '.join(tname(d + '2O', k) for d in DIMS for k in REAL_KINDS)}$
     public :: ${', '.join(tname(d + '4O3sym', k) for d in DIMS for k in REAL_KINDS)}$
     public :: ${', '.join(tname(d + '4O2sym', k) for d in DIMS for k in REAL_KINDS)}$
     public :: ${', '.join(tname(d + '4O', k) for d in DIMS for k in REAL_KINDS)}$
-    ! Scaled identities, one per kind (the unscaled ones serve every kind, D-014)
+    ! Scaled identities, one per kind (the unscaled ones serve every kind)
     public :: ${', '.join(iname(X + 'S', k) for X in IDENTITIES for k in REAL_KINDS)}$
 
     private 

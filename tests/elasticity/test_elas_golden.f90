@@ -216,7 +216,7 @@ contains
 end module elas_golden_cases
 
 program test_elas_golden
-    !! Golden (characterization) test of the elasticity family in double precision, bit for bit
+    !! Golden (characterization) test of the elasticity family in double precision, within the tolerance of its category (D-021)
     !! against tests/reference/elasticity/elasticity_dp.txt, captured from the original OO code
     !! (regenerate.sh there) and reproduced by the kernel API (D-018.18f): `elas_linear_init` and the
     !! family generics of muscle_elasticity_laws.
@@ -226,6 +226,7 @@ program test_elas_golden
     use muscle_kinds, only : dp
     use muscle_elasticity_laws, only : elas_linear_dp
     use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
     use muscle_test_golden, only : golden_init, golden_check, golden_finish
     use elas_golden_cases, only : run_3D, run_2D, check_embedding, n_embed_bad
     implicit none
@@ -241,7 +242,7 @@ program test_elas_golden
 
     type(elas_linear_dp) :: lin, unset
     character(len=48) :: key
-    integer :: i
+    integer :: i, status
 
     call golden_init('elasticity/elasticity_dp.txt')
 
@@ -252,7 +253,8 @@ program test_elas_golden
     do i = 1, size(PRM, 2)
         write(key, '(a, i0)') 'set ', i
         call golden_check(trim(key) // ' | E, nu', PRM(:, i))
-        call elas_linear_init(lin, young=PRM(1, i), poisson=PRM(2, i))
+        call elas_linear_init(lin, young=PRM(1, i), poisson=PRM(2, i), status=status)
+        if (status /= STATUS_OK) error stop 'elas_linear_init failed'
         call run_3D(trim(key), lin)
         call run_2D(trim(key), lin)
         if (i < size(PRM, 2)) call check_embedding(trim(key), lin)

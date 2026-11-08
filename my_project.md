@@ -19,6 +19,7 @@ search: true
 license: by-nc
 max_frontpage_items: 4
 page_dir: pages
+md_extensions: markdown.extensions.toc
 ---
 
 # Introduction

@@ -1,0 +1,103 @@
+title: Conventions
+
+# Development conventions
+
+The rules every contribution follows. `tools/check.sh` (the [verification gate](contributing.html#verification))
+checks the mechanical ones; the others are checked in review. The reasons behind them are recorded, in Spanish,
+in `docs/fypp/DECISIONES.md` (decision numbers `D-0xx` in the comments of the code).
+
+## Code style
+
+- Every source file starts with the SPDX header:
+  `! SPDX-License-Identifier: GPL-3.0-or-later` and the copyright line.
+- One module per file, named `muscle_<area>_<thing>`, in a file of the same name.
+- `implicit none` everywhere; modules are `private` with explicit `public` lists; `use ..., only : ...`.
+- `intent` on every argument; `pure` whenever possible.
+- Four-space indentation, no tabs, lines of at most 132 columns (also after FYPP expands a template).
+- Code and comments in English. Comments explain *why* or give the formula, not what the code does.
+- FORD documentation with `!!` right after the declaration of every module, type, procedure and argument;
+  formulas in LaTeX `\( ... \)`.
+- Hand-unrolled loops in the tensor code are a performance decision: keep them.
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org) with the area as scope
+  (`feat(hard): ...`, `fix(solvers): ...`, `test(...)`, `docs(...)`); one commit is one verifiable step.
+
+## Precision: `sp` and `dp`
+
+- Everything (tensors, math, models, solvers, materials) exists in single (`sp`) and double (`dp`) precision
+  from one source: write the template once with `#:for k in REAL_KINDS` and `${k}$`.
+- The kinds come only from `muscle_kinds` (`sp = real32`, `dp = real64`). Forbidden: `real(8)`, `real*8`,
+  `kind=8`, `dble(...)`, `real(real64)`.
+- Every literal carries its kind: `1.0_${k}$`, `0.5_dp`; never `1d0` or `1e-12` (a default `real`).
+  Conversions with `real(x, ${k}$)`.
+- Precision-dependent constants (tolerances, finite difference steps, Newton tolerances) are defined per
+  kind in `muscle_kinds` (`TOL_APPROX_sp`, `NEWTON_TOL_dp`, ...), with the criterion documented.
+- Names carry the kind once, at the end: types `ten_3D2Osym_dp`, specific procedures
+  `ddot_3D2Osym_3D2Osym_dp`, `hard_stress_swift_sp`. Generics group both kinds and resolve by argument kind.
+- No mixed-kind operators and no parameterized derived types (`type :: t(k)`).
+
+## One code for 2D and 3D
+
+- Tensor operations are written once in index notation; the layout of each type (from
+  `tools/fypp/muscle_meta.py`, `layout(family, dim)`) decides which components exist, and FYPP drops the zero
+  terms.
+- Voigt order is **tensorial** (no factor 2 in the stored shears): 3D `(11, 22, 33, 12, 23, 13)`, 2D symmetric
+  `(11, 22, 33, 12)`, 2D general `(11, 21, 12, 22, 33)`. 2D keeps the 33 component (plane strain, plane stress,
+  axisymmetric). Changing a storage order needs a recorded decision: FE codes map `vals` to their arrays.
+- Every unified operation has an embedding test: the 2D result embedded in 3D equals the 3D operation on the
+  embedded operands.
+
+## Minimal FYPP
+
+FYPP does only what Fortran cannot; a template reads as a Fortran file (decision D-020).
+
+- **FYPP may:** instantiate by kind and dimension; switch build options (`#:if defined('MUSCLE_GPU')`); expand
+  fixed text with name substitution (`@:DEVICE()`, `TENSOR_COMMON_PROCEDURES`); take an *expression* as a macro
+  argument (`@:FD_DERIV(res, f(x), ...)`); list names by pattern (`public`, `interface`); generate one module per
+  material of the registry; include one level of a shared solver body.
+- **Written in Fortran, in the template:** derived types with their components and FORD docs, procedure
+  signatures with `intent`, bodies and closings (`end function`, `end type`, `end module`).
+- **Forbidden:** macros that build declarations from Python metadata or logic; macros that take statements or
+  blocks as arguments; nested `#:include`.
+- Python metadata (`tools/fypp/muscle_meta.py`) holds data (registries, names, the parameter order of
+  `mat_init`), not Fortran code. No `cpp` directives in templates; build switches arrive as FYPP defines.
+
+## GPU: static dispatch only
+
+Everything that runs per integration point (tensors, point math, models, solvers) must compile as device code
+with standard OpenMP offload (NVIDIA, AMD and Intel). Forbidden in kernel code:
+
+- polymorphism and dynamic dispatch: `class(...)`, abstract types, `deferred`, `select type`, procedure
+  pointers and `procedure(...)` arguments (finite differences use the expression macros instead);
+- `allocatable` or `pointer` components in types that travel to the device (fixed-size arrays with a
+  compile-time maximum, e.g. `MAX_VISCO_BRANCHES`);
+- I/O, `stop`, `error stop` (errors return an integer `status`, constants `STATUS_*` of `muscle_status`);
+- LAPACK/BLAS (small systems use the own unrolled LU solver), mutable module variables, `allocate`, recursion,
+  intrinsic IEEE modules;
+- `optional` arguments in the **host** procedures that launch target regions (batch API); `optional` is allowed
+  in `@:DEVICE()` procedures called on the device.
+
+Mark every kernel procedure with `@:DEVICE()` right after `implicit none` (it expands to
+`!$omp declare target` only in a GPU build). The batch API works on data already resident on the device
+(`map(present, ...)`); the library never maps arrays itself. Known compiler pitfalls and their workarounds are
+listed in `docs/fypp/PROBLEMAS.md` (GPU / compilers). `class(...)` survives only in the type-bound wrappers
+`*_tbp` of the tensor types (historical API, host only).
+
+## Tests
+
+- New tests: `add_muscle_test(<name> <file.f90>)` or `add_muscle_fypp_test(<name> <file.fypp>)` in the
+  `CMakeLists.txt` of the folder; the ctest name is the relative path joined with `-`.
+- Every templated test is instantiated for `REAL_KINDS` with a tolerance per kind
+  (`sp` ~1e-5 relative, `dp` 1e-12, the tolerance of `.approx.`); inputs are representable in `sp`.
+- **Goldens** (`tests/reference/`): reference values stored from a validated version, compared within the
+  tolerance of their category (decision D-021): direct computations 1e-13 (default), finite differences 1e-9,
+  iterative return mappings 1e-9 with the status exact and the iterations within one.
+  `MUSCLE_GOLDEN_STRICT=1` compares bit for bit (meaningful only with gfortran, Debug);
+  `MUSCLE_GOLDEN_REPORT=1` prints the largest relative error of every record that is not bit-identical.
+  The `*_golden_mutation` tests check that a perturbation of 1e-6 is detected.
+- A refactor that must not change anything is checked with `tools/gen_snapshot.sh` (same generated code and
+  public symbols), not with the goldens.
+- Checks of two paths of the same binary stay exact (batch = point API, generic = specific, `pack`/`unpack`).
+- Kernel tests run inside an `!$omp target teams distribute parallel do` region and compare with the CPU
+  (ctest label `target`). Run GPU programs with memory and time limits, e.g.
+  `systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0 env OMP_TARGET_OFFLOAD=MANDATORY timeout 300 ./prog`;
+  never `ulimit -s unlimited` (a JIT compiler bug once exhausted the memory of the machine).

@@ -3,8 +3,8 @@
 #:include "muscle_common.fypp"
 
 module muscle_hard_laws
-    !! Isotropic hardening laws for kernels (D-007, D-017): the parameter types of every law
-    !! (`hard_<name>_<k>`) and the family generics (prefix `hard_`, D-017.5b), with the same names and
+    !! Isotropic hardening laws for kernels: the parameter types of every law
+    !! (`hard_<name>_<k>`) and the family generics (prefix `hard_`), with the same names and
     !! arguments for every law and kind:
     !!
     !! - `hard_stress(prm, ep)`: flow stress \( \sigma_y(\epsilon_p) \);
@@ -14,8 +14,8 @@ module muscle_hard_laws
     !! `prm` is the parameter type of a law and `ep` the equivalent plastic strain, of the same kind.
     !! Example: `sy = hard_stress(hard_bilinear_dp(y0=250.0_dp, K=1000.0_dp), 0.01_dp)`.
     !!
-    !! To add a law: write `muscle_hard_<name>.fypp`, then add its name to the `use` lines and to the
-    !! three interfaces below (the compiler rejects a name that does not exist).
+    !! To add a law: write `muscle_hard_<name>.fypp`, then add a `use` statement of its own and its names to
+    !! the three interfaces below (the compiler rejects a name that does not exist).
 #:for k in REAL_KINDS
     use muscle_hard_bilinear, only : hard_bilinear_${k}$, hard_stress_bilinear_${k}$, &
         & hard_dstress_dep_bilinear_${k}$, hard_ddstress_ddep_bilinear_${k}$

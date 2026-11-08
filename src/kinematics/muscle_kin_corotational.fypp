@@ -11,10 +11,9 @@ module muscle_kin_corotational
     !! tangent are rotated to the spatial frame, \( \boldsymbol\sigma = \mathbf{R}\hat{\boldsymbol\sigma}\mathbf{R}^T \),
     !! \( c_{ijkl} = R_{iI} R_{jJ} R_{kK} R_{lL} C_{IJKL} \) (no division by J). The geometric term of the
     !! Jaumann rate of the Kirchhoff stress over J is the volume change, \( \boldsymbol\sigma\otimes\mathbf{I} \):
-    !! the corotational frame is rotated by the FE code (Abaqus, ANSYS), so there is no spin term
-    !! (D-018.15f).
+    !! the corotational frame is rotated by the FE code (Abaqus, ANSYS), so there is no spin term.
     !!
-    !! Kernel API (D-017.14d): the (empty) parameter type `kin_corotational_<k>` and the `pure`
+    !! Kernel API: the (empty) parameter type `kin_corotational_<k>` and the `pure`
     !! procedures `kin_corot_update_corotational_<k>(prm, strain, state, status [, R])` (the state
     !! holds the strain, J and R, the identity when `R` is absent; its F-based components keep the
     !! reference configuration, so the F-based functions of muscle_kin_finite do not apply to it; no
@@ -98,7 +97,7 @@ contains
     pure function kin_to_spatial_tangent_corotational_${k}$(prm, state, tangent) result(res)
         !! Spatial tangent from the constitutive tangent: the part of \(
         !! J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) through the constitutive stress, for \( \delta\mathbf{F}
-        !! = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (with the derivative of the strain measure, D-018.15f; without the
+        !! = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (with the derivative of the strain measure; without the
         !! geometric term) of the corotational model in `real(${k}$)`.
         !! Rotation to the spatial frame with R.
         implicit none
@@ -117,7 +116,7 @@ contains
 
     pure function kin_geometric_tangent_corotational_${k}$(prm, state, stress) result(res)
         !! Geometric term of the spatial tangent: the part of \( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) at
-        !! a fixed constitutive stress (D-018.15f); `to_spatial_tangent` plus this is the tangent of the Jaumann rate of the
+        !! a fixed constitutive stress; `to_spatial_tangent` plus this is the tangent of the Jaumann rate of the
         !! Kirchhoff stress of the corotational model in `real(${k}$)`.
         !! The volume change, \( \boldsymbol\sigma\otimes\mathbf{I} \) (`kin_volumetric_tangent`; no spin: the FE code rotates the
         !! frame).

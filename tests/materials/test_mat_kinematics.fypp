@@ -57,7 +57,7 @@ program test_mat_kinematics
 #:for m in KMATS
     use ${muscle_meta.material_module(m.name)}$, only : mat_update, ${', '.join(muscle_meta.material_type(m.name, k) for k in REAL_KINDS)}$
 #:endfor
-    use muscle_test_golden, only : golden_init, golden_check, golden_finish
+    use muscle_test_golden, only : golden_init, golden_check, golden_finish, GOLDEN_TOL_SOLVER
     use muscle_test_utils, only : check_approx, check_true
     implicit none
 
@@ -104,7 +104,7 @@ program test_mat_kinematics
     logical :: passed
 
     passed = .true.
-    call golden_init('materials/mat_kinematics_dp.txt')
+    call golden_init('materials/mat_kinematics_dp.txt', tol=GOLDEN_TOL_SOLVER)
 #:for k in REAL_KINDS
 #:for m in KMATS
     call sequence_${m.name}$_${k}$()
@@ -196,7 +196,9 @@ contains
         !! with `soft` sigma_y = 2, K = 100: yield strain ~1e-5)${', Hill (1948) hill48-2' if m.yield_ == 'hill48' else ''}$.
         type(${MT}$), intent(out) :: mat
         logical, intent(in) :: soft
-        call elas_linear_init(mat%elas, young=210000.0_${k}$, poisson=0.3_${k}$)
+        integer :: status
+        call elas_linear_init(mat%elas, young=210000.0_${k}$, poisson=0.3_${k}$, status=status)
+        call check_true(passed, '${m.name}$ elastic init (${k}$)', status == STATUS_OK)
         mat%hard%y0 = merge(2.0_${k}$, 200.0_${k}$, soft)
         mat%hard%K = merge(100.0_${k}$, 1000.0_${k}$, soft)
 #:for fam in ('os', 'vp')
@@ -225,11 +227,19 @@ contains
         type(${MT}$) :: mat
         type(plastic_state_${k}$) :: sn, snp1, qn, qnp1, sp_tmp
         type(${G2(k)}$) :: f_n, f_np1, q_n, q_np1, qt, fp
-        type(${S2(k)}$) :: stress, qstress, sp_stress
-        type(${C4(k)}$) :: tangent, qtangent, sp_tan, geo
+        type(${S2(k)}$) :: stress, sp_stress
+        type(${C4(k)}$) :: tangent, sp_tan
+#:if not SS
+        type(${S2(k)}$) :: qstress
+        type(${C4(k)}$) :: qtangent
+        integer :: qstatus, qiters
+#:endif
+#:if m.tangent_rate == 'none'
+        type(${C4(k)}$) :: geo
         type(kin_state_${k}$) :: ks
+#:endif
         real(${k}$) :: q(3, 3), tau(6, 6, 2), id(3, 3), e(3, 3)
-        integer :: is, status, qstatus, iters, qiters, c, side, st2, it2
+        integer :: is, status, iters, c, side, st2, it2
         character(len=64) :: key
 
         call make_${m.name}$_${k}$(mat, .false.)
@@ -290,7 +300,7 @@ contains
 #:endif
 #:if k == 'dp'
             call golden_check(trim(key) // ' | result', [stress%vals, snp1%strain_pf, snp1%strain_p%vals, &
-                real(status, dp), real(iters, dp)])
+                real(status, dp), real(iters, dp)], status_iters=.true.)
             call golden_check(trim(key) // ' | tangent', reshape(tangent%vals, [36]))
 #:endif
             sn = snp1
@@ -350,7 +360,7 @@ contains
                 TOL_OBJ_${k}$)
 #:if k == 'dp'
             call golden_check(trim(key) // ' | result', [stress%vals, snp1%strain_pf, snp1%strain_p%vals, &
-                real(status, dp), real(iters, dp)])
+                real(status, dp), real(iters, dp)], status_iters=.true.)
             call golden_check(trim(key) // ' | tangent', reshape(tangent%vals, [36]))
 #:endif
             sn = snp1

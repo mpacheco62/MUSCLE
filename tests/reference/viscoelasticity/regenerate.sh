@@ -13,7 +13,7 @@
 # (pre-FYPP, OO) modules src/viscoelasticity/muscle_visco_{state,frozen,base,maxwell,kelvin}.f90
 # (with the defaults of src/elasticity/muscle_elasticity_base.f90 that Elasticity_frozen inherited),
 # with the approved changes recorded in the "Updated" lines of the header (D-017.13a/b); the kernel
-# API reproduces it bit for bit, and the test exists to detect any change against them. Regenerating
+# API reproduces it bit for bit, and the test exists to detect a change beyond the tolerance of its category (D-021). Regenerating
 # after a change would hide it. The test run by ctest never writes this file.
 #
 # Usage: tests/reference/viscoelasticity/regenerate.sh BUILD_DIR

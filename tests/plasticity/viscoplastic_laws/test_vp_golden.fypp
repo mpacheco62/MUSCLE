@@ -170,7 +170,7 @@ contains
 end module vp_golden_cases
 
 program test_vp_golden
-    !! Golden (characterization) test of the viscoplastic laws in double precision, bit for bit
+    !! Golden (characterization) test of the viscoplastic laws in double precision, within the tolerance of its category (D-021)
     !! against tests/reference/plasticity/viscoplastic_laws/vp_laws_dp.txt, captured from the
     !! original OO code (regenerate.sh there) and reproduced by the kernel API (D-018.18f): the
     !! parameter types of `muscle_vp_laws`/`muscle_vp_overstress_laws` and the family generics, with

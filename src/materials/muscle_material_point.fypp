@@ -1,6 +1,6 @@
 #! SPDX-License-Identifier: GPL-3.0-or-later
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#! Generic API of a declared material for FE codes (D-018.17): the material from a flat parameter array
+#! Generic API of a declared material for FE codes: the material from a flat parameter array
 #! `INIT` (public generic `mat_init_<name>`, order `muscle_meta.material_props`), the point API over flat arrays `POINTS`
 #! (without and with the tangent, specifics of the public generic `muscle_point_<name>`) and, for a material whose input is a strain, the rotation of
 #! the tensorial parts of a history array `ROTATE` (public generic `mat_rotate_hsv_<name>`). Included
@@ -8,7 +8,7 @@
 #! `MAT`, `MAT_T`, `STATE_T`, `COEFS_T`, `VISCO`, `KIN`, `COROT`, `UPDATE`, `PACK`, `UNPACK`, `NSTATE`,
 #! `S2`, `T4`, `G2`).
 #!
-#! Each `POINTS` specific is a thin wrapper over the point kernel: the same conventions as the batch API (D-018.16a)
+#! Each `POINTS` specific is a thin wrapper over the point kernel: the same conventions as the batch API
 #! and the same bits as `UNPACK`, `UPDATE`, `PACK` (no derived tensor type in its interface).
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
@@ -26,7 +26,7 @@
 
     pure subroutine ${INIT}$(mat, props, status)
         !! Material `${MAT.name}$`, `real(${k}$)`,
-        !! from a flat parameter array of an FE code (D-018.17a, e): the inputs of the model of each
+        !! from a flat parameter array of an FE code: the inputs of the model of each
         !! component (its initializer, or its parameter components) and the settings of the solver, in
         !! this order (printed as a Markdown table by `muscle_meta.py props <name>`):
         !!
@@ -40,7 +40,7 @@
         !! else that of the initializers of the models (`STATUS_OK` for those without validation); with an
         !! error the material must not be used.
 #:for cond, doc in DOMAINS
-        !! Also `STATUS_INVALID_PARAMETER` unless ${doc}$ (D-018.19c):
+        !! Also `STATUS_INVALID_PARAMETER` unless ${doc}$:
         !! `${cond}$`.
 #:endfor
         use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER
@@ -97,10 +97,10 @@ ${muscle_meta.material_init_call(MAT, p, k)}$
 
     pure subroutine ${POINT}$(mat, ${', '.join(XS)}$, dt, ${'coefs, ' if VISCO else ''}$hsv_n, hsv_np1, stress, status, &
         iters${', ddsdde' if TAN else ''}$)
-        !! Point API of material `${MAT.name}$` for FE codes, `real(${k}$)` (D-018.17b), ${'with' if TAN else 'without'}$ the
+        !! Point API of material `${MAT.name}$` for FE codes, `real(${k}$)`, ${'with' if TAN else 'without'}$ the
         !! tangent `ddsdde` (both are specifics of the generic `${muscle_meta.material_point(MAT.name)}$`): the point kernel
         !! `mat_update` on flat arrays, bit for bit `mat_unpack_${MAT.name}$`, `mat_update` and
-        !! `mat_pack_${MAT.name}$`, with the conventions of the batch API (D-018.16a): strains and
+        !! `mat_pack_${MAT.name}$`, with the conventions of the batch API: strains and
         !! stresses in tensorial Voigt order (xx, yy, zz, xy, yz, xz) without the factor 2 of the shears${';' if TAN or FIN else '.'}$
 #:if TAN
         !! `ddsdde(i, j)` = \( \partial\sigma_i/\partial\varepsilon_j \) for j = 1..3 and
@@ -114,7 +114,7 @@ ${muscle_meta.material_init_call(MAT, p, k)}$
 #:if VISCO
         !!
         !! `coefs`: the coefficients of the time step, `mat_step(mat, dt, coefs, status)` (once per step
-        !! for every point, D-018.14d; the caller checks its status before calling this procedure).
+        !! for every point; the caller checks its status before calling this procedure).
 #:endif
         !! `hsv_n` and `hsv_np1` may not be the same array (copy the FE history array to a local one).
         implicit none
@@ -143,7 +143,7 @@ ${muscle_meta.material_init_call(MAT, p, k)}$
         real(${k}$), intent(out) :: stress(6)
             !! ${'Cauchy stress' if FIN else 'Stress'}$ at \( t_{n+1} \) (tensorial Voigt).
         integer, intent(out) :: status
-            !! `STATUS_OK` or an error code of muscle_status (outputs not to be used, D-017.14f).
+            !! `STATUS_OK` or an error code of muscle_status (outputs not to be used).
         integer, intent(out) :: iters
             !! Iterations of the return mapping (0 in an elastic step).
 #:if TAN
@@ -174,8 +174,8 @@ ${muscle_meta.material_init_call(MAT, p, k)}$
 #:if not FIN
 
     pure subroutine ${ROTATE}$(hsv, drot)
-        !! Rotates the tensorial parts of a history array of material `${MAT.name}$`, `real(${k}$)`
-        !! (D-018.17c): \( \mathbf{A} \leftarrow \Delta\mathbf{R}\,\mathbf{A}\,\Delta\mathbf{R}^T \) for the
+        !! Rotates the tensorial parts of a history array of material `${MAT.name}$`, `real(${k}$)`:
+        !! \( \mathbf{A} \leftarrow \Delta\mathbf{R}\,\mathbf{A}\,\Delta\mathbf{R}^T \) for the
         !! plastic strain hsv(1:6)${' and the elastic strain and history tensors of the viscoelastic state, hsv(8:' + str(muscle_meta.material_state_size(MAT)) + ')' if VISCO else ''}$;
         !! the equivalent plastic strain hsv(7) is a scalar. For FE codes that rotate the stress and strain
         !! to the corotational frame but not the state variables (Abaqus `STATEV` with `DROT`), before

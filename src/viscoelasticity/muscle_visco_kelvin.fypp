@@ -24,7 +24,7 @@ module muscle_visco_kelvin
     !! \( \Delta t \) the stress is a difference of terms \( \propto \zeta/\Delta t \) and loses
     !! digits; 3D only.
     !!
-    !! Kernel API (D-017.13): parameter types `visco_kelvin_<k>` (private components, built with
+    !! Kernel API: parameter types `visco_kelvin_<k>` (private components, built with
     !! `visco_kelvin_init(prm, bulk, shear, bulk_viscosity, shear_viscosity, status)`:
     !! `STATUS_INVALID_PARAMETER` with a negative modulus or viscosity) and the `pure` procedures
     !! `visco_step_coefficients_kelvin_<k>`, `visco_freeze_kelvin_<k>`, `visco_update_kelvin_<k>` and
@@ -107,7 +107,7 @@ contains
         !! Coefficients of a time step (algorithmic moduli and the factors of each branch; the time step is
         !! validated) of the Kelvin-Voigt model in `real(${k}$)`.
         !! Algorithmic moduli \(K^{alg} = K + \zeta/\Delta t\), \(G^{alg} = G + \mu_v/\Delta t\) and the two viscous factors
-        !! used by `visco_freeze`; \( \Delta t \le 0 \) gives `STATUS_INVALID_TIME_STEP` (D-017.13b).
+        !! used by `visco_freeze`; \( \Delta t \le 0 \) gives `STATUS_INVALID_TIME_STEP`.
         implicit none
         @:DEVICE()
         type(visco_kelvin_${k}$), intent(in) :: prm

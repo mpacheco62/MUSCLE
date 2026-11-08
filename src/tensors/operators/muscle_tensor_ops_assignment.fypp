@@ -2,8 +2,8 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_ops_common.fypp"
-#! Assignments between tensor types, generated from the pair table of muscle_meta (OP_TABLE['='],
-#! D-015) for every dimension and kind. Each procedure writes every stored component of `a`:
+#! Assignments between tensor types, generated from the pair table of muscle_meta (OP_TABLE['='])
+#! for every dimension and kind. Each procedure writes every stored component of `a`:
 #! - from a tensor: each component of `a` takes the matching tensor component of `b` (layouts);
 #! - from an identity: zero, then the non-zero components of the identity (iden_combination).
 #:set MODULE = 'assignment'

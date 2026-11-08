@@ -22,7 +22,7 @@ module muscle_visco_frozen
     !! The isotropic case is stored with two scalars (K_alg, G_alg): stress and tangent are
     !! evaluated without fourth-order products.
     !!
-    !! Kernel API (D-017.13): it is the model `frozen` of the elastic family, parameter types
+    !! Kernel API: it is the model `frozen` of the elastic family, parameter types
     !! `elas_frozen_<k>` (public components `k_alg`, `g_alg`, `stress_hist`, written per point by
     !! `visco_freeze` of muscle_visco_laws) and the `pure` functions `elas_stress_frozen_<d>_<k>`,
     !! `elas_stress_dev_frozen_<d>_<k>`, `elas_dstress_dstrain_frozen_<d>_<k>` and

@@ -70,6 +70,7 @@ module test_elas_cases
     use muscle_elasticity_linear, only : elas_linear_init, &
         ${', '.join(muscle_meta.model_specific('elas', f.name, 'linear', 'dp', d) for f in muscle_meta.model_family('elas').funcs for d in DIMS)}$
     use test_elas_point, only : ${', '.join('point_{}_{}'.format(d, k) for k in REAL_KINDS for d in DIMS)}$
+    use muscle_status, only : STATUS_OK
     use muscle_test_utils, only : check_true, check_scaled
     implicit none
     private
@@ -176,11 +177,12 @@ contains
         real(dp) :: e(3, 3), lam, mu, rs(${len(L2.comps)}$), rsd(${len(L2.comps)}$), rc(${len(L4.comps)}$), rcd(${len(L4.comps)}$)
         real(dp), parameter :: TOL = real(TOL_APPROX_${k}$, dp)
         character(len=64) :: lab
-        integer :: ip, n
+        integer :: ip, n, status
 
         do ip = 1, size(YOUNG)
             call lame(real(YOUNG(ip), dp), real(NU(ip), dp), lam, mu)
-            call elas_linear_init(prm, YOUNG(ip), NU(ip))
+            call elas_linear_init(prm, YOUNG(ip), NU(ip), status)
+            call check_true(passed, '${d}$ ${k}$ init status', status == STATUS_OK)
             do n = 1, NSTRAIN
                 write(lab, '(a, i0, a, i0)') '${d}$ ${k}$ E,nu #', ip, ' strain ', n
                 eps%vals = real(strain_vals(n, ${len(L2.comps)}$), ${k}$)
@@ -230,12 +232,13 @@ contains
         character(len=64) :: lab
         real(${k}$), parameter :: NUS(2) = [0.25_${k}$, 0.49_${k}$]
             !! Poisson ratios (0.49: lambda/mu ~ 50).
-        integer :: n, idev, inu
+        integer :: n, idev, inu, status
 
         p2%vals = [0.7_${k}$, -1.3_${k}$, 0.4_${k}$, 0.9_${k}$]
         p3%vals = [p2%vals, 0.0_${k}$, 0.0_${k}$]
         do inu = 1, size(NUS)
-            call elas_linear_init(prm, 1000.0_${k}$, NUS(inu))
+            call elas_linear_init(prm, 1000.0_${k}$, NUS(inu), status)
+            call check_true(passed, '${k}$ embedding: init status', status == STATUS_OK)
             do n = 1, NSTRAIN
                 write(lab, '(a, f4.2, a, i0)') '${k}$ embedding, nu ', NUS(inu), ', strain ', n
                 e2%vals = real(strain_vals(n, 4), ${k}$)
@@ -283,6 +286,7 @@ contains
         type(elas_linear_${k}$) :: prm
         real(dp), parameter :: TOL = real(TOL_APPROX_${k}$, dp)
         real(dp) :: e(3, 3), lam, mu
+        integer :: status
 #:for d in DIMS
 #:set L2 = layout('2Osym', d)
 #:set L4 = layout('4O3sym', d)
@@ -291,7 +295,8 @@ contains
         real(dp) :: rsd_${d}$(${len(L2.comps)}$), rcd_${d}$(${len(L4.comps)}$)
 #:endfor
 
-        call elas_linear_init(prm, 1000.0_${k}$, 0.5_${k}$)
+        call elas_linear_init(prm, 1000.0_${k}$, 0.5_${k}$, status)
+        call check_true(passed, '${k}$ nu = 0.5: init status (not validated)', status == STATUS_OK)
         call lame(1000.0_dp, 0.5_dp, lam, mu)
         call check_true(passed, '${k}$ nu = 0.5: lambda = +Inf', lam > huge(1.0_dp))
 #:for d in DIMS
@@ -337,10 +342,11 @@ contains
         type(${tname('3D4O3sym', 'dp')}$) :: c3, d3
         type(${tname('2D4O3sym', 'dp')}$) :: c2, d2
         character(len=64) :: lab
-        integer :: ip, n
+        integer :: ip, n, status
 
         do ip = 1, size(YOUNG)
-            call elas_linear_init(prm, YOUNG(ip), NU(ip))
+            call elas_linear_init(prm, YOUNG(ip), NU(ip), status)
+            call check_true(passed, 'generics: init status', status == STATUS_OK)
             do n = 1, NSTRAIN
                 write(lab, '(a, i0, a, i0)') 'generic = specific, E,nu #', ip, ' strain ', n
                 e3%vals = strain_vals(n, 6)

@@ -2,8 +2,8 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #:include "muscle_tensor_common.fypp"
-#! General (unsymmetric) fourth-order tensors, one type per dimension and kind (pattern of D-011,
-#! D-012):
+#! General (unsymmetric) fourth-order tensors, one type per dimension and kind (pattern of
+#! muscle_tensor_2osym.fypp):
 #! - everything that depends on the component layout comes from layout('4O', dim): `vals` is the
 #!   square matrix C(I(i,j), I(k,l)) indexed by the storage of the base 2O layout (9x9 in 3D, 5x5
 #!   in 2D), so the inverted matrix is `vals` itself (M99INV in 3D, M55INV in 2D);
@@ -12,7 +12,7 @@
 #! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
 #! - formatted output lives in muscle_tensor_io (host only);
-#! - the historical names (ten_3D4O, ten_2D4O = dp) come from muscle_tensors (D-003).
+#! - the historical names (ten_3D4O, ten_2D4O = dp) come from muscle_tensors.
 #! - convert_2sym returns the minor-symmetric 4O2sym type of the same kind, taken from the
 #!   family module muscle_tensor_4o2sym (not from muscle_tensors, which uses muscle_tensor_io
 #!   and would close a module cycle with UDTIO).

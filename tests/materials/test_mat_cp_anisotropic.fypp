@@ -171,7 +171,8 @@ $:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in ANISO.CASES if 'tol_tan'
 
         call make_cp_cpb06_swift_${k}$(golden_case(0, 'cp_cpb06_swift', 'lin1000', '', 'swift_li', 'cpb06-li', 200, &
             0.0_dp, 0.0_dp), mat)
-        call elas_linear_init(mat%elas, young=YOUNG, poisson=0.33_${k}$)
+        call elas_linear_init(mat%elas, young=YOUNG, poisson=0.33_${k}$, status=status)
+        call check_true(passed, 'large increments: elastic init (${k}$)', status == STATUS_OK)
         sigma_y0 = hard_stress(mat%hard, 0.0_${k}$)
         eps_y = sigma_y0/YOUNG
         sn = ${state_t('cp_cpb06_swift', k)}$()

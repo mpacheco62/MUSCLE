@@ -14,7 +14,7 @@ muscle_add_fypp_sources(muscle
                    muscle_tensors.fypp
                    )
 
-# Operators between types (D-015): generated from the pair table of tools/fypp/muscle_meta.py
+# Operators between types: generated from the pair table of tools/fypp/muscle_meta.py
 muscle_add_fypp_sources(muscle
                    operators/muscle_tensor_ops_addition_subtraction.fypp
                    operators/muscle_tensor_ops_assignment.fypp

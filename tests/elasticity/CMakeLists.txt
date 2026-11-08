@@ -3,7 +3,7 @@ add_muscle_test(linear test_muscle_elasticity_linear.f90)
 add_muscle_test(linear_openmp test_muscle_elasticity_linear_openmp.f90)
 
 # Golden (characterization) test of the elasticity family (every function of the linear model
-# through the kernel API, 3D and 2D), double precision, bit for bit against
+# through the kernel API, 3D and 2D), double precision, within the tolerance of its category (D-021) against
 # tests/reference/elasticity/ (regenerate.sh there), captured from the original OO code.
 add_muscle_test(elas_golden test_elas_golden.f90)
 set_tests_properties(elasticity-elas_golden PROPERTIES

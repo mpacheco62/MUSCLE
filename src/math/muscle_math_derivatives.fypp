@@ -1,20 +1,12 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
-#! d(A^2)/dA by component of ten_3D4O3sym (Itskov, 2007, Eq. 6.119 with k = 2), in terms of the
-#! stored components of a ten_3D2Osym `a` (xx, yy, zz, xy, yz, xz); written in storage order.
-#:set A = {c.name: 'a%vals({})'.format(c.pos[0]) for c in layout('2Osym', '3D').comps}
-#:set DSQUARE = {'xxxx': '2.0_{k}*{xx}', 'yyyy': '2.0_{k}*{yy}', 'zzzz': '2.0_{k}*{zz}', &
-    & 'xyxy': '0.5_{k}*({xx}+{yy})', 'yzyz': '0.5_{k}*({yy}+{zz})', 'xzxz': '0.5_{k}*({xx}+{zz})', &
-    & 'xyyz': '0.5_{k}*{xz}', 'yzxz': '0.5_{k}*{xy}', 'xyxz': '0.5_{k}*{yz}', &
-    & 'xxxy': '{xy}', 'yyxy': '{xy}', 'xxxz': '{xz}', 'zzxz': '{xz}', 'yyyz': '{yz}', 'zzyz': '{yz}'}
-#:assert set(DSQUARE) <= {c.name for c in layout('4O3sym', '3D').comps}
 
 module muscle_math_derivatives
     !! Derivatives of tensor functions: `dsquare`, the analytical derivative of the square of a
     !! symmetric tensor, for each real kind (`dsquare_sp`, `dsquare_dp`); kernel routine.
     !! Numerical derivatives are the finite-difference macros of `tests/common/muscle_fd.fypp`
-    !! (`FD_DERIV`, `FD_GRAD`, `FD_JAC`, `FD_HESS`), which call the function directly (D-018.18b).
+    !! (`FD_DERIV`, `FD_GRAD`, `FD_JAC`, `FD_HESS`), which call the function directly.
     use muscle_kinds, only : sp, dp
     use muscle_tensor_2osym, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$
     use muscle_tensor_4o3sym, only : ${', '.join(tname('3D4O3sym', k) for k in REAL_KINDS)}$
@@ -47,9 +39,28 @@ contains
         type(${tname('3D4O3sym', k)}$) :: res
             !! \( \partial (A^2)/\partial A \).
 
-#:for c in layout('4O3sym', '3D').comps
-        res%vals(${c.pos[0]}$) = ${DSQUARE.get(c.name, '0.0_{k}').format(k=k, **A)}$
-#:endfor
+        ! Storage order of ten_3D4O3sym; a%vals = (xx, yy, zz, xy, yz, xz)
+        res%vals(1) = 2.0_${k}$*a%vals(1)
+        res%vals(2) = 2.0_${k}$*a%vals(2)
+        res%vals(3) = 2.0_${k}$*a%vals(3)
+        res%vals(4) = 0.5_${k}$*(a%vals(1)+a%vals(2))
+        res%vals(5) = 0.5_${k}$*(a%vals(2)+a%vals(3))
+        res%vals(6) = 0.5_${k}$*(a%vals(1)+a%vals(3))
+        res%vals(7) = 0.0_${k}$
+        res%vals(8) = 0.0_${k}$
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.5_${k}$*a%vals(6)
+        res%vals(11) = 0.5_${k}$*a%vals(4)
+        res%vals(12) = 0.0_${k}$
+        res%vals(13) = a%vals(4)
+        res%vals(14) = a%vals(5)
+        res%vals(15) = 0.5_${k}$*a%vals(5)
+        res%vals(16) = a%vals(4)
+        res%vals(17) = a%vals(5)
+        res%vals(18) = a%vals(6)
+        res%vals(19) = 0.0_${k}$
+        res%vals(20) = 0.0_${k}$
+        res%vals(21) = a%vals(6)
     end function dsquare_${k}$
 #:endfor
 

@@ -5,10 +5,10 @@
 module muscle_visco_types
     !! Module muscle_visco_types
     !! =========================
-    !! State and step coefficients of the linear viscoelastic models for kernels (D-017.13), in
+    !! State and step coefficients of the linear viscoelastic models for kernels, in
     !! every real kind. Fixed size (`MAX_VISCO_BRANCHES` history tensors, no allocatable
     !! components): a state is copied (commit, rollback, private copies, device arrays) without
-    !! allocating memory. 3D only, as the models (D-017.13c).
+    !! allocating memory. 3D only, as the models.
     !!
     !! - `visco_state_<k>`: state of a material point at an instant: number of active branches,
     !!   elastic strain and the history tensors (Voigt order of `ten_3D2Osym`); their meaning is
