@@ -192,7 +192,8 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
         real(${k}$) :: res
             !! Determinant.
 #! Explicit formulas (original evaluation order); they assume the column-major storage
-#:assert [c.idx for c in layout('2O', d).comps] == ([(i, j) for j in (1, 2, 3) for i in (1, 2, 3)] if d == '3D' else [(1, 1), (2, 1), (1, 2), (2, 2), (3, 3)])
+#:assert [c.idx for c in layout('2O', d).comps] == ([(i, j) for j in (1, 2, 3) for i in (1, 2, 3)] if d == '3D' &
+    & else [(1, 1), (2, 1), (1, 2), (2, 2), (3, 3)])
 #:if d == '3D'
         res = a%vals(1)*a%vals(5)*a%vals(9) + a%vals(2)*a%vals(6)*a%vals(7) &
             + a%vals(3)*a%vals(4)*a%vals(8) - a%vals(7)*a%vals(5)*a%vals(3) &

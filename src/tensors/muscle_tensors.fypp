@@ -65,7 +65,8 @@ module muscle_tensors
     !! - `iden_2OS`: Scaled 3D identity tensor, second order (\(c \delta_{ij}\)).
     !! - `iden_4O3T`: 3D identity tensor, fourth order, type 3 (\(\delta_{ij}\delta_{kl}\)).
     !! - `iden_4O4T`: 3D identity tensor, fourth order, type 4 (symmetric identity).
-    !! - `iden_4O4TS`: Scaled 3D identity tensor, fourth order, type 4 (\(c \cdot (\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})/2\)).
+    !! - `iden_4O4TS`: Scaled 3D identity tensor, fourth order, type 4
+    !!   (\(c \cdot (\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})/2\)).
     !!
     !! Public Entities
     !! ---------------
@@ -121,7 +122,8 @@ module muscle_tensors
     !! - `.approx.`: Custom equality comparison for tensors (checks for approximate equality of components).
     !! - `.dev.`: Deviatoric part of a second-order tensor.
     !! - `.ddot.`: Double dot product (e.g., `tensor4 : tensor2`, `tensor2 : tensor2`).
-    !! - `.tdot.`: Tensor dot product (specific definition depends on implementation, often \( (A \otimes B)_{ijkl} = A_{ij} B_{kl} \) for second order).
+    !! - `.tdot.`: Tensor dot product (specific definition depends on implementation, often
+    !!   \( (A \otimes B)_{ijkl} = A_{ij} B_{kl} \) for second order).
     !! - `.inv.`: Inverse of a tensor (every `ten_*` type, also as the method `%inv()`); quiet NaN if singular.
     !! - `inverse`: `call inverse(a, a_inv, ok [, cond])`, inverse with a success flag and the condition number.
     !! - `.tdotsym.`: Symmetrized dyadic product \( \frac{1}{2}(\mathbf{a}\otimes\mathbf{b} + \mathbf{b}\otimes\mathbf{a}) \).

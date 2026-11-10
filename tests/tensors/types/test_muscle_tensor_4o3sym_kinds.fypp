@@ -434,8 +434,9 @@ contains
         passed = .true.
 
         ! ---- Exact inverse: 2x2 blocks [[2,1],[1,1]]^-1 = [[1,-1],[-1,2]] -------------------
-        ! Blocks on the Voigt pairs (11,12) (normal-shear), (22,33) (normal-normal)${' and (23,13) (shear-shear)' if d == '3D' else ''}$;
-        ! every intermediate of the adjugate/LU is dyadic -> exact. kappa_inf = 3 * 3 = 9.
+        ! Blocks on the Voigt pairs (11,12) (normal-shear), (22,33)
+        ! (normal-normal)${' and (23,13) (shear-shear)' if d == '3D' else ''}$; every intermediate of the adjugate/LU is dyadic ->
+        ! exact. kappa_inf = 3 * 3 = 9.
         a = ZERO
         call a%set(xxxx=2.0_${k}$, xyxy=1.0_${k}$, xxxy=1.0_${k}$, yyyy=2.0_${k}$, zzzz=1.0_${k}$, yyzz=1.0_${k}$)
         e = ZERO
@@ -466,7 +467,8 @@ contains
         a = ZERO
         call a%set(xxxx=real(lam + 2.0_dp*mu, ${k}$), yyyy=real(lam + 2.0_dp*mu, ${k}$), &
                    zzzz=real(lam + 2.0_dp*mu, ${k}$), xxyy=real(lam, ${k}$), yyzz=real(lam, ${k}$), &
-                   xxzz=real(lam, ${k}$), xyxy=real(mu, ${k}$)${', yzyz=real(mu, {0}), xzxz=real(mu, {0})'.format(k) if d == '3D' else ''}$)
+                   xxzz=real(lam, ${k}$), &
+                   xyxy=real(mu, ${k}$)${', yzyz=real(mu, {0}), xzxz=real(mu, {0})'.format(k) if d == '3D' else ''}$)
         call inverse(a, x, ok, cond)
         ra = real(to_voigt_${T}$(a), dp)
         kap = norm_inf(ra)*norm_inf(inv_ref(ra))
@@ -512,11 +514,13 @@ contains
             case (2)
                 ! no zz stiffness: row and column 33 of the Voigt matrix vanish
                 a = ZERO
-                call a%set(xxxx=2.0_${k}$, yyyy=2.0_${k}$, xyxy=1.0_${k}$, xxyy=0.5_${k}$${', yzyz=1.0_{0}, xzxz=1.0_{0}'.format(k) if d == '3D' else ''}$)
+                call a%set(xxxx=2.0_${k}$, yyyy=2.0_${k}$, xyxy=1.0_${k}$, &
+                           xxyy=0.5_${k}$${', yzyz=1.0_{0}, xzxz=1.0_{0}'.format(k) if d == '3D' else ''}$)
             case (3)
                 ! rows 11 and 22 equal (rank deficient, non-zero diagonal)
                 a = ZERO
-                call a%set(xxxx=1.0_${k}$, yyyy=1.0_${k}$, xxyy=1.0_${k}$, zzzz=1.0_${k}$, xyxy=1.0_${k}$${', yzyz=1.0_{0}, xzxz=1.0_{0}'.format(k) if d == '3D' else ''}$)
+                call a%set(xxxx=1.0_${k}$, yyyy=1.0_${k}$, xxyy=1.0_${k}$, zzzz=1.0_${k}$, &
+                           xyxy=1.0_${k}$${', yzyz=1.0_{0}, xzxz=1.0_{0}'.format(k) if d == '3D' else ''}$)
             end select
             call inverse(a, x, ok, cond)
             call check_true(passed, 'inverse (singular): ok = .false.' // TN, .not. ok)
@@ -697,8 +701,9 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
             c3 = ZERO
             call c3%set(${', '.join('{0}=a2%vals({1})'.format(nm, p + 1) for p, nm in enumerate(NAMES['2D']))}$)
             call check_approx(passed, 'embed == 3D set(2D names)' // TN, a3%vals, c3%vals, tol=ZERO)
+#:set oop_vals = ['a3%vals({})'.format(p + 1) for p, nm in enumerate(NAMES['3D']) if nm not in NAMES['2D']]
             call check_true(passed, 'out-of-plane shear components = 0' // TN, &
-                            all([${', '.join('a3%vals({})'.format(p + 1) for p, nm in enumerate(NAMES['3D']) if nm not in NAMES['2D'])}$] == ZERO))
+                            all([${', '.join(oop_vals)}$] == ZERO))
 
             ! Component-wise operations (exact)
             call check_approx(passed, 'a + b' // TN, vv(embed_${k}$(a2 + b2)), vv(a3 + b3), tol=ZERO)

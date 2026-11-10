@@ -123,7 +123,9 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-        ${assign_terms('res%vals(:)', [op_weighted('a%vals(:, {})'.format(c.pos[0]), 'b%vals({})'.format(c.pos[0]), c.mult, k) for c in lb.comps], 8)}$
+#:set ddot_terms = [op_weighted('a%vals(:, {})'.format(c.pos[0]), 'b%vals({})'.format(c.pos[0]), c.mult, k) &
+    & for c in lb.comps]
+        ${assign_terms('res%vals(:)', ddot_terms, 8)}$
     end function ${e.name}$
 
 #:elif e.tag_res.endswith('2Osym') and e.tag_b.endswith('4O2sym')
@@ -148,7 +150,8 @@ contains
         a_weighted(${c.pos[0]}$) = ${op_weight('a%vals({})'.format(c.pos[0]), c.mult, k)}$
 #:endfor
 #:for j in la.comps
-        ${assign_terms('res%vals({})'.format(j.pos[0]), ['a_weighted({0})*b%vals({0}, {1})'.format(i.pos[0], j.pos[0]) for i in la.comps], 8)}$
+#:set ddot_terms = ['a_weighted({0})*b%vals({0}, {1})'.format(i.pos[0], j.pos[0]) for i in la.comps]
+        ${assign_terms('res%vals({})'.format(j.pos[0]), ddot_terms, 8)}$
 #:endfor
     end function ${e.name}$
 
@@ -166,7 +169,8 @@ contains
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
 #:for c in op_layout(e.tag_res).comps
-        ${assign_terms('res%vals({})'.format(c.pos[0]), op_ddot_voigt_terms(op_layout(e.tag_b if e.swapped else e.tag_a), t4 + '%vals', t2 + '%vals', c.pos[0], k), 8)}$
+#:set ddot_terms = op_ddot_voigt_terms(op_layout(e.tag_b if e.swapped else e.tag_a), t4 + '%vals', t2 + '%vals', c.pos[0], k)
+        ${assign_terms('res%vals({})'.format(c.pos[0]), ddot_terms, 8)}$
 #:endfor
     end function ${e.name}$
 
@@ -185,7 +189,8 @@ contains
         ${op_res_decl(e)}$ :: res
 #:set la = op_layout(e.tag_a)
 #:for c in lr.comps
-        ${assign_terms('res%vals({})'.format(', '.join(map(str, c.pos))), op_ddot_matrix_terms(la, 'a%vals', la, 'b%vals', *c.pos, k), 8)}$
+#:set ddot_terms = op_ddot_matrix_terms(la, 'a%vals', la, 'b%vals', *c.pos, k)
+        ${assign_terms('res%vals({})'.format(', '.join(map(str, c.pos))), ddot_terms, 8)}$
 #:endfor
     end function ${e.name}$
 

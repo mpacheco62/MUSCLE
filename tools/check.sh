@@ -105,6 +105,10 @@ echo "== lint: ${#fypp_files[@]} templates (${#kernel_files[@]} kernel), ${#fort
 
 # Formatting (every Fortran source)
 report tabs "tab characters" "$(grep -nP '\t' "${fortran_files[@]}" 2>/dev/null)"
+# Every source line, comments included, fits the free-form limit (the generated code is checked below)
+report line-length "source line longer than 132 columns" "$(perl -CSD -ne '
+    chomp; print "$ARGV:$.: ", length($_), " columns\n" if length($_) > 132 && !/!\s*lint:\s*allow\(line-length\)/;
+    close ARGV if eof' "${fortran_files[@]}")"
 
 # License headers (sources of the library, tests, benchmarks and tools)
 for f in $(printf '%s\n' "${fypp_files[@]}" "${py_files[@]}" "${header_files[@]}" | sort -u); do
@@ -231,7 +235,22 @@ for gpu in nvptx nvptx-release amdgcn spir64; do prune_stale_modules "${build_di
 echo "== build: ${build_dir} (Debug, MUSCLE_REAL_KINDS=sp;dp)"
 cmake -S . -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DMUSCLE_REAL_KINDS=sp;dp" \
     > /dev/null || exit 1
-cmake --build "$build_dir" --target build_all_tests -j "$(nproc)" || exit 1
+# The full check rebuilds from scratch, so that a warning of a file not recompiled since is seen too
+clean=()
+(( quick )) || clean=(--clean-first)
+cmake --build "$build_dir" --target build_all_tests -j "$(nproc)" "${clean[@]}" 2>&1 | tee "$build_dir/build.log"
+(( PIPESTATUS[0] == 0 )) || exit 1
+
+# No compiler warnings in the library or the tests (the flags that silence the intentional ones are in
+# src/CMakeLists.txt and tests/CMakeLists.txt). gfortran prints the location (the template line, through
+# the #line markers) a few lines before each "Warning:"; with --quick only the recompiled files are seen.
+warned=$(perl -ne '
+    $loc = "$1:$2" if m{^(\S+\.(?:fypp|f90|F90|inc)):(\d+):\d+:\s*$};
+    print "$loc: $1\n" if /^Warning: (.*)/' "$build_dir/build.log" | sed "s#^$PWD/##" | sort -u)
+if [[ -n "$warned" ]]; then
+    echo "LINT [warnings] the build has compiler warnings:"; echo "$warned" | sed 's/^/    /'
+    exit 1
+fi
 
 # Generated code must fit the free-form limit (comments may run longer)
 long=$(find "$build_dir/fypp" -name '*.f90' -print0 2>/dev/null | xargs -0 -r perl -ne '

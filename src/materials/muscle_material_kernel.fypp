@@ -93,14 +93,22 @@
         !! `status`: that of `kin_update` (`STATUS_INVALID_DEFORMATION`; the return mapping is then not
         !! run and the outputs keep default values) or of the return mapping.
         use muscle_status, only : STATUS_OK
-        use muscle_tensors, only : operator(+)${', operator(*), operator(.transform.), operator(.ddot.), transpose' if SPATIAL_KIN else ''}$
-        use muscle_kin_laws, only : kin_update, kin_update_norot, kin_to_cauchy, kin_to_spatial_tangent, kin_state_${k}$${', kin_geometric_tangent' if MAT.tangent_rate == 'jaumann' else ''}$${', kin_spin_tangent' if SPATIAL_KIN else ''}$
+#:if SPATIAL_KIN
+        use muscle_tensors, only : operator(+), operator(*), operator(.transform.), operator(.ddot.), transpose
+#:else
+        use muscle_tensors, only : operator(+)
+#:endif
+#:set kin_extra = (', kin_geometric_tangent' if MAT.tangent_rate == 'jaumann' else '') &
+    & + (', kin_spin_tangent' if SPATIAL_KIN else '')
+        use muscle_kin_laws, only : kin_update, kin_update_norot, kin_to_cauchy, kin_to_spatial_tangent, &
+            kin_state_${k}$${kin_extra}$
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat
             !! Material (parameters of its models, iteration limit and tolerance).
         type(${G2}$), intent(in) :: F_n
-            !! Deformation gradient at \( t_n \)${'' if SPATIAL_KIN else ' (not used by this kinematics: the state does not depend on it)'}$.
+            !! Deformation gradient at
+            !! \( t_n \)${'' if SPATIAL_KIN else ' (not used by this kinematics: the state does not depend on it)'}$.
         type(${G2}$), intent(in) :: F_np1
             !! Deformation gradient at \( t_{n+1} \).
         real(${k}$), intent(in) :: dt
@@ -212,7 +220,8 @@
 #:else
         !! and the consistent tangent (`tangent_rate` none: without the geometric term).
 #:endif
-        use muscle_kin_laws, only : kin_corot_update, kin_to_cauchy, kin_to_spatial_tangent, kin_state_${k}$${', kin_geometric_tangent' if MAT.tangent_rate == 'jaumann' else ''}$
+        use muscle_kin_laws, only : kin_corot_update, kin_to_cauchy, kin_to_spatial_tangent, &
+            kin_state_${k}$${', kin_geometric_tangent' if MAT.tangent_rate == 'jaumann' else ''}$
 ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jaumann' else ''}$
         implicit none
         @:DEVICE()

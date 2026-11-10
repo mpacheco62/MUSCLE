@@ -1,0 +1,84 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "mat_sequence_common.fypp"
+#! Materials of the test registry (tools/fypp/muscle_materials.py) solved by closest_point_time: each one needs
+#! at least one entry in CASES, with parameter set names of case_params.py.
+#:set SOLVER = 'closest_point_time'
+#:set MATS = solver_materials(SOLVER)
+
+program test_mat_closest_point_time
+    !! Declared materials with the rate-dependent closest point return mapping (Phase 7, D-018): the
+    !! point kernel `mat_update` of the materials of the test registry against every reference record of
+    !! the OO solver (tests/reference/solvers/closest_point_time_dp.txt, D-018.3/D-018.10b/D-018.12b/
+    !! D-018.18h applied: the numerical tangent from the state at t_n), with the checks of
+    !! mat_sequence_common.fypp. The reference test uses a new state every step and records the analytic
+    !! tangent of plastic steps only (the OO tangent of an elastic step reads
+    !! uninitialized data, D-018.2); the OO stress of a step that does not converge is zero
+    !! (D-017.14f).
+    !! Reduced reference (plan R, R6): only the cases with a case number keep their reference records, those
+    !! that detect the mutations of the solver the unit tests cannot (tests/mutations/solvers.toml);
+    !! the other cases (case number 0) keep their strain sequences for the checks of
+    !! mat_sequence_common.fypp.
+    !! Cases 3 (full Johnson-Cook) and 6 (Nemat-Nasser-Li) are kept: they go through the clipping of
+    !! the multiplier and the stagnation relaxation of the Newton loop, and their sequences detect the
+    !! changes of the relaxation factor and of the plastic strain residual norm (only the iteration
+    !! path and its count change, which has no independent truth).
+    $:MAT_TEST_USES(MATS)
+    implicit none
+
+    $:MAT_TEST_DECLS()
+    ! Tolerances relative to the largest component (measured maxima of the cases in brackets,
+    ! gfortran 15.2 Debug; margin 3-20x)
+    real(sp), parameter :: TOL_SP_STRESS = 5.0e-5_sp
+        !! sp vs dp, stress [1.0e-5].
+    real(sp), parameter :: TOL_SP_STRAIN_P = 1.0e-3_sp
+        !! sp vs dp, plastic strain [2.4e-4]: Nemat-Nasser-Li seq step 2, a plastic increment of 6e-8
+        !! (the sp Newton tolerance, 1e-5 on the plastic strain residual and 1e-5 sigma on f, bounds
+        !! the absolute error of the plastic strain, not the relative one).
+    real(sp), parameter :: TOL_SP_EP = 5.0e-4_sp
+        !! sp vs dp, equivalent plastic strain [6.5e-5], the same step.
+    real(sp), parameter :: TOL_SP_TANGENT = 2.0e-5_sp
+        !! sp vs dp, analytic tangent [4.3e-6].
+    real(sp), parameter :: TOL_SP_FD = 5.0e-4_sp
+        !! sp analytic tangent vs finite differences [9.8e-5].
+    real(dp), parameter :: TOL_DP_FD = 1.0e-6_dp
+        !! dp analytic tangent vs finite differences [8.9e-8].
+    real(dp), parameter :: RK_FD_TOL = 0.15_dp, NNL_FD_TOL = 1.0e-3_dp
+        !! Analytic vs finite difference tangent of Rusinek-Klepaczko [8.5e-2] and Nemat-Nasser-Li
+        !! [3.5e-4], both kinds: the analytic tangent is not consistent with these laws (D-018.10d).
+    type(solver_case), parameter :: CASES(*) = [ &
+        solver_case(0, 'tm_jc_vm_swift', 'lin1000', 'jc1', 'swift_small', 'vonmises', 200, 100.0_dp, 3.00e-3_dp), &
+        solver_case(0, 'tm_jc_vm_bilinear', 'steel', 'jc2', 'bilinear', 'vonmises', 200, 1.0e-3_dp, 7.04e-4_dp), &
+        solver_case(3, 'tm_jcfull_vm_vocemod', 'steel', 'jcfull', 'vocemod', 'vonmises', 200, 1.0e-3_dp, 9.16e-4_dp, &
+            check_sp=.false.), &
+        solver_case(0, 'tm_mrk_vm', 'steel', 'mrk', '-', 'vonmises', 200, 1.0e-2_dp, 1.15e-3_dp), &
+        solver_case(0, 'tm_rk_vm', 'steel', 'rk', '-', 'vonmises', 200, 1.0e-3_dp, 2.47e-3_dp, &
+            fd_tol=RK_FD_TOL), &
+        solver_case(6, 'tm_nnl_vm', 'steel', 'nnl', '-', 'vonmises', 200, 1.0e-2_dp, 3.57e-4_dp, &
+            fd_tol=NNL_FD_TOL), &
+        solver_case(0, 'tm_va_vm', 'steel', 'va', '-', 'vonmises', 200, 1.0e-2_dp, 8.89e-4_dp), &
+        solver_case(0, 'tm_jc_hill48_swift', 'steel', 'jc3', 'swift', 'hill48-2', 200, 1.0e-2_dp, 4.37e-4_dp), &
+        solver_case(0, 'tm_jc_cpb06_ludwik', 'steel', 'jc2', 'ludwik', 'cpb06-2', 200, 1.0e-3_dp, 7.04e-4_dp), &
+        solver_case(0, 'tm_jc_yld2004_swift', 'steel', 'jc3', 'swift', 'yld2004-2', 200, 1.0e-2_dp, 4.34e-4_dp), &
+        solver_case(0, 'tm_jc_dp_bilinear', 'steel', 'jc2', 'bilinear', 'dp-1', 200, 1.0e-3_dp, 7.01e-4_dp), &
+        solver_case(0, 'tm_maxwell_jc_vm_bilinear', 'maxwell', 'jc2', 'bilinear', 'vonmises', 200, 1.0e-2_dp, 9.81e-3_dp), &
+        solver_case(0, 'tm_jc_vm_swift', 'lin1000', 'jc1', 'swift_small', 'vonmises', 1, 100.0_dp, 3.00e-3_dp), &
+        solver_case(0, 'tm_jc_cpb06_ludwik', 'steel', 'jc2', 'ludwik', 'cpb06-4', 3, 1.0e-3_dp, 7.10e-4_dp), &
+        solver_case(0, 'tm_mrk_vm', 'steel', 'mrk', '-', 'vonmises', 200, 10.0_dp, 1.15e-3_dp), &
+        solver_case(0, 'tm_jc_cpb06ex2_swift', 'steel', 'jc2', 'swift', 'cpb06ex2-1', 200, 1.0e-3_dp, 5.61e-4_dp)]
+        !! Cases of test_time_golden (case number of the reference records, 0 for none; material, reference
+        !! names, Newton limit, time step, A_Y; tolerance of the tangent check, sp checks).
+        !! - Modified Rusinek-Klepaczko: NaN from the first plastic step in case 4 (D-018.2, plastic
+        !!   strain rates above epdmax), case 15 below epdmax.
+        !! - Full Johnson-Cook: dp only; in sp seq step 1 does not converge (the flow stress at a zero
+        !!   rate is 0, D-017.7) and the later steps drift from dp.
+
+    $:MAT_TEST_MAIN('test_mat_closest_point_time', 'solvers/closest_point_time_dp.txt', MATS, 'jcfull')
+
+contains
+    $:MAT_TEST_PROCS(SOLVER, MATS, 'time', reference_tangent='plastic', zero_stress=True, &
+        & tangent_num='before')
+
+end program test_mat_closest_point_time

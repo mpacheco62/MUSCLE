@@ -89,7 +89,7 @@ and coverage point to the lines of the templates (`#line` markers).
 | To ... | Edit |
 |--------|------|
 | add a model | its template, the family module, `tools/fypp/muscle_meta.py` and the tests ([Developer Guide](contributing.html)) |
-| add a material | the registry (and, for the test registry, its golden case) |
+| add a material | the registry (and, for the test registry, a case of the sequence test of its solver) |
 | add a solver | a body in `src/solvers/`, `MATERIAL_SOLVERS`, the solver chain of `muscle_material.fypp` |
 | change the API of every material | `src/materials/muscle_material*.fypp` |
 | change a tensor operation | `src/tensors/operators/`, whose bodies are unrolled from the layouts of `muscle_meta.py` |

@@ -1,0 +1,6 @@
+# Mutation check of the tensor types (tools/mutation_check.py types): the family modules and the code common to
+# every family (TENSOR_COMMON_*). Added in the re-analysis of test quality (docs/fypp/REANALISIS_TESTS.md).
+sources = ["src/tensors/types/muscle_tensor_*.fypp", "include/muscle_tensor_common.fypp"]
+reference = ""
+unit = "^tensors-"
+samples = 40

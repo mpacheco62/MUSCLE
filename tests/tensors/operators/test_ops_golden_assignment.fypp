@@ -1,7 +1,0 @@
-! SPDX-License-Identifier: GPL-3.0-or-later
-! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#! Golden test of the generics of src/tensors/operators/muscle_tensor_ops_assignment (see
-#! ops_golden_cases.fypp; reference: tests/reference/tensors/operators/ops_assignment_dp.txt).
-#:set GOLDEN_NAME = 'assignment'
-#:set GOLDEN_GENERICS = ['assignment(=)']
-#:include "ops_golden_cases.fypp"

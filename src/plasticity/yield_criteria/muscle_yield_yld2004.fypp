@@ -61,9 +61,11 @@ module muscle_yield_yld2004
 
 #:for k in REAL_KINDS
     type :: yield_yld2004_${k}$
-        !! Parameters of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)` (build it with `yield_yld2004_init`, which computes the private derived components; do not change the inputs after `yield_yld2004_init`).
+        !! Parameters of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)` (build it with `yield_yld2004_init`, which
+        !! computes the private derived components; do not change the inputs after `yield_yld2004_init`).
         real(${k}$), private :: Lp(3,3)
-            !! Normal block of \( \mathbf{L}^\prime = \mathbf{C}^\prime \mathbb{P}_{dev} \), which maps (sxx, syy, szz) to (Spxx, Spyy, Spzz).
+            !! Normal block of \( \mathbf{L}^\prime = \mathbf{C}^\prime \mathbb{P}_{dev} \), which maps (sxx, syy, szz) to (Spxx,
+            !! Spyy, Spzz).
         real(${k}$) :: cp_shear(3)
             !! Shear factors of \( \mathbf{C}^\prime \) on (xy, yz, xz): (cp44, cp55, cp66).
         real(${k}$), private :: Lpp(3,3)
@@ -355,7 +357,8 @@ contains
     end subroutine yield_yld2004_principal_${k}$
 
     pure function yield_stress_eq_yld2004_3D_${k}$(prm, sigma) result(res)
-        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)` (3D).
+        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)`
+        !! (3D).
         implicit none
         @:DEVICE()
         type(yield_yld2004_${k}$), intent(in) :: prm
@@ -375,7 +378,8 @@ contains
     end function yield_stress_eq_yld2004_3D_${k}$
 
     pure function yield_dstress_eq_yld2004_3D_${k}$(prm, sigma) result(res)
-        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)` (3D).
+        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the Yld2004-18p (Barlat et al. 2005) model in
+        !! `real(${k}$)` (3D).
         implicit none
         @:DEVICE()
         type(yield_yld2004_${k}$), intent(in) :: prm
@@ -401,7 +405,8 @@ contains
     end function yield_dstress_eq_yld2004_3D_${k}$
 
     pure function yield_ddstress_eq_yld2004_3D_${k}$(prm, sigma) result(res)
-        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)` (3D).
+        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) of the Yld2004-18p (Barlat et al. 2005) model
+        !! in `real(${k}$)` (3D).
         implicit none
         @:DEVICE()
         type(yield_yld2004_${k}$), intent(in) :: prm
@@ -431,8 +436,8 @@ contains
     end function yield_ddstress_eq_yld2004_3D_${k}$
 
     pure function yield_joint_evaluation_yld2004_${k}$(prm) result(res)
-        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn): true for the Yld2004-18p (Barlat et al. 2005) model
-        !! (`real(${k}$)` parameters; a constant, resolved at compile time).
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn): true for the
+        !! Yld2004-18p (Barlat et al. 2005) model (`real(${k}$)` parameters; a constant, resolved at compile time).
         implicit none
         @:DEVICE()
         type(yield_yld2004_${k}$), intent(in) :: prm
@@ -444,8 +449,10 @@ contains
     end function yield_joint_evaluation_yld2004_${k}$
 
     pure subroutine yield_stress_eq_and_derivatives_yld2004_3D_${k}$(prm, sigma, f, df, ddf)
-        !! Equivalent stress and its first and second derivatives at the same stress of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)` (3D).
-        !! One spectral decomposition of Sp and one of Spp (Barlat et al., 2005, Eqs. 11 and 14) instead of the eigenvalues of both in stress_eq and their decompositions in each derivative; the same operations as the three functions, so the same bits (spectral_decomposition takes its eigenvalues from eigenvals, as stress_eq does).
+        !! Equivalent stress and its first and second derivatives at the same stress of the Yld2004-18p (Barlat et al. 2005) model
+        !! in `real(${k}$)` (3D). One spectral decomposition of Sp and one of Spp (Barlat et al., 2005, Eqs. 11 and 14) instead of
+        !! the eigenvalues of both in stress_eq and their decompositions in each derivative; the same operations as the three
+        !! functions, so the same bits (spectral_decomposition takes its eigenvalues from eigenvals, as stress_eq does).
         implicit none
         @:DEVICE()
         type(yield_yld2004_${k}$), intent(in) :: prm

@@ -144,8 +144,8 @@ contains
     end function yield_ddstress_eq_hill48_3D_${k}$
 
     pure function yield_joint_evaluation_hill48_${k}$(prm) result(res)
-        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn): false for the Hill (1948) model
-        !! (`real(${k}$)` parameters; a constant, resolved at compile time).
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn): false for the Hill
+        !! (1948) model (`real(${k}$)` parameters; a constant, resolved at compile time).
         implicit none
         @:DEVICE()
         type(yield_hill48_${k}$), intent(in) :: prm
@@ -158,7 +158,8 @@ contains
 
     pure subroutine yield_stress_eq_and_derivatives_hill48_3D_${k}$(prm, sigma, f, df, ddf)
         !! Equivalent stress and its first and second derivatives at the same stress of the Hill (1948) model in `real(${k}$)` (3D),
-        !! computed by the functions `yield_stress_eq_hill48_3D_${k}$`, `yield_dstress_eq_hill48_3D_${k}$`, `yield_ddstress_eq_hill48_3D_${k}$` in turn.
+        !! computed by the functions `yield_stress_eq_hill48_3D_${k}$`, `yield_dstress_eq_hill48_3D_${k}$`,
+        !! `yield_ddstress_eq_hill48_3D_${k}$` in turn.
         implicit none
         @:DEVICE()
         type(yield_hill48_${k}$), intent(in) :: prm

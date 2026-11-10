@@ -89,6 +89,11 @@ elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
         target_compile_options(muscle PRIVATE 
                                         -c -cpp -fopenmp -fPIC -mcmodel=medium
                                         $<$<CONFIG:Debug>:-g -O0 -Wall -Wextra -Wimplicit-interface -Wsurprising -fcheck=all -fbacktrace -ffpe-trap=zero,overflow,invalid>
+                                        # Unused dummy arguments are the uniform contract of a family (a kinematics without
+                                        # parameters still takes prm); unused local variables still warn. The exact real
+                                        # comparisons are deliberate guards (exact zero before a division, ...): silenced for
+                                        # now, to be removed (docs/fypp/PROBLEMAS.md)
+                                        $<$<CONFIG:Debug>:-Wno-unused-dummy-argument -Wno-compare-reals>
                                         $<$<CONFIG:Profile_unittests>:-g -O0 -fprofile-arcs -ftest-coverage>
                                         $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
                                 )

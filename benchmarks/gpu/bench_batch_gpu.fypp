@@ -260,8 +260,8 @@ contains
     subroutine check_sample(n, eps, hn, hb, sg, tn, st, it)
         !! `n_sample` points spread over the batch against the point API on the host: statuses exact, the
         !! points with other iterations counted (a sp Newton iterate on the stopping tolerance may need one
-        !! iteration more or less on the device: FMA, order of the sums); for the points that converge, the stress and the tangent within `TOL_DEVICE_${k}$`
-        !! relative to their largest component, and the history within `TOL_DEVICE_${k}$` relative to the
+        !! iteration more or less on the device: FMA, order of the sums); for the points that converge, the stress and the tangent
+        !! within `TOL_DEVICE_${k}$` relative to their largest component, and the history within `TOL_DEVICE_${k}$` relative to the
         !! largest component of the history or of the strain of the point (the plastic increment of a
         !! barely plastic point comes from the small difference between the trial stress and the yield
         !! stress: its own relative error is amplified, not that relative to the strain).

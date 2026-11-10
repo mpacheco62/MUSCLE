@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 """Sample inputs of every model for the tests of the material initializers (``mat_init_<name>``,
-D-018.17a; tests/materials/test_mat_init.fypp loads this file through ``muscle_meta.load_python_file``).
+D-018.17a; tests/materials/test_muscle_material_init.fypp loads this file through ``muscle_meta.load_python_file``).
 
 ``sample_inputs(mm, prefix, model)``: ``{input name: literal}`` for the inputs of the model
 (``mm.model_inputs``), the literals without kind (a list of literals for an input per branch). The values
-are those of the first golden set of the model (golden_params.py: component assignments and keyword or
-positional initializer calls), the default of a parameter the golden set does not give, and Young
+are those of the first reference set of the model (case_params.py: component assignments and keyword or
+positional initializer calls), the default of a parameter the reference set does not give, and Young
 modulus and Poisson ratio for the linear elasticity.
 """
 
@@ -19,11 +19,11 @@ _NUM = r'-?[0-9.]+(?:e-?[0-9]+)?'
 
 
 def _golden(mm):
-    return mm.load_python_file(os.path.join(_HERE, 'golden_params.py')).GOLDEN_PARAMS
+    return mm.load_python_file(os.path.join(_HERE, 'case_params.py')).CASE_PARAMS
 
 
 def _literal(text):
-    """Literal without kind of a golden value (``500.0_{k}`` -> ``500.0``, ``DP_HARDENING_SHEAR`` -> ``3``,
+    """Literal without kind of a reference value (``500.0_{k}`` -> ``500.0``, ``DP_HARDENING_SHEAR`` -> ``3``,
     ``[1.0_{k}, 2.0_{k}]`` -> ``['1.0', '2.0']``)."""
     text = text.strip()
     if text.startswith('['):
@@ -58,7 +58,7 @@ def sample_inputs(mm, prefix, model):
         val = res.get(i.name, defaults.get(i.name))
         if val is None:
             raise ValueError(f'no sample value for input {i.name!r} of {prefix} {model}: add the entry '
-                             f'({prefix!r}, {model!r}) to GOLDEN_PARAMS in tests/materials/golden_params.py')
+                             f'({prefix!r}, {model!r}) to CASE_PARAMS in tests/materials/case_params.py')
         out[i.name] = val
     return out
 

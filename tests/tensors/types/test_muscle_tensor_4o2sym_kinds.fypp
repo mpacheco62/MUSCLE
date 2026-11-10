@@ -279,7 +279,8 @@ contains
 #:set nb = len(VP[d])
         character(len=4), parameter :: NAMES_${d}$(${nb}$,${nb}$) = reshape([character(len=4) :: &
 #:for J in range(nb)
-            ${', '.join("'" + VP[d][I] + VP[d][J] + "'" for I in range(nb))}$${', &' if J < nb - 1 else '], [' + str(nb) + ', ' + str(nb) + '])'}$
+#:set names_row = ', '.join("'" + VP[d][I] + VP[d][J] + "'" for I in range(nb))
+            ${names_row}$${', &' if J < nb - 1 else '], [' + str(nb) + ', ' + str(nb) + '])'}$
 #:endfor
         character(len=4) :: lay_names_${d}$(${nb}$,${nb}$)
         integer :: lay_pos_${d}$(${len(lay.comps)}$, 2), conv_${d}$(${len(CONV[d])}$, 2)
@@ -365,7 +366,8 @@ contains
         call check_approx(passed, 'init(array)' // TN, c%vals, v, tol=ZERO)
         call a%init( &
 #:for I in reversed(range(nb))
-            ${', '.join('{}{}={}.0_{}'.format(VP[d][I], VP[d][J], 10*(I + 1) + J + 1, k) for J in reversed(range(nb)))}$${', &' if I > 0 else ')'}$
+#:set names_row = ', '.join('{}{}={}.0_{}'.format(VP[d][I], VP[d][J], 10*(I + 1) + J + 1, k) for J in reversed(range(nb)))
+            ${names_row}$${', &' if I > 0 else ')'}$
 #:endfor
         call check_approx(passed, 'init(named): C_ijkl in vals(I(ij), J(kl))' // TN, a%vals, v, tol=ZERO)
         call b%init( &
@@ -497,9 +499,9 @@ contains
         passed = .true.
 
         ! ---- Exact unsymmetric inverse: 2x2 blocks [[2,3],[1,2]]^-1 = [[2,-3],[-1,2]] ----------
-        ! Blocks on the Voigt pairs (11,12) (normal-shear), (22,33) (normal-normal)${' and (23,13) (shear-shear)' if d == '3D' else ''}$;
-        ! every intermediate of the adjugate/LU (pivot 2, multiplier 1/2) is dyadic -> exact.
-        ! kappa_inf = ||C||_inf ||C^-1||_inf = 5 * 5 (before the shear scaling).
+        ! Blocks on the Voigt pairs (11,12) (normal-shear), (22,33)
+        ! (normal-normal)${' and (23,13) (shear-shear)' if d == '3D' else ''}$; every intermediate of the adjugate/LU (pivot 2,
+        ! multiplier 1/2) is dyadic -> exact. kappa_inf = ||C||_inf ||C^-1||_inf = 5 * 5 (before the shear scaling).
         a = ZERO
         a%vals(1, 1) = 2.0_${k}$
         a%vals(1, 4) = 3.0_${k}$
@@ -823,7 +825,9 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
                               vv(embed_tables_${k}$(a2)), tol=ZERO)
             call c3%init( &
 #:for I in range(6)
-                ${', '.join('{}{}={}'.format(VP['3D'][I], VP['3D'][J], 'm({}, {})'.format(I + 1, J + 1) if I < 4 and J < 4 else 'ZERO') for J in range(6))}$${', &' if I < 5 else ')'}$
+#:set names_row = ', '.join('{}{}={}'.format(VP['3D'][I], VP['3D'][J], 'm({}, {})'.format(I + 1, J + 1) &
+    & if I < 4 and J < 4 else 'ZERO') for J in range(6))
+                ${names_row}$${', &' if I < 5 else ')'}$
 #:endfor
             call check_approx(passed, 'embed == 3D init(2D names)' // TN, a3%vals, c3%vals, tol=ZERO)
             call check_true(passed, 'out-of-plane shear rows/columns = 0' // TN, &

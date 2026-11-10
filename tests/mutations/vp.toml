@@ -1,0 +1,6 @@
+# Mutation check of the viscoplastic and overstress laws (tools/mutation_check.py vp)
+sources = ["src/plasticity/viscoplastic_laws/muscle_vp_*.fypp"]
+# The reference test was deleted (plan R): the unit tests detected all the 322 mutations it detected.
+reference = ""
+unit = "^plasticity-viscoplastic_laws-"
+samples = 40

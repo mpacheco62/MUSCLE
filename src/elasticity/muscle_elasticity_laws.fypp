@@ -52,7 +52,8 @@ module muscle_elasticity_laws
     end interface elas_stress
 
     interface elas_stress_dev
-        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) (every model, kind and dimension of the family).
+        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) (every model, kind and dimension of
+        !! the family).
 #:for k in REAL_KINDS
 #:for d in DIMS
         module procedure elas_stress_dev_linear_${d}$_${k}$, elas_stress_dev_frozen_${d}$_${k}$
@@ -70,7 +71,8 @@ module muscle_elasticity_laws
     end interface elas_dstress_dstrain
 
     interface elas_dstress_dstrain_dev
-        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) (every model, kind and dimension of the family).
+        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) (every model, kind
+        !! and dimension of the family).
 #:for k in REAL_KINDS
 #:for d in DIMS
         module procedure elas_dstress_dstrain_dev_linear_${d}$_${k}$, elas_dstress_dstrain_dev_frozen_${d}$_${k}$

@@ -202,7 +202,7 @@ function(muscle_add_materials TARGET TEMPLATE)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
                  "${registry}" "${MUSCLE_FYPP_META_DIR}/muscle_meta.py")
     message(STATUS "MUSCLE: materials (${registry}): ${materials}")
-    # For the tests generated for every material of the registry (tests/materials/test_mat_smoke.fypp)
+    # For the tests generated for every material of the registry (tests/materials/test_muscle_material_smoke.fypp)
     set_property(GLOBAL PROPERTY MUSCLE_MATERIALS_REGISTRY "${registry}")
     set_property(GLOBAL PROPERTY MUSCLE_MATERIALS_FLAGS "${registry_flags}")
     # Bodies of the solvers of muscle_meta.MATERIAL_SOLVERS (src/solvers/), included by the template

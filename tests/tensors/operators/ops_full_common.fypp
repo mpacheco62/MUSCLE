@@ -5,7 +5,7 @@
 #! on the compact Voigt storage), for every specific of the operator table:
 #! op_entries(g, d, k) for every generic g in FULL_GENERICS, d in DIMS and k in REAL_KINDS.
 #!
-#! Included by the `test_ops_<...>_full.fypp` templates after they set:
+#! Included by the `test_muscle_tensor_ops_<module>_full.fypp` templates after they set:
 #!   FULL_NAME      program name, e.g. 'test_ops_ddot_full' (the helper module is <name>_lib)
 #!   FULL_GENERICS  generics of OP_TABLE checked, e.g. ['.ddot.'] or ['+', '-']
 #!
@@ -51,7 +51,8 @@
 #:set IDX2 = [(i, j) for j in range(1, 4) for i in range(1, 4)]
 #:set IDX4 = [(i, j, k, l) for l in range(1, 4) for k in range(1, 4) for j in range(1, 4) for i in range(1, 4)]
 #! Linear (column-major) storage position of the full component idx, 0 for a structural zero
-#:set lin = lambda lay, idx: (lambda pos: 0 if pos is None else (pos[0] if len(pos) == 1 else pos[0] + (pos[1] - 1)*lay.shape[0]))(lay.index(*idx))
+#:set lin = lambda lay, idx: (lambda pos: 0 if pos is None &
+    & else (pos[0] if len(pos) == 1 else pos[0] + (pos[1] - 1)*lay.shape[0]))(lay.index(*idx))
 #! Comma-separated list broken into continuation lines of 20 items
 #:set wrap = lambda xs: ', &\n        & '.join(', '.join(str(x) for x in xs[n:n + 20]) for n in range(0, len(xs), 20))
 #! Tensor order of a table tag ('3D2Osym', 'I4O4TS', 'real' -> 2, 4, 0)
@@ -59,7 +60,8 @@
 #! Shape of a full tensor of order o
 #:set fshape = lambda o: '3, 3' if o == 2 else '3, 3, 3, 3'
 #! Call of the expansion function of a tag on `var` (unscaled identities: no kind, no argument)
-#:set full = lambda tag, k, var: 'full_' + tag + ('()' if op_iden(tag) is not None and not op_iden(tag)[1] else '_' + k + '(' + var + ')')
+#:set full = lambda tag, k, var: 'full_' + tag &
+    & + ('()' if op_iden(tag) is not None and not op_iden(tag)[1] else '_' + k + '(' + var + ')')
 #! Tolerance factor (see above): longer rounding chain of the 4th-order transform
 #:set tol_factor = lambda e: '32' if e.generic == '.transform.' and order(e.tag_b) == 4 else '16'
 #:set ALL_ENTRIES = [e for g in FULL_GENERICS for d in DIMS for k in REAL_KINDS for e in op_entries(g, d, k)]

@@ -1,0 +1,517 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "mat_sequence_common.fypp"
+#! Von Mises with linear hardening, one material per solver (closed forms)
+#:set LINEAR = ['cp_vm_bilinear', 'cp2_vm_bilinear', 'cut_vm_bilinear', 'tm_jc_vm_bilinear', 'pz_vm_bilinear']
+#! Hill (1948) with Swift hardening, one material per solver (properties of the converged step)
+#:set ANISO = ['cp_hill48_swift', 'cp2_hill48_swift', 'cut_hill48_swift', 'tm_jc_hill48_swift', 'pz_hill48_swift']
+#:set MATS = LINEAR + ANISO
+#:set solver_of = lambda m: muscle_meta.material(m).solver
+#:set hard_of = lambda m: dict(muscle_meta.material_components(muscle_meta.material(m)))['hard']
+#! Reference names of case_params.py of the models of a material
+#:set VISC = {'closest_point_time': 'jc1', 'closest_point_perzyna': 'per1'}
+#:set YLD = {'vonmises': 'vonmises', 'hill48': 'hill48-2'}
+#! Parameters of a hardening law in stress units (scaled by the homogeneity checks)
+#:set HARD_STRESS_FIELDS = {'bilinear': ['y0', 'K'], 'swift': ['k']}
+#! Rate independent solvers whose elastic check has a relative threshold, and the threshold
+#:set THRESHOLD = {'closest_point': 'TOL_ELASTIC', 'closest_point_2': 'TOL_ELASTIC', 'closest_point_time': 'TOL_ELASTIC', &
+    & 'cutting_plane': 'NEWTON'}
+#! Newton solvers (the converged state solves the backward Euler equations; quadratic convergence)
+#:set NEWTON = ['closest_point', 'closest_point_2', 'closest_point_time', 'closest_point_perzyna']
+#! Newton solvers checked for quadratic convergence (closest_point_2: not quadratic, see the known issues)
+#:set QUADRATIC = ['closest_point', 'closest_point_time', 'closest_point_perzyna']
+
+program test_mat_return_mapping
+    !! Return mapping kernels of every solver against truths independent of the solver (plan R, R6), in
+    !! every kind (dp tolerances from the Newton tolerance 1e-10; sp with its own, measured maxima in
+    !! brackets, gfortran 15.2 Debug). E = 210000, nu = 0.3; dt = 0.01 for the rate dependent solvers.
+    !!
+    !! - Radial return (von Mises, linear hardening y0 = 200, K = 1000) from a plastic state (ep_n > 0,
+    !!   strain_p_n /= 0), trial overstress 80 %: rate independent solvers, the closed form dgamma =
+    !!   (q_tr - sigma_y(ep_n))/(3G + K) (Simo and Hughes 1998, Box 3.1); Perzyna (n = 1) the root of the
+    !!   quadratic eta/dt dgamma sigma_y(ep_n + dgamma) = q_tr - 3G dgamma - sigma_y(ep_n + dgamma);
+    !!   Johnson-Cook the root of q_tr - 3G dgamma = sigma_y(ep_n + dgamma) (1 + C ln(dgamma/(dt epdmax)))
+    !!   by bisection. Stress, plastic strain (radial: 3/2 dgamma s_tr/q_tr) and ep. A Newton solver on a
+    !!   problem linear in dgamma (closest_point, closest_point_2) is exact after one update and the next
+    !!   iteration confirms it: 2 iterations; cutting_plane needs one correction. The consistent tangent
+    !!   of the rate independent Newton solvers against its closed form (Box 3.2), the continuum tangent
+    !!   of cutting_plane against its closed form, and the tangent of every Newton solver against finite
+    !!   differences from that plastic state.
+    !! - Elastic threshold (the documented check f_trial <= TOL max(sigma_y, SY_MIN), TOL = TOL_ELASTIC or
+    !!   the Newton tolerance of cutting_plane), with every stress parameter scaled by 2^-20, 1 and 2^20:
+    !!   a trial 0.5 TOL above the yield stress is elastic (the trial stress, no plastic strain, 0
+    !!   iterations), one 4 TOL above it is plastic.
+    !! - Homogeneity: scaling every stress parameter (E and the hardening stresses) by 2^-20 or 2^20 scales
+    !!   the stress and leaves the strains, the status and the iterations unchanged (the solvers have no
+    !!   absolute stress tolerance), von Mises and Hill.
+    !! - Converged step with Hill (1948) and Swift hardening: the stress is the elastic law of the
+    !!   elastic strain; consistency |f| < tol sigma (sigma the flow stress at the rate dep/dt of the
+    !!   step for Johnson-Cook; Perzyna: the flow law dgamma = dt g(q, ep) within the tolerance of the
+    !!   solver); the backward Euler flow rule strain_p - strain_p_n = dgamma df/dsigma within tol.
+    !! - Quadratic convergence of the Newton solvers on the Hill step: the iterates (the state returned
+    !!   with iter_nw = 1, 2, ...) approach the converged state with e_{k+1} <= Q e_k^2 once e_k < 0.1.
+    !!
+    !! Known issues found by these checks (reported, not checked until they are fixed):
+    !!
+    !! - closest_point_2: the consistency row of its 7x7 Newton Jacobian, a(7, j) = -(C:n)_j, lacks the
+    !!   factor 2 of the shear components (the derivative of f with respect to the Voigt component j of
+    !!   the plastic strain is -(C:n):e_j, which counts a tensorial shear twice). The fixed point is
+    !!   right, but the convergence is linear when the step has shears: the radial return is not exact
+    !!   after one update (6 iterations for a trial 4 TOL above the yield stress; 50 for the large Hill
+    !!   step). Hence no iteration count and no quadratic convergence check for it, and the radial
+    !!   return tolerance of the rate dependent solvers (the Newton tolerance).
+    !! - closest_point_time with Johnson-Cook: a trial stress slightly above the yield stress at a zero
+    !!   rate (4 TOL_ELASTIC) does not converge in 200 iterations: the solution lies on the rate floor
+    !!   (dgamma/dt < epmin), where the right-hand rate derivative of the Newton direction (D-018.19b),
+    !!   sigma_y C/(epmin dt), makes the steps far smaller than the solution. Only "not elastic" is
+    !!   checked there.
+    $:MAT_TEST_USES(MATS)
+    use muscle_kinds, only : ${', '.join('TOL_APPROX_' + k + ', TOL_ELASTIC_' + k for k in REAL_KINDS)}$
+    use muscle_tensors, only : operator(+), operator(-), operator(*), operator(.dev.), operator(.ddot.), &
+        assignment(=)
+    use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
+    use muscle_elasticity_laws, only : elas_stress
+    use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq
+    use muscle_hard_laws, only : hard_stress, hard_dstress_dep
+    use muscle_vp_laws, only : vp_flow_stress
+    use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma
+    use muscle_test_utils, only : check_scaled
+    implicit none
+
+    $:MAT_TEST_DECLS()
+    real(dp), parameter :: E_STEEL = 210000.0_dp, NU_STEEL = 0.3_dp
+        !! Elastic constants of every material.
+    real(dp), parameter :: DT_RATE = 0.01_dp
+        !! Time step of the rate dependent solvers.
+    real(dp), parameter :: SCALE_EXP = 20.0_dp
+        !! Stress scales 2^-20 and 2^20 of the threshold and homogeneity checks.
+    real(sp), parameter :: TOL_RADIAL_sp = 2.0e-6_sp
+        !! Radial return of closest_point and cutting_plane, relative (to dgamma, the largest stress and
+        !! plastic strain), sp [1.9e-7].
+    real(dp), parameter :: TOL_RADIAL_dp = 1.0e-11_dp
+        !! Radial return of closest_point and cutting_plane: one exact update, rounding only [2.7e-16].
+    real(sp), parameter :: TOL_RADIAL_RATE_sp = 5.0e-5_sp
+        !! Radial return of the other solvers, sp [5.4e-6, closest_point_2].
+    real(dp), parameter :: TOL_RADIAL_RATE_dp = 1.0e-8_dp
+        !! Radial return of the other solvers: the Newton tolerance 1e-10 on f relative to sigma_y,
+        !! divided by the slope 3G/sigma_y of f in dgamma [1.1e-10, closest_point_2].
+    real(sp), parameter :: TOL_TAN_sp = 1.0e-5_sp
+        !! Tangent against its closed form, relative to the elastic response, sp [2.1e-6].
+    real(dp), parameter :: TOL_TAN_dp = 5.0e-10_dp
+        !! Tangent against its closed form, relative to the elastic response [4.4e-11 closest_point_2, at
+        !! its Newton tolerance; 2.8e-15 the others].
+    real(sp), parameter :: TOL_FD_sp = 5.0e-4_sp
+        !! Tangent against finite differences, sp [4.8e-5].
+    real(dp), parameter :: TOL_FD_dp = 1.0e-6_dp
+        !! Tangent against finite differences (central differences of a Newton solution) [1.4e-8].
+    real(sp), parameter :: TOL_HOMOG_sp = 1.0e-6_sp
+        !! Homogeneity, relative, sp [0: a power of 2 scales every rounding exactly].
+    real(dp), parameter :: TOL_HOMOG_dp = 1.0e-13_dp
+        !! Homogeneity, relative [0: a power of 2 scales every rounding exactly; not checked bit for bit,
+        !! so that a different operation order of the compiler in the two calls does not fail it].
+    real(sp), parameter :: CONV_MARGIN = 1.01_sp
+        !! Margin of the convergence criteria recomputed by the test (rounding of the recomputation).
+    real(dp), parameter :: QUAD_FACTOR = 100.0_dp
+        !! Q of the quadratic convergence check e_{k+1} <= Q e_k^2.
+
+    passed = .true.
+#:for k in REAL_KINDS
+#:for m in LINEAR
+    call radial_${m}$_${k}$()
+#:if solver_of(m) in THRESHOLD
+    call threshold_${m}$_${k}$()
+#:endif
+#:endfor
+#:for m in MATS
+    call homogeneity_${m}$_${k}$()
+#:endfor
+#:for m in ANISO
+    call converged_${m}$_${k}$()
+#:if solver_of(m) in QUADRATIC
+    call quadratic_${m}$_${k}$()
+#:endif
+#:endfor
+#:endfor
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_mat_return_mapping'
+        stop 1
+    end if
+
+contains
+$:MAT_CASE_PROCS(MATS, fd_check=[m for m in LINEAR if solver_of(m) in NEWTON])
+#:for k in REAL_KINDS
+#:set S2 = tname('3D2Osym', k)
+#:set S4 = tname('3D4O2sym', k)
+
+    pure function state_n_${k}$() result(state)
+        !! Plastic state at t_n of the checks: ep_n = 0.01 and a deviatoric plastic strain, `real(${k}$)`.
+        type(plastic_state_${k}$) :: state
+        state%strain_p%vals = 2.0e-3_${k}$*[1.0_${k}$, -0.6_${k}$, -0.4_${k}$, 0.3_${k}$, -0.2_${k}$, 0.1_${k}$]
+        state%strain_pf = 0.01_${k}$
+        state%stress%vals = 0.0_${k}$
+    end function state_n_${k}$
+
+    pure function direction_${k}$(which) result(d)
+        !! Strain directions with all six components: 1, deviatoric; 2, with a volumetric part, `real(${k}$)`.
+        integer, intent(in) :: which
+        type(${S2}$) :: d
+        if (which == 1) then
+            d%vals = [0.8_${k}$, -0.3_${k}$, -0.5_${k}$, 0.4_${k}$, 0.25_${k}$, -0.35_${k}$]
+        else
+            d%vals = [0.7_${k}$, -0.2_${k}$, -0.3_${k}$, 0.3_${k}$, -0.4_${k}$, 0.2_${k}$]
+        end if
+    end function direction_${k}$
+
+    pure real(${k}$) function q_vm_${k}$(stress)
+        !! Von Mises equivalent stress sqrt(3/2 s:s), `real(${k}$)`.
+        type(${S2}$), intent(in) :: stress
+        type(${S2}$) :: s
+        s = .dev. stress
+        q_vm_${k}$ = sqrt(1.5_${k}$*(s .ddot. s))
+    end function q_vm_${k}$
+
+    pure real(${k}$) function shear_modulus_${k}$(scale)
+        !! Shear modulus of the materials with every stress parameter scaled by `scale`, `real(${k}$)`.
+        real(${k}$), intent(in) :: scale
+        shear_modulus_${k}$ = scale*real(E_STEEL, ${k}$)/(2.0_${k}$*(1.0_${k}$ + real(NU_STEEL, ${k}$)))
+    end function shear_modulus_${k}$
+
+    pure function deviatoric_strain_${k}$(q, scale) result(strain)
+        !! Deviatoric elastic strain along direction 1 whose von Mises stress is `q`, `real(${k}$)`.
+        real(${k}$), intent(in) :: q, scale
+        type(${S2}$) :: strain, d
+        d = direction_${k}$(1)
+        ! q = 2G sqrt(3/2) |e| (tensorial Voigt: the shear components count twice in |e|)
+        strain = (q/(2.0_${k}$*shear_modulus_${k}$(scale)*sqrt(1.5_${k}$*(d .ddot. d))))*d
+    end function deviatoric_strain_${k}$
+#:for m in MATS
+#:set MT = muscle_meta.material_type(m, k)
+#:set SOLVER = solver_of(m)
+#:set DT = 'real(DT_RATE, ' + k + ')' if SOLVER in VISC else '0.0_' + k
+
+    subroutine scaled_${m}$_${k}$(scale, mat)
+        !! `${m}$` with every stress parameter (E and the hardening stresses) scaled by `scale`, `real(${k}$)`.
+        real(${k}$), intent(in) :: scale
+        type(${MT}$), intent(out) :: mat
+        integer :: status
+        call make_${m}$_${k}$(solver_case(0, '${m}$', 'steel', '${VISC.get(SOLVER, '')}$', '${hard_of(m)}$', &
+            '${YLD[muscle_meta.material(m).yield_]}$', 200, 0.0_dp, 0.0_dp), mat)
+        call elas_linear_init(mat%elas, young=scale*real(E_STEEL, ${k}$), poisson=real(NU_STEEL, ${k}$), status=status)
+        if (status /= STATUS_OK) error stop 'scaled_${m}$_${k}$: elas_linear_init failed'
+#:for f in HARD_STRESS_FIELDS[hard_of(m)]
+        mat%hard%${f}$ = scale*mat%hard%${f}$
+#:endfor
+    end subroutine scaled_${m}$_${k}$
+
+    pure real(${k}$) function flow_stress_${m}$_${k}$(mat, ep, ep_n)
+        !! Flow stress of `${m}$` at ep after a step from ep_n (rate (ep - ep_n)/dt for a viscoplastic
+        !! law; the static yield stress otherwise), `real(${k}$)`.
+        type(${MT}$), intent(in) :: mat
+        real(${k}$), intent(in) :: ep, ep_n
+#:if SOLVER == 'closest_point_time'
+        flow_stress_${m}$_${k}$ = vp_flow_stress(mat%vp, ep, (ep - ep_n)/${DT}$, hard_stress(mat%hard, ep))
+#:else
+        associate (unused => ep_n)
+        end associate
+        flow_stress_${m}$_${k}$ = hard_stress(mat%hard, ep)
+#:endif
+    end function flow_stress_${m}$_${k}$
+
+    subroutine homogeneity_${m}$_${k}$()
+        !! `${m}$`: a plastic step from the plastic state with every stress parameter scaled by 2^-20 and
+        !! 2^20 against the unscaled one, `real(${k}$)`.
+        type(${MT}$) :: mat
+        type(plastic_state_${k}$) :: sn, snp1, ref
+        type(${S2}$) :: strain, stress, stress_ref
+        type(${S4}$) :: tangent
+        real(${k}$) :: scale
+        integer :: status, iters, status_ref, iters_ref, is
+
+        sn = state_n_${k}$()
+        call scaled_${m}$_${k}$(1.0_${k}$, mat)
+        strain = sn%strain_p + (3.0_${k}$*hard_stress(mat%hard, sn%strain_pf)/real(E_STEEL, ${k}$))*direction_${k}$(2)
+        call mat_update(mat, strain, ${DT}$, sn, ref, stress_ref, tangent, status_ref, iters_ref)
+        call check_true(passed, '${m}$ homogeneity reference step converged and plastic (${k}$)', &
+            status_ref == STATUS_OK .and. iters_ref > 0)
+        do is = -1, 1, 2
+            scale = 2.0_${k}$**(is*real(SCALE_EXP, ${k}$))
+            call scaled_${m}$_${k}$(scale, mat)
+            call mat_update(mat, strain, ${DT}$, sn, snp1, stress, tangent, status, iters)
+            call check_true(passed, '${m}$ homogeneity status and iterations (${k}$)', &
+                status == status_ref .and. iters == iters_ref)
+            call check_approx(passed, '${m}$ homogeneity stress (${k}$)', stress%vals/scale, stress_ref%vals, &
+                TOL_HOMOG_${k}$)
+            call check_approx(passed, '${m}$ homogeneity plastic strain (${k}$)', snp1%strain_p%vals, ref%strain_p%vals, &
+                TOL_HOMOG_${k}$)
+            call check_scaled(passed, '${m}$ homogeneity ep (${k}$)', snp1%strain_pf, ref%strain_pf, &
+                ref%strain_pf - sn%strain_pf, TOL_HOMOG_${k}$)
+        end do
+    end subroutine homogeneity_${m}$_${k}$
+#:if m in LINEAR
+
+    subroutine radial_${m}$_${k}$()
+        !! `${m}$`: radial return from the plastic state against its closed form, `real(${k}$)`.
+        type(${MT}$) :: mat
+        type(plastic_state_${k}$) :: sn, snp1
+        type(${S2}$) :: strain, stress, trial, s_tr, flow, expected
+        type(${S4}$) :: tangent
+        real(${k}$) :: g, y_n, hmod, q_tr, dgam, tol
+        integer :: status, iters
+#:if SOLVER in ('closest_point', 'closest_point_2', 'cutting_plane')
+        real(${k}$) :: bulk, theta, theta_bar
+        type(${S2}$) :: elastic, n_hat, de, ds
+        integer :: i, j
+#:elif SOLVER == 'closest_point_time'
+        real(dp) :: lo, hi, mid, fmid
+        integer :: it
+#:elif SOLVER == 'closest_point_perzyna'
+        real(dp) :: qa, qb, qc
+#:endif
+
+        call scaled_${m}$_${k}$(1.0_${k}$, mat)
+        sn = state_n_${k}$()
+        g = shear_modulus_${k}$(1.0_${k}$)
+        y_n = hard_stress(mat%hard, sn%strain_pf)
+        hmod = hard_dstress_dep(mat%hard, sn%strain_pf)
+        ! Trial von Mises stress 1.8 sigma_y(ep_n) plus a volumetric strain
+        strain = sn%strain_p + deviatoric_strain_${k}$(1.8_${k}$*y_n, 1.0_${k}$)
+        strain%vals(1:3) = strain%vals(1:3) + 1.0e-3_${k}$
+        trial = elas_stress(mat%elas, strain - sn%strain_p)
+        s_tr = .dev. trial
+        q_tr = q_vm_${k}$(trial)
+#:if SOLVER in ('closest_point', 'closest_point_2', 'cutting_plane')
+        dgam = (q_tr - y_n)/(3.0_${k}$*g + hmod)
+#:if SOLVER == 'closest_point_2'
+        ! Not exact after one update (KNOWN_ISSUES): converged to the Newton tolerance
+        tol = TOL_RADIAL_RATE_${k}$
+#:else
+        tol = TOL_RADIAL_${k}$
+#:endif
+#:elif SOLVER == 'closest_point_time'
+        ! q_tr - 3G x = sigma_y(ep_n + x) (1 + C ln(max(x/dt, epmin)/epdmax)): decreasing in x
+        lo = 0.0_dp
+        hi = real(q_tr, dp)/(3.0_dp*real(g, dp))
+        do it = 1, 200
+            mid = 0.5_dp*(lo + hi)
+            fmid = real(q_tr, dp) - 3.0_dp*real(g, dp)*mid - (real(y_n, dp) + real(hmod, dp)*mid) &
+                *(1.0_dp + real(mat%vp%C, dp)*log(max(mid/DT_RATE, real(mat%vp%epmin, dp))/real(mat%vp%epdmax, dp)))
+            if (fmid > 0.0_dp) then
+                lo = mid
+            else
+                hi = mid
+            end if
+        end do
+        dgam = real(0.5_dp*(lo + hi), ${k}$)
+        tol = TOL_RADIAL_RATE_${k}$
+#:elif SOLVER == 'closest_point_perzyna'
+        if (mat%os%n /= 1.0_${k}$) error stop 'radial_${m}$_${k}$: the closed form needs the Perzyna exponent 1'
+        ! eta/dt x (y_n + K x) = q_tr - 3G x - y_n - K x: qa x^2 + qb x - qc = 0, the positive root
+        qa = real(mat%os%eta, dp)*real(hmod, dp)/DT_RATE
+        qb = real(mat%os%eta, dp)*real(y_n, dp)/DT_RATE + 3.0_dp*real(g, dp) + real(hmod, dp)
+        qc = real(q_tr, dp) - real(y_n, dp)
+        dgam = real(2.0_dp*qc/(qb + sqrt(qb**2 + 4.0_dp*qa*qc)), ${k}$)
+        tol = TOL_RADIAL_RATE_${k}$
+#:endif
+        ! Associated flow of von Mises: df/dsigma = 3/2 s/q, the same at the trial and the final stress
+        flow = (1.5_${k}$/q_tr)*s_tr
+        call mat_update(mat, strain, ${DT}$, sn, snp1, stress, tangent, status, iters)
+        call check_true(passed, '${m}$ radial return converged (${k}$)', status == STATUS_OK)
+#:if SOLVER == 'closest_point'
+        call check_true(passed, '${m}$ radial return: one exact Newton update, confirmed by the next iteration (${k}$)', &
+            iters == 2)
+#:elif SOLVER == 'cutting_plane'
+        call check_true(passed, '${m}$ radial return: one correction (${k}$)', iters == 1)
+#:endif
+        call check_scaled(passed, '${m}$ radial return ep (${k}$)', snp1%strain_pf, sn%strain_pf + dgam, dgam, tol)
+        call check_approx(passed, '${m}$ radial return plastic strain (${k}$)', snp1%strain_p%vals, &
+            sn%strain_p%vals + dgam*flow%vals, tol)
+        expected = trial - (2.0_${k}$*g*dgam)*flow
+        call check_approx(passed, '${m}$ radial return stress (${k}$)', stress%vals, expected%vals, tol)
+#:if SOLVER in ('closest_point', 'closest_point_2', 'cutting_plane')
+        ! Tangent: bulk tr(de) 1 + 2G theta dev(de) - 2G theta_bar (n:de) n, n = s/|s|; consistent
+        ! (theta = 1 - 3G dgamma/q_tr) or, cutting_plane, continuum (theta = 1)
+        bulk = real(E_STEEL, ${k}$)/(3.0_${k}$*(1.0_${k}$ - 2.0_${k}$*real(NU_STEEL, ${k}$)))
+#:if SOLVER == 'cutting_plane'
+        theta = 1.0_${k}$
+#:else
+        theta = 1.0_${k}$ - 3.0_${k}$*g*dgam/q_tr
+#:endif
+        theta_bar = 1.0_${k}$/(1.0_${k}$ + hmod/(3.0_${k}$*g)) - (1.0_${k}$ - theta)
+        n_hat = (1.0_${k}$/sqrt(s_tr .ddot. s_tr))*s_tr
+        do j = 1, 4
+            if (j <= 2) then
+                de = direction_${k}$(j)
+            else
+                de%vals = 0.0_${k}$
+                de%vals(j + 1) = 1.0_${k}$
+            end if
+            ds = tangent .ddot. de
+            ! Relative to the elastic response (the plastic correction cancels most of it)
+            elastic = (2.0_${k}$*g)*(.dev. de)
+            elastic%vals(1:3) = elastic%vals(1:3) + bulk*sum(de%vals(1:3))
+            expected = elastic - (2.0_${k}$*g*(1.0_${k}$ - theta))*(.dev. de) &
+                - (2.0_${k}$*g*theta_bar*(n_hat .ddot. de))*n_hat
+            do i = 1, 6
+                call check_scaled(passed, '${m}$ radial return tangent, closed form (${k}$)', ds%vals(i), &
+                    expected%vals(i), maxval(abs(elastic%vals)), TOL_TAN_${k}$)
+            end do
+        end do
+#:endif
+#:if SOLVER in NEWTON
+        call fd_check_${m}$_${k}$('${m}$ radial return', mat, strain, ${DT}$, sn, tangent, TOL_FD_${k}$)
+#:endif
+    end subroutine radial_${m}$_${k}$
+#:if SOLVER in THRESHOLD
+
+    subroutine threshold_${m}$_${k}$()
+        !! `${m}$`: trial stresses just below and above the relative elastic threshold, with every stress
+        !! parameter scaled by 2^-20, 1 and 2^20, `real(${k}$)`.
+        type(${MT}$) :: mat
+        type(plastic_state_${k}$) :: sn, snp1
+        type(${S2}$) :: strain, stress, trial
+        type(${S4}$) :: tangent
+        real(${k}$) :: scale, sigma0, threshold
+        integer :: status, iters, is
+        character(len=8) :: tag
+
+        sn = plastic_state_${k}$()
+        sn%strain_p%vals = 0.0_${k}$
+        sn%strain_pf = 0.0_${k}$
+        sn%stress%vals = 0.0_${k}$
+        do is = -1, 1
+            scale = 2.0_${k}$**(is*real(SCALE_EXP, ${k}$))
+            write(tag, '(a, i0)') '2^', is*nint(SCALE_EXP)
+            call scaled_${m}$_${k}$(scale, mat)
+#:if SOLVER == 'closest_point_time'
+            ! The check uses the flow stress at a zero plastic strain rate
+            sigma0 = vp_flow_stress(mat%vp, 0.0_${k}$, 0.0_${k}$, hard_stress(mat%hard, 0.0_${k}$))
+#:else
+            sigma0 = hard_stress(mat%hard, 0.0_${k}$)
+#:endif
+#:if THRESHOLD[SOLVER] == 'NEWTON'
+            threshold = mat%tol
+#:else
+            threshold = TOL_ELASTIC_${k}$
+#:endif
+            ! Below: elastic
+            strain = deviatoric_strain_${k}$(sigma0*(1.0_${k}$ + 0.5_${k}$*threshold), scale)
+            trial = elas_stress(mat%elas, strain)
+            call mat_update(mat, strain, ${DT}$, sn, snp1, stress, tangent, status, iters)
+            call check_true(passed, '${m}$ 0.5 TOL above the yield stress is elastic, scale ' // trim(tag) // &
+                ' (${k}$)', status == STATUS_OK .and. iters == 0 .and. snp1%strain_pf == 0.0_${k}$ .and. &
+                all(snp1%strain_p%vals == 0.0_${k}$))
+            call check_approx(passed, '${m}$ elastic step stress, scale ' // trim(tag) // ' (${k}$)', stress%vals, &
+                trial%vals, TOL_APPROX_${k}$)
+            ! Above: plastic
+            strain = deviatoric_strain_${k}$(sigma0*(1.0_${k}$ + 4.0_${k}$*threshold), scale)
+            call mat_update(mat, strain, ${DT}$, sn, snp1, stress, tangent, status, iters)
+            call check_true(passed, '${m}$ 4 TOL above the yield stress is plastic, scale ' // trim(tag) // &
+                ' (${k}$)', iters > 0 .and. snp1%strain_pf > 0.0_${k}$)
+#:if SOLVER != 'closest_point_time'
+            call check_true(passed, '${m}$ 4 TOL above the yield stress converges, scale ' // trim(tag) // &
+                ' (${k}$)', status == STATUS_OK)
+#:endif
+        end do
+    end subroutine threshold_${m}$_${k}$
+#:endif
+#:endif
+#:if m in ANISO
+
+    subroutine aniso_step_${m}$_${k}$(mat, sn, strain, factor)
+        !! The Hill step of `${m}$`: the plastic state at t_n and a strain `factor` yield strains along
+        !! direction 2 from it, `real(${k}$)`.
+        type(${MT}$), intent(out) :: mat
+        type(plastic_state_${k}$), intent(out) :: sn
+        type(${S2}$), intent(out) :: strain
+        real(${k}$), intent(in) :: factor
+        call scaled_${m}$_${k}$(1.0_${k}$, mat)
+        sn = state_n_${k}$()
+        strain = sn%strain_p + (factor*hard_stress(mat%hard, sn%strain_pf)/real(E_STEEL, ${k}$))*direction_${k}$(2)
+    end subroutine aniso_step_${m}$_${k}$
+
+    subroutine converged_${m}$_${k}$()
+        !! `${m}$`: the converged Hill step satisfies the equations of the return mapping, `real(${k}$)`.
+        type(${MT}$) :: mat
+        type(plastic_state_${k}$) :: sn, snp1
+        type(${S2}$) :: strain, stress, law, residual
+        type(${S4}$) :: tangent
+        real(${k}$) :: q, sigma, dgam
+        integer :: status, iters
+#:if SOLVER == 'closest_point_perzyna'
+        type(${S2}$) :: res_stress
+        real(${k}$) :: c
+#:endif
+
+        call aniso_step_${m}$_${k}$(mat, sn, strain, 3.0_${k}$)
+        call mat_update(mat, strain, ${DT}$, sn, snp1, stress, tangent, status, iters)
+        call check_true(passed, '${m}$ Hill step converged and plastic (${k}$)', status == STATUS_OK .and. iters > 0 &
+            .and. snp1%strain_pf > sn%strain_pf)
+        law = elas_stress(mat%elas, strain - snp1%strain_p)
+        call check_approx(passed, '${m}$ Hill step stress = elastic law (${k}$)', stress%vals, law%vals, TOL_APPROX_${k}$)
+        q = yield_stress_eq(mat%yield, stress)
+        dgam = snp1%strain_pf - sn%strain_pf
+        sigma = flow_stress_${m}$_${k}$(mat, snp1%strain_pf, sn%strain_pf)
+        residual = sn%strain_p - snp1%strain_p + dgam*yield_dstress_eq(mat%yield, stress)
+#:if SOLVER == 'closest_point_perzyna'
+        ! Flow law dgamma = dt g(q, ep) within tol sigma_y dt dg/dq; flow rule within tol sigma_y in
+        ! stress units (the criteria of the solver)
+        c = os_dflow_dsigma(mat%os, q, snp1%strain_pf, sigma)
+        call check_true(passed, '${m}$ Hill step flow law (${k}$)', abs(dgam - ${DT}$*os_flow_rate(mat%os, q, &
+            snp1%strain_pf, sigma)) <= CONV_MARGIN*mat%tol*sigma*${DT}$*c)
+        call check_true(passed, '${m}$ Hill step positive overstress (${k}$)', q > sigma)
+        res_stress = elas_stress(mat%elas, residual)
+        call check_true(passed, '${m}$ Hill step flow rule (${k}$)', &
+            sqrt(sum(res_stress%vals**2)) <= CONV_MARGIN*mat%tol*sigma)
+#:else
+        call check_true(passed, '${m}$ Hill step consistency |f| < tol sigma (${k}$)', &
+            abs(q - sigma) <= CONV_MARGIN*mat%tol*sigma)
+#:if SOLVER != 'cutting_plane'
+        call check_true(passed, '${m}$ Hill step backward Euler flow rule (${k}$)', &
+            sqrt(sum(residual%vals**2)) <= CONV_MARGIN*mat%tol)
+#:endif
+#:endif
+    end subroutine converged_${m}$_${k}$
+#:if SOLVER in QUADRATIC
+
+    subroutine quadratic_${m}$_${k}$()
+        !! `${m}$`: quadratic convergence of the Newton iterates of a large Hill step, `real(${k}$)`.
+        type(${MT}$) :: mat
+        type(plastic_state_${k}$) :: sn, snp1, conv
+        type(${S2}$) :: strain, stress
+        type(${S4}$) :: tangent
+        real(${k}$) :: err, err_prev, err_floor
+        integer :: status, iters, nit, i, checked
+
+        call aniso_step_${m}$_${k}$(mat, sn, strain, 10.0_${k}$)
+        call mat_update(mat, strain, ${DT}$, sn, conv, stress, tangent, status, nit)
+        call check_true(passed, '${m}$ large Hill step converged (${k}$)', status == STATUS_OK .and. nit >= 3)
+        if (status /= STATUS_OK) return
+        ! Rounding floor of the error (relative to the increment)
+        err_floor = 1.0e3_${k}$*epsilon(1.0_${k}$)
+        checked = 0
+        err_prev = huge(1.0_${k}$)
+        ! The converged state is iterate nit - 1; iterate i is the state returned with iter_nw = i
+        do i = 1, nit - 2
+            mat%iter_nw = i
+            call mat_update(mat, strain, ${DT}$, sn, snp1, stress, tangent, status, iters)
+            err = max(abs(snp1%strain_pf - conv%strain_pf)/(conv%strain_pf - sn%strain_pf), &
+                maxval(abs(snp1%strain_p%vals - conv%strain_p%vals))/maxval(abs(conv%strain_p%vals - sn%strain_p%vals)))
+            if (err_prev < 0.1_${k}$ .and. err > err_floor) then
+                checked = checked + 1
+                call check_true(passed, '${m}$ quadratic convergence e_{k+1} <= Q e_k^2 (${k}$)', &
+                    err <= real(QUAD_FACTOR, ${k}$)*err_prev**2)
+            end if
+            err_prev = err
+        end do
+#:if k == 'dp'
+        call check_true(passed, '${m}$ quadratic convergence checked on some iterate (${k}$)', checked > 0)
+#:endif
+    end subroutine quadratic_${m}$_${k}$
+#:endif
+#:endif
+#:endfor
+#:endfor
+
+end program test_mat_return_mapping

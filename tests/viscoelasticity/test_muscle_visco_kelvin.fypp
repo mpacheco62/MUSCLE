@@ -264,7 +264,8 @@ end subroutine test_frozen_stress_tangent_2d
 
 subroutine test_states(passed)
     ! No branch tensors, and the frozen elasticity reads the converged state: an update to another
-    ! strain (a failed global attempt) leaves the history stress of state_n.
+    ! strain (a failed global attempt) leaves the history stress of state_n. zeta /= 2 mu_v, so that the
+    ! volumetric and deviatoric weights of the history stress differ (the other cases have zeta = 2 mu_v).
     use muscle_kinds, only : dp
     use muscle_tensors
     use muscle_test_utils
@@ -281,7 +282,7 @@ subroutine test_states(passed)
     integer :: status
 
     passed = .true.
-    call visco_kelvin_init(model, bulk=2000.0_dp, shear=800.0_dp, bulk_viscosity=300.0_dp, shear_viscosity=150.0_dp, &
+    call visco_kelvin_init(model, bulk=2000.0_dp, shear=800.0_dp, bulk_viscosity=400.0_dp, shear_viscosity=150.0_dp, &
         status=status)
     call new_state(model, state)
     call check_true(passed, "init: zero branch tensors", state%n_branches == 0)
@@ -294,7 +295,7 @@ subroutine test_states(passed)
 
     ! freeze reads state_n, not the unconverged state_np1. Measured: 0
     elas = freeze_dt(model, 0.1_dp, state)
-    expected = -(300.0_dp/0.1_dp)*(strain .ddot. iden_2O())*iden_2O() - (2.0_dp*150.0_dp/0.1_dp)*(.dev. strain)
+    expected = -(400.0_dp/0.1_dp)*(strain .ddot. iden_2O())*iden_2O() - (2.0_dp*150.0_dp/0.1_dp)*(.dev. strain)
     call check_approx(passed, "freeze after update: history stress of state_n", elas%stress_hist, expected, &
                       tol=1.0e-12_dp)
     call check_approx(passed, "update: elastic strain of state_np1", trial_np1%strain_e, other, tol=0.0_dp)

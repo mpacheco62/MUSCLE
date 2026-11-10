@@ -2,8 +2,8 @@
 #! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #! Generic API of a declared material for FE codes: the material from a flat parameter array
 #! `INIT` (public generic `mat_init_<name>`, order `muscle_meta.material_props`), the point API over flat arrays `POINTS`
-#! (without and with the tangent, specifics of the public generic `muscle_point_<name>`) and, for a material whose input is a strain, the rotation of
-#! the tensorial parts of a history array `ROTATE` (public generic `mat_rotate_hsv_<name>`). Included
+#! (without and with the tangent, specifics of the public generic `muscle_point_<name>`) and, for a material whose input is a
+#! strain, the rotation of the tensorial parts of a history array `ROTATE` (public generic `mat_rotate_hsv_<name>`). Included
 #! by src/materials/muscle_material.fypp after muscle_material_batch.fypp with its variables set (`k`,
 #! `MAT`, `MAT_T`, `STATE_T`, `COEFS_T`, `VISCO`, `KIN`, `COROT`, `UPDATE`, `PACK`, `UNPACK`, `NSTATE`,
 #! `S2`, `T4`, `G2`).
@@ -31,7 +31,9 @@
         !! this order (printed as a Markdown table by `muscle_meta.py props <name>`):
         !!
 #:for q in PROPS
-        !! - `props(${q.index}$)`: ${q.component + ' ' if q.component else 'solver '}$`${q.name}$`${' of branch ' + str(q.branch) if q.branch else ''}$${' (integer, rounded)' if q.type == 'integer' else ''}$${', valid if `' + muscle_meta.material_prop_check(q, k) + '`' if q.domain else ''}$
+#:set prop_note = (' of branch ' + str(q.branch) if q.branch else '') + (' (integer, rounded)' if q.type == 'integer' else '')
+#:set prop_valid = ', valid if `' + muscle_meta.material_prop_check(q, k) + '`' if q.domain else ''
+        !! - `props(${q.index}$)`: ${q.component + ' ' if q.component else 'solver '}$`${q.name}$`${prop_note}$${prop_valid}$
 #:endfor
         !!
         !! `status`: `STATUS_INVALID_PARAMETER` if `props` has fewer than `${NPROPS}$` values or a
@@ -101,7 +103,8 @@ ${muscle_meta.material_init_call(MAT, p, k)}$
         !! tangent `ddsdde` (both are specifics of the generic `${muscle_meta.material_point(MAT.name)}$`): the point kernel
         !! `mat_update` on flat arrays, bit for bit `mat_unpack_${MAT.name}$`, `mat_update` and
         !! `mat_pack_${MAT.name}$`, with the conventions of the batch API: strains and
-        !! stresses in tensorial Voigt order (xx, yy, zz, xy, yz, xz) without the factor 2 of the shears${';' if TAN or FIN else '.'}$
+        !! stresses in tensorial Voigt order (xx, yy, zz, xy, yz, xz) without the factor 2 of the
+        !! shears${';' if TAN or FIN else '.'}$
 #:if TAN
         !! `ddsdde(i, j)` = \( \partial\sigma_i/\partial\varepsilon_j \) for j = 1..3 and
         !! \( \partial\sigma_i/\partial\gamma_j \) with the engineering shear \( \gamma_j = 2\varepsilon_j \)
@@ -162,8 +165,8 @@ ${muscle_meta.material_init_call(MAT, p, k)}$
         ${x}$_t%vals = ${x}$
 #:endfor
         call ${UNPACK}$(hsv_n, state_n)
-        call ${UPDATE}$(mat, ${', '.join(x + '_t' for x in XS)}$, dt, ${'coefs, ' if VISCO else ''}$state_n, state_np1, stress_t, tangent, &
-            status, iters)
+        call ${UPDATE}$(mat, ${', '.join(x + '_t' for x in XS)}$, dt, ${'coefs, ' if VISCO else ''}$state_n, state_np1, &
+            stress_t, tangent, status, iters)
         call ${PACK}$(state_np1, hsv_np1)
         stress = stress_t%vals
 #:if TAN
@@ -176,7 +179,12 @@ ${muscle_meta.material_init_call(MAT, p, k)}$
     pure subroutine ${ROTATE}$(hsv, drot)
         !! Rotates the tensorial parts of a history array of material `${MAT.name}$`, `real(${k}$)`:
         !! \( \mathbf{A} \leftarrow \Delta\mathbf{R}\,\mathbf{A}\,\Delta\mathbf{R}^T \) for the
-        !! plastic strain hsv(1:6)${' and the elastic strain and history tensors of the viscoelastic state, hsv(8:' + str(muscle_meta.material_state_size(MAT)) + ')' if VISCO else ''}$;
+#:if VISCO
+        !! plastic strain hsv(1:6) and the elastic strain and history tensors of the viscoelastic state,
+        !! hsv(8:${muscle_meta.material_state_size(MAT)}$);
+#:else
+        !! plastic strain hsv(1:6);
+#:endif
         !! the equivalent plastic strain hsv(7) is a scalar. For FE codes that rotate the stress and strain
         !! to the corotational frame but not the state variables (Abaqus `STATEV` with `DROT`), before
         !! the point API; a code that rotates its state variables does not need it.

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 """Single plastic steps of the anisotropic yield criteria with the closest point return mapping, for
-tests/materials/test_mat_cp_anisotropic.fypp (loaded through ``muscle_meta.load_python_file``).
+tests/materials/test_muscle_material_cp_anisotropic.fypp (loaded through ``muscle_meta.load_python_file``).
 
 Ported from the historical OO tests test_muscle_solver_closest_point_{hill48,cpb06,cpb06ex2,yld2004}.f90
 (D-018.18g): uniaxial tension (RD, 45 degrees, TD), compression (RD) and pure shears (xy, yz, xz) at an
@@ -11,7 +11,7 @@ mpmath (50 digits) in those tests: Hill (1948, Eq. 5); Cazacu et al. (2006, Eqs.
 Ti-6Al-4V of Tuninetti et al. (2013, Table 2); Plunkett et al. (2008) for CPB06ex2 (steel, and AZ31B in
 compression); Barlat et al. (2005) for Yld2004-18p (AA2090-T3, a = 8).
 
-Every case: ``name``, ``material`` (test registry), ``yld`` (parameter set of golden_params.py), the
+Every case: ``name``, ``material`` (test registry), ``yld`` (parameter set of case_params.py), the
 total ``strain`` and the expected ``stress`` and ``strain_p`` (tensorial Voigt order xx, yy, zz, xy, yz,
 xz, without kind suffix), and optionally ``width`` (the projection t (x) t transverse to the tensile
 axis) and ``r`` (Lankford coefficient (t (x) t : strain_p)/strain_p_zz), ``ratio`` (the stress of the

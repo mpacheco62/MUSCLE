@@ -1,5 +1,8 @@
 # Plan de migración de MUSCLE a FYPP
 
+> **Histórico.** La migración terminó (Fase 9, 2026-11-08); este plan se conserva como registro. El estado
+> vigente está en `ESTADO_OPTIMO.md`, las decisiones en `DECISIONES.md` y los problemas en `PROBLEMAS.md`.
+
 Estado: **borrador v1 (2026-10-25)** · Rama base: `dev` · Línea base: 60/60 tests (2026-10-28, `dev` en `db0bc91`, gfortran 15.2, Debug)
 
 ## 1. Objetivos

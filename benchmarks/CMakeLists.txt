@@ -49,7 +49,7 @@ if(NOT MUSCLE_MATERIALS)
                              FLAGS "-DBENCH_CASE='${_case}'"
                              DEPENDS "${_bench_dir}/bench_cases.py"
                                      "${BASE_TESTS_DIR}/materials/props_samples.py"
-                                     "${BASE_TESTS_DIR}/materials/golden_params.py")
+                                     "${BASE_TESTS_DIR}/materials/case_params.py")
         set_source_files_properties("${_out}" PROPERTIES Fortran_PREPROCESS ON)
         add_muscle_benchmark(batch_gpu_${_case} "${_out}")
         target_link_libraries(bench_batch_gpu_${_case} PRIVATE muscle_test_utils)

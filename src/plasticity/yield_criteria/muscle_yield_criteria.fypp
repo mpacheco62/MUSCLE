@@ -101,7 +101,8 @@ module muscle_yield_criteria
     end interface yield_dstress_eq
 
     interface yield_ddstress_eq
-        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) (every model, kind and dimension of the family).
+        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) (every model, kind and dimension of the
+        !! family).
 #:for k in REAL_KINDS
         module procedure yield_ddstress_eq_vonmises_3D_${k}$
         module procedure yield_ddstress_eq_hill48_3D_${k}$
@@ -113,7 +114,8 @@ module muscle_yield_criteria
     end interface yield_ddstress_eq
 
     interface yield_stress_eq_and_derivatives
-        !! Equivalent stress and its first and second derivatives at the same stress (every model, kind and dimension of the family).
+        !! Equivalent stress and its first and second derivatives at the same stress (every model, kind and dimension of the
+        !! family).
 #:for k in REAL_KINDS
         module procedure yield_stress_eq_and_derivatives_vonmises_3D_${k}$
         module procedure yield_stress_eq_and_derivatives_hill48_3D_${k}$
@@ -125,7 +127,8 @@ module muscle_yield_criteria
     end interface yield_stress_eq_and_derivatives
 
     interface yield_joint_evaluation
-        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn) (every model, kind and dimension of the family).
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn) (every model, kind and
+        !! dimension of the family).
 #:for k in REAL_KINDS
         module procedure yield_joint_evaluation_vonmises_${k}$
         module procedure yield_joint_evaluation_hill48_${k}$

@@ -1,0 +1,446 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#!
+#! Limits, clamps and branches of the viscoplastic (`vp_*`) and overstress (`os_*`) laws in every kind,
+#! at the documented boundaries (value exactly on the boundary and on both sides), against closed forms
+#! written here (references in dp from the kind-k parameters):
+#! - full Johnson-Cook: thermal factor 1 - T*^m with T* clamped to [0, 1], T* = 0 when Tmelt <= Troom,
+#!   m = 0 (no softening) and m = 1; dflow_depd exactly at the rate floor `tiny`;
+#! - Johnson-Cook: the rate floor epd <= epmin (dflow_depd = 0 on the floor, finite dstress_dep);
+#! - Johnson-Cook newton_dstress_dep (D-018.19b): on the floor the right-hand rate derivative
+#!   sigma_y C/epmin instead of 0 (closed form, and a one-sided FD of the flow stress in dp), elsewhere
+#!   dstress_dep (and its closed form);
+#! - Perzyna: overstress psi = 0 exactly with n = 1 (g_psi = 0 for psi <= 0);
+#! - VA: m = 0 (f = 1 - B2, no rate term) and m = 1;
+#! - Rusinek-Klepaczko: the derivatives clamp the rate to [epmin, 0.99 epdmax] and floor
+#!   log10(epdmax/epd) at 0.01 (D-017.7);
+#! - MRK: the derivatives with L = log10(epdmax/epd) between 0 and 1 and at its floor 1e-10;
+#! - NNL: the clamp X <= 0.999 of the flow stress and of the derivatives (they differentiate through
+#!   it, D-017.7), and X = 0 at a large rate (the X^(1/q) terms are dropped).
+#! Tolerances: TOL_K of the formulas (sp 5e-6, dp 1e-12, as test_vp_laws_kinds); TOL_NNL at the NNL
+#! clamp in sp, where 1 - X^(1/q) = 6.7e-4 is a cancellation (up to eps/6.7e-4 = 1.8e-4 relative;
+#! measured sp 4.2e-5 in dflow_depd, dp 0). TOL_FD: the one-sided FD reference of the JC newton
+#! derivative (2nd-order forward stencil, h = 1e-3 epmin: truncation ~ 2/3 (h/epmin)^2 = 6.7e-7).
+#:set TOL_K = {'sp': '5.0e-6', 'dp': '1.0e-12'}
+#:set TOL_NNL = {'sp': '5.0e-4', 'dp': '1.0e-12'}
+#:set TOL_FD = '1.0e-5'
+
+program test_vp_limits
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_test_utils, only : check_approx, check_true
+    use muscle_test_helpers, only : record
+    implicit none
+
+    integer :: code
+
+    code = 0
+#:for i, k in enumerate(REAL_KINDS)
+    call record(test_jcfull_${k}$(), ${10*i + 1}$, 'full Johnson-Cook thermal factor and rate floor ${k}$', code)
+    call record(test_jc_${k}$(), ${10*i + 2}$, 'Johnson-Cook rate floor ${k}$', code)
+    call record(test_perzyna_${k}$(), ${10*i + 3}$, 'Perzyna at psi = 0 ${k}$', code)
+    call record(test_va_${k}$(), ${10*i + 4}$, 'VA with m = 0 and m = 1 ${k}$', code)
+    call record(test_rk_${k}$(), ${10*i + 5}$, 'Rusinek-Klepaczko clamps of the derivatives ${k}$', code)
+    call record(test_mrk_${k}$(), ${10*i + 6}$, 'MRK floor of L in the derivatives ${k}$', code)
+    call record(test_nnl_${k}$(), ${10*i + 7}$, 'NNL clamp of X ${k}$', code)
+    call record(test_jc_newton_${k}$(), ${10*i + 8}$, 'Johnson-Cook newton_dstress_dep at and off the rate floor ${k}$', code)
+#:endfor
+    if (code /= 0) stop code
+    print '(a)', ' Passed!'
+
+contains
+#:for k in REAL_KINDS
+
+    function test_jcfull_${k}$() result(passed)
+        !! Full Johnson-Cook in `real(${k}$)`: sigma = sigma_y (1 + C ln(epd/epd0)) (1 - T*^m),
+        !! T* = (T - Troom)/(Tmelt - Troom) clamped to [0, 1] (0 if Tmelt <= Troom), factor 1 for m = 0.
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_jcfull_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        integer, parameter :: NC = 9
+        ! Cases: current temperature, melting temperature, m, expected T*
+        real(${k}$), parameter :: T_CUR(NC) = [2000.0_${k}$, 1700.0_${k}$, 1800.0_${k}$, 200.0_${k}$, 600.0_${k}$, &
+            600.0_${k}$, 600.0_${k}$, 600.0_${k}$, 600.0_${k}$]
+        real(${k}$), parameter :: T_MELT(NC) = [1700.0_${k}$, 1700.0_${k}$, 1700.0_${k}$, 1700.0_${k}$, 293.15_${k}$, &
+            200.0_${k}$, 1700.0_${k}$, 1700.0_${k}$, 1700.0_${k}$]
+        real(${k}$), parameter :: M(NC) = [1.5_${k}$, 1.5_${k}$, 1.0_${k}$, 1.5_${k}$, 1.5_${k}$, 1.5_${k}$, 0.0_${k}$, &
+            1.0_${k}$, 1.5_${k}$]
+        type(vp_jcfull_${k}$) :: v
+        real(${k}$) :: sy, dsy, ep, epd
+        real(dp) :: fr, ts, ft
+        character(len=60) :: label
+        integer :: i
+
+        passed = .true.
+        sy = 100.0_${k}$
+        dsy = 10.0_${k}$
+        ep = 0.1_${k}$
+        epd = 1.0_${k}$
+        v%C = 0.05_${k}$
+        v%epdmax = 0.1_${k}$
+        v%Troom = 293.15_${k}$
+        fr = 1.0_dp + real(v%C, dp)*log(real(epd, dp)/real(v%epdmax, dp))
+        do i = 1, NC
+            v%T_current = T_CUR(i)
+            v%Tmelt = T_MELT(i)
+            v%m = M(i)
+            if (T_MELT(i) <= v%Troom) then
+                ts = 0.0_dp
+            else
+                ts = (real(T_CUR(i), dp) - real(v%Troom, dp))/(real(T_MELT(i), dp) - real(v%Troom, dp))
+                ts = max(0.0_dp, min(1.0_dp, ts))
+            end if
+            if (M(i) == 0.0_${k}$) then
+                ft = 1.0_dp
+            else
+                ft = 1.0_dp - ts**real(M(i), dp)
+            end if
+            write(label, '(a, i0)') '${k}$ JCfull thermal factor, case ', i
+            call check_approx(passed, trim(label) // ': flow_stress', vp_flow_stress(v, ep, epd, sy), &
+                              real(real(sy, dp)*fr*ft, ${k}$), TOL)
+            call check_approx(passed, trim(label) // ': dflow_dep', vp_dflow_dep(v, ep, epd, sy, dsy), &
+                              real(real(dsy, dp)*fr*ft, ${k}$), TOL)
+            call check_approx(passed, trim(label) // ': dflow_depd', vp_dflow_depd(v, ep, epd, sy), &
+                              real(real(sy, dp)*real(v%C, dp)/real(epd, dp)*ft, ${k}$), TOL)
+        end do
+
+        ! Exactly at the rate floor `tiny` the derivative is the formula sigma_y C/epd (not 0): with
+        ! sigma_y = 1 and no softening it is C/tiny, finite
+        v%m = 0.0_${k}$
+        call check_approx(passed, '${k}$ JCfull dflow_depd at epd = tiny', vp_dflow_depd(v, ep, tiny(1.0_${k}$), 1.0_${k}$), &
+                          v%C/tiny(1.0_${k}$), TOL)
+        call check_approx(passed, '${k}$ JCfull dflow_depd below tiny', &
+                          vp_dflow_depd(v, ep, tiny(1.0_${k}$)/2.0_${k}$, 1.0_${k}$), 0.0_${k}$, 0.0_${k}$)
+    end function test_jcfull_${k}$
+
+    function test_jc_${k}$() result(passed)
+        !! Johnson-Cook in `real(${k}$)` at the rate floor: for epd <= epmin, x = epmin/epd0 and
+        !! d sigma/d epd = 0 (so dstress_dep = dsigma_y/dep (1 + C ln x), finite); above it,
+        !! sigma_y C/(x epd0).
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, vp_jc_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(vp_jc_${k}$) :: v
+        real(${k}$) :: sy, dsy, ep, epd, dt, rates(3)
+        real(dp) :: x, fr
+        integer :: j
+
+        passed = .true.
+        v = vp_jc_${k}$(C=0.05_${k}$, epdmax=0.1_${k}$)
+        sy = 100.0_${k}$
+        dsy = 10.0_${k}$
+        ep = 0.1_${k}$
+        dt = 1.0e-3_${k}$
+        rates = [v%epmin, v%epmin/2.0_${k}$, 0.0_${k}$]
+        x = real(v%epmin, dp)/real(v%epdmax, dp)
+        fr = 1.0_dp + real(v%C, dp)*log(x)
+        do j = 1, size(rates)
+            epd = rates(j)
+            call check_approx(passed, '${k}$ JC flow_stress at epd <= epmin', vp_flow_stress(v, ep, epd, sy), &
+                              real(real(sy, dp)*fr, ${k}$), TOL)
+            call check_approx(passed, '${k}$ JC dflow_dep at epd <= epmin', vp_dflow_dep(v, ep, epd, sy, dsy), &
+                              real(real(dsy, dp)*fr, ${k}$), TOL)
+            call check_approx(passed, '${k}$ JC dflow_depd at epd <= epmin', vp_dflow_depd(v, ep, epd, sy), &
+                              0.0_${k}$, 0.0_${k}$)
+            call check_approx(passed, '${k}$ JC dstress_dep at epd <= epmin', vp_dstress_dep(v, ep, epd, dt, sy, dsy), &
+                              real(real(dsy, dp)*fr, ${k}$), TOL)
+        end do
+        ! Just above the floor: the rate derivative is on
+        epd = nearest(v%epmin, 1.0_${k}$)
+        x = real(epd, dp)/real(v%epdmax, dp)
+        call check_approx(passed, '${k}$ JC dflow_depd just above epmin', vp_dflow_depd(v, ep, epd, sy), &
+                          real(real(sy, dp)*real(v%C, dp)/(x*real(v%epdmax, dp)), ${k}$), TOL)
+    end function test_jc_${k}$
+
+    function test_jc_newton_${k}$() result(passed)
+        !! Johnson-Cook `vp_newton_dstress_dep` in `real(${k}$)` (D-018.19b): on the rate floor
+        !! (epd <= epmin, x0 = epmin/epd0) it is dsigma_y/dep (1 + C ln x0) + sigma_y C/(epmin dt), the
+        !! right-hand rate derivative of the flow stress at the floor (checked also against a one-sided
+        !! FD of `vp_flow_stress` in dp); above the floor it is `vp_dstress_dep`, i.e.
+        !! dsigma_y/dep (1 + C ln x) + sigma_y C/(epd dt) with x = epd/epd0.
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dstress_dep, vp_newton_dstress_dep, vp_jc_${k}$, &
+            & vp_jc_dp
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        integer, parameter :: NP = 4
+        ! Parameter sets: default floor (rate term dominates), sigma_y = 0 (hardening term only),
+        ! dsigma_y/dep = 0 (rate term only) and a balanced set where both terms are comparable
+        real(${k}$), parameter :: SYS(NP) = [100.0_${k}$, 0.0_${k}$, 100.0_${k}$, 100.0_${k}$]
+        real(${k}$), parameter :: DSYS(NP) = [10.0_${k}$, 10.0_${k}$, 0.0_${k}$, 1.0e4_${k}$]
+        real(${k}$), parameter :: EPMINS(NP) = [1.0e-7_${k}$, 1.0e-7_${k}$, 1.0e-7_${k}$, 1.0e-3_${k}$]
+        real(${k}$), parameter :: DTS(NP) = [1.0e-3_${k}$, 1.0e-3_${k}$, 1.0e-3_${k}$, 1.0_${k}$]
+        type(vp_jc_${k}$) :: v
+        type(vp_jc_dp) :: vd
+        real(${k}$) :: sy, dsy, ep, epd, dt, rates(3), above(4)
+        real(dp) :: c, e0, emin, x, ref, dfd, e
+        character(len=70) :: label
+        integer :: ip, j
+
+        passed = .true.
+        ep = 0.1_${k}$
+        do ip = 1, NP
+            v = vp_jc_${k}$(C=0.05_${k}$, epdmax=0.1_${k}$, epmin=EPMINS(ip))
+            sy = SYS(ip)
+            dsy = DSYS(ip)
+            dt = DTS(ip)
+            c = real(v%C, dp)
+            e0 = real(v%epdmax, dp)
+            emin = real(v%epmin, dp)
+
+            ! On the floor: closed form with x0 = epmin/epd0
+            x = emin/e0
+            ref = real(dsy, dp)*(1.0_dp + c*log(x)) + real(sy, dp)*c/(emin*real(dt, dp))
+            rates = [v%epmin, v%epmin/2.0_${k}$, 0.0_${k}$]
+            do j = 1, size(rates)
+                write(label, '(a, i0, a, i0)') '${k}$ JC newton_dstress_dep on the floor, set ', ip, ', rate ', j
+                call check_approx(passed, trim(label), vp_newton_dstress_dep(v, ep, rates(j), dt, sy, dsy), &
+                                  real(ref, ${k}$), TOL)
+            end do
+
+            ! On the floor: dflow_dep + (right-hand FD of the flow stress in epd)/dt, in dp from the
+            ! kind-k parameters (forward stencil: x - h < lower = epmin)
+            vd = vp_jc_dp(C=c, epdmax=e0, epmin=emin)
+            e = emin
+            @:FD_DERIV(dfd, vp_flow_stress(vd, real(ep, dp), {x}, real(sy, dp)), e, dp, step=1.0e-3_dp*emin, lower=emin)
+            write(label, '(a, i0)') '${k}$ JC newton_dstress_dep vs one-sided FD, set ', ip
+            call check_approx(passed, trim(label), vp_newton_dstress_dep(v, ep, v%epmin, dt, sy, dsy), &
+                              real(vp_dflow_dep(vd, real(ep, dp), e, real(sy, dp), real(dsy, dp)) &
+                                   + dfd/real(dt, dp), ${k}$), ${TOL_FD}$_${k}$)
+
+            ! Above the floor: dstress_dep and its closed form with x = epd/epd0
+            above = [nearest(v%epmin, 1.0_${k}$), 2.0_${k}$*v%epmin, 0.05_${k}$, 1.0_${k}$]
+            do j = 1, size(above)
+                epd = above(j)
+                x = real(epd, dp)/e0
+                ref = real(dsy, dp)*(1.0_dp + c*log(x)) + real(sy, dp)*c/(real(epd, dp)*real(dt, dp))
+                write(label, '(a, i0, a, i0)') '${k}$ JC newton_dstress_dep above the floor, set ', ip, ', rate ', j
+                call check_approx(passed, trim(label) // ' (closed form)', &
+                                  vp_newton_dstress_dep(v, ep, epd, dt, sy, dsy), real(ref, ${k}$), TOL)
+                call check_approx(passed, trim(label) // ' (= dstress_dep)', &
+                                  vp_newton_dstress_dep(v, ep, epd, dt, sy, dsy), vp_dstress_dep(v, ep, epd, dt, sy, dsy), TOL)
+            end do
+        end do
+    end function test_jc_newton_${k}$
+
+    function test_perzyna_${k}$() result(passed)
+        !! Perzyna in `real(${k}$)` with n = 1: g_psi = n psi^(n - 1)/eta = 1/eta for psi > 0 and 0 for
+        !! psi <= 0, so the derivatives jump at sigma_eq = sigma_y.
+        use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_perzyna_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(os_perzyna_${k}$) :: o
+        real(${k}$) :: sy, dsy, ep, seq
+        real(dp) :: psi, etad
+
+        passed = .true.
+        o = os_perzyna_${k}$(eta=2.0_${k}$, n=1.0_${k}$)
+        etad = real(o%eta, dp)
+        sy = 50.0_${k}$
+        dsy = 100.0_${k}$
+        ep = 0.1_${k}$
+        ! psi = 0 exactly
+        call check_approx(passed, '${k}$ Perzyna flow_rate at psi = 0', os_flow_rate(o, sy, ep, sy), 0.0_${k}$, 0.0_${k}$)
+        call check_approx(passed, '${k}$ Perzyna dflow_dsigma at psi = 0', os_dflow_dsigma(o, sy, ep, sy), 0.0_${k}$, 0.0_${k}$)
+        call check_approx(passed, '${k}$ Perzyna dflow_dep at psi = 0', os_dflow_dep(o, sy, ep, sy, dsy), 0.0_${k}$, 0.0_${k}$)
+        ! psi < 0 and psi > 0
+        call check_approx(passed, '${k}$ Perzyna dflow_dsigma at psi < 0', os_dflow_dsigma(o, 0.5_${k}$*sy, ep, sy), &
+                          0.0_${k}$, 0.0_${k}$)
+        seq = 1.5_${k}$*sy
+        psi = real(seq, dp)/real(sy, dp) - 1.0_dp
+        call check_approx(passed, '${k}$ Perzyna flow_rate at psi > 0', os_flow_rate(o, seq, ep, sy), real(psi/etad, ${k}$), TOL)
+        call check_approx(passed, '${k}$ Perzyna dflow_dsigma at psi > 0', os_dflow_dsigma(o, seq, ep, sy), &
+                          real(1.0_dp/(etad*real(sy, dp)), ${k}$), TOL)
+        call check_approx(passed, '${k}$ Perzyna dflow_dep at psi > 0', os_dflow_dep(o, seq, ep, sy, dsy), &
+                          real(-real(seq, dp)*real(dsy, dp)/(etad*real(sy, dp)**2), ${k}$), TOL)
+    end function test_perzyna_${k}$
+
+    function test_va_${k}$() result(passed)
+        !! VA in `real(${k}$)`: sigma = B ep^n f + sigma_u, f = 1 + B1 epd^(1/m) - B2 (f = 1 - B2 and no rate
+        !! term for m = 0), with m = 0 and m = 1.
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, vp_va_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(vp_va_${k}$) :: v
+        real(${k}$) :: ep, epd, dt
+        real(dp) :: b, n, b1, b2, su, x, e, f, df
+        integer :: im
+
+        passed = .true.
+        v%B = 374.5_${k}$
+        v%n = 0.264_${k}$
+        v%B1 = 0.3_${k}$
+        v%B2 = 0.5_${k}$
+        v%sig_u = 195.0_${k}$
+        b = real(v%B, dp); n = real(v%n, dp); b1 = real(v%B1, dp); b2 = real(v%B2, dp); su = real(v%sig_u, dp)
+        ep = 0.2_${k}$
+        epd = 0.1_${k}$
+        dt = 1.0e-3_${k}$
+        x = real(ep, dp)
+        e = real(epd, dp)
+        do im = 0, 1
+            v%m = real(im, ${k}$)
+            if (im == 0) then
+                f = 1.0_dp - b2
+                df = 0.0_dp
+            else
+                f = 1.0_dp + b1*e - b2
+                df = b1
+            end if
+            call check_approx(passed, '${k}$ VA flow_stress, m = ' // achar(48 + im), vp_flow_stress(v, ep, epd), &
+                              real(b*x**n*f + su, ${k}$), TOL)
+            call check_approx(passed, '${k}$ VA dflow_dep, m = ' // achar(48 + im), vp_dflow_dep(v, ep, epd), &
+                              real(b*n*x**(n - 1.0_dp)*f, ${k}$), TOL)
+            call check_approx(passed, '${k}$ VA dflow_depd, m = ' // achar(48 + im), vp_dflow_depd(v, ep, epd), &
+                              real(b*x**n*df, ${k}$), TOL)
+            call check_approx(passed, '${k}$ VA dstress_dep, m = ' // achar(48 + im), vp_dstress_dep(v, ep, epd, dt), &
+                              real(b*n*x**(n - 1.0_dp)*f + b*x**n*df/real(dt, dp), ${k}$), TOL)
+        end do
+    end function test_va_${k}$
+
+    function test_rk_${k}$() result(passed)
+        !! Rusinek-Klepaczko in `real(${k}$)`: the rate derivative uses the rate clamped to
+        !! [epmin, 0.99 epdmax] and L = max(log10(epdmax/epd), 0.01) in B (D-017.7), so it is constant
+        !! above 0.99 epdmax and below epmin.
+        use muscle_vp_laws, only : vp_dflow_depd, vp_dstress_dep, vp_rk_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(vp_rk_${k}$) :: r
+        real(${k}$) :: ep, dt, high(4), low(4)
+        real(dp) :: ref
+        integer :: j
+
+        passed = .true.
+        r = vp_rk_${k}$(B0=600.0_${k}$, epdmax=0.01_${k}$, nu=0.02_${k}$, ep0=0.01_${k}$, n0=0.3_${k}$, &
+                      D2=0.05_${k}$, D1=0.2_${k}$, epdmin=1.0e-6_${k}$, sig0=200.0_${k}$, m=1.5_${k}$)
+        ep = 0.1_${k}$
+        dt = 1.0e-3_${k}$
+        high = [r%epdmax*0.99_${k}$, r%epdmax, 2.0_${k}$*r%epdmax, 1.0e3_${k}$]
+        ref = rk_drate_ref_${k}$(r%B0, r%ep0, r%n0, r%D2, r%D1, r%nu, r%epdmin, r%epdmax, r%sig0, r%m, ep, &
+                           real(r%epdmax*0.99_${k}$, dp))
+        do j = 1, size(high)
+            call check_approx(passed, '${k}$ RK dflow_depd at epd >= 0.99 epdmax', vp_dflow_depd(r, ep, high(j)), &
+                              real(ref, ${k}$), TOL)
+            call check_approx(passed, '${k}$ RK dstress_dep at epd >= 0.99 epdmax', vp_dstress_dep(r, ep, high(j), dt), &
+                              real(ref/real(dt, dp), ${k}$), TOL)
+        end do
+        low = [r%epmin, r%epmin/2.0_${k}$, 0.0_${k}$, -1.0_${k}$]
+        ref = rk_drate_ref_${k}$(r%B0, r%ep0, r%n0, r%D2, r%D1, r%nu, r%epdmin, r%epdmax, r%sig0, r%m, ep, real(r%epmin, dp))
+        do j = 1, size(low)
+            call check_approx(passed, '${k}$ RK dflow_depd at epd <= epmin', vp_dflow_depd(r, ep, low(j)), &
+                              real(ref, ${k}$), TOL)
+        end do
+    end function test_rk_${k}$
+
+    function test_mrk_${k}$() result(passed)
+        !! MRK in `real(${k}$)`: partial derivatives of the module documentation with
+        !! L = max(1e-10, log10(epdmax/epd)) and F = 1 - chi1 L, at 0 < L < 1 (epd = epdmax/2) and at the
+        !! floor of L (epd = epdmax).
+        use muscle_vp_laws, only : vp_dflow_dep, vp_dflow_depd, vp_mrk_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        type(vp_mrk_${k}$) :: a
+        real(${k}$) :: ep, epd
+        real(dp) :: e, x, el, n, b1, b2, f, fp, sig0a, dn, db1, db2, dsig0a, df, ln10
+        integer :: j
+
+        passed = .true.
+        a%B01 = 100.0_${k}$; a%B02 = 100.0_${k}$; a%epdmax = 100.0_${k}$; a%nu1 = 0.05_${k}$; a%nu2 = 0.1_${k}$
+        a%n0 = 4.0_${k}$; a%D2 = 0.05_${k}$; a%epdmin = 1.0e-5_${k}$; a%chi1 = 0.1_${k}$; a%chi2 = 0.5_${k}$
+        a%sig_u = 250.0_${k}$
+        ln10 = log(10.0_dp)
+        ep = 0.2_${k}$
+        x = real(ep, dp)
+        do j = 1, 2
+            epd = a%epdmax/real(j, ${k}$)    ! L = 0 (floored) and L = log10(2)
+            e = real(epd, dp)
+            el = max(real(1.0e-10_${k}$, dp), log10(real(a%epdmax, dp)/e))
+            n = real(a%n0, dp)*max(0.0_dp, 1.0_dp - real(a%D2, dp)*log10(e/real(a%epdmin, dp)))
+            b1 = real(a%B01, dp)*el**(-real(a%nu1, dp))
+            b2 = real(a%B02, dp)*el**(-real(a%nu2, dp))
+            f = 1.0_dp - real(a%chi1, dp)*el
+            fp = f**(1.0_dp/real(a%chi2, dp))
+            sig0a = b1*x + b2*(1.0_dp - exp(-n*x))
+            dn = -real(a%n0, dp)*real(a%D2, dp)/(ln10*e)
+            db1 = real(a%nu1, dp)*b1/(el*e*ln10)
+            db2 = real(a%nu2, dp)*b2/(el*e*ln10)
+            dsig0a = db1*x + db2*(1.0_dp - exp(-n*x)) + b2*x*exp(-n*x)*dn
+            df = (1.0_dp/real(a%chi2, dp))*f**(1.0_dp/real(a%chi2, dp) - 1.0_dp)*real(a%chi1, dp)/(ln10*e)
+            call check_approx(passed, '${k}$ MRK dflow_dep, epd = epdmax/' // achar(48 + j), vp_dflow_dep(a, ep, epd), &
+                              real(fp*(b1 + b2*n*exp(-n*x)), ${k}$), TOL)
+            call check_approx(passed, '${k}$ MRK dflow_depd, epd = epdmax/' // achar(48 + j), vp_dflow_depd(a, ep, epd), &
+                              real(df*sig0a + fp*dsig0a, ${k}$), TOL)
+        end do
+    end function test_mrk_${k}$
+
+    function test_nnl_${k}$() result(passed)
+        !! NNL in `real(${k}$)`: at a small rate X = -kT/G0 S exceeds 0.999 and is clamped there, in the flow
+        !! stress and in the derivatives (which differentiate through the clamp, D-017.7); at a large rate
+        !! X = 0 and the X^(1/q) terms are dropped (1 - X^(1/q) = 1).
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_nnl_${k}$
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$, TOLC = ${TOL_NNL[k]}$_${k}$
+        type(vp_nnl_${k}$) :: b
+        real(${k}$) :: ep, epd
+        real(dp) :: x, e, h, xc, base2, dsu, dh, dxp, dxpd, sa, s0, n1, n0, at, kg, q, p
+
+        passed = .true.
+        b%sig_a = 350.0_${k}$; b%sig_0 = 600.0_${k}$; b%KG0 = 0.04_${k}$; b%n1 = 0.08_${k}$; b%epd0 = 1.0e8_${k}$
+        b%at = 10.0_${k}$; b%n0 = 0.5_${k}$; b%q = 1.5_${k}$; b%p = 0.5_${k}$
+        sa = real(b%sig_a, dp); s0 = real(b%sig_0, dp); n1 = real(b%n1, dp); n0 = real(b%n0, dp)
+        at = real(b%at, dp); kg = real(b%KG0, dp); q = real(b%q, dp); p = real(b%p, dp)
+        ep = 0.01_${k}$
+        x = real(ep, dp)
+        h = 1.0_dp + at*x**n0
+        dsu = sa*n1*x**(n1 - 1.0_dp)
+        dh = at*n0*x**(n0 - 1.0_dp)
+
+        ! Clamp X = 0.999: the unclamped X (with the eps_log floor of the flow stress, or without it in
+        ! the derivatives) is above it
+        epd = 1.0e-6_${k}$
+        e = real(epd, dp)
+        call check_true(passed, '${k}$ NNL test point: unclamped X > 0.999', &
+                        -kg*(log(max(e/real(b%epd0, dp), real(b%eps_log, dp))) + log(h)) > 0.999_dp)
+        xc = real(0.999_${k}$, dp)
+        base2 = 1.0_dp - xc**(1.0_dp/q)
+        dxp = (1.0_dp/q)*xc**(1.0_dp/q - 1.0_dp)*(-kg*dh/h)
+        dxpd = (1.0_dp/q)*xc**(1.0_dp/q - 1.0_dp)*(-kg/e)
+        call check_approx(passed, '${k}$ NNL flow_stress at the clamp of X', vp_flow_stress(b, ep, epd), &
+                          real(sa*x**n1 + s0*base2**(1.0_dp/p)*h, ${k}$), TOLC)
+        call check_approx(passed, '${k}$ NNL dflow_dep at the clamp of X', vp_dflow_dep(b, ep, epd), &
+                          real(dsu + s0*(1.0_dp/p)*base2**(1.0_dp/p - 1.0_dp)*(-dxp)*h + s0*base2**(1.0_dp/p)*dh, ${k}$), TOLC)
+        call check_approx(passed, '${k}$ NNL dflow_depd at the clamp of X', vp_dflow_depd(b, ep, epd), &
+                          real(s0*(1.0_dp/p)*base2**(1.0_dp/p - 1.0_dp)*(-dxpd)*h, ${k}$), TOLC)
+
+        ! X = 0 (S > 0)
+        epd = 1.0e12_${k}$
+        e = real(epd, dp)
+        call check_true(passed, '${k}$ NNL test point: unclamped X < 0', -kg*(log(e/real(b%epd0, dp)) + log(h)) < 0.0_dp)
+        call check_approx(passed, '${k}$ NNL flow_stress at X = 0', vp_flow_stress(b, ep, epd), real(sa*x**n1 + s0*h, ${k}$), TOL)
+        call check_approx(passed, '${k}$ NNL dflow_dep at X = 0', vp_dflow_dep(b, ep, epd), real(dsu + s0*dh, ${k}$), TOL)
+        call check_approx(passed, '${k}$ NNL dflow_depd at X = 0', vp_dflow_depd(b, ep, epd), 0.0_${k}$, 0.0_${k}$)
+    end function test_nnl_${k}$
+
+    function rk_drate_ref_${k}$(B0_k, ep0_k, n0_k, D2_k, D1_k, nu_k, epdmin_k, epdmax_k, sig0_k, m_k, ep_k, e) result(res)
+        !! Rate derivative of Rusinek-Klepaczko (module documentation) at the rate `e` (already clamped),
+        !! with L = max(log10(epdmax/e), 0.01) in B and without sigma* when its base is <= 1e-10, in dp
+        !! from the `real(${k}$)` parameters.
+        real(${k}$), intent(in) :: B0_k, ep0_k, n0_k, D2_k, D1_k, nu_k, epdmin_k, epdmax_k, sig0_k, m_k, ep_k
+        real(dp), intent(in) :: e
+        real(dp) :: res
+        real(dp) :: b0, n0, d2, d1, nu, emax, kb, nv, el, bv, sf, ln10
+
+        b0 = real(B0_k, dp); n0 = real(n0_k, dp); d2 = real(D2_k, dp); d1 = real(D1_k, dp)
+        nu = real(nu_k, dp); emax = real(epdmax_k, dp)
+        ln10 = log(10.0_dp)
+        kb = real(ep0_k, dp) + real(ep_k, dp)
+        nv = n0*max(0.0_dp, 1.0_dp - d2*log10(e/real(epdmin_k, dp)))
+        el = max(log10(emax/e), 0.01_dp)
+        bv = b0*el**(-nu)
+        res = b0*nu*el**(-nu - 1.0_dp)/(e*ln10)*kb**nv + bv*kb**nv*log(kb)*(-n0*d2/(e*ln10))
+        sf = 1.0_dp - d1*log10(emax/e)
+        if (sf > 1.0e-10_dp) res = res + real(sig0_k, dp)*real(m_k, dp)*sf**(real(m_k, dp) - 1.0_dp)*d1/(e*ln10)
+    end function rk_drate_ref_${k}$
+#:endfor
+
+end program test_vp_limits

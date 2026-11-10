@@ -1278,9 +1278,9 @@ ModelInput = namedtuple('ModelInput', 'name type shape doc domain', defaults=(''
 #: validated private components, D-017.10b): ``doc`` (lines of the FORD summary, ``{k}`` = kind),
 #: ``inputs`` (``ModelInput``, in the order of the dummy arguments after the parameters ``prm``),
 #: ``status`` (FORD text of the final ``integer, intent(out) :: status``: every initializer has one, so that
-#: all are called the same way, ``_STATUS_OK_ONLY`` when it validates nothing; ``tests/tools`` checks it),
-#: ``prm_intent`` and ``prm_doc`` (the parameter argument). The template writes the body.
-ModelInit = namedtuple('ModelInit', 'doc inputs status prm_intent prm_doc', defaults=(None, 'out', 'Parameters.'))
+#: all are called the same way, ``_STATUS_OK_ONLY`` when it validates nothing; ``tests/tools`` checks it).
+#: The template writes the signature and the body.
+ModelInit = namedtuple('ModelInit', 'doc inputs status', defaults=(None,))
 
 _R = lambda name, doc, shape='': ModelInput(name, 'real', shape, doc)
 
@@ -1323,7 +1323,6 @@ MODEL_INITS = MappingProxyType({
                 ModelInput('hardening_mode', 'integer', '',
                            r'Hardening calibration mode (`DP_HARDENING_*`: 1 tension, 2 compression, 3 shear).',
                            '{x} >= 1 .and. {x} <= 3')),
-        prm_intent='inout', prm_doc=r'Parameters (defined on entry: default initialization or a previous `init`).',
         status=_STATUS_OK_ONLY),
     ('yield', 'cpb06'): ModelInit(
         doc=(r'Parameters of the CPB06 model in `real({k})` from the components of the linear',

@@ -157,7 +157,9 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
             !! Second operand.
         real(${k}$) :: res
             !! Scalar result.
-        res = ${join_terms([('{}*'.format(c.mult) if c.mult > 1 else '') + 'a%vals({0})*b%vals({0})'.format(c.pos[0]) for c in lay.comps])}$
+#:set ddot_terms = [('{}*'.format(c.mult) if c.mult > 1 else '') + 'a%vals({0})*b%vals({0})'.format(c.pos[0]) &
+    & for c in lay.comps]
+        res = ${join_terms(ddot_terms)}$
     end function ddot_${S}$_${P}$
 
     pure function dev_${P}$(a) result(res)

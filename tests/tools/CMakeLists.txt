@@ -5,10 +5,10 @@ add_test(NAME tools-muscle_meta
          COMMAND ${Python3_EXECUTABLE} -B -m unittest -v test_muscle_meta
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Coverage of the golden operator tests (tests/tensors/operators/ops_golden_cases.fypp) against
-# the inventory of historical double precision operator signatures (tools/fypp/ref/)
-add_test(NAME tools-ops_golden_coverage
-         COMMAND ${Python3_EXECUTABLE} -B -m unittest -v test_ops_golden_coverage
+# The operator table (op_entries) against the inventory of historical double precision operator
+# signatures (tools/fypp/ref/); the full-tensor tests check every entry of the table
+add_test(NAME tools-ops_inventory
+         COMMAND ${Python3_EXECUTABLE} -B -m unittest -v test_ops_inventory
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Registry of declared materials (tools/fypp/muscle_materials.py) and its validation in muscle_meta

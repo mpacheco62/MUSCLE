@@ -1,7 +1,0 @@
-! SPDX-License-Identifier: GPL-3.0-or-later
-! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
-#! Golden test of the generics of src/tensors/operators/muscle_tensor_ops_dyadic (see
-#! ops_golden_cases.fypp; reference: tests/reference/tensors/operators/ops_dyadic_dp.txt).
-#:set GOLDEN_NAME = 'dyadic'
-#:set GOLDEN_GENERICS = ['operator(.tdot.)', 'operator(.tdotsym.)']
-#:include "ops_golden_cases.fypp"

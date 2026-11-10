@@ -417,7 +417,8 @@ contains
         !! `${S}$ .approx. ${S}$`: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \) with
         !! `tol = TOL_APPROX_IDEN_${k}$`: a perturbation of 0.5 tol (times the scale) is accepted,
         !! one of 2 tol rejected, at scales below 1 (absolute criterion) and above (relative), in
-        !! both orders of the operands.
+        !! both orders of the operands; an Inf factor matches only the same Inf, NaN nothing.
+        use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_positive_inf, ieee_negative_inf
         logical, intent(out) :: passed
         real(${k}$), parameter :: TOL = TOL_APPROX_IDEN_${k}$
         real(${k}$), parameter :: BASE(5) = [1.0_${k}$, 0.0_${k}$, 0.25_${k}$, 1000.0_${k}$, -1000.0_${k}$]
@@ -450,6 +451,16 @@ contains
         a = 2.0_${k}$ * iden_2O()
         b = iden_2O() + iden_2O() * 1.0_${k}$
         call check_true(passed, '2 I .approx. (I + 1 I)', a .approx. b)
+        ! An infinite scale would accept any finite factor
+        call a%init(ieee_value(1.0_${k}$, ieee_positive_inf))
+        call check_true(passed, 'Inf I .approx. Inf I', a .approx. a)
+        call b%init(1.0_${k}$)
+        call check_true(passed, '.not. Inf I .approx. I', .not. (a .approx. b))
+        call check_true(passed, '.not. I .approx. Inf I', .not. (b .approx. a))
+        call b%init(ieee_value(1.0_${k}$, ieee_negative_inf))
+        call check_true(passed, '.not. Inf I .approx. -Inf I', .not. (a .approx. b))
+        call a%init(ieee_value(1.0_${k}$, ieee_quiet_nan))
+        call check_true(passed, '.not. NaN I .approx. NaN I', .not. (a .approx. a))
     end subroutine test_approx_2O_${k}$
 
 #:endfor

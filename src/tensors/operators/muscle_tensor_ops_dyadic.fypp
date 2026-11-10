@@ -123,7 +123,8 @@ contains
 #:if c.voigt[0] == c.voigt[1]
         res%vals(${c.pos[0]}$) = ${la.ref('a%vals', *ij)}$*${lb.ref('b%vals', *kl)}$
 #:else
-        res%vals(${c.pos[0]}$) = 0.5_${k}$ * (${la.ref('a%vals', *ij)}$*${lb.ref('b%vals', *kl)}$ + ${lb.ref('b%vals', *ij)}$*${la.ref('a%vals', *kl)}$)
+        res%vals(${c.pos[0]}$) = 0.5_${k}$ * (${la.ref('a%vals', *ij)}$*${lb.ref('b%vals', *kl)}$ &
+            + ${lb.ref('b%vals', *ij)}$*${la.ref('a%vals', *kl)}$)
 #:endif
 #:endfor
     end function ${e.name}$

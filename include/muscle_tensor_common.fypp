@@ -94,7 +94,9 @@
 
     pure function is_approx_${P}$(a, b, tol) result(res)
         !! Component-wise approximate equality of two `${T}$` with a relative tolerance:
-        !! \( |a_I - b_I| \le tol \cdot \max(\max|a|, \max|b|, \epsilon_{abs}) \) for all I.
+        !! \( |a_I - b_I| \le tol \cdot \max(\max|a|, \max|b|, \epsilon_{abs}) \) for all I, the maxima
+        !! over the finite components; a component that is Inf or NaN in either tensor matches only if both
+        !! are the same Inf (an infinite scale would accept any finite value).
         implicit none
         @:DEVICE()
         type(${T}$), intent(in) :: a
@@ -109,8 +111,12 @@
 
         tol2 = ${tol_def}$
         if (present(tol)) tol2 = tol
-        max_val = max(maxval(abs(a%vals)), maxval(abs(b%vals)), EPS_ABS_${k}$)
-        res = all(abs(a%vals - b%vals) .le. tol2 * max_val)
+        ! abs(x) <= huge(x) is false for Inf and NaN (no IEEE modules in kernels)
+        max_val = max(maxval(abs(a%vals), mask=abs(a%vals) <= huge(tol2) .and. abs(b%vals) <= huge(tol2)), &
+                      maxval(abs(b%vals), mask=abs(a%vals) <= huge(tol2) .and. abs(b%vals) <= huge(tol2)), &
+                      EPS_ABS_${k}$)
+        res = all(merge(abs(a%vals - b%vals) <= tol2*max_val, a%vals == b%vals, &
+                        abs(a%vals) <= huge(tol2) .and. abs(b%vals) <= huge(tol2)))
     end function is_approx_${P}$
 
     pure function approx_${P}$(a, b) result(res)

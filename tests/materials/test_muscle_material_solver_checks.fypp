@@ -1,0 +1,465 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "mat_sequence_common.fypp"
+#:set MATS = ['cp_vm_swift', 'cp_vm_bilinear', 'cp2_vm_swift', 'tm_jc_vm_swift', 'cut_vm_swift', 'cp_maxwell_vm_bilinear', &
+    & 'cp_kelvin_hill48_swift']
+#! Frozen viscoelastic couplings: (material, parameter set name of the viscoelastic model, of the hardening law, of
+#! the criterion, hardening parameter raised for the elastic first step)
+#:set COUPLED = [('cp_maxwell_vm_bilinear', 'maxwell', 'bilinear', 'vonmises', 'y0'), &
+    & ('cp_kelvin_hill48_swift', 'kelvin', 'swift', 'hill48-2', 'k')]
+#! Uniaxial cases with a closed form, von Mises with Swift hardening (E = 1000, nu = 0.3): (material, label,
+#! parameter set name of the viscoplastic law, time step, strain xx, yy = zz, expected stress xx, expected
+#! equivalent plastic strain, absolute tolerance of ep in dp, relative tolerance of the stress and the
+#! plastic strain in dp, check the tangent against finite differences, Newton iterations at most)
+#:set UNIAXIAL = [ &
+    & ('cp_vm_swift', 'closest_point uniaxial', '', '0.0', '0.43857844', '-0.20128922', '90.0', '0.3485784401', &
+    &  '1.0e-5', '1.0e-5', True, 7), &
+    & ('cp2_vm_swift', 'closest_point_2 uniaxial', '', '0.0', '0.43857844', '-0.20128922', '90.0', '0.3485784401', &
+    &  '1.0e-8', '1.0e-5', True, 7), &
+    & ('tm_jc_vm_swift', 'closest_point_time uniaxial Johnson-Cook', 'jc1', '100.0', '0.43857844', '-0.19915993', &
+    &  '100.6464834098', '0.3379319566', '1.0e-8', '1.0e-6', True, 7)]
+
+program test_mat_solver_checks
+    !! Physical checks of the return mapping kernels (D-018.18g), ported from the historical OO tests
+    !! test_muscle_solver_closest_point{,_2,_time}.f90 and test_muscle_solver_cutting_plane.f90, in
+    !! every kind (sp with its own tolerances, measured maxima in brackets, gfortran 15.2 Debug):
+    !!
+    !! - uniaxial tension with von Mises and Swift hardening against the closed form (closest_point,
+    !!   closest_point_2; closest_point_time with Johnson-Cook: E (exx - ep) = Swift(ep) (1 + C
+    !!   ln(ep/(dt epdmax)))) and cutting_plane against the radial return; zero and elastic strains:
+    !!   the elastic stress and tangent, no plastic strain;
+    !! - closest_point: an elastic step returns 0 iterations; one Newton update (iter_nw = 1) with
+    !!   linear hardening is the closed-form radial return (Simo and Hughes 1998, Box 3.1, Remark
+    !!   3.3.2) and reports not converged; the iteration limit (iter_nw = k - 1 does not converge,
+    !!   iter_nw = k gives the same state bit for bit); the history array keeps the tensorial plastic
+    !!   strain (the stress is the elastic law of the packed plastic strain); a failed attempt leaves
+    !!   `hsv_n` untouched and a retry from it (the FE rollback) ends with the history of a clean path,
+    !!   bit for bit; the first not converged attempt of closest_point_time (iter_nw one below);
+    !! - the Johnson-Cook flow stress at a strain rate and at the reference rate;
+    !! - closest_point with a frozen viscoelastic elasticity (Maxwell, Kelvin-Voigt; from the coupling
+    !!   tests of test_muscle_visco_{maxwell,kelvin}.f90): after an elastic step that leaves a non-zero
+    !!   history stress, a plastic step converges with f = 0 and its tangent matches finite differences;
+    !!   the stress is the frozen elastic law of the elastic strain, which the viscoelastic state keeps.
+    $:MAT_TEST_USES(MATS)
+    use muscle_tensors, only : operator(-), operator(.dev.), operator(.ddot.), assignment(=)
+    use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
+    use muscle_hard_laws, only : hard_stress
+    use muscle_vp_laws, only : vp_flow_stress
+    use muscle_mat_cp_vm_swift, only : muscle_point_cp_vm_swift
+    use muscle_test_utils, only : check_scaled
+    use muscle_visco_laws, only : visco_freeze_branches
+    use muscle_visco_frozen, only : ${', '.join('elas_frozen_' + k for k in REAL_KINDS)}$
+    use muscle_yield_criteria, only : yield_stress_eq
+    use muscle_kinds, only : ${', '.join('TOL_APPROX_' + k for k in REAL_KINDS)}$
+    implicit none
+
+    $:MAT_TEST_DECLS()
+    real(sp), parameter :: TOL_UNI_sp = 1.0e-5_sp
+        !! Uniaxial stress and plastic strain, relative, and ep, absolute, sp [1.1e-6].
+    real(sp), parameter :: TOL_TAN_sp = 1.0e-4_sp
+        !! Analytic tangent against finite differences, sp [1.7e-5].
+    real(dp), parameter :: TOL_TAN_dp = 1.0e-7_dp
+        !! Analytic tangent against finite differences (OO tests).
+    real(sp), parameter :: TOL_RADIAL_sp = 5.0e-7_sp
+        !! One Newton update against the radial return, sp [7.2e-8].
+    real(dp), parameter :: TOL_RADIAL_dp = 1.0e-12_dp
+        !! One Newton update against the radial return (OO test; measured 1.4e-16).
+    real(sp), parameter :: TOL_CUT_sp = 3.0e-6_sp
+        !! cutting_plane against the radial return, sp [3.4e-7].
+    real(dp), parameter :: TOL_CUT_dp = 1.0e-8_dp
+        !! cutting_plane against the radial return (OO test).
+    real(sp), parameter :: TOL_PACKED_sp = 1.0e-6_sp
+        !! Packed stress against the elastic law of the packed plastic strain, sp [0].
+    real(dp), parameter :: TOL_PACKED_dp = 1.0e-10_dp
+        !! Packed stress against the elastic law of the packed plastic strain (OO test).
+    real(sp), parameter :: TOL_PACKED_EP_sp = 1.0e-8_sp
+        !! Packed equivalent plastic strain against that of the packed plastic strain (absolute), sp
+        !! [9.3e-10].
+    real(dp), parameter :: TOL_PACKED_EP_dp = 1.0e-5_dp
+        !! Packed equivalent plastic strain (absolute; OO test: the historical Newton tolerance).
+    real(dp), parameter :: TOL_COUPLING_F_dp = 1.0e-8_dp
+        !! Frozen coupling, |f|/sigma_y (OO tests: |f| < 1e-5 absolute with sigma_y about 40; here
+        !! sigma_y about 300, and the Newton tolerance is 1e-10 sigma_y; measured 2.6e-15).
+    real(sp), parameter :: TOL_COUPLING_F_sp = 5.0e-5_sp
+        !! Frozen coupling, |f|/sigma_y, sp [8.3e-6].
+    real(dp), parameter :: TOL_COUPLING_TAN_dp = 1.0e-6_dp
+        !! Frozen coupling, tangent against finite differences (OO tests).
+    real(sp), parameter :: TOL_COUPLING_TAN_sp = 1.0e-4_sp
+        !! Frozen coupling, tangent against finite differences, sp [1.3e-5].
+    real(dp), parameter :: TOL_COUPLING_LAW_dp = 1.0e-12_dp
+        !! Frozen coupling, stress against the frozen law of the elastic strain (OO tests).
+    real(sp), parameter :: TOL_COUPLING_LAW_sp = 1.0e-6_sp
+        !! Frozen coupling, frozen law, sp [0].
+    real(sp), parameter :: TOL_JC_sp = 5.0e-5_sp
+        !! Johnson-Cook flow stress, absolute (about 6 ulp of 70), sp [0].
+    real(dp), parameter :: TOL_JC_dp = 1.0e-10_dp
+        !! Johnson-Cook flow stress, absolute (OO test).
+
+    passed = .true.
+#:for k in REAL_KINDS
+#:for m, label, vp, dt, exx, eyy, sxx, epx, tol_ep, tol_s, tan, nit in UNIAXIAL
+    call uniaxial_${m}$_${k}$('${label}$', '${vp}$', ${dt}$_${k}$, ${exx}$_${k}$, ${eyy}$_${k}$, ${sxx}$_${k}$, ${epx}$_${k}$, &
+#:if k == 'dp'
+        ${tol_ep}$_${k}$, ${tol_s}$_${k}$, ${'.true.' if tan else '.false.'}$, ${nit}$)
+#:else
+        TOL_UNI_${k}$, TOL_UNI_${k}$, ${'.true.' if tan else '.false.'}$, ${nit}$)
+#:endif
+#:endfor
+#:for m in ('cp_vm_swift', 'cp2_vm_swift', 'cut_vm_swift')
+    call elastic_${m}$_${k}$('${m}$ zero strain', 0.0_${k}$, 0.0_${k}$, 0.0_${k}$)
+    call elastic_${m}$_${k}$('${m}$ elastic strain', 0.001_${k}$, -0.0003_${k}$, 1.0_${k}$)
+#:endfor
+    call cutting_plane_uniaxial_${k}$()
+    call elastic_status_${k}$()
+    call radial_return_${k}$()
+    call iteration_limit_${k}$()
+    call packed_shear_${k}$()
+    call rollback_retry_${k}$()
+    call time_not_converged_${k}$()
+    call jc_flow_stress_${k}$()
+#:for m, visco, hard, yld, raised in COUPLED
+    call coupling_${m}$_${k}$()
+#:endfor
+#:endfor
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_mat_solver_checks'
+        stop 1
+    end if
+
+contains
+$:MAT_CASE_PROCS(MATS, fd_check=[u[0] for u in UNIAXIAL] + [c[0] for c in COUPLED])
+#:for k in REAL_KINDS
+#:set S2 = tname('3D2Osym', k)
+#:set S4 = tname('3D4O2sym', k)
+#:for m in ('cp_vm_swift', 'cp2_vm_swift', 'tm_jc_vm_swift')
+
+    subroutine uniaxial_${m}$_${k}$(label, vp, dt, exx, eyy, sxx, epx, tol_ep, tol_s, tan, max_iters)
+        !! Uniaxial step of `${m}$` from the virgin state against the closed form, `real(${k}$)`.
+        character(len=*), intent(in) :: label
+            !! Name of the case.
+        character(len=*), intent(in) :: vp
+            !! Reference name of the viscoplastic law ('' if none).
+        real(${k}$), intent(in) :: dt, exx, eyy, sxx, epx
+            !! Time step, strain (xx, yy = zz), expected stress xx and equivalent plastic strain.
+        real(${k}$), intent(in) :: tol_ep, tol_s
+            !! Absolute tolerance of ep; relative of the stress and the plastic strain.
+        logical, intent(in) :: tan
+            !! Check the tangent against finite differences.
+        integer, intent(in) :: max_iters
+            !! Newton iterations at most.
+        type(${muscle_meta.material_type(m, k)}$) :: mat
+        type(${state_t(m, k)}$) :: sn, snp1
+        type(${S2}$) :: strain, stress
+        type(${S4}$) :: tangent
+        integer :: status, iters
+
+        call make_${m}$_${k}$(solver_case(0, '${m}$', 'lin1000', vp, 'swift_small', 'vonmises', 200, 0.0_dp, 0.0_dp), mat)
+        sn = ${state_t(m, k)}$()
+        strain%vals = [exx, eyy, eyy, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$]
+        call mat_update(mat, strain, dt, sn, snp1, stress, tangent, status, iters)
+        call check_true(passed, label // ' converged (${k}$)', status == STATUS_OK)
+        call check_approx(passed, label // ' stress (${k}$)', stress%vals, [sxx, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            0.0_${k}$, 0.0_${k}$], tol_s)
+        call check_approx(passed, label // ' equivalent plastic strain (${k}$)', snp1%strain_pf, epx, tol_ep)
+        call check_approx(passed, label // ' plastic strain (${k}$)', snp1%strain_p%vals, [epx, -0.5_${k}$*epx, &
+            -0.5_${k}$*epx, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$], tol_s)
+        call check_true(passed, label // ' iterations (${k}$)', iters >= 1 .and. iters <= max_iters)
+        if (tan) call fd_check_${m}$_${k}$(label, mat, strain, dt, sn, tangent, TOL_TAN_${k}$)
+    end subroutine uniaxial_${m}$_${k}$
+#:endfor
+#:for m in ('cp_vm_swift', 'cp2_vm_swift', 'cut_vm_swift')
+
+    subroutine elastic_${m}$_${k}$(label, exx, eyy, sxx)
+        !! Zero or elastic uniaxial strain of `${m}$`: elastic stress (expected xx component `sxx`) and
+        !! tangent, no plastic strain, `real(${k}$)`.
+        character(len=*), intent(in) :: label
+            !! Name of the case.
+        real(${k}$), intent(in) :: exx, eyy, sxx
+            !! Strain (xx, yy = zz) and expected stress xx.
+        type(${muscle_meta.material_type(m, k)}$) :: mat
+        type(${state_t(m, k)}$) :: sn, snp1
+        type(${S2}$) :: strain, stress
+        type(${S4}$) :: tangent, elastic
+        integer :: status, iters
+
+        call make_${m}$_${k}$(solver_case(0, '${m}$', 'lin1000', '', 'swift_small', 'vonmises', 200, 0.0_dp, 0.0_dp), mat)
+        sn = ${state_t(m, k)}$()
+        strain%vals = [exx, eyy, eyy, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$]
+        call mat_update(mat, strain, 0.0_${k}$, sn, snp1, stress, tangent, status, iters)
+        ! The elastic tangent (a 4O3sym) in the storage of the kernel tangent
+        elastic = elas_dstress_dstrain(mat%elas, strain)
+        call check_true(passed, label // ' elastic (${k}$)', status == STATUS_OK .and. iters == 0)
+        call check_approx(passed, label // ' stress (${k}$)', stress%vals, [sxx, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
+            0.0_${k}$, 0.0_${k}$], TOL_APPROX_${k}$)
+        call check_true(passed, label // ' no plastic strain (${k}$)', snp1%strain_pf == 0.0_${k}$ .and. &
+            all(snp1%strain_p%vals == 0.0_${k}$))
+        call check_approx(passed, label // ' elastic tangent (${k}$)', tangent%vals, elastic%vals, TOL_APPROX_${k}$)
+    end subroutine elastic_${m}$_${k}$
+#:endfor
+
+    subroutine cutting_plane_uniaxial_${k}$()
+        !! cutting_plane: uniaxial strain exx = 0.8 against the radial return (ep 0.453258459032, stress
+        !! xx 728.2627238217, yy = zz 635.8686380891), `real(${k}$)`.
+        type(${muscle_meta.material_type('cut_vm_swift', k)}$) :: mat
+        type(${state_t('cut_vm_swift', k)}$) :: sn, snp1
+        type(${S2}$) :: strain, stress
+        type(${S4}$) :: tangent
+        integer :: status, iters
+
+        call make_cut_vm_swift_${k}$(solver_case(0, 'cut_vm_swift', 'lin1000', '', 'swift_small', 'vonmises', 100, &
+            0.0_dp, 0.0_dp), mat)
+        sn = ${state_t('cut_vm_swift', k)}$()
+        strain%vals = [0.8_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$]
+        call mat_update(mat, strain, 0.0_${k}$, sn, snp1, stress, tangent, status, iters)
+        call check_true(passed, 'cutting_plane uniaxial converged (${k}$)', status == STATUS_OK)
+        call check_approx(passed, 'cutting_plane uniaxial equivalent plastic strain (${k}$)', snp1%strain_pf, &
+            0.453258459032_${k}$, TOL_CUT_${k}$)
+        call check_approx(passed, 'cutting_plane uniaxial stress (${k}$)', stress%vals, [728.2627238217_${k}$, &
+            635.8686380891_${k}$, 635.8686380891_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$], TOL_CUT_${k}$)
+    end subroutine cutting_plane_uniaxial_${k}$
+
+    subroutine make_al_${k}$(mat, iter_nw)
+        !! cp_vm_swift with E = 70000, nu = 0.33 and Swift k = 500, e0 = 0.01, n = 0.2 (the FE
+        !! boundary cases of the OO tests), `real(${k}$)`.
+        type(${muscle_meta.material_type('cp_vm_swift', k)}$), intent(out) :: mat
+            !! Material.
+        integer, intent(in) :: iter_nw
+            !! Newton iteration limit.
+        integer :: status
+
+        call make_cp_vm_swift_${k}$(solver_case(0, 'cp_vm_swift', 'lin1000', '', 'swift_li', 'vonmises', iter_nw, &
+            0.0_dp, 0.0_dp), mat)
+        call elas_linear_init(mat%elas, young=70000.0_${k}$, poisson=0.33_${k}$, status=status)
+        call check_true(passed, 'elastic init (${k}$)', status == STATUS_OK)
+    end subroutine make_al_${k}$
+
+    pure function mixed_strain_${k}$(eps_y, f) result(strain)
+        !! Strain with all six components, f times (2, -0.75, -1.25, 1, -0.5, 0.75) eps_y.
+        real(${k}$), intent(in) :: eps_y, f
+            !! Yield strain and factor.
+        real(${k}$) :: strain(6)
+
+        strain = (f*eps_y)*[2.0_${k}$, -0.75_${k}$, -1.25_${k}$, 1.0_${k}$, -0.5_${k}$, 0.75_${k}$]
+    end function mixed_strain_${k}$
+
+    subroutine elastic_status_${k}$()
+        !! closest_point: an elastic step (trial von Mises stress 17.8 < y0 = 200, all six strain
+        !! components) returns STATUS_OK and 0 iterations, `real(${k}$)`.
+        type(${muscle_meta.material_type('cp_vm_bilinear', k)}$) :: mat
+        type(${state_t('cp_vm_bilinear', k)}$) :: sn, snp1
+        type(${S2}$) :: strain, stress
+        type(${S4}$) :: tangent
+        integer :: status, iters
+
+        call make_cp_vm_bilinear_${k}$(solver_case(0, 'cp_vm_bilinear', 'lin1000', '', 'bilinear', 'vonmises', 200, &
+            0.0_dp, 0.0_dp), mat)
+        call elas_linear_init(mat%elas, young=70000.0_${k}$, poisson=0.33_${k}$, status=status)
+        call check_true(passed, 'elastic init (${k}$)', status == STATUS_OK)
+        sn = ${state_t('cp_vm_bilinear', k)}$()
+        strain%vals = [2.0e-4_${k}$, -6.0e-5_${k}$, -1.0e-4_${k}$, 8.0e-5_${k}$, -4.0e-5_${k}$, 6.0e-5_${k}$]
+        call mat_update(mat, strain, 0.0_${k}$, sn, snp1, stress, tangent, status, iters)
+        call check_true(passed, 'closest_point elastic status (${k}$)', status == STATUS_OK .and. iters == 0)
+    end subroutine elastic_status_${k}$
+
+    subroutine radial_return_${k}$()
+        !! closest_point: one Newton update (iter_nw = 1) with linear hardening (slope H = 1000) equals the
+        !! radial return, dg = (q_trial - y0)/(3G + H), strain_p = 3/2 dg/q_trial dev(sigma_trial); the
+        !! solver stops before the iteration that checks convergence, `real(${k}$)`.
+        type(${muscle_meta.material_type('cp_vm_bilinear', k)}$) :: mat
+        type(${state_t('cp_vm_bilinear', k)}$) :: sn, snp1
+        type(${S2}$) :: strain, stress, deviator
+        type(${S4}$) :: tangent
+        real(${k}$) :: g, q_trial, dg
+        integer :: status, iters
+
+        call make_cp_vm_bilinear_${k}$(solver_case(0, 'cp_vm_bilinear', 'lin1000', '', 'bilinear', 'vonmises', 1, &
+            0.0_dp, 0.0_dp), mat)
+        call elas_linear_init(mat%elas, young=70000.0_${k}$, poisson=0.33_${k}$, status=status)
+        call check_true(passed, 'elastic init (${k}$)', status == STATUS_OK)
+        sn = ${state_t('cp_vm_bilinear', k)}$()
+        strain%vals = 20.0_${k}$*[2.0e-4_${k}$, -6.0e-5_${k}$, -1.0e-4_${k}$, 8.0e-5_${k}$, -4.0e-5_${k}$, 6.0e-5_${k}$]
+        g = 70000.0_${k}$/(2.0_${k}$*(1.0_${k}$ + 0.33_${k}$))
+        deviator = .dev. elas_stress(mat%elas, strain)
+        q_trial = sqrt(1.5_${k}$*(deviator .ddot. deviator))
+        dg = (q_trial - 200.0_${k}$)/(3.0_${k}$*g + 1000.0_${k}$)
+        call mat_update(mat, strain, 0.0_${k}$, sn, snp1, stress, tangent, status, iters)
+        call check_true(passed, 'closest_point one update status (${k}$)', status == STATUS_NOT_CONVERGED)
+        call check_approx(passed, 'closest_point one update plastic strain (${k}$)', snp1%strain_p%vals, &
+            (1.5_${k}$*dg/q_trial)*deviator%vals, TOL_RADIAL_${k}$)
+        call check_approx(passed, 'closest_point one update equivalent plastic strain (${k}$)', snp1%strain_pf, dg, &
+            TOL_RADIAL_${k}$*dg)
+    end subroutine radial_return_${k}$
+
+    subroutine iteration_limit_${k}$()
+        !! closest_point: with the k iterations of the default limit, iter_nw = k - 1 does not converge
+        !! and iter_nw = k converges in k iterations with the same history, bit for bit, `real(${k}$)`.
+        type(${muscle_meta.material_type('cp_vm_swift', k)}$) :: mat, limited
+        real(${k}$) :: strain(6), hsv_n(${muscle_meta.material_nstate('cp_vm_swift')}$)
+        real(${k}$) :: base(size(hsv_n)), exact(size(hsv_n)), short(size(hsv_n)), stress(6)
+        integer :: status, iters, nit
+
+        call make_al_${k}$(mat, 200)
+        strain = mixed_strain_${k}$(hard_stress(mat%hard, 0.0_${k}$)/70000.0_${k}$, 1.0_${k}$)
+        hsv_n = 0.0_${k}$
+        call muscle_point_cp_vm_swift(mat, strain, 0.0_${k}$, hsv_n, base, stress, status, nit)
+        call check_true(passed, 'closest_point default limit converged (${k}$)', status == STATUS_OK .and. nit >= 2)
+        call make_al_${k}$(limited, nit - 1)
+        call muscle_point_cp_vm_swift(limited, strain, 0.0_${k}$, hsv_n, short, stress, status, iters)
+        call check_true(passed, 'closest_point below the limit not converged (${k}$)', status == STATUS_NOT_CONVERGED)
+        call make_al_${k}$(limited, nit)
+        call muscle_point_cp_vm_swift(limited, strain, 0.0_${k}$, hsv_n, exact, stress, status, iters)
+        call check_true(passed, 'closest_point at the limit converged (${k}$)', status == STATUS_OK .and. iters == nit)
+        call check_true(passed, 'closest_point same history at the limit (${k}$)', all(exact == base))
+    end subroutine iteration_limit_${k}$
+
+    subroutine packed_shear_${k}$()
+        !! closest_point: the history array keeps the tensorial plastic strain (eps_xy, not gamma_xy):
+        !! the stress is the elastic law of the total minus the packed plastic strain; one step from the
+        !! virgin state gives ep = sqrt(2/3 eps_p : eps_p) (von Mises), `real(${k}$)`.
+        type(${muscle_meta.material_type('cp_vm_swift', k)}$) :: mat
+        real(${k}$) :: strain(6), hsv_n(${muscle_meta.material_nstate('cp_vm_swift')}$), hsv(size(hsv_n)), stress(6)
+        type(${S2}$) :: total, plastic, law
+        integer :: status, iters
+
+        call make_al_${k}$(mat, 200)
+        ! Five times the yield strain: plastic, with large plastic shears
+        strain = (hard_stress(mat%hard, 0.0_${k}$)/70000.0_${k}$)*[4.0_${k}$, -1.5_${k}$, -2.5_${k}$, 2.0_${k}$, &
+            -1.0_${k}$, 1.5_${k}$]
+        hsv_n = 0.0_${k}$
+        call muscle_point_cp_vm_swift(mat, strain, 0.0_${k}$, hsv_n, hsv, stress, status, iters)
+        call check_true(passed, 'closest_point packed shear converged (${k}$)', status == STATUS_OK)
+        total%vals = strain
+        plastic%vals = hsv(1:6)
+        law = elas_stress(mat%elas, total - plastic)
+        call check_approx(passed, 'closest_point packed stress (${k}$)', stress, law%vals, TOL_PACKED_${k}$)
+        call check_approx(passed, 'closest_point packed equivalent plastic strain (${k}$)', hsv(7), &
+            sqrt(2.0_${k}$/3.0_${k}$*(plastic .ddot. plastic)), TOL_PACKED_EP_${k}$)
+    end subroutine packed_shear_${k}$
+
+    subroutine rollback_retry_${k}$()
+        !! closest_point, FE boundary: a converged step from a plastic state, then a failed attempt
+        !! (iter_nw = 1) leaves the history `hsv_n` of the step untouched; retrying from it (the FE
+        !! rollback) with a smaller step and the final one ends with the history of a clean path, bit for
+        !! bit, `real(${k}$)`.
+        type(${muscle_meta.material_type('cp_vm_swift', k)}$) :: mat, one_iteration
+        real(${k}$) :: eps_y, stress(6), h0(${muscle_meta.material_nstate('cp_vm_swift')}$)
+        real(${k}$), dimension(size(h0)) :: base, saved, clean3, clean4, failed, retry3, retry4
+        integer :: status, iters
+
+        call make_al_${k}$(mat, 200)
+        call make_al_${k}$(one_iteration, 1)
+        eps_y = hard_stress(mat%hard, 0.0_${k}$)/70000.0_${k}$
+        h0 = 0.0_${k}$
+        call muscle_point_cp_vm_swift(mat, mixed_strain_${k}$(eps_y, 1.0_${k}$), 0.0_${k}$, h0, base, stress, status, iters)
+        call check_true(passed, 'closest_point starting step converged (${k}$)', status == STATUS_OK)
+        ! Clean path
+        call muscle_point_cp_vm_swift(mat, mixed_strain_${k}$(eps_y, 1.5_${k}$), 0.0_${k}$, base, clean3, stress, status, &
+            iters)
+        call check_true(passed, 'closest_point clean smaller step converged (${k}$)', status == STATUS_OK)
+        call muscle_point_cp_vm_swift(mat, mixed_strain_${k}$(eps_y, 2.0_${k}$), 0.0_${k}$, clean3, clean4, stress, &
+            status, iters)
+        call check_true(passed, 'closest_point clean final step converged (${k}$)', status == STATUS_OK)
+        ! Failed attempt of the final step from the plastic state, then the retry
+        saved = base
+        call muscle_point_cp_vm_swift(one_iteration, mixed_strain_${k}$(eps_y, 2.0_${k}$), 0.0_${k}$, base, failed, &
+            stress, status, iters)
+        call check_true(passed, 'closest_point forced attempt failed (${k}$)', status == STATUS_NOT_CONVERGED)
+        call check_true(passed, 'closest_point failed attempt keeps hsv_n (${k}$)', all(base == saved))
+        call muscle_point_cp_vm_swift(mat, mixed_strain_${k}$(eps_y, 1.5_${k}$), 0.0_${k}$, base, retry3, stress, status, &
+            iters)
+        call check_true(passed, 'closest_point smaller retry converged (${k}$)', status == STATUS_OK)
+        call muscle_point_cp_vm_swift(mat, mixed_strain_${k}$(eps_y, 2.0_${k}$), 0.0_${k}$, retry3, retry4, stress, &
+            status, iters)
+        call check_true(passed, 'closest_point final retry converged (${k}$)', status == STATUS_OK)
+        call check_true(passed, 'closest_point retry same history as the clean path (${k}$)', &
+            all(retry3 == clean3) .and. all(retry4 == clean4))
+    end subroutine rollback_retry_${k}$
+
+    subroutine time_not_converged_${k}$()
+        !! closest_point_time: the uniaxial Johnson-Cook case with one Newton iteration less than it needs
+        !! does not converge, `real(${k}$)`.
+        type(${muscle_meta.material_type('tm_jc_vm_swift', k)}$) :: mat
+        type(${state_t('tm_jc_vm_swift', k)}$) :: sn, snp1
+        type(${S2}$) :: strain, stress
+        type(${S4}$) :: tangent
+        integer :: status, iters, nit
+
+        call make_tm_jc_vm_swift_${k}$(solver_case(0, 'tm_jc_vm_swift', 'lin1000', 'jc1', 'swift_small', 'vonmises', &
+            200, 0.0_dp, 0.0_dp), mat)
+        sn = ${state_t('tm_jc_vm_swift', k)}$()
+        strain%vals = [0.43857844_${k}$, -0.19915993_${k}$, -0.19915993_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$]
+        call mat_update(mat, strain, 100.0_${k}$, sn, snp1, stress, tangent, status, nit)
+        call check_true(passed, 'closest_point_time default limit converged (${k}$)', status == STATUS_OK .and. nit >= 2)
+        mat%iter_nw = nit - 1
+        call mat_update(mat, strain, 100.0_${k}$, sn, snp1, stress, tangent, status, iters)
+        call check_true(passed, 'closest_point_time below the limit not converged (${k}$)', &
+            status == STATUS_NOT_CONVERGED)
+    end subroutine time_not_converged_${k}$
+
+    subroutine jc_flow_stress_${k}$()
+        !! Johnson-Cook flow stress (C = 0.05, epdmax = 0.1, Swift hardening): Swift(ep) (1 + C
+        !! ln(epd/epdmax)) at ep = 0.2, epd = 1, and the hardening stress at the reference rate, `real(${k}$)`.
+        type(${muscle_meta.material_type('tm_jc_vm_swift', k)}$) :: mat
+        real(${k}$) :: sy
+
+        call make_tm_jc_vm_swift_${k}$(solver_case(0, 'tm_jc_vm_swift', 'lin1000', 'jc1', 'swift_small', 'vonmises', &
+            200, 0.0_dp, 0.0_dp), mat)
+        mat%vp%C = 0.05_${k}$
+        mat%vp%epdmax = 0.1_${k}$
+        sy = hard_stress(mat%hard, 0.2_${k}$)
+        call check_scaled(passed, 'Johnson-Cook flow stress (${k}$)', vp_flow_stress(mat%vp, 0.2_${k}$, 1.0_${k}$, sy), &
+            sy*(1.0_${k}$ + 0.05_${k}$*log(1.0_${k}$/0.1_${k}$)), 1.0_${k}$, TOL_JC_${k}$)
+        sy = hard_stress(mat%hard, 0.0_${k}$)
+        call check_scaled(passed, 'Johnson-Cook flow stress at the reference rate (${k}$)', &
+            vp_flow_stress(mat%vp, 0.0_${k}$, 0.1_${k}$, sy), sy, 1.0_${k}$, TOL_JC_${k}$)
+    end subroutine jc_flow_stress_${k}$
+#:for m, visco, hard, yld, raised in COUPLED
+#:set MT = muscle_meta.material_type(m, k)
+#:set VS = state_t(m, k)
+
+    subroutine coupling_${m}$_${k}$()
+        !! `${m}$` (reference parameter sets, dt = 0.05): an elastic step (hardening parameter `${raised}$` raised)
+        !! builds the viscoelastic history, then a plastic step from it, `real(${k}$)`.
+        real(${k}$), parameter :: DT = 0.05_${k}$
+        type(${MT}$) :: mat, stiff
+        type(visco_coefs_${k}$) :: coefs
+        type(${VS}$) :: s0, sn, snp1
+        type(${S2}$) :: strain, stress, strain_e, law
+        type(${S4}$) :: tangent
+        type(elas_frozen_${k}$) :: frozen
+        integer :: status, iters
+
+        call make_${m}$_${k}$(solver_case(0, '${m}$', '${visco}$', '', '${hard}$', '${yld}$', 200, 0.0_dp, 0.0_dp), mat)
+        call mat_step(mat, DT, coefs, status)
+        call check_true(passed, '${m}$ coupling time step (${k}$)', status == STATUS_OK)
+        ! First step, elastic: a non-zero viscous history
+        stiff = mat
+        stiff%hard%${raised}$ = 1.0e6_${k}$
+        s0 = ${VS}$()
+        strain%vals = [2.0e-2_${k}$, -5.0e-3_${k}$, -5.0e-3_${k}$, 4.0e-3_${k}$, 2.0e-3_${k}$, 1.0e-3_${k}$]
+        call mat_update(stiff, strain, DT, coefs, s0, sn, stress, tangent, status, iters)
+        call check_true(passed, '${m}$ coupling first step elastic (${k}$)', status == STATUS_OK .and. iters == 0)
+        frozen = visco_freeze_branches(mat%visco, coefs, sn%visco%strain_e, size(sn%visco%h, 2), sn%visco%h)
+        call check_true(passed, '${m}$ coupling history stress is non-zero (${k}$)', any(frozen%stress_hist%vals /= 0.0_${k}$))
+        ! Plastic step from that state
+        strain%vals = [0.15_${k}$, -0.05_${k}$, -0.05_${k}$, 1.0e-2_${k}$, -6.0e-3_${k}$, 4.0e-3_${k}$]
+        call mat_update(mat, strain, DT, coefs, sn, snp1, stress, tangent, status, iters)
+        call check_true(passed, '${m}$ coupling converged and plastic (${k}$)', status == STATUS_OK .and. &
+            snp1%plastic%strain_pf > 0.0_${k}$)
+        call check_scaled(passed, '${m}$ coupling f = 0 (${k}$)', yield_stress_eq(mat%yield, stress), &
+            hard_stress(mat%hard, snp1%plastic%strain_pf), hard_stress(mat%hard, snp1%plastic%strain_pf), &
+            TOL_COUPLING_F_${k}$)
+        call fd_check_${m}$_${k}$('${m}$ coupling', mat, strain, DT, coefs, sn, tangent, TOL_COUPLING_TAN_${k}$)
+        strain_e = strain - snp1%plastic%strain_p
+        law = elas_stress(frozen, strain_e)
+        call check_approx(passed, '${m}$ coupling frozen stress = returned stress (${k}$)', law%vals, stress%vals, &
+            TOL_COUPLING_LAW_${k}$)
+        call check_true(passed, '${m}$ coupling state keeps the elastic strain (${k}$)', &
+            all(snp1%visco%strain_e%vals == strain_e%vals))
+    end subroutine coupling_${m}$_${k}$
+#:endfor
+#:endfor
+
+end program test_mat_solver_checks

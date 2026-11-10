@@ -9,13 +9,13 @@ Read by the templates (``muscle_meta.load_python_file``) and by CMake
 of a group once per case with the fypp define ``TARGET_CASE='<case>'``:
 
 - ``tensor``: ``<family>_<dim>_<kind>``, the free functions of muscle_tensor_functions
-  (tests/tensors/test_tensor_target.fypp);
+  (tests/tensors/test_muscle_tensor_target.fypp);
 - ``family``: ``<prefix>_<kind>``, the generics of every model of a family
-  (tests/gpu/test_family_target.fypp; the kinematics are tested by kinematics-kin_kinds);
+  (tests/gpu/test_muscle_family_target.fypp; the kinematics are tested by kinematics-kin_kinds);
 - ``material``: ``<material>_<kind>``, ``mat_update`` of materials of the test registry that together
-  use every model and every solver (tests/materials/test_mat_kernels_target.fypp);
+  use every model and every solver (tests/materials/test_muscle_material_kernels_target.fypp);
 - ``batch_dev``: ``<material>_<kind>``, the batch API on device memory of the materials of
-  ``BATCH_DEV_MATERIALS`` (tests/materials/test_mat_batch_dev.fypp).
+  ``BATCH_DEV_MATERIALS`` (tests/materials/test_muscle_material_batch_dev.fypp).
 """
 import sys
 from collections import namedtuple
@@ -52,7 +52,7 @@ FAMILY_ARG_TYPES = {'sigma': '2Osym', 'strain': '2Osym'}
 #: Argument of a family function: name and type (`real` or a tensor family).
 Arg = namedtuple('Arg', 'name type')
 
-#: Materials with a target test and the golden case of each (test_mat_<solver>.fypp): (material,
+#: Materials with a target test and the reference case of each (test_muscle_material_<solver>.fypp): (material,
 #: elasticity, overstress or viscoplastic law, hardening, criterion, dt, yield strain a_y, first factor
 #: f0 of the strain ramp f a_y, f from f0 to 4). f0 = 2 for jcfull: its barely plastic points (rates
 #: near 0, where the rate term of the law is singular) are ill-conditioned, they converge to other

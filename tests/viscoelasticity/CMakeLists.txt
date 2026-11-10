@@ -13,16 +13,8 @@ foreach(_muscle_visco maxwell kelvin)
     target_link_libraries(test_${_muscle_visco} PRIVATE muscle_visco_test_steps)
 endforeach()
 
-# Golden (characterization) test of the viscoelasticity family (Maxwell with 0, 1, 2, 3 and
-# MAX_VISCO_BRANCHES branches, Kelvin-Voigt, the frozen elasticity in 3D and 2D), multi-step load
-# histories through the kernel API, double precision, within the tolerance of its category (D-021) against
-# tests/reference/viscoelasticity/ (regenerate.sh there), captured from the original OO code.
-add_muscle_fypp_test(visco_golden test_visco_golden.fypp)
-set_tests_properties(viscoelasticity-visco_golden PROPERTIES
-                     ENVIRONMENT "MUSCLE_TEST_REFERENCE_DIR=${BASE_TESTS_DIR}/reference")
-
 # Kernel API of the viscoelastic family (D-017.13) in every kind: load histories of Maxwell and
 # Kelvin-Voigt through the generics of muscle_visco_laws, sp against dp, the status of invalid time
 # steps and parameters (D-017.13b), the frozen elasticity 2D vs 3D, and a pure @:DEVICE() procedure
 # that advances several steps at a point
-add_muscle_fypp_test(visco_kinds test_visco_kinds.fypp)
+add_muscle_fypp_test(visco_kinds test_muscle_visco_laws_kinds.fypp)

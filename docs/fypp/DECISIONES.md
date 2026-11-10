@@ -1256,3 +1256,56 @@ no validan nada; las validaciones quedan para la etapa de robustez). `MODEL_INIT
 `mat_init_<name>` lo pasa y lo comprueba como con visco. Cambia la API pública: quien llame a estos cinco
 inicializadores debe pasar `status`. Sin cambio numérico (goldens iguales); los módulos generados cambian sólo en
 la firma, la asignación, el `use`, la llamada con `status=status` y la comprobación en `mat_init`.
+
+## D-023 — Tests unitarios en vez de referencias; criterio de mutaciones (plan R, 2026-11-09)
+**Contexto:** los 22 tests «golden» (~8 600 registros) se capturaron para migrar bit a bit; sólo detectan
+cambios, no dicen si el resultado es correcto. **Decisiones del usuario:** (1) se acepta un mínimo de
+referencias donde no hay verdad independiente; (2) **criterio de mutaciones**: una referencia sólo se borra si
+los tests unitarios detectan todas las mutaciones del código que ella detecta; (3) se hace todo el plan R
+(ESTADO_OPTIMO, Bloque R); (4) se renombra «golden» → «reference».
+**Herramienta:** `tools/mutation_check.py <area>` (áreas en `tests/mutations/<area>.toml`): aplica una a una
+mutaciones de las fuentes (operador binario, literal real, subíndice, relacional; muestreadas con semilla o
+todas, más las escritas a mano), recompila un build dp Debug y reporta qué grupo las detecta. Se aplicó con
+**todas** las mutaciones de cada área (≈ 3 600), no con una muestra.
+**Resultado:** quedan 3 tests de referencia con 83 registros: `math_reference` (6: autovectores elegidos en
+empates exactos, elección no especificada; la rama `|1 - d| <= EPS` de `eigenvals`, PROBLEMAS) y las secuencias
+reducidas de `closest_point_time` (50) y `closest_point_perzyna` (27: amortiguamiento, búsqueda lineal y
+función de mérito del Newton, sin verdad independiente). Todo lo demás lo cubren tests unitarios nuevos o
+ampliados (ESTADO_OPTIMO R1–R6). API renombrada: `muscle_test_reference` (`reference_init/check/finish`,
+`REFERENCE_TOL_*`), `MUSCLE_REFERENCE_STRICT/REPORT`, `*_reference_mutation`, `muscle_reference_test` en CMake;
+`mat_sequence_common.fypp`, `case_params.py` (`CASE_PARAMS`), `solver_case`, `muscle_test_solver_sequence`.
+**Consecuencias:** un modelo o solver nuevo lleva tests unitarios y el chequeo de mutaciones de su área, no un
+golden; un material nuevo del registro de prueba entra al test de secuencia de su solver con `solver_case(0,
+...)`. Etiquetas de ctest: `kinds`, `legacy`, `reference`, `target`. Hallazgos registrados en PROBLEMAS:
+`check_approx` y `.approx.` aceptaban Inf (corregidos), y quedan marcados sin corregir la rama de `eigenvals`, el jacobiano de
+`closest_point_2` sin factor 2 de corte y la no convergencia de `closest_point_time` + JC con poca sobretensión.
+
+## D-024 — Se retira el pack/unpack genérico de `muscle_plastic_state` (2026-11-09)
+
+**Contexto:** `plastic_state_pack/unpack` (`PLASTIC_STATE_SIZE = 13`: tensión, deformación plástica, εp) era la
+traducción de `Plastic_material_history%pack_to_fea/unpack_from_fea` (Fase 5). Desde D-018.7 cada material
+tiene su propio pack (`mat_pack_<name>`, `MAT_<NAME>_NSTATE`: deformación plástica, εp y el estado viscoelástico,
+sin la tensión, que va en `sig`), que es el contrato documentado en `pages/integration.md` y `pages/migration.md`.
+El genérico quedó sin uso (sólo su test) y su documentación lo presentaba como «el» layout del array de
+historia FE (re-análisis de comprensión, `REANALISIS_COMPRENSION.md`).
+**Decisión del usuario:** opción (a): se borran `plastic_state_pack/unpack` y `PLASTIC_STATE_SIZE`; se conserva
+el tipo `plastic_state_<k>` (estado en memoria de todos los kernels). No cambia ningún material ni el layout de
+`hsv`. El test `plasticity-plastic_state_kinds` comprueba ahora los valores por defecto y la copia en un
+procedimiento `@:DEVICE()`; el layout de los materiales lo comprueban los tests de `tests/materials/`.
+
+## D-025 — Se retiran los 38 tests heredados `.f90`; nombres de tests espejo de `src` (2026-11-10)
+
+**Contexto:** re-análisis de la calidad de los tests (`REANALISIS_TESTS.md`): con `mutation_check --samples all`
+en todas las áreas (≈ 4 300 mutaciones, los heredados como grupo «referencia»), los heredados sólo detectaban 14
+mutaciones que los demás tests no detectaban (normalización de CPB06, C′ de CPB06ex2, `kin_pull_back_tangent`);
+los tests unitarios agregados en el commit `6723289` las detectan todas. Los heredados eran 9 650 líneas con 49 %
+en bloques repetidos y la regla «no se mueven ni se reescriben» de la migración.
+**Decisión del usuario:** (1) se retiran los 38 tests de la etiqueta `legacy` (tipos de tensores 17, incluidos los
+2 de OpenMP; operadores 5; fluencia 6 y su biblioteca `yield_test_numeric`; endurecimiento 4; elasticidad 2,
+incluido el de OpenMP; math 2; viscoplásticas 1; cinemáticas 1), criterio de D-023. El uso en hilos lo cubren
+`materials-mat_batch_openmp`, los tests target y el lint/auditoría de kernels (sin `save`). Desaparece la etiqueta
+`legacy` (quedan `kinds`, `reference`, `target`). (2) Nombres: los tests de `src/<ruta>/muscle_<x>.fypp` son
+`tests/<ruta>/test_muscle_<x>[_<tema>].fypp` (siempre con `muscle_`); un test de varios módulos lleva el de su
+tema (`test_muscle_material_<solver>`, `test_muscle_fypp_smoke`). Se renombraron 44 archivos con `git mv`; los
+nombres de ctest (`<carpeta>-<nombre>`) no cambian, así que los filtros `-R` y las áreas de `mutation_check`
+siguen valiendo.

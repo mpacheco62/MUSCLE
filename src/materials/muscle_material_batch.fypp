@@ -110,7 +110,8 @@
 #:set ARRAYS = ', '.join(XS + [OUTS] + (['ddsdde'] if TAN else []) + (['idx'] if IDX else []))
 
     subroutine ${LOOP}$(mat, ${VARGS}$npts, ${XARGS}$, dt, ${OUTS}$${', ddsdde' if TAN else ''}$${', n, idx' if IDX else ''}$)
-        !! Loop of `${BATCH_DEV if DEV else BATCH}$` over ${'the points idx(1:n)' if IDX else 'every point'}$${', with the tangent' if TAN else ''}$ (host;
+        !! Loop of `${BATCH_DEV if DEV else BATCH}$` over
+        !! ${'the points idx(1:n)' if IDX else 'every point'}$${', with the tangent' if TAN else ''}$ (host;
         !! parallel loop of `BATCH_LOOP`${', the arrays given by their device addresses' if DEV else ''}$).
         implicit none
         type(${MAT_T}$), intent(in) :: mat

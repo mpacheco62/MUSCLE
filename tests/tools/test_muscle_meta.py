@@ -886,7 +886,7 @@ class TestOpDdotTerms(unittest.TestCase):
 
     def test_matrix_terms_numeric(self):
         # Term structure of C_IJ = sum_K A_IK w_K B_KJ (K ascending, both dimensions). Same formula as
-        # the helper: the independent check is test_ops_ddot_full (full tensors).
+        # the helper: the independent check is test_muscle_tensor_ops_contraction_double_full (full tensors).
         rng = random.Random(9)
         for d in mm.DIMS:
             lay = mm.layout('4O3sym', d)

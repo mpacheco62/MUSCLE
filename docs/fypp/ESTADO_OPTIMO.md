@@ -107,7 +107,7 @@ completo y, los que no deben cambiar la librería (1.1, 1.6), también con `tool
 | ID | Qué | Por qué | Esfuerzo | Riesgo | Terminado cuando |
 |---|---|---|---|---|---|
 | 1.1 | **Hecho (2026-11-08): 57 s** frente a decenas de minutos del completo. **`check.sh --quick`**: lint + build CPU `sp;dp` Debug + `ctest`; sin build UDTIO, sin FORD, sin GPU, sin auditoría. El completo queda para cerrar etapas | Hoy la elección es «sólo lint» o decenas de minutos (`ctest` solo: 9.6 s) | 0.5 | Muy bajo | `--quick` existe, está en `--help` y su tiempo queda medido |
-| 1.6 | **Hecho (2026-11-08).** **Limpiar los 52 avisos**: todos están en `tests/materials/test_mat_kinematics.fypp` (variables sin usar); la librería no tiene avisos | Tapan avisos nuevos | < 0.5 | Nulo | Build Debug sin avisos; el test comprueba lo mismo |
+| 1.6 | **Hecho (2026-11-08); corregido el 2026-11-10:** la medición de entonces fue sobre un build incremental (la librería no se recompiló); un build limpio tenía **514 avisos** (393 argumentos sin usar, 62 comparaciones exactas, el resto en tests). Bloque de avisos del re-análisis 4 (`1da8f79`, `e12d1c2`, `6f6cfba`): 0 avisos en build limpio con `-Wno-unused-dummy-argument` y, pendiente de retirar, `-Wno-compare-reals`; `check.sh` falla con cualquier aviso. Texto original: **Limpiar los 52 avisos**: todos están en `tests/materials/test_mat_kinematics.fypp` (variables sin usar); la librería no tiene avisos | Tapan avisos nuevos | < 0.5 | Nulo | Build Debug sin avisos; el test comprueba lo mismo |
 | 1.3 | **Hecho (2026-11-08, D-021):** 186/186 en Debug, Release y `Profile_unittests`; modo estricto pasa bit a bit en Debug; con FMA quedan 6 problemas de diseño de tests en PROBLEMAS. **Goldens con tolerancia por categoría** (decisión del usuario: los goldens eran para la migración; ahora son tests de regresión de funcionalidad, no de bits). Ver detalle abajo | Fallan con otros flags/compiladores (2 falsos fallos con `Profile_unittests`) y bloquean optimizaciones legítimas | ~1 | Bajo | Pasan en Debug, `Profile_unittests` y Release; un cambio deliberado mayor que la tolerancia hace fallar el test; modo estricto disponible |
 | 1.4 | **Hecho (2026-11-08):** librería (`src/`+`include/`) 98.2 % líneas, **81.7 % funciones** (3 750 de 4 588 procedimientos generados), 91.9 % ramas. Las líneas están infladas: gcov atribuye el código generado a la línea de la plantilla (una línea de un `#:for` cuenta cubierta si se ejecuta cualquier instancia); el dato representativo es el de funciones. **Arreglar la cobertura** (lcov 2.0 falla con los `#line`: `--ignore-errors inconsistent`, `--rc geninfo_unexecuted_blocks=1`, o gcovr) y medirla una vez. Después de 1.3 | No se sabe qué cubren los tests | 0.5 | Nulo | Informe generado; cifra anotada aquí y en `PROBLEMAS.md` |
 | 1.2 | ~~Separar `muscle_kinds`~~ **No por ahora**: 89 de los 133 módulos que lo usan traen alguna constante (incluidos los 80 materiales); la cascada bajaría de 133 a ~89 | Beneficio menor que el costo de tocar 133 `use` | — | — | — |
@@ -166,7 +166,57 @@ completo y, los que no deben cambiar la librería (1.1, 1.6), también con `tool
 | 3.5 | **No se hará (2026-11-08): la guía corregida basta; el recién llegado agregó su test sin trabarse.** **Un test pequeño por ley** como patrón copiable, en lugar de ampliar los monolitos | La prueba del recién llegado no supo dónde ponerlo | 0.5 | Nulo | Patrón documentado en `contributing.md` |
 | 3.6 | **Hecho (internas, 2026-11-08):** `muscle_kin_finite` (929 líneas) seguía generando 24 funciones desde tablas de Python (`MEASURES`, `CONV`, ...), una violación de D-020 que las métricas no veían (no usaba macros `MODEL_*`): reescrito a mano, snapshot idéntico salvo orden; párrafo «cómo agregar un modelo» en los 7 módulos de familia. `*_init` sin `status`: el usuario decidió agregarlo a todos (D-022, hecho). **Consistencia de convenciones**: inventario de desviaciones entre familias (sufijo `_3D_` en yield sí y en hard no, nombres de `*_init`, estilo de tests) y corrección de las internas. **Decisión:** las que cambian API pública | Menos carga mental | 0.5–1 | Bajo (internas) / requiere decisión (públicas) | Inventario hecho; internas corregidas |
 | 3.7 | **Decidido (usuario, 2026-11-08): se mantiene la escritura explícita.** **Lista de modelos en los módulos de familia**: explicitud (hoy) o lista única con `#:for`. **Decisión** | Información repetida en 3 lugares por familia | 0.25 | Bajo | Decisión registrada en D-020 |
-| 3.8 | **Más adelante (decisión del usuario, 2026-11-08): renombrar «golden» → «reference» y reordenar los tests.** Hoy: 28 archivos con «golden» en el nombre, 933 menciones en `tests/`/`src/`/`tools/`, 22 tests de ctest; tests `.f90` heredados y plantillas mezclados, monolitos de hasta 1 057 líneas. Un commit sólo de renombre y otro de reorganización, separados del cambio de tolerancias (1.3) | Nombre que describe lo que hace; estructura de tests navegable | 1–2 | Bajo (los nombres de ctest cambian: avisar en `CLAUDE.md`) | Sin «golden» en nombres; estructura de `tests/` documentada |
+| 3.8 | **Reemplazado por el bloque R (2026-11-09).** Antes: **Más adelante (decisión del usuario, 2026-11-08): renombrar «golden» → «reference» y reordenar los tests.** Hoy: 28 archivos con «golden» en el nombre, 933 menciones en `tests/`/`src/`/`tools/`, 22 tests de ctest; tests `.f90` heredados y plantillas mezclados, monolitos de hasta 1 057 líneas. Un commit sólo de renombre y otro de reorganización, separados del cambio de tolerancias (1.3) | Nombre que describe lo que hace; estructura de tests navegable | 1–2 | Bajo (los nombres de ctest cambian: avisar en `CLAUDE.md`) | Sin «golden» en nombres; estructura de `tests/` documentada |
+
+### Bloque R. Tests de referencia → tests unitarios (decidido con el usuario, 2026-11-09)
+
+Reemplaza y amplía el ítem 3.8. **Objetivo:** reducir al mínimo los tests de referencia (hoy «golden»: 22 tests,
+~8 600 registros en `tests/reference/`) y convertirlos en tests unitarios con una verdad independiente (forma
+cerrada, propiedades, otra ruta de cálculo). **Decisiones del usuario:** (1) se acepta un mínimo de referencias donde
+no hay verdad independiente (solvers sobre secuencias de carga, criterios anisótropos); (2) **criterio de
+mutaciones**: una referencia sólo se borra si el test unitario que la reemplaza detecta las mismas mutaciones
+deliberadas del código (cambiar un coeficiente, intercambiar componentes, alterar una fórmula); (3) se hace todo el
+plan. Estructura de `tests/`: se mantiene el espejo de `src/`, con etiquetas de ctest por tipo (`kinds`, `legacy`,
+`reference`, `target`); los `.f90` heredados no se mueven (etiqueta `legacy` + nota en la guía); los monolitos no se
+parten por ahora; se renombra todo «golden» → «reference» (archivos, API `reference_init/reference_check`,
+`REFERENCE_TOL_*`, `MUSCLE_REFERENCE_STRICT`, ctest), con nota histórica en el glosario.
+
+| Etapa | Qué | Esfuerzo |
+|---|---|---|
+| R0 | Inventario: por test de referencia, qué comprueba, qué tests unitarios ya lo cubren, qué falta y qué referencia queda; un juego de mutaciones por área | 0.5 |
+| R1 | Operadores de tensores: contra el cálculo con matrices completas (ampliar `ops_full_common.fypp`); borrar las 6 referencias | 0.5–1 |
+| R2 | Math: sistemas lineales (residuo, A·A⁻¹ = I), operaciones (invariantes de autovalores), derivadas (polinomios, analítica vs diferencias), espectral (V Λ Vᵀ = A, ortogonalidad) | 1–1.5 |
+| R3 | Elasticidad (forma cerrada, embebido 2D/3D), endurecimiento y leyes vp (fórmulas cerradas, derivadas vs diferencias), viscoelasticidad (relajación de Maxwell, fluencia de Kelvin) | 1.5–2 |
+| R4 | Cinemáticas: estiramiento uniaxial, corte simple, rotación rígida en forma cerrada; objetividad | 1 |
+| R5 | Fluencia: von Mises y Hill cerrados; homogeneidad, gradiente/hessiano vs diferencias, reducción isótropa; referencias mínimas para CPB06/Yld2004 anisótropos | 1–1.5 |
+| R6 | Solvers: retorno radial cerrado para von Mises lineal; consistencia f ≈ 0, paso elástico, tangente vs diferencias; referencias mínimas por solver | 1.5–2 |
+| R7 | Renombre «golden» → «reference» de lo que quede, arreglos de estructura (mover `tests/test_muscle_math_operations.f90` a `tests/math/`, `muscle_test_solver_golden.f90` a `tests/materials/`, unir `reference/solvers` y `reference/materials`, documentar `tests/gpu/`), etiquetas de ctest, guía | 1 |
+
+Un commit por etapa (tests nuevos + borrado de referencias juntos, tras pasar el criterio de mutaciones);
+`check.sh --quick` en cada uno y `check.sh` completo al final. Meta: ~6–8 tests de referencia con unos pocos cientos
+de registros.
+
+**Resultado (2026-11-09, hecho, D-023).** Chequeo con **todas** las mutaciones de cada área (`tools/mutation_check.py
+<area> --samples all`), no con una muestra:
+
+| Etapa | Área | Mutaciones que detectaba la referencia | Unitarios antes → después | Qué quedó |
+|---|---|---|---|---|
+| R0 | herramienta `tools/mutation_check.py`, `tests/mutations/*.toml` | — | — | — |
+| R1 | operadores de tensores (+ 8 a mano en `muscle_meta.py`) | 25 | 25 → 25 | nada (6 tests borrados; `tools-ops_inventory` reemplaza la cobertura) |
+| R2 | math | 655 | 633 → 649 | `math_reference`: 6 registros (empates exactos; rama de `eigenvals`) |
+| R3 | hard / elas / vp / visco | 48 / 152 / 322 / 194 | 48 / 152 / 304 / 187 → todas | nada (test nuevo `vp_limits`) |
+| R4 | kin / mat_kinematics | 245 / 237 | 166 → 245 / 236 → 237 | nada (test nuevo `kin_finite`, verdad en precisión cuádruple) |
+| R5 | yield | 1 286 | 1 281 → 1 286 | nada |
+| R6 | solvers | 130 | 102 → 117 (+ referencia reducida: 130) | `closest_point_time` 50 y `closest_point_perzyna` 27 registros: camino de Newton |
+| R7 | renombre y orden | — | — | etiquetas `kinds/legacy/reference/target`, guía (Tests), D-023 |
+
+De 22 tests y ~8 600 registros quedan **3 tests y 83 registros**. Desvíos del plan: `tests/test_muscle_math_operations.f90`
+no se movió sino que se borró (no estaba registrado, no compilaba y lo cubre `tensors-types-3d2osym`);
+`reference/materials` desapareció con R4, así que no hubo nada que unir; `muscle_test_solver_golden.f90` pasó a
+`tests/materials/muscle_test_solver_sequence.f90`. Hallazgos (PROBLEMAS): `check_approx` aceptaba Inf (corregido),
+el mismo hueco en `.approx.` (corregido a pedido del usuario), y marcados sin corregir: la rama `|1 - d| <= EPS` de
+`eigenvals`, el jacobiano de `closest_point_2` sin factor 2 de corte y `closest_point_time` + JC sin convergencia con
+poca sobretensión.
 
 ### Bloque 4. No ahora (sólo si aparece la necesidad)
 - **Alternativa D** (tipos vacíos en materiales; parche en `build-snapshots/d_visco_kin.patch`), **B** o **C**:
@@ -198,9 +248,11 @@ completo y, los que no deben cambiar la librería (1.1, 1.6), también con `tool
 | Prueba del recién llegado | parcial, 3 pasos no documentados | **lograda (2026-11-08)**: ley + 3 materiales + 45 registros golden siguiendo sólo la guía, 186/186; fricciones menores corregidas en la guía |
 | Verificación diaria | sólo lint o `check.sh` completo | `--quick` en pocos minutos (medir al implementarlo) |
 | Constante de tolerancia nueva | reconstrucción total (~60 s) | sin meta por ahora (1.2 pospuesto) |
-| Avisos del build Debug | 52 | 0 |
+| Avisos del build Debug | 52 (medido mal: 514 en build limpio) | **0 en build limpio** (2026-11-10), comprobado por `check.sh`; `-Wno-compare-reals` pendiente de retirar |
 | Cobertura | no medible | medida: 81.7 % de funciones de la librería (98.2 % líneas, inflado por las plantillas) |
 | Goldens fuera de Debug | 2 falsos fallos (comparación bit a bit) | 0, con tolerancia por categoría y modo estricto opcional |
+| Tests de referencia | 22 tests, ~8 600 registros | **3 tests, 83 registros** (plan R, criterio de mutaciones) |
+| Tests heredados `.f90` (`legacy`) | 38 tests, 9 650 líneas | **0** (D-025, 2026-11-10: los unitarios detectan todas sus mutaciones; re-análisis 6) |
 | `muscle_meta.py` | 2 287 líneas | **2 093 tras 3.1** (sin el registro de firmas) |
 | Bloques repetidos en `src` (`tools/dup_report.py`) | 12 % | ≤ 10 % |
 | Macros prohibidas (`tools/fypp_metrics.sh`) | 0 | 0 |

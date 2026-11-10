@@ -1,0 +1,6 @@
+# Mutation check of the viscoelastic laws (tools/mutation_check.py visco)
+sources = ["src/viscoelasticity/muscle_visco_*.fypp"]
+# The reference test was deleted (plan R): the unit tests detected all the 194 mutations it detected.
+reference = ""
+unit = "^viscoelasticity-"
+samples = 40

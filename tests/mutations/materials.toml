@@ -1,0 +1,7 @@
+# Mutation check of the material templates (tools/mutation_check.py materials): kernel (update, pack/unpack),
+# point and batch APIs, initialization. Every mutation regenerates the 80 material modules of the test registry.
+# Added in the re-analysis of test quality (docs/fypp/REANALISIS_TESTS.md).
+sources = ["src/materials/muscle_material*.fypp"]
+reference = "^materials-mat_(closest_point_perzyna|closest_point_time)$"
+unit = "^materials-"
+samples = 40

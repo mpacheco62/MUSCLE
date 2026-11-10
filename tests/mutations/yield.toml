@@ -1,0 +1,6 @@
+# Mutation check of the yield criteria (tools/mutation_check.py yield)
+sources = ["src/plasticity/yield_criteria/muscle_*.fypp"]
+# The reference test was deleted (plan R): the unit tests detected all the 1286 mutations it detected.
+reference = ""
+unit = "^plasticity-yield_criteria-"
+samples = 50

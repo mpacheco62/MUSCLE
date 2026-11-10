@@ -9,7 +9,8 @@ module muscle_kin_updated_lagrangian
     !! \( \mathbf{e} = \tfrac{1}{2}(\mathbf{I} - \mathbf{b}^{-1}) \) and the constitutive stress and
     !! tangent are the spatial (Cauchy) ones: `kin_to_cauchy` is the identity. With
     !! \( \delta\mathbf{F} = \delta\boldsymbol\varepsilon\,\mathbf{F} \) the strain changes by
-    !! \( \delta\mathbf{e} = \tfrac{1}{2}(\delta\boldsymbol\varepsilon\,\mathbf{b}^{-1} + \mathbf{b}^{-1}\delta\boldsymbol\varepsilon) \):
+    !! \( \delta\mathbf{e} = \tfrac{1}{2}(\delta\boldsymbol\varepsilon\,\mathbf{b}^{-1} +
+    !! \mathbf{b}^{-1}\delta\boldsymbol\varepsilon) \):
     !! `kin_to_spatial_tangent` is \( \mathbb{A} : \delta\mathbf{e} \) (`kin_almansi_tangent`; it was the
     !! identity before) and the geometric term of the Kirchhoff stress \( J\boldsymbol\sigma \) is
     !! \( \boldsymbol\sigma\otimes\mathbf{I} \) (`kin_volumetric_tangent`).

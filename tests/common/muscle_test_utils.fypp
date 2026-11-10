@@ -29,6 +29,9 @@ module muscle_test_utils
     !! - Real arrays: the same component-wise criterion; `tol = 0` means exact equality.
     !! - Real scalars: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \) (absolute below 1,
     !!   relative above); `tol = 0` means exact equality.
+    !! - Real scalars and arrays: an Inf or NaN component passes only if it equals the expected one
+    !!   (the same Inf), and the scale of an array is that of its finite components (an Inf scale
+    !!   would accept any finite difference).
     !! - `check_scaled`: \( |a - b| \le tol \cdot scale \) with the natural scale of the rounding
     !!   error given by the caller (sum of |terms| of a dot product or of a determinant).
     !! - `check_target` (results of a kernel in an OpenMP target region against the same kernel on
@@ -238,6 +241,9 @@ contains
         scale = max(1.0_${k}$, abs(got), abs(expected))
         diff = abs(got - expected)
         ok = diff <= t*scale
+        ! An Inf would make the scale infinite and pass any finite value: a non-finite operand
+        ! passes only if both are the same Inf
+        if (.not. (abs(got) <= huge(got) .and. abs(expected) <= huge(expected))) ok = got == expected
         if (.not. ok) then
             print '(a)', ' FAIL: ' // label
             call print_criterion_${k}$(t, scale, 'max(1, |got|, |expected|)')
@@ -372,9 +378,14 @@ contains
         real(${k}$), optional, intent(in) :: scale_min
             !! Smallest error scale (default: none).
         real(${k}$) :: scale
-        scale = max(maxval(abs(got)), maxval(abs(expected)), EPS_ABS_${k}$)
+        logical :: finite(size(got))
+        ! Scale over the finite components (an Inf would pass any finite value); a non-finite
+        ! component passes only if both are the same Inf
+        finite = abs(got) <= huge(got) .and. abs(expected) <= huge(expected)
+        scale = max(maxval(abs(got), mask=finite), maxval(abs(expected), mask=finite), EPS_ABS_${k}$)
         if (present(scale_min)) scale = max(scale, scale_min)
-        call report_${k}$(passed, label, all(abs(got - expected) <= tol*scale), got, expected, names, tol, scale_min)
+        call report_${k}$(passed, label, all(merge(abs(got - expected) <= tol*scale, got == expected, finite)), &
+                          got, expected, names, tol, scale_min)
     end subroutine compare_${k}$
 
     subroutine report_${k}$(passed, label, ok, got, expected, names, tol, scale_min)
@@ -398,13 +409,15 @@ contains
         real(${k}$) :: scale, diff
         integer :: i, n_bad
         character(len=10) :: comp
+        logical :: finite(size(got))
 
         passed = passed .and. ok
         if (ok) return
 
-        scale = max(maxval(abs(got)), maxval(abs(expected)), EPS_ABS_${k}$)
+        finite = abs(got) <= huge(got) .and. abs(expected) <= huge(expected)
+        scale = max(maxval(abs(got), mask=finite), maxval(abs(expected), mask=finite), EPS_ABS_${k}$)
         if (present(scale_min)) scale = max(scale, scale_min)
-        n_bad = count(abs(got - expected) > tol*scale)
+        n_bad = count(.not. merge(abs(got - expected) <= tol*scale, got == expected, finite))
         print '(a)', ' FAIL: ' // label
         if (present(scale_min)) then
             call print_criterion_${k}$(tol, scale, 'max(max|got|, max|expected|, scale_min)')
@@ -418,7 +431,7 @@ contains
         print '(a)', '   comp        got                       expected                  |diff|     |diff|/scale'
         do i = 1, size(got)
             diff = abs(got(i) - expected(i))
-            if (.not. (diff <= tol*scale)) then
+            if (.not. merge(diff <= tol*scale, got(i) == expected(i), finite(i))) then
                 comp = names(i)
                 print '(3x, a10, es24.15, 2x, es24.15, 2x, es9.2, 2x, es9.2)', &
                     comp, got(i), expected(i), diff, diff/scale

@@ -56,7 +56,8 @@ module muscle_yield_cpb06
 
 #:for k in REAL_KINDS
     type :: yield_cpb06_${k}$
-        !! Parameters of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in `real(${k}$)` (build it with `yield_cpb06_init`, which computes the private derived components; do not change the inputs after `yield_cpb06_init`).
+        !! Parameters of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in `real(${k}$)` (build it with `yield_cpb06_init`, which
+        !! computes the private derived components; do not change the inputs after `yield_cpb06_init`).
         real(${k}$) :: C1(3,3)
             !! Normal block \( C_{ij} \), i, j = 1..3, of the linear transformation \( \mathbf{C} \).
         real(${k}$) :: C2(3)
@@ -201,7 +202,8 @@ contains
     end subroutine yield_cpb06_principal_${k}$
 
     pure function yield_stress_eq_cpb06_3D_${k}$(prm, sigma) result(res)
-        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in `real(${k}$)` (3D).
+        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in `real(${k}$)`
+        !! (3D).
         implicit none
         @:DEVICE()
         type(yield_cpb06_${k}$), intent(in) :: prm
@@ -231,7 +233,8 @@ contains
     end function yield_stress_eq_cpb06_3D_${k}$
 
     pure function yield_dstress_eq_cpb06_3D_${k}$(prm, sigma) result(res)
-        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in `real(${k}$)` (3D).
+        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in
+        !! `real(${k}$)` (3D).
         implicit none
         @:DEVICE()
         type(yield_cpb06_${k}$), intent(in) :: prm
@@ -254,7 +257,8 @@ contains
     end function yield_dstress_eq_cpb06_3D_${k}$
 
     pure function yield_ddstress_eq_cpb06_3D_${k}$(prm, sigma) result(res)
-        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in `real(${k}$)` (3D).
+        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) of the CPB06 (Cazacu-Plunkett-Barlat 2006)
+        !! model in `real(${k}$)` (3D).
         implicit none
         @:DEVICE()
         type(yield_cpb06_${k}$), intent(in) :: prm
@@ -277,8 +281,8 @@ contains
     end function yield_ddstress_eq_cpb06_3D_${k}$
 
     pure function yield_joint_evaluation_cpb06_${k}$(prm) result(res)
-        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn): false for the CPB06 (Cazacu-Plunkett-Barlat 2006) model
-        !! (`real(${k}$)` parameters; a constant, resolved at compile time).
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn): false for the CPB06
+        !! (Cazacu-Plunkett-Barlat 2006) model (`real(${k}$)` parameters; a constant, resolved at compile time).
         implicit none
         @:DEVICE()
         type(yield_cpb06_${k}$), intent(in) :: prm
@@ -290,8 +294,9 @@ contains
     end function yield_joint_evaluation_cpb06_${k}$
 
     pure subroutine yield_stress_eq_and_derivatives_cpb06_3D_${k}$(prm, sigma, f, df, ddf)
-        !! Equivalent stress and its first and second derivatives at the same stress of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in `real(${k}$)` (3D),
-        !! computed by the functions `yield_stress_eq_cpb06_3D_${k}$`, `yield_dstress_eq_cpb06_3D_${k}$`, `yield_ddstress_eq_cpb06_3D_${k}$` in turn.
+        !! Equivalent stress and its first and second derivatives at the same stress of the CPB06 (Cazacu-Plunkett-Barlat 2006)
+        !! model in `real(${k}$)` (3D), computed by the functions `yield_stress_eq_cpb06_3D_${k}$`,
+        !! `yield_dstress_eq_cpb06_3D_${k}$`, `yield_ddstress_eq_cpb06_3D_${k}$` in turn.
         implicit none
         @:DEVICE()
         type(yield_cpb06_${k}$), intent(in) :: prm

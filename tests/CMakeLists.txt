@@ -39,7 +39,8 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         #                         )
 elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
         message(STATUS "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-        target_compile_options(compile_options INTERFACE "-O3" "-Wall")
+        # Unused dummy arguments are part of uniform interfaces; unused local variables still warn
+        target_compile_options(compile_options INTERFACE "-O3" "-Wall" "-Wno-unused-dummy-argument")
         target_compile_options(compile_options INTERFACE
                                         $<$<CONFIG:Debug>:-g>
                                         $<$<CONFIG:Profile_unittests>:-g -O0 -fprofile-arcs -ftest-coverage>
@@ -58,11 +59,11 @@ endif()
 # Shared assertions (muscle_test_utils: check_approx, check_true, check_scaled) and helpers
 # (muscle_test_helpers: random generator, reference matrix operations, record) of the tests
 muscle_fypp_preprocess(MUSCLE_TEST_UTILS_SRC common/muscle_test_utils.fypp common/muscle_test_helpers.fypp)
-# muscle_test_golden: golden checks (tolerance by category, D-021) against tests/reference/ (set the test property
-# ENVIRONMENT MUSCLE_TEST_REFERENCE_DIR=${BASE_TESTS_DIR}/reference); muscle_test_solver_golden: strain
-# sequence and record layout of the golden tests of the return mapping solvers
-add_library(muscle_test_utils STATIC ${MUSCLE_TEST_UTILS_SRC} common/muscle_test_golden.f90
-            common/muscle_test_solver_golden.f90)
+# muscle_test_reference: reference checks (tolerance by category, D-021) against tests/reference/ (register the
+# test with muscle_reference_test); muscle_test_solver_sequence: strain
+# sequence and record layout of the reference tests of the return mapping solvers
+add_library(muscle_test_utils STATIC ${MUSCLE_TEST_UTILS_SRC} common/muscle_test_reference.f90
+            materials/muscle_test_solver_sequence.f90)
 target_link_libraries(muscle_test_utils PUBLIC muscle PRIVATE compile_options)
 set_target_properties(muscle_test_utils PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules/tests)
 target_include_directories(muscle_test_utils PUBLIC ${CMAKE_BINARY_DIR}/modules/tests)
@@ -99,7 +100,6 @@ function(add_muscle_test NAME)
     # Add test using prefix-free name for CTest and prefixed name for executable
     add_test(NAME ${TEST_DISPLAY_NAME} COMMAND ${EXE_NAME})
     set_target_properties(${EXE_NAME} PROPERTIES MUSCLE_TEST_NAME ${TEST_DISPLAY_NAME})
-    
     target_link_libraries(${EXE_NAME} PRIVATE ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
 endfunction()
 
@@ -111,6 +111,18 @@ function(add_muscle_fypp_test NAME SOURCE)
     cmake_parse_arguments(PARSE_ARGV 2 arg "" "" "DEPENDS")
     muscle_fypp_preprocess(GENERATED ${SOURCE} DEPENDS ${arg_DEPENDS})
     add_muscle_test(${NAME} ${GENERATED})
+    get_target_property(test_name test_${NAME} MUSCLE_TEST_NAME)
+    set_tests_properties(${test_name} PROPERTIES LABELS kinds)
+endfunction()
+
+
+# Reference test (plan R): compares results with the records of tests/reference/ (muscle_test_reference);
+# sets the directory of the references and the label `reference`. Extra ENVIRONMENT entries (e.g.
+# MUSCLE_REFERENCE_STRICT=1) are passed after ENV.
+function(muscle_reference_test TEST_NAME)
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "ENV")
+    set(env "MUSCLE_TEST_REFERENCE_DIR=${BASE_TESTS_DIR}/reference" ${arg_ENV})
+    set_tests_properties(${TEST_NAME} PROPERTIES LABELS reference ENVIRONMENT "${env}")
 endfunction()
 
 

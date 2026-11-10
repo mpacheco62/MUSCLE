@@ -132,6 +132,18 @@ If the tensor is singular, `.inv.` and `%inv()` return quiet NaN in every compon
 \( \kappa_\infty \) of the matrix that is inverted. When compiling with `-ffast-math`, check `ok`
 rather than testing for NaN.
 
+### Comparison (`.approx.`, `is_approx`)
+`a .approx. b` (and `is_approx(a, b[, tol])`, with an explicit tolerance) compares every stored component.
+The default tolerance depends on the type (`muscle_kinds`):
+
+| Types | Default tolerance (`sp` / `dp`) | Relative to |
+|-------|---------------------------------|-------------|
+| tensors | `TOL_APPROX_<k>`: 1e-5 / 1e-12 | the largest finite magnitude of both operands (floor `EPS_ABS_<k>`) |
+| `4O2sym` | `TOL_APPROX_4O2SYM_<k>`: 1e-4 / 1e-8 | the same (looser: the historical precision of its inverse) |
+| scaled identities | `TOL_APPROX_IDEN_<k>`: 1e-5 / 1e-10 | \( \max(1, \lvert a \rvert, \lvert b \rvert) \) |
+
+A component that is not finite matches only an identical one: Inf with an Inf of the same sign, NaN never.
+
 ## Free functions and type-bound procedures
 
 Two equivalent APIs exist for the named operations:

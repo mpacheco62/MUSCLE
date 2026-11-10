@@ -1,0 +1,452 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#!
+#! Kernel API of the viscoelastic family (D-017.13) in every kind, through the generics of
+#! muscle_visco_laws (step coefficients, freeze, update with explicit states) and muscle_elasticity_laws
+#! (the frozen elasticity):
+#! - load histories of Maxwell and Kelvin-Voigt parameter sets: sp against dp (sp inputs converted to
+#!   dp; the dp values are fixed by the physical checks of test_muscle_visco_maxwell/kelvin);
+#! - status (D-017.13b): dt < 0 is an error in both models, dt = 0 valid in Maxwell (G_alg = G_0)
+#!   and an error in Kelvin-Voigt; invalid parameters in the initializers and in visco_state_init;
+#! - frozen elasticity 2D vs 3D (dims-2d-3d.md, with a history stress without 23/13 components),
+#!   and its kernel 2D deviatoric stress against `.dev.` of its 2D stress (the historical path);
+#! - a `pure`, `@:DEVICE()` procedure that advances several steps of Maxwell at a point, against
+#!   the same steps written in the test (bit for bit).
+#! Tolerances: 2D vs 3D TOL_APPROX_<k> relative to the largest
+#! component; sp vs dp relative to the largest value of each group (coefficient, stress, state) over
+#! the history: TOL_APPROX_sp (measured 6.0e-7; the error of gamma in sp is at most 3.0e-6 by design,
+#! D-017.13a).
+#:set NSTEPS = 9
+#:set MODELS = ['maxwell', 'kelvin']
+
+module test_visco_point
+    !! Point procedures (kernels) that call the viscoelastic generics, for every kind.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
+    use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$
+    use muscle_visco_laws, only : visco_step_coefficients, visco_freeze, visco_update, &
+        ${', '.join('visco_maxwell_{0}, visco_state_{0}, visco_coefs_{0}, elas_frozen_{0}'.format(k) for k in REAL_KINDS)}$
+    use muscle_elasticity_laws, only : elas_stress
+    implicit none
+    private
+
+    integer, parameter, public :: NSTEPS = ${NSTEPS}$
+        !! Steps of the load histories.
+#:for k in REAL_KINDS
+    public :: maxwell_steps_${k}$
+#:endfor
+
+contains
+#:for k in REAL_KINDS
+
+    pure subroutine maxwell_steps_${k}$(prm, dts, eps, state, sig, status)
+        !! What a kernel does at a point over several steps in `real(${k}$)`: coefficients, frozen
+        !! elasticity, (elastic) stress, update and commit of the state. Stops at the first error.
+        implicit none
+        @:DEVICE()
+        type(visco_maxwell_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: dts(NSTEPS)
+            !! Time steps.
+        real(${k}$), intent(in) :: eps(6, NSTEPS)
+            !! Elastic strain at the end of each step.
+        type(visco_state_${k}$), intent(inout) :: state
+            !! State (converged at the start, at the end of the last step on exit).
+        real(${k}$), intent(out) :: sig(6, NSTEPS)
+            !! Stress at the end of each step.
+        integer, intent(out) :: status
+            !! Status of the first failed step, else STATUS_OK.
+        type(visco_coefs_${k}$) :: coefs
+        type(elas_frozen_${k}$) :: elas
+        type(visco_state_${k}$) :: state_np1
+        type(${tname('3D2Osym', k)}$) :: strain, s
+        integer :: i
+
+        sig = 0.0_${k}$
+        do i = 1, NSTEPS
+            call visco_step_coefficients(prm, dts(i), coefs, status)
+            if (status /= STATUS_OK) return
+            elas = visco_freeze(prm, coefs, state)
+            strain%vals = eps(:, i)
+            s = elas_stress(elas, strain)
+            sig(:, i) = s%vals
+            call visco_update(prm, coefs, state, strain, state_np1)
+            state = state_np1
+        end do
+    end subroutine maxwell_steps_${k}$
+#:endfor
+
+end module test_visco_point
+
+module test_visco_cases
+    use, intrinsic :: iso_fortran_env, only : int64
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$, ${', '.join('TOL_APPROX_' + k for k in REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER, STATUS_INVALID_TIME_STEP
+    use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in DIMS for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
+    use muscle_visco_laws, only : visco_step_coefficients, visco_freeze, visco_update, visco_n_branches, &
+        visco_state_init, MAX_VISCO_BRANCHES, &
+        ${', '.join('visco_{0}_{1}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$, &
+        ${', '.join('visco_state_{0}, visco_coefs_{0}, elas_frozen_{0}'.format(k) for k in REAL_KINDS)}$
+    use muscle_visco_maxwell, only : visco_maxwell_init, visco_maxwell_init_normalized, &
+        visco_maxwell_shear_instantaneous
+    use muscle_visco_kelvin, only : visco_kelvin_init
+    use muscle_elasticity_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev
+    use muscle_tensors, only : operator(.dev.)
+    use test_visco_point, only : NSTEPS, ${', '.join('maxwell_steps_' + k for k in REAL_KINDS)}$
+    use muscle_test_utils, only : check_true, check_scaled
+    implicit none
+    private
+
+    public :: run_all
+
+    integer, parameter :: NSETS = 5
+        !! Parameter sets: 1-3 Maxwell, 4-5 Kelvin-Voigt.
+#:if 'sp' in REAL_KINDS
+    real(dp), parameter :: TOL_SP = real(TOL_APPROX_sp, dp)
+        !! sp vs dp, relative to the largest value of each group (see the header).
+#:endif
+    real(dp), parameter :: DTS(NSTEPS) = [1.0e-3_dp, 0.01_dp, 0.05_dp, 0.1_dp, 0.0_dp, 0.5_dp, 1.0_dp, &
+        0.0_dp, 5.0_dp]
+        !! Time steps (dt = 0 only in Maxwell; Kelvin-Voigt takes the next positive one).
+    real(dp), parameter :: D1(6) = [1.0_dp, -0.4_dp, 0.2_dp, 0.6_dp, -0.2_dp, 0.1_dp]*1.0e-3_dp
+    real(dp), parameter :: D2(6) = [0.3_dp, 0.5_dp, -0.7_dp, -0.2_dp, 0.4_dp, 0.3_dp]*1.0e-3_dp
+    integer, parameter :: NREC = 4 + 2*MAX_VISCO_BRANCHES + 6 + 6 + 6*MAX_VISCO_BRANCHES + 1
+        !! Values recorded per step: coefficients (dt, k_alg, g_alg, decay, weight, status), stress,
+        !! state_np1 (strain_e, h, n_branches).
+
+contains
+
+    pure function strain_at(i) result(e)
+        !! Elastic strain at the end of step i (a non-proportional load-unload path).
+        integer, intent(in) :: i
+        real(dp) :: e(6)
+        e = real(i, dp)*D1 + merge(2.0_dp, -1.0_dp, mod(i, 2) == 0)*D2
+        if (i > 6) e = e - 3.0_dp*D1
+    end function strain_at
+
+    pure function dt_of(iset, i) result(dt)
+        !! Time step i of parameter set iset (Kelvin-Voigt: no dt = 0).
+        integer, intent(in) :: iset, i
+        real(dp) :: dt
+        dt = DTS(i)
+        if (iset > 3 .and. dt == 0.0_dp) dt = 0.2_dp
+    end function dt_of
+
+    logical function same_bits(a, b)
+        !! Bitwise equality of two dp arrays.
+        real(dp), intent(in) :: a(:), b(:)
+        same_bits = size(a) == size(b)
+        if (same_bits) same_bits = all(transfer(a, 1_int64, size(a)) == transfer(b, 1_int64, size(b)))
+    end function same_bits
+#:for k in REAL_KINDS
+
+    subroutine maxwell_set_${k}$(iset, prm, status)
+        !! Maxwell parameter set iset (1-3) in `real(${k}$)`.
+        integer, intent(in) :: iset
+        type(visco_maxwell_${k}$), intent(out) :: prm
+        integer, intent(out) :: status
+        select case (iset)
+        case (1) ! two branches
+            call visco_maxwell_init(prm, 2000.0_${k}$, 100.0_${k}$, [200.0_${k}$, 300.0_${k}$], [0.1_${k}$, 1.0_${k}$], status)
+        case (2) ! three branches with very different relaxation times, G_inf = 0
+            call visco_maxwell_init(prm, 2000.0_${k}$, 0.0_${k}$, [100.0_${k}$, 1000.0_${k}$, 10.0_${k}$], &
+                [1.0e-3_${k}$, 1.0_${k}$, 1.0e3_${k}$], status)
+        case default ! normalized (Abaqus)
+            call visco_maxwell_init_normalized(prm, 1000.0_${k}$, 0.3_${k}$, [0.3_${k}$, 0.5_${k}$], [0.2_${k}$, 5.0_${k}$], &
+                status)
+        end select
+    end subroutine maxwell_set_${k}$
+
+    subroutine kelvin_set_${k}$(iset, prm, status)
+        !! Kelvin-Voigt parameter set iset (4-5) in `real(${k}$)`.
+        integer, intent(in) :: iset
+        type(visco_kelvin_${k}$), intent(out) :: prm
+        integer, intent(out) :: status
+        if (iset == 4) then
+            call visco_kelvin_init(prm, 2000.0_${k}$, 100.0_${k}$, 50.0_${k}$, 20.0_${k}$, status)
+        else ! no spring: pure dashpot
+            call visco_kelvin_init(prm, 0.0_${k}$, 0.0_${k}$, 30.0_${k}$, 5.0_${k}$, status)
+        end if
+    end subroutine kelvin_set_${k}$
+#:for m in MODELS
+
+    subroutine history_${m}$_${k}$(iset, rec)
+        !! Load history of parameter set iset with the `real(${k}$)` kernel API: per step the
+        !! coefficients, the stress of the frozen elasticity and the updated state (as dp values).
+        integer, intent(in) :: iset
+        real(dp), intent(out) :: rec(NREC, NSTEPS)
+        type(visco_${m}$_${k}$) :: prm
+        type(visco_state_${k}$) :: state_n, state_np1
+        type(visco_coefs_${k}$) :: coefs
+        type(elas_frozen_${k}$) :: elas
+        type(${tname('3D2Osym', k)}$) :: strain, s
+        integer :: i, status
+
+        call ${m}$_set_${k}$(iset, prm, status)
+        if (status /= STATUS_OK) error stop 'invalid parameter set'
+        call visco_state_init(state_n, visco_n_branches(prm), status)
+        do i = 1, NSTEPS
+            call visco_step_coefficients(prm, real(dt_of(iset, i), ${k}$), coefs, status)
+            elas = visco_freeze(prm, coefs, state_n)
+            strain%vals = real(strain_at(i), ${k}$)
+            s = elas_stress(elas, strain)
+            call visco_update(prm, coefs, state_n, strain, state_np1)
+            rec(:, i) = real([coefs%dt, coefs%k_alg, coefs%g_alg, coefs%decay, coefs%weight, real(status, ${k}$), &
+                s%vals, state_np1%strain_e%vals, reshape(state_np1%h, [6*MAX_VISCO_BRANCHES]), &
+                real(state_np1%n_branches, ${k}$)], dp)
+            state_n = state_np1
+        end do
+    end subroutine history_${m}$_${k}$
+#:endfor
+#:endfor
+
+    subroutine test_histories(passed)
+        !! sp vs dp of every parameter set.
+        logical, intent(inout) :: passed
+        real(dp) :: rd(NREC, NSTEPS)
+#:if 'sp' in REAL_KINDS
+        real(dp) :: rs(NREC, NSTEPS), sc
+        integer :: j
+#:endif
+        character(len=48) :: lab
+        integer :: iset
+
+        do iset = 1, NSETS
+            write(lab, '(a, i0)') 'visco history, parameter set ', iset
+            if (iset <= 3) then
+                call history_maxwell_dp(iset, rd)
+#:if 'sp' in REAL_KINDS
+                call history_maxwell_sp(iset, rs)
+#:endif
+            else
+                call history_kelvin_dp(iset, rd)
+#:if 'sp' in REAL_KINDS
+                call history_kelvin_sp(iset, rs)
+#:endif
+            end if
+#:if 'sp' in REAL_KINDS
+            ! sp vs dp: each group of values (coefficients, stress, state) with its own scale
+            do j = 1, NREC
+                sc = maxval(abs(rd(j, :)))
+                if (j > 3 + 2*MAX_VISCO_BRANCHES + 1 .and. j <= 4 + 2*MAX_VISCO_BRANCHES + 6) then
+                    sc = maxval(abs(rd(5 + 2*MAX_VISCO_BRANCHES:4 + 2*MAX_VISCO_BRANCHES + 6, :)))  ! stress
+                else if (j > 4 + 2*MAX_VISCO_BRANCHES + 6 .and. j < NREC) then
+                    sc = maxval(abs(rd(5 + 2*MAX_VISCO_BRANCHES + 6:NREC - 1, :)))  ! strain and history tensors
+                end if
+                call check_vals(passed, trim(lab) // ': sp vs dp', rs(j, :), rd(j, :), sc)
+            end do
+#:endif
+        end do
+    end subroutine test_histories
+
+#:if 'sp' in REAL_KINDS
+    subroutine check_vals(passed, label, got, expected, sc)
+        !! Values of one record over the history, relative to the scale `sc`.
+        logical, intent(inout) :: passed
+        character(len=*), intent(in) :: label
+        real(dp), intent(in) :: got(:), expected(:), sc
+        integer :: i
+        do i = 1, size(got)
+            call check_scaled(passed, label, got(i), expected(i), sc, TOL_SP)
+        end do
+    end subroutine check_vals
+#:endif
+#:for k in REAL_KINDS
+
+    subroutine test_status_${k}$(passed)
+        !! Status of the kernel API in `real(${k}$)` (D-017.13b) and of the initializers.
+        logical, intent(inout) :: passed
+        type(visco_maxwell_${k}$) :: pm, pm_default
+        type(visco_kelvin_${k}$) :: pk
+        type(visco_coefs_${k}$) :: c
+        type(visco_state_${k}$) :: st
+        integer :: status, j
+
+        call maxwell_set_${k}$(1, pm, status)
+        call check_true(passed, 'maxwell init ${k}$', status == STATUS_OK .and. visco_n_branches(pm) == 2)
+        call visco_step_coefficients(pm, -1.0e-2_${k}$, c, status)
+        call check_true(passed, 'maxwell dt < 0 ${k}$', status == STATUS_INVALID_TIME_STEP .and. c%k_alg == 0.0_${k}$)
+        call visco_step_coefficients(pm, 0.0_${k}$, c, status)
+        call check_true(passed, 'maxwell dt = 0 ${k}$: valid, G_alg = G_0, no relaxation', status == STATUS_OK &
+            .and. c%g_alg == visco_maxwell_shear_instantaneous(pm) .and. all(c%decay(1:2) == 1.0_${k}$))
+        call visco_step_coefficients(pm_default, -1.0_${k}$, c, status)
+        call check_true(passed, 'maxwell default dt < 0 ${k}$', status == STATUS_INVALID_TIME_STEP)
+
+        call kelvin_set_${k}$(4, pk, status)
+        call check_true(passed, 'kelvin init ${k}$', status == STATUS_OK .and. visco_n_branches(pk) == 0)
+        call visco_step_coefficients(pk, -1.0e-2_${k}$, c, status)
+        call check_true(passed, 'kelvin dt < 0 ${k}$', status == STATUS_INVALID_TIME_STEP)
+        call visco_step_coefficients(pk, 0.0_${k}$, c, status)
+        call check_true(passed, 'kelvin dt = 0 ${k}$', status == STATUS_INVALID_TIME_STEP .and. c%k_alg == 0.0_${k}$)
+        call visco_step_coefficients(pk, 0.5_${k}$, c, status)
+        call check_true(passed, 'kelvin dt > 0 ${k}$', status == STATUS_OK)
+
+        ! Initializers: invalid parameters leave the default type
+        call visco_maxwell_init(pm, 1.0_${k}$, 1.0_${k}$, [1.0_${k}$, 2.0_${k}$], [1.0_${k}$], status)
+        call check_true(passed, 'maxwell init sizes ${k}$', status == STATUS_INVALID_PARAMETER .and. visco_n_branches(pm) == 0)
+        call visco_maxwell_init(pm, 1.0_${k}$, 1.0_${k}$, [1.0_${k}$], [0.0_${k}$], status)
+        call check_true(passed, 'maxwell init tau <= 0 ${k}$', status == STATUS_INVALID_PARAMETER)
+        call visco_maxwell_init(pm, 1.0_${k}$, 1.0_${k}$, [(1.0_${k}$, j = 1, MAX_VISCO_BRANCHES + 1)], &
+            [(1.0_${k}$, j = 1, MAX_VISCO_BRANCHES + 1)], status)
+        call check_true(passed, 'maxwell init too many branches ${k}$', status == STATUS_INVALID_PARAMETER)
+        call visco_maxwell_init_normalized(pm, 1.0_${k}$, 0.3_${k}$, [0.6_${k}$, 0.6_${k}$], [1.0_${k}$, 1.0_${k}$], status)
+        call check_true(passed, 'maxwell init sum(g) > 1 ${k}$', status == STATUS_INVALID_PARAMETER)
+        call visco_kelvin_init(pk, 1.0_${k}$, -1.0_${k}$, 1.0_${k}$, 1.0_${k}$, status)
+        call check_true(passed, 'kelvin init negative modulus ${k}$', status == STATUS_INVALID_PARAMETER)
+        call visco_kelvin_init(pk, 1.0_${k}$, 1.0_${k}$, 1.0_${k}$, -1.0_${k}$, status)
+        call check_true(passed, 'kelvin init negative viscosity ${k}$', status == STATUS_INVALID_PARAMETER)
+        call visco_state_init(st, MAX_VISCO_BRANCHES + 1, status)
+        call check_true(passed, 'state init n > MAX ${k}$', status == STATUS_INVALID_PARAMETER .and. st%n_branches == 0)
+        call visco_state_init(st, -1, status)
+        call check_true(passed, 'state init n < 0 ${k}$', status == STATUS_INVALID_PARAMETER)
+
+        ! Valid limits of the parameters: exactly MAX_VISCO_BRANCHES branches, and sum(g) = 1 (a Maxwell
+        ! fluid, G_inf = 0); n = 0 and sum(g) = 0 are valid too
+        call visco_state_init(st, MAX_VISCO_BRANCHES, status)
+        call check_true(passed, 'state init n = MAX ${k}$', status == STATUS_OK .and. st%n_branches == MAX_VISCO_BRANCHES)
+        call visco_state_init(st, 0, status)
+        call check_true(passed, 'state init n = 0 ${k}$', status == STATUS_OK .and. st%n_branches == 0)
+        call visco_maxwell_init(pm, 1.0_${k}$, 1.0_${k}$, [(1.0_${k}$, j = 1, MAX_VISCO_BRANCHES)], &
+            [(1.0_${k}$, j = 1, MAX_VISCO_BRANCHES)], status)
+        call check_true(passed, 'maxwell init MAX branches ${k}$', status == STATUS_OK &
+            .and. visco_n_branches(pm) == MAX_VISCO_BRANCHES)
+        call visco_maxwell_init_normalized(pm, 1.0_${k}$, 0.25_${k}$, [(0.0625_${k}$, j = 1, MAX_VISCO_BRANCHES)], &
+            [(1.0_${k}$, j = 1, MAX_VISCO_BRANCHES)], status)
+        call check_true(passed, 'maxwell init normalized MAX branches ${k}$', status == STATUS_OK &
+            .and. visco_n_branches(pm) == MAX_VISCO_BRANCHES)
+        call visco_maxwell_init_normalized(pm, 1.0_${k}$, 0.25_${k}$, [0.5_${k}$, 0.5_${k}$], [1.0_${k}$, 2.0_${k}$], status)
+        call check_true(passed, 'maxwell init normalized sum(g) = 1 ${k}$', status == STATUS_OK &
+            .and. visco_n_branches(pm) == 2 .and. visco_maxwell_shear_instantaneous(pm) == 0.4_${k}$)
+    end subroutine test_status_${k}$
+
+    subroutine test_frozen_2d_3d_${k}$(passed)
+        !! Frozen elasticity in `real(${k}$)`: every 2D function equals the 3D one of the embedded strain
+        !! (history stress without 23/13 components), and the out-of-plane 3D shears vanish.
+        logical, intent(inout) :: passed
+        type(elas_frozen_${k}$) :: el
+        type(${tname('3D2Osym', k)}$) :: e3, s3, d3
+        type(${tname('2D2Osym', k)}$) :: e2, s2, d2
+        type(${tname('3D4O3sym', k)}$) :: c3, cd3
+        type(${tname('2D4O3sym', k)}$) :: c2, cd2
+        real(${k}$) :: sc, scc
+
+        el = elas_frozen_${k}$(k_alg=1500.0_${k}$, g_alg=250.0_${k}$, &
+            stress_hist=${tname('3D2Osym', k)}$([10.0_${k}$, -20.0_${k}$, 30.0_${k}$, -4.0_${k}$, 0.0_${k}$, 0.0_${k}$]))
+        e2%vals = [1.0e-3_${k}$, -4.0e-4_${k}$, 2.0e-4_${k}$, 6.0e-4_${k}$]
+        e3%vals = [e2%vals, 0.0_${k}$, 0.0_${k}$]
+        s3 = elas_stress(el, e3)
+        s2 = elas_stress(el, e2)
+        d3 = elas_stress_dev(el, e3)
+        d2 = elas_stress_dev(el, e2)
+        c3 = elas_dstress_dstrain(el, e3)
+        c2 = elas_dstress_dstrain(el, e2)
+        cd3 = elas_dstress_dstrain_dev(el, e3)
+        cd2 = elas_dstress_dstrain_dev(el, e2)
+        sc = maxval(abs(s3%vals))
+        scc = maxval(abs(c3%vals))
+#:for c in layout('2Osym', '2D').comps
+        call check_scaled(passed, 'frozen 2D vs 3D stress ${c.name}$ ${k}$', s2%vals(${c.pos[0]}$), &
+            s3%vals(${layout('2Osym', '3D').index(*c.idx)[0]}$), sc, TOL_APPROX_${k}$)
+        call check_scaled(passed, 'frozen 2D vs 3D stress_dev ${c.name}$ ${k}$', d2%vals(${c.pos[0]}$), &
+            d3%vals(${layout('2Osym', '3D').index(*c.idx)[0]}$), sc, TOL_APPROX_${k}$)
+#:endfor
+        call check_true(passed, 'frozen 3D out-of-plane shears ${k}$', all(s3%vals(5:6) == 0.0_${k}$))
+#:for c in layout('4O3sym', '2D').comps
+        call check_scaled(passed, 'frozen 2D vs 3D tangent ${c.name}$ ${k}$', c2%vals(${c.pos[0]}$), &
+            c3%vals(${layout('4O3sym', '3D').index(*c.idx)[0]}$), scc, TOL_APPROX_${k}$)
+        call check_scaled(passed, 'frozen 2D vs 3D dev tangent ${c.name}$ ${k}$', cd2%vals(${c.pos[0]}$), &
+            cd3%vals(${layout('4O3sym', '3D').index(*c.idx)[0]}$), scc, TOL_APPROX_${k}$)
+#:endfor
+    end subroutine test_frozen_2d_3d_${k}$
+
+    subroutine test_point_${k}$(passed)
+        !! The `pure`, `@:DEVICE()` multi-step procedure against the step loop of `history_maxwell_${k}$`
+        !! (same kind, bit for bit).
+        logical, intent(inout) :: passed
+        type(visco_maxwell_${k}$) :: prm
+        type(visco_state_${k}$) :: state
+        real(${k}$) :: dts(NSTEPS), eps(6, NSTEPS), sig(6, NSTEPS)
+        real(dp) :: rec(NREC, NSTEPS)
+        integer :: i, status, s0
+
+        call maxwell_set_${k}$(1, prm, status)
+        call visco_state_init(state, visco_n_branches(prm), status)
+        do i = 1, NSTEPS
+            dts(i) = real(dt_of(1, i), ${k}$)
+            eps(:, i) = real(strain_at(i), ${k}$)
+        end do
+        call maxwell_steps_${k}$(prm, dts, eps, state, sig, status)
+        call history_maxwell_${k}$(1, rec)
+        s0 = 4 + 2*MAX_VISCO_BRANCHES
+        call check_true(passed, 'point procedure ${k}$: status', status == STATUS_OK)
+        call check_true(passed, 'point procedure ${k}$: stress == step loop (bits)', &
+            same_bits(reshape(real(sig, dp), [6*NSTEPS]), reshape(rec(s0 + 1:s0 + 6, :), [6*NSTEPS])))
+        call check_true(passed, 'point procedure ${k}$: final state == step loop (bits)', &
+            same_bits(real([state%strain_e%vals, reshape(state%h, [6*MAX_VISCO_BRANCHES])], dp), &
+                      rec(s0 + 7:NREC - 1, NSTEPS)))
+        ! dt < 0 at some step: the procedure stops with the status
+        dts(4) = -1.0_${k}$
+        call visco_state_init(state, visco_n_branches(prm), status)
+        call maxwell_steps_${k}$(prm, dts, eps, state, sig, status)
+        call check_true(passed, 'point procedure ${k}$: dt < 0', status == STATUS_INVALID_TIME_STEP)
+    end subroutine test_point_${k}$
+#:endfor
+
+    subroutine test_frozen_dev_2d(passed)
+        !! Kernel 2D deviatoric stress of the frozen elasticity (analytic) against `.dev.` of its 2D
+        !! stress (the path of the retired OO type, inherited from Base_elasticity): same up to rounding.
+        logical, intent(inout) :: passed
+        type(elas_frozen_dp) :: el
+        type(ten_3D2Osym_dp) :: h
+        type(ten_2D2Osym_dp) :: e2, a, b
+        integer :: i
+
+        h%vals = [10.0_dp, -20.0_dp, 30.0_dp, -4.0_dp, 5.0_dp, -6.0_dp]
+        el = elas_frozen_dp(k_alg=1500.0_dp, g_alg=250.0_dp, stress_hist=h)
+        e2%vals = [1.0e-3_dp, -4.0e-4_dp, 2.0e-4_dp, 6.0e-4_dp]
+        a = .dev. elas_stress(el, e2)
+        b = elas_stress_dev(el, e2)
+        do i = 1, 4
+            call check_scaled(passed, 'frozen 2D stress_dev kernel vs .dev. stress', b%vals(i), a%vals(i), &
+                maxval(abs(a%vals)), TOL_APPROX_dp)
+        end do
+    end subroutine test_frozen_dev_2d
+
+    subroutine run_all(code)
+        !! Runs every test; `code` is the number of the first failed group (0: all passed).
+        integer, intent(out) :: code
+        logical :: passed
+
+        code = 0
+        passed = .true.
+        call test_histories(passed)
+        if (.not. passed .and. code == 0) code = 1
+#:for k in REAL_KINDS
+        passed = .true.
+        call test_status_${k}$(passed)
+        if (.not. passed .and. code == 0) code = 2
+        passed = .true.
+        call test_frozen_2d_3d_${k}$(passed)
+        if (.not. passed .and. code == 0) code = 3
+        passed = .true.
+        call test_point_${k}$(passed)
+        if (.not. passed .and. code == 0) code = 4
+#:endfor
+        passed = .true.
+        call test_frozen_dev_2d(passed)
+        if (.not. passed .and. code == 0) code = 5
+    end subroutine run_all
+
+end module test_visco_cases
+
+program test_visco_kinds
+    use test_visco_cases, only : run_all
+    implicit none
+    integer :: code
+
+    call run_all(code)
+    if (code /= 0) stop code
+    print '(a)', ' Passed!'
+end program test_visco_kinds

@@ -46,9 +46,12 @@
 #:mute
 
 #! Indents the expanded lines (not the #line markers) by `n` columns
-#:set fd_indent = lambda text, n: '\n'.join(l if not l or l.startswith('#') else ' ' * int(n) + l for l in text.rstrip('\n').split('\n'))
+#:set fd_indent = lambda text, n: '\n'.join(l if not l or l.startswith('#') else ' ' * int(n) + l &
+    & for l in text.rstrip('\n').split('\n'))
 #! `use` of the kind (and of the step constants if the default step is used)
-#:set fd_use_kind = lambda k, step, rel, mn, zero=None, scale=None: 'use muscle_kinds, only : ' + k + ('' if step is not None else ''.join(', {}_{}'.format(c, k) for c in [rel] + ([] if scale is not None else [mn] + ([zero] if zero else []))))
+#:set fd_use_kind = lambda k, step, rel, mn, zero=None, scale=None: 'use muscle_kinds, only : ' + k &
+    & + ('' if step is not None else ''.join(', {}_{}'.format(c, k) &
+    & for c in [rel] + ([] if scale is not None else [mn] + ([zero] if zero else []))))
 #! Extra local of the default step: |x|
 #:set fd_decl_n = lambda step: '' if step is not None else ', fd_n'
 #! Step statements: explicit `step`; or |x| = nterms (list of terms) and h = rel max(|x|, scale)

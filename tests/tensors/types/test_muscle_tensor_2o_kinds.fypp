@@ -10,7 +10,8 @@
 #:set STORE3 = [(1, 1), (2, 1), (3, 1), (1, 2), (2, 2), (3, 2), (1, 3), (2, 3), (3, 3)]
 #:set STORE2 = [(1, 1), (2, 1), (1, 2), (2, 2), (3, 3)]
 #:set STORE = {'3D': STORE3, '2D': STORE2}
-#:set NAMES3 = [('xx', 1, 1), ('xy', 1, 2), ('xz', 1, 3), ('yx', 2, 1), ('yy', 2, 2), ('yz', 2, 3), ('zx', 3, 1), ('zy', 3, 2), ('zz', 3, 3)]
+#:set NAMES3 = [('xx', 1, 1), ('xy', 1, 2), ('xz', 1, 3), ('yx', 2, 1), ('yy', 2, 2), ('yz', 2, 3), &
+    & ('zx', 3, 1), ('zy', 3, 2), ('zz', 3, 3)]
 #:set NAMES2 = [('xx', 1, 1), ('xy', 1, 2), ('yx', 2, 1), ('yy', 2, 2), ('zz', 3, 3)]
 #:set NAMES = {'3D': NAMES3, '2D': NAMES2}
 #! Small dyadic matrices (row-major 3x3), exact in every kind and in every operation below
@@ -252,7 +253,8 @@ contains
 #:if d == '3D'
         call a%init(1.0_${k}$, 2.0_${k}$, 3.0_${k}$, 4.0_${k}$, 5.0_${k}$, 6.0_${k}$, 7.0_${k}$, 8.0_${k}$, 9.0_${k}$)
         call check_approx(passed, 'init(xx, xy, xz, yx, ..) -> column-major vals' // TN, a%vals, &
-                          [1.0_${k}$, 4.0_${k}$, 7.0_${k}$, 2.0_${k}$, 5.0_${k}$, 8.0_${k}$, 3.0_${k}$, 6.0_${k}$, 9.0_${k}$], tol=ZERO)
+                          [1.0_${k}$, 4.0_${k}$, 7.0_${k}$, 2.0_${k}$, 5.0_${k}$, 8.0_${k}$, 3.0_${k}$, 6.0_${k}$, &
+                           9.0_${k}$], tol=ZERO)
 #:else
         call a%init(1.0_${k}$, 2.0_${k}$, 3.0_${k}$, 4.0_${k}$, 5.0_${k}$)
         call check_approx(passed, 'init(xx, xy, yx, yy, zz) -> (xx, yx, xy, yy, zz)' // TN, a%vals, &
@@ -481,7 +483,8 @@ $:test_free_generics('2O', d, k, 'test_2o_kinds_lib', 'muscle_tensor_2o', scalar
 #:if defined('ENABLE_UDTIO')
     subroutine test_udtio_${d}$_${k}$(passed)
         !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`.
-        !! Expected texts captured from the original (pre-FYPP) `ten_${d}$2O`${', except the matrix rows 2-3 (see below)' if d == '3D' else ''}$:
+        !! Expected texts captured from the original (pre-FYPP)
+        !! `ten_${d}$2O`${', except the matrix rows 2-3 (see below)' if d == '3D' else ''}$:
         !!
         !! - list mode (`DT"LIST"`): `[` + the ${N}$ stored components in storage order
         !!   (column-major${', then zz' if d == '2D' else ''}$) + `]`, `ES11.4` by default,

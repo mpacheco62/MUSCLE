@@ -193,6 +193,8 @@ contains
             !! Second identity.
         type(${U}$) :: res
             !! The identity.
+
+        res = a
     end function mul_${I}$_${I}$
 
 #:endif
@@ -386,7 +388,7 @@ contains
 
     pure function approx_${IS}$_${k}$(a, b) result(res)
         !! `${S}$ .approx. ${S}$`: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \) with
-        !! `tol = TOL_APPROX_IDEN_${k}$`.
+        !! `tol = TOL_APPROX_IDEN_${k}$`; an Inf or NaN factor matches only the same Inf.
         implicit none
         @:DEVICE()
         type(${S}$), intent(in) :: a
@@ -399,6 +401,8 @@ contains
 
         tol = TOL_APPROX_IDEN_${k}$*max(1.0_${k}$, abs(a%val), abs(b%val))
         res = (abs(a%val - b%val)) <= tol
+        ! abs(x) <= huge(x) is false for Inf and NaN: an infinite scale would accept any finite value
+        if (.not. (abs(a%val) <= huge(tol) .and. abs(b%val) <= huge(tol))) res = a%val == b%val
     end function approx_${IS}$_${k}$
 
     pure subroutine init_${IS}$_${k}$_tbp(self, val)

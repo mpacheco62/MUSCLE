@@ -118,8 +118,9 @@ contains
     end function elas_stress_linear_3D_${k}$
 
     pure function elas_stress_dev_linear_3D_${k}$(prm, strain) result(res)
-        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model in `real(${k}$)` (3D).
-        !! Analytic, also in 2D: \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
+        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model
+        !! in `real(${k}$)` (3D). Analytic, also in 2D:
+        !! \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
         implicit none
         @:DEVICE()
         type(elas_linear_${k}$), intent(in) :: prm
@@ -143,8 +144,9 @@ contains
     end function elas_stress_dev_linear_3D_${k}$
 
     pure function elas_dstress_dstrain_linear_3D_${k}$(prm, strain) result(res)
-        !! Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in `real(${k}$)` (3D).
-        !! Constant: `strain` is not used. \( C_{iiii} = e_1 \), \( C_{iijj} = \lambda \), \( C_{ijij} = \mu \) (\( i \ne j \)), others 0.
+        !! Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in
+        !! `real(${k}$)` (3D). Constant: `strain` is not used. \( C_{iiii} = e_1 \), \( C_{iijj} = \lambda \), \( C_{ijij} = \mu \)
+        !! (\( i \ne j \)), others 0.
         implicit none
         @:DEVICE()
         type(elas_linear_${k}$), intent(in) :: prm
@@ -178,8 +180,9 @@ contains
     end function elas_dstress_dstrain_linear_3D_${k}$
 
     pure function elas_dstress_dstrain_dev_linear_3D_${k}$(prm, strain) result(res)
-        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in `real(${k}$)` (3D).
-        !! Constant: `strain` is not used. Analytic: \( 4\mu/3 \) (normal diagonal), \( -2\mu/3 \) (normal off-diagonal), \( \mu \) (shears).
+        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) of the linear
+        !! isotropic elastic model in `real(${k}$)` (3D). Constant: `strain` is not used. Analytic: \( 4\mu/3 \) (normal diagonal),
+        !! \( -2\mu/3 \) (normal off-diagonal), \( \mu \) (shears).
         implicit none
         @:DEVICE()
         type(elas_linear_${k}$), intent(in) :: prm
@@ -241,8 +244,9 @@ contains
     end function elas_stress_linear_2D_${k}$
 
     pure function elas_stress_dev_linear_2D_${k}$(prm, strain) result(res)
-        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model in `real(${k}$)` (2D).
-        !! Analytic, also in 2D: \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
+        !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) of the linear isotropic elastic model
+        !! in `real(${k}$)` (2D). Analytic, also in 2D:
+        !! \( s_{ij} = 2\mu\,\varepsilon_{ij} - \tfrac{2}{3}\mu\,\varepsilon_{kk}\,\delta_{ij} \).
         implicit none
         @:DEVICE()
         type(elas_linear_${k}$), intent(in) :: prm
@@ -264,8 +268,9 @@ contains
     end function elas_stress_dev_linear_2D_${k}$
 
     pure function elas_dstress_dstrain_linear_2D_${k}$(prm, strain) result(res)
-        !! Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in `real(${k}$)` (2D).
-        !! Constant: `strain` is not used. \( C_{iiii} = e_1 \), \( C_{iijj} = \lambda \), \( C_{ijij} = \mu \) (\( i \ne j \)), others 0.
+        !! Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in
+        !! `real(${k}$)` (2D). Constant: `strain` is not used. \( C_{iiii} = e_1 \), \( C_{iijj} = \lambda \), \( C_{ijij} = \mu \)
+        !! (\( i \ne j \)), others 0.
         implicit none
         @:DEVICE()
         type(elas_linear_${k}$), intent(in) :: prm
@@ -288,8 +293,9 @@ contains
     end function elas_dstress_dstrain_linear_2D_${k}$
 
     pure function elas_dstress_dstrain_dev_linear_2D_${k}$(prm, strain) result(res)
-        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) of the linear isotropic elastic model in `real(${k}$)` (2D).
-        !! Constant: `strain` is not used. Analytic: \( 4\mu/3 \) (normal diagonal), \( -2\mu/3 \) (normal off-diagonal), \( \mu \) (shears).
+        !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) of the linear
+        !! isotropic elastic model in `real(${k}$)` (2D). Constant: `strain` is not used. Analytic: \( 4\mu/3 \) (normal diagonal),
+        !! \( -2\mu/3 \) (normal off-diagonal), \( \mu \) (shears).
         implicit none
         @:DEVICE()
         type(elas_linear_${k}$), intent(in) :: prm

@@ -2,7 +2,7 @@
 # Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 """Unit tests of the parameter array of the declared materials in tools/fypp/muscle_meta.py
 (``material_props``, ``material_init_call``, ``material_props_table`` and the command
-``muscle_meta.py props NAME``; D-018.17a, e). tests/materials/test_mat_init.fypp checks that the Fortran
+``muscle_meta.py props NAME``; D-018.17a, e). tests/materials/test_muscle_material_init.fypp checks that the Fortran
 initializers ``mat_init_<name>`` follow the same order.
 
 Run: python3 -m unittest tests/tools/test_muscle_material_props.py

@@ -1,0 +1,416 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#!
+#! Special cases of the spectral routines, every kind, with references known in closed form:
+#!
+#! - eigenvals when the middle root is the mean of the other two (det of the deviator = 0, the
+#!   branch d = 1 of the closed form): integer tensors with integer eigenvalues (diag(5, 3, 1) and
+#!   its permutations, Q diag(9, 0, -9) Q^T with the integer orthogonal 3 Q = [[1,2,2],[2,1,-2],
+#!   [2,-2,1]], plus a shift) are returned exactly: J2, sqrt(J2) and I1/3 are exact there.
+#! - spectral_decomposition (T V = V L, V^T V = I, descending L) on tensors that select each branch
+#!   of the construction: diagonal tensors with distinct eigenvalues in every order (the plane
+#!   block is already diagonal, q = 0), equally spaced eigenvalues (both outer roots equally far
+#!   from the middle one), c I + d n (x) n with an exactly repeated pair on top or at the bottom
+#!   and n = (1,2,2)/3, (2,2,1)/3 (|n_1| = |n_2|: equal cross products and equal pivot candidates),
+#!   and the integer tensor with eigenvalues (9, 0, -9).
+#! - spectral_hessian / spectral_gradient of phi(S) = tr(S^4)/4 + det(S), a symmetric function of
+#!   the eigenvalues whose derivatives phi_a = lam_a^3 + lam_b lam_c, phi_aa = 3 lam_a^2,
+#!   phi_ab = lam_c (c the third index) are all different and whose divided differences are not
+#!   their own limits (degree 4), against the closed forms dphi/dS = S^3 + cof(S),
+#!   cof(S) = S^2 - I1 S + I2 I (Cayley-Hamilton), and
+#!   d2phi/dS2 : dS = dS S^2 + S dS S + S^2 dS + S dS + dS S - tr(dS) S - I1 dS
+#!                    + (I1 tr(dS) - tr(S dS)) I,
+#! with distinct, double (top, bottom) and triple eigenvalues, randomly rotated. The references are
+#! computed in dp from the tensor of kind k converted exactly to dp.
+#! - spectral_hessian with arbitrary phi_a, phi_ab (the routine takes any) against its documented
+#!   formula (theta_ab: divided difference, or its limit 1/2 (phi_aa + phi_bb) - phi_ab for equal
+#!   eigenvalues), evaluated independently on 3x3 matrices.
+#!
+#! Tolerances, in units of eps = epsilon(1.0_k): decomposition |T V - V L| <= C_RES eps s and
+#! |V^T V - I| <= C_ORTH eps (as test_math_spectral_kinds: measured 6.2 and 5 there); gradient and
+#! Hessian action relative to their scale (3 s^2 + 2 s, times max|dS| for the Hessian) <= C_HESS eps,
+#! amplified by 1/gap for distinct roots (the eigenvector error, gap >= 0.3 here). Measured maxima
+#! printed by the test.
+#:set C_RES = 60
+#:set C_ORTH = 50
+#:set C_HESS = 80
+
+module test_math_spectral_cases_ref
+    !! Double precision helpers: Voigt <-> matrix and the closed forms of phi = tr(S^4)/4 + det(S).
+    use muscle_kinds, only : dp
+    implicit none
+    private
+    public :: mat_of, voigt_of, phi_grad_ref, phi_hess_ref, eye3
+
+contains
+
+    pure function mat_of(v) result(m)
+        !! Symmetric matrix of a tensorial Voigt vector (11, 22, 33, 12, 23, 13).
+        real(dp), intent(in) :: v(6)
+        real(dp) :: m(3,3)
+        m = reshape([v(1), v(4), v(6), v(4), v(2), v(5), v(6), v(5), v(3)], [3, 3])
+    end function mat_of
+
+    pure function voigt_of(m) result(v)
+        !! Tensorial Voigt vector of the symmetric part of a matrix.
+        real(dp), intent(in) :: m(3,3)
+        real(dp) :: v(6)
+        v = [m(1,1), m(2,2), m(3,3), 0.5_dp*(m(1,2) + m(2,1)), 0.5_dp*(m(2,3) + m(3,2)), &
+             0.5_dp*(m(1,3) + m(3,1))]
+    end function voigt_of
+
+    pure function eye3() result(m)
+        !! 3x3 identity.
+        real(dp) :: m(3,3)
+        m = 0.0_dp
+        m(1,1) = 1.0_dp
+        m(2,2) = 1.0_dp
+        m(3,3) = 1.0_dp
+    end function eye3
+
+    pure function phi_grad_ref(s) result(g)
+        !! dphi/dS = S^3 + cof(S), cof(S) = S^2 - I1 S + I2 I.
+        real(dp), intent(in) :: s(3,3)
+        real(dp) :: g(3,3)
+        real(dp) :: s2(3,3), i1, i2
+        s2 = matmul(s, s)
+        i1 = s(1,1) + s(2,2) + s(3,3)
+        i2 = 0.5_dp*(i1**2 - (s2(1,1) + s2(2,2) + s2(3,3)))
+        g = matmul(s2, s) + s2 - i1*s + i2*eye3()
+    end function phi_grad_ref
+
+    pure function phi_hess_ref(s, ds) result(h)
+        !! d2phi/dS2 : dS, the directional derivative of phi_grad_ref.
+        real(dp), intent(in) :: s(3,3), ds(3,3)
+        real(dp) :: h(3,3)
+        real(dp) :: s2(3,3), sds(3,3), i1, tr_ds, tr_sds
+        s2 = matmul(s, s)
+        sds = matmul(s, ds)
+        i1 = s(1,1) + s(2,2) + s(3,3)
+        tr_ds = ds(1,1) + ds(2,2) + ds(3,3)
+        tr_sds = sds(1,1) + sds(2,2) + sds(3,3)
+        h = matmul(ds, s2) + matmul(sds, s) + matmul(s2, ds) + sds + matmul(ds, s) - tr_ds*s - i1*ds &
+            + (i1*tr_ds - tr_sds)*eye3()
+    end function phi_hess_ref
+
+end module test_math_spectral_cases_ref
+
+
+program test_math_spectral_cases
+    !! Exact and closed-form special cases of eigenvals, spectral_decomposition, spectral_gradient
+    !! and spectral_hessian, `real(sp)` and `real(dp)`.
+    use muscle_kinds, only : sp, dp
+    use muscle_test_helpers, only : record
+    implicit none
+    integer :: code
+
+    code = 0
+#:for i, k in enumerate(REAL_KINDS)
+    call record(test_middle_mean_${k}$(), ${10*i + 1}$, 'eigenvals, middle root = mean ${k}$', code)
+    call record(test_decomposition_${k}$(), ${10*i + 2}$, 'spectral_decomposition branches ${k}$', code)
+    call record(test_hessian_${k}$(), ${10*i + 3}$, 'spectral_hessian of tr(S^4)/4 + det(S) ${k}$', code)
+    call record(test_hessian_contract_${k}$(), ${10*i + 4}$, 'spectral_hessian formula, arbitrary inputs ${k}$', code)
+#:endfor
+    if (code /= 0) stop code
+    print *, "Passed!"
+
+contains
+
+#:for k in REAL_KINDS
+#:set T2 = tname('3D2Osym', k)
+#:set T4 = tname('3D4O3sym', k)
+
+    logical function test_middle_mean_${k}$() result(passed)
+        !! eigenvals of `${T2}$` with integer eigenvalues whose middle one is the mean of the others:
+        !! exact.
+        use muscle_tensors
+        use muscle_math_operations, only : eigenvals
+        use muscle_test_utils, only : check_true
+        integer, parameter :: PERM(3, 6) = reshape([1, 2, 3, 1, 3, 2, 2, 1, 3, 2, 3, 1, 3, 1, 2, 3, 2, 1], [3, 6])
+        real(${k}$), parameter :: DIAG(3) = [5.0_${k}$, 3.0_${k}$, 1.0_${k}$]
+        real(${k}$), parameter :: SHIFTS(3) = [0.0_${k}$, 3.0_${k}$, -12.0_${k}$]
+        type(${T2}$) :: t
+        real(${k}$) :: lam(3), shift
+        character(len=64) :: label
+        integer :: ip, is
+
+        passed = .true.
+        do ip = 1, 6
+            t%vals = 0.0_${k}$
+            t%vals(1:3) = DIAG(PERM(:, ip))
+            lam = eigenvals(t)
+            write(label, '(a, 3i2)') 'diag(5, 3, 1) permuted', PERM(:, ip)
+            if (any(lam /= DIAG)) print '(2x, a, 3es16.8)', '${k}$ ' // trim(label) // ': got', lam
+            call check_true(passed, '${k}$ ' // trim(label), all(lam == DIAG))
+        end do
+        ! Q diag(9, 0, -9) Q^T = [[-3, 6, 0], [6, 0, 6], [0, 6, 3]], shifted by 0, 3 and -12
+        do is = 1, 3
+            shift = SHIFTS(is)
+            t%vals = [-3.0_${k}$ + shift, shift, 3.0_${k}$ + shift, 6.0_${k}$, 6.0_${k}$, 0.0_${k}$]
+            lam = eigenvals(t)
+            write(label, '(a, f5.1)') 'Q diag(9, 0, -9) Q^T + shift I, shift =', shift
+            if (any(lam /= [9.0_${k}$, 0.0_${k}$, -9.0_${k}$] + shift)) &
+                print '(2x, a, 3es16.8)', '${k}$ ' // trim(label) // ': got', lam
+            call check_true(passed, '${k}$ ' // trim(label), all(lam == [9.0_${k}$, 0.0_${k}$, -9.0_${k}$] + shift))
+        end do
+    end function test_middle_mean_${k}$
+
+    subroutine check_decomposition_${k}$(passed, worst, label, vals)
+        !! spectral_decomposition of the `${T2}$` with Voigt `vals`: descending eigenvalues,
+        !! T V = V L and V^T V = I (dp residuals of the kind-k results).
+        use muscle_tensors
+        use muscle_math_spectral_derivs, only : spectral_decomposition
+        use muscle_test_utils, only : check_true
+        use test_math_spectral_cases_ref, only : mat_of, eye3
+        logical, intent(inout) :: passed
+        real(dp), intent(inout) :: worst(2)
+            !! Largest residual and orthogonality errors found, in units of eps s and eps.
+        character(len=*), intent(in) :: label
+        real(${k}$), intent(in) :: vals(6)
+        real(dp), parameter :: EPS = real(epsilon(1.0_${k}$), dp)
+        type(${T2}$) :: t
+        real(${k}$) :: lam(3), v(3,3)
+        real(dp) :: am(3,3), vd(3,3), s, res, orth
+        integer :: a
+
+        t%vals = vals
+        am = mat_of(real(vals, dp))
+        call spectral_decomposition(t, lam, v)
+        vd = real(v, dp)
+        s = maxval(abs(real(lam, dp)))
+        res = 0.0_dp
+        do a = 1, 3
+            res = max(res, maxval(abs(matmul(am, vd(:, a)) - real(lam(a), dp)*vd(:, a))))
+        end do
+        res = res/(EPS*s)
+        orth = maxval(abs(matmul(transpose(vd), vd) - eye3()))/EPS
+        worst = max(worst, [res, orth])
+        if (res > ${C_RES}$ .or. orth > ${C_ORTH}$) print '(2x, a, 2es10.2)', '${k}$ ' // label // &
+            ': residual/(eps s), orthogonality/eps =', res, orth
+        call check_true(passed, '${k}$ decomposition descending: ' // label, lam(1) >= lam(2) .and. lam(2) >= lam(3))
+        call check_true(passed, '${k}$ decomposition T V = V L: ' // label, res <= ${C_RES}$)
+        call check_true(passed, '${k}$ decomposition V^T V = I: ' // label, orth <= ${C_ORTH}$)
+    end subroutine check_decomposition_${k}$
+
+    logical function test_decomposition_${k}$() result(passed)
+        !! spectral_decomposition in `real(${k}$)` on the special tensors of the header.
+        use muscle_test_utils, only : check_true
+        integer, parameter :: PERM(3, 6) = reshape([1, 2, 3, 1, 3, 2, 2, 1, 3, 2, 3, 1, 3, 1, 2, 3, 2, 1], [3, 6])
+        real(${k}$) :: diag(3, 3), n(3, 2), nn(6), vals(6), cd(2, 4)
+        real(dp) :: worst(2)
+        character(len=64) :: label
+        integer :: id, ip, in, ic
+
+        passed = .true.
+        worst = 0.0_dp
+        ! Diagonal: outer root farther from the middle (top or bottom), equally spaced
+        diag(:, 1) = [4.0_${k}$, 2.0_${k}$, 1.0_${k}$]
+        diag(:, 2) = [4.0_${k}$, 3.0_${k}$, 1.0_${k}$]
+        diag(:, 3) = [3.0_${k}$, 2.0_${k}$, 1.0_${k}$]
+        do id = 1, 3
+            do ip = 1, 6
+                vals = 0.0_${k}$
+                vals(1:3) = diag(PERM(:, ip), id)
+                write(label, '(a, 3f4.0)') 'diagonal', vals(1:3)
+                call check_decomposition_${k}$(passed, worst, trim(label), vals)
+            end do
+        end do
+        ! c I + d n (x) n (exact integers): repeated pair on top (d < 0) or at the bottom (d > 0)
+        n(:, 1) = [1.0_${k}$, 2.0_${k}$, 2.0_${k}$]
+        n(:, 2) = [2.0_${k}$, 2.0_${k}$, 1.0_${k}$]
+        cd(:, 1) = [1.0_${k}$, -1.0_${k}$]
+        cd(:, 2) = [-1.0_${k}$, 1.0_${k}$]
+        cd(:, 3) = [3.0_${k}$, -1.0_${k}$]
+        cd(:, 4) = [-3.0_${k}$, 1.0_${k}$]
+        do in = 1, 2
+            nn = [n(1, in)**2, n(2, in)**2, n(3, in)**2, n(1, in)*n(2, in), n(2, in)*n(3, in), n(1, in)*n(3, in)]
+            do ic = 1, 4
+                vals = cd(2, ic)*nn
+                vals(1:3) = vals(1:3) + cd(1, ic)
+                write(label, '(a, 3f3.0, a, f4.0, a, f4.0)') 'c I + d n n, 3n =', n(:, in), ', c =', &
+                    cd(1, ic), ', 9d =', 9.0_${k}$*cd(2, ic)
+                call check_decomposition_${k}$(passed, worst, trim(label), vals)
+            end do
+        end do
+        ! Q diag(9, 0, -9) Q^T: distinct, equally spaced, off the axes
+        call check_decomposition_${k}$(passed, worst, 'Q diag(9, 0, -9) Q^T', &
+            [-3.0_${k}$, 0.0_${k}$, 3.0_${k}$, 6.0_${k}$, 6.0_${k}$, 0.0_${k}$])
+        print '(a, 2f7.2)', '  ${k}$ decomposition: worst residual/(eps s), orthogonality/eps:', worst
+    end function test_decomposition_${k}$
+
+    logical function test_hessian_${k}$() result(passed)
+        !! spectral_gradient and spectral_hessian in `real(${k}$)` of phi = tr(S^4)/4 + det(S) against
+        !! the closed forms, eigenvalue shapes x scales x random rotations.
+        use muscle_tensors
+        use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian
+        use muscle_test_utils, only : check_true
+        use muscle_test_helpers, only : park_miller, rnd, rotation_ref
+        use test_math_spectral_cases_ref, only : mat_of, voigt_of, phi_grad_ref, phi_hess_ref
+        integer, parameter :: NSHAPE = 6, NROT = 10
+        real(dp), parameter :: EPS = real(epsilon(1.0_${k}$), dp)
+        real(dp), parameter :: SCALES(2) = [1.0_dp, 2.5_dp]
+        real(dp) :: shapes(3, NSHAPE), q(3,3), sd(3,3), am(3,3), dsm(3,3), dsv(6), s, gap, sc
+        real(dp) :: err_g, err_h, worst(2)
+        type(park_miller) :: rng
+        type(${T2}$) :: t, ds, grad, ht
+        type(${T4}$) :: hess
+        real(${k}$) :: lam(3), v(3,3), dphi(3), d2phi(3,3)
+        character(len=64) :: label
+        integer :: ishape, isc, ir, a
+
+        passed = .true.
+        worst = 0.0_dp
+        rng = park_miller(9112026)
+        shapes(:, 1) = [1.0_dp, 0.3_dp, -0.7_dp]
+        shapes(:, 2) = [1.0_dp, -0.4_dp, -0.8_dp]
+        shapes(:, 3) = [1.0_dp, 1.0_dp, -0.5_dp]
+        shapes(:, 4) = [0.4_dp, -1.0_dp, -1.0_dp]
+        shapes(:, 5) = [1.0_dp, 1.0_dp, 1.0_dp]
+        shapes(:, 6) = [-0.6_dp, -0.6_dp, -0.6_dp]
+        do isc = 1, size(SCALES)
+        do ishape = 1, NSHAPE
+        do ir = 0, NROT
+            write(label, '(a, 3f5.1, a, f4.1, a, i0)') 'eigenvalues', shapes(:, ishape), ' s=', SCALES(isc), &
+                ' rot ', ir
+            sd = 0.0_dp
+            do a = 1, 3
+                sd(a, a) = SCALES(isc)*shapes(a, ishape)
+            end do
+            ! ir = 0: the diagonal tensor itself (exactly repeated roots)
+            if (ir > 0) then
+                q = rotation_ref(rng)
+                sd = matmul(q, matmul(sd, transpose(q)))
+            end if
+            t%vals = real(voigt_of(sd), ${k}$)
+            am = mat_of(real(t%vals, dp))
+            do a = 1, 6
+                dsv(a) = rnd(rng)
+            end do
+            ds%vals = real(dsv, ${k}$)
+            dsv = real(ds%vals, dp)
+            dsm = mat_of(dsv)
+
+            call spectral_decomposition(t, lam, v)
+            dphi = [lam(1)**3 + lam(2)*lam(3), lam(2)**3 + lam(1)*lam(3), lam(3)**3 + lam(1)*lam(2)]
+            d2phi = reshape([3.0_${k}$*lam(1)**2, lam(3), lam(2), &
+                             lam(3), 3.0_${k}$*lam(2)**2, lam(1), &
+                             lam(2), lam(1), 3.0_${k}$*lam(3)**2], [3, 3])
+            s = SCALES(isc)*maxval(abs(shapes(:, ishape)))
+            sc = 3.0_dp*s**2 + 2.0_dp*s
+            ! Eigenvector error ~ eps/gap for distinct roots; clusters enter only through sums over the
+            ! cluster (or their limits), which are well conditioned
+            gap = 1.0_dp
+            if (ishape <= 2) gap = min(abs(shapes(1, ishape) - shapes(2, ishape)), &
+                                       abs(shapes(2, ishape) - shapes(3, ishape)))
+
+            grad = spectral_gradient(v, dphi)
+            err_g = maxval(abs(real(grad%vals, dp) - voigt_of(phi_grad_ref(am))))/sc*gap/EPS
+            hess = spectral_hessian(lam, v, dphi, d2phi)
+            ht = hess .ddot. ds
+            err_h = maxval(abs(real(ht%vals, dp) - voigt_of(phi_hess_ref(am, dsm))))/(sc*maxval(abs(dsv)))*gap/EPS
+            worst = max(worst, [err_g, err_h])
+            if (err_g > ${C_HESS}$ .or. err_h > ${C_HESS}$) print '(2x, a, 2es10.2)', '${k}$ ' // trim(label) // &
+                ': gradient, Hessian error*gap/eps =', err_g, err_h
+            call check_true(passed, '${k}$ spectral_gradient: ' // trim(label), err_g <= ${C_HESS}$)
+            call check_true(passed, '${k}$ spectral_hessian: ' // trim(label), err_h <= ${C_HESS}$)
+        end do
+        end do
+        end do
+        print '(a, 2f7.2)', '  ${k}$ phi = tr(S^4)/4 + det(S): worst gradient, Hessian error*gap/eps:', worst
+    end function test_hessian_${k}$
+
+    logical function test_hessian_contract_${k}$() result(passed)
+        !! spectral_hessian in `real(${k}$)` with arbitrary inputs (the routine takes any phi_a, phi_ab,
+        !! eigenvalues and orthonormal eigenvectors) against its documented formula, evaluated
+        !! independently in dp on 3x3 matrices through the action on dS:
+        !! H : dS = sum_ab phi_ab E_a (E_b : dS) + sum_(a<b) 2 theta_ab N_ab (N_ab : dS), with
+        !! theta_ab = (phi_a - phi_b)/(lam_a - lam_b), or its limit 1/2 (phi_aa + phi_bb) - phi_ab when
+        !! lam_a and lam_b coincide. Eigenvalues distinct, with each pair repeated, and triple (also
+        !! zero); random symmetric phi_ab (every entry different), random rotations V.
+        use muscle_tensors
+        use muscle_math_spectral_derivs, only : spectral_hessian
+        use muscle_test_utils, only : check_true
+        use muscle_test_helpers, only : park_miller, rnd, rotation_ref
+        use test_math_spectral_cases_ref, only : mat_of, voigt_of
+        integer, parameter :: NLAM = 6, NDRAW = 10
+        real(dp), parameter :: EPS = real(epsilon(1.0_${k}$), dp)
+        real(dp) :: lams(3, NLAM), lr(3), vr(3,3), dr(3), d2r(3,3), dsm(3,3), dsv(6), ea(3,3,3), n(3,3)
+        real(dp) :: ref(3,3), theta, sc, err, worst
+        type(park_miller) :: rng
+        type(${T2}$) :: ds, ht
+        type(${T4}$) :: hess
+        real(${k}$) :: lam(3), v(3,3), dphi(3), d2phi(3,3)
+        character(len=64) :: label
+        integer :: il, idr, a, b, i, j
+
+        passed = .true.
+        worst = 0.0_dp
+        rng = park_miller(2026119)
+        lams(:, 1) = [3.0_dp, 1.0_dp, -2.0_dp]
+        lams(:, 2) = [2.0_dp, 2.0_dp, -1.0_dp]
+        lams(:, 3) = [2.0_dp, -1.0_dp, -1.0_dp]
+        lams(:, 4) = [1.5_dp, 1.5_dp, 1.5_dp]
+        lams(:, 5) = [-0.5_dp, -0.5_dp, -0.5_dp]
+        lams(:, 6) = [0.0_dp, 0.0_dp, 0.0_dp]
+        do il = 1, NLAM
+            do idr = 1, NDRAW
+                write(label, '(a, 3f5.1, a, i0)') 'lam', lams(:, il), ', draw ', idr
+                lam = real(lams(:, il), ${k}$)
+                v = real(rotation_ref(rng), ${k}$)
+                do j = 1, 3
+                    dphi(j) = real(rnd(rng), ${k}$)
+                    do i = 1, j
+                        d2phi(i, j) = real(rnd(rng), ${k}$)
+                        d2phi(j, i) = d2phi(i, j)
+                    end do
+                end do
+                do i = 1, 6
+                    ds%vals(i) = real(rnd(rng), ${k}$)
+                end do
+                ! Reference from the kind-k inputs converted exactly to dp
+                lr = real(lam, dp)
+                vr = real(v, dp)
+                dr = real(dphi, dp)
+                d2r = real(d2phi, dp)
+                dsv = real(ds%vals, dp)
+                dsm = mat_of(dsv)
+                do a = 1, 3
+                    do j = 1, 3
+                        ea(:, j, a) = vr(:, a)*vr(j, a)
+                    end do
+                end do
+                ref = 0.0_dp
+                do a = 1, 3
+                    do b = 1, 3
+                        ref = ref + d2r(a, b)*sum(ea(:, :, b)*dsm)*ea(:, :, a)
+                    end do
+                end do
+                do a = 1, 2
+                    do b = a + 1, 3
+                        if (lr(a) /= lr(b)) then
+                            theta = (dr(a) - dr(b))/(lr(a) - lr(b))
+                        else
+                            theta = 0.5_dp*(d2r(a, a) + d2r(b, b)) - d2r(a, b)
+                        end if
+                        do j = 1, 3
+                            n(:, j) = 0.5_dp*(vr(:, a)*vr(j, b) + vr(:, b)*vr(j, a))
+                        end do
+                        ref = ref + 2.0_dp*theta*sum(n*dsm)*n
+                    end do
+                end do
+                hess = spectral_hessian(lam, v, dphi, d2phi)
+                ht = hess .ddot. ds
+                ! Scale of the terms (the distinct eigenvalues are at least 1 apart)
+                sc = (maxval(abs(d2r)) + maxval(abs(dr)))*maxval(abs(dsv))
+                err = maxval(abs(real(ht%vals, dp) - voigt_of(ref)))/(sc*EPS)
+                worst = max(worst, err)
+                if (err > ${C_HESS}$) print '(2x, a, es10.2)', '${k}$ ' // trim(label) // ': error/eps =', err
+                call check_true(passed, '${k}$ spectral_hessian formula: ' // trim(label), err <= ${C_HESS}$)
+            end do
+        end do
+        print '(a, f7.2)', '  ${k}$ spectral_hessian, arbitrary inputs: worst error/eps:', worst
+    end function test_hessian_contract_${k}$
+
+#:endfor
+end program test_math_spectral_cases

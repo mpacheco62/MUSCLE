@@ -72,13 +72,14 @@ $:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var
 #!   and 4 times the threshold tol*max|a| (both operand orders), explicit tolerances 1e-2/1e-4
 #!   around a 1e-3 perturbation, plus `loop_checks` (list of (label, condition) on `a`);
 #! - the relative criterion: 0 ~ 0, 0 !~ 1e-20 (at `vals(zero_pos)`), the absolute floor
-#!   EPS_ABS_<k>, the scale max(max|a|, max|b|), the inclusive threshold and NaN.
+#!   EPS_ABS_<k>, the scale max(max|a|, max|b|), the inclusive threshold, NaN and Inf (an Inf
+#!   component matches only the same Inf and does not make the scale infinite).
 #:def test_approx(fam, d, k, lib, zero_pos, loop_checks=(), tol_name='TOL_APPROX')
 #:set T = tname(d + fam, k)
 #:set N = len(layout(fam, d).comps)
     subroutine test_approx_${d}$_${k}$(passed)
         !! `is_approx` (default tolerance ${tol_name}$_${k}$ and explicit `tol`) and `.approx.` of `${T}$`.
-        use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+        use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_positive_inf, ieee_negative_inf
         use muscle_kinds, only: ${tol_name}$_${k}$, EPS_ABS_${k}$
         use ${lib}$
         logical, intent(out) :: passed
@@ -147,6 +148,22 @@ $:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var
         a = 1.0_${k}$
         ${at('a%vals', fam, d, 2)}$ = ieee_value(1.0_${k}$, ieee_quiet_nan)
         call check_true(passed, 'NaN .approx. NaN is false [${T}$]', .not. (a .approx. a))
+        ! Inf matches only the same Inf, and does not make the scale infinite
+        a = 1.0_${k}$
+        ${at('a%vals', fam, d, 2)}$ = ieee_value(1.0_${k}$, ieee_positive_inf)
+        call check_true(passed, 'Inf .approx. Inf [${T}$]', a .approx. a)
+        b = a
+        ${at('b%vals', fam, d, 2)}$ = 1.0_${k}$
+        call check_true(passed, 'Inf .approx. 1 is false [${T}$]', .not. (a .approx. b))
+        call check_true(passed, '1 .approx. Inf is false [${T}$]', .not. (b .approx. a))
+        b = a
+        ${at('b%vals', fam, d, 2)}$ = ieee_value(1.0_${k}$, ieee_negative_inf)
+        call check_true(passed, 'Inf .approx. -Inf is false [${T}$]', .not. (a .approx. b))
+        b = a
+        ! |1 - 4| = 3 > 0.5 * max(1, 4) over the finite components (with the Inf in the scale it passed)
+        ${at('b%vals', fam, d, 1)}$ = 4.0_${k}$
+        call check_true(passed, 'an Inf component does not hide another difference [${T}$]', &
+                        .not. a%is_approx(b, tol=0.5_${k}$))
     end subroutine test_approx_${d}$_${k}$
 #:enddef test_approx
 

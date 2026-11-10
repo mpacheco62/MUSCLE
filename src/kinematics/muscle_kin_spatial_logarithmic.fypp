@@ -11,8 +11,8 @@ module muscle_kin_spatial_logarithmic
     !! The Kirchhoff stress is converted to Cauchy, \( \boldsymbol\sigma = J^{-1}\boldsymbol\tau \),
     !! and the constitutive tangent to the spatial one through the derivative of \( \ln\mathbf{b} \)
     !! (`kin_spatial_log_tangent`, divided by J; formerly only the division by J); the
-    !! geometric term at a fixed Kirchhoff stress is zero. The Hencky strain comes from the eigenvalues and eigenprojections of b (those of C
-    !! are mathematically the same eigenvalues, but computed from other components: reusing them
+    !! geometric term at a fixed Kirchhoff stress is zero. The Hencky strain comes from the eigenvalues and eigenprojections of b
+    !! (those of C are mathematically the same eigenvalues, but computed from other components: reusing them
     !! would change the bits, D-017.14e) and drops those at or below `KIN_EIG_MIN_<k>`; the status
     !! only checks the eigenvalues of C.
     !!

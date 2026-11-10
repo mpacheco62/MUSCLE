@@ -2,15 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #
-# Regenerates the golden values of the math modules (tests/reference/math/math_<module>_dp.txt)
-# by running the golden tests tests/math/test_math_golden_<module>.{f90,fypp} with `--write FILE`
-# (tests/reference/write_golden.sh: the header of the existing file and its matching records are kept).
+# Regenerates the minimal reference of the math modules (tests/reference/math/math_reference_dp.txt, plan R)
+# by running tests/math/test_muscle_math_reference.f90 with `--write FILE` (tests/reference/write_reference.sh: the
+# header of the existing file and its matching records are kept).
 #
-# ONLY run it on code whose behaviour IS the reference: these files were captured from the
-# original (pre-FYPP) modules src/math/muscle_math_{derivatives,operations,spectral_derivs,
-# linsolvers}.f90, and the tests exist to detect a change beyond the tolerance of their category (D-021). Regenerating after a
-# change would hide it. The test run by ctest never writes these files.
-# The mklsolve records of math_linsolvers_dp.txt also depend on the LAPACK library linked.
+# ONLY run it on code whose behaviour IS the reference: the records were captured from the original
+# (pre-FYPP) modules src/math/muscle_math_{operations,spectral_derivs}.f90, and the test exists to detect a
+# change beyond the tolerance of its category (D-021). Regenerating after a change would hide it. The test
+# run by ctest never writes this file.
 #
 # Usage: tests/reference/math/regenerate.sh BUILD_DIR
 #   BUILD_DIR: a Debug build (no -ffast-math) with `cmake --build BUILD_DIR --target build_all_tests` done.
@@ -36,9 +35,7 @@ if [[ -n "$lapack" ]]; then
     lapack=", LAPACK $(readlink -f "$lapack")"
 fi
 
-for module in derivatives operations spectral_derivs linsolvers; do
-    "$ref_dir/../write_golden.sh" "$build_dir/tests/math/test_math_golden_$module" \
-        "$ref_dir/math_${module}_dp.txt" \
-        "commit $commit$dirty, $version, CMAKE_BUILD_TYPE=$build_type$lapack" \
-        "tests/reference/math/regenerate.sh (test_math_golden_$module --write)"
-done
+"$ref_dir/../write_reference.sh" "$build_dir/tests/math/test_math_reference" \
+    "$ref_dir/math_reference_dp.txt" \
+    "commit $commit$dirty, $version, CMAKE_BUILD_TYPE=$build_type$lapack" \
+    "tests/reference/math/regenerate.sh (test_math_reference --write)"

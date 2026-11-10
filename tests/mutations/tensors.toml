@@ -1,0 +1,50 @@
+# Mutation check of the tensor operators (tools/mutation_check.py tensors)
+sources = ["src/tensors/operators/muscle_tensor_ops_*.fypp"]
+# The reference tests were deleted (plan R): the unit tests detected all the 25 mutations they detected
+# (19 of the sources, 6 of the helpers below).
+reference = ""
+unit = "^tensors-"
+samples = 40
+
+# The bodies of most operators are unrolled from the layouts by the helpers of tools/fypp/muscle_meta.py:
+# mutations of those helpers (each one regenerates every module)
+[[manual]]
+id = "meta-sym-sum"
+file = "tools/fypp/muscle_meta.py"
+old = "return '({} + {})'.format(lay.ref(var, i, j), lay.ref(var, j, i))"
+new = "return '({} - {})'.format(lay.ref(var, i, j), lay.ref(var, j, i))"
+[[manual]]
+id = "meta-shear-weight"
+file = "tools/fypp/muscle_meta.py"
+old = "return x if w == 1 else f'{float(w)!r}_{kind}*{x}'"
+new = "return x if w == 1 else f'{float(w + 1)!r}_{kind}*{x}'"
+[[manual]]
+id = "meta-dot-range"
+file = "tools/fypp/muscle_meta.py"
+old = "for k in (1, 2, 3) if la.index(i, k) and lb.index(k, j)]"
+new = "for k in (1, 2) if la.index(i, k) and lb.index(k, j)]"
+[[manual]]
+id = "meta-voigt-transform-factor"
+file = "tools/fypp/muscle_meta.py"
+old = "expr = '2.0_{}*{}'.format(kind, terms[0])"
+new = "expr = '1.0_{}*{}'.format(kind, terms[0])"
+[[manual]]
+id = "meta-congruence-transpose"
+file = "tools/fypp/muscle_meta.py"
+old = "res[c.idx] = ' + '.join('{}{}{}*{}'.format(t, i, L, lf.ref(f, j, L)) for L in outer)"
+new = "res[c.idx] = ' + '.join('{}{}{}*{}'.format(t, i, L, lf.ref(f, L, j)) for L in outer)"
+[[manual]]
+id = "meta-voigt-congruence-transpose"
+file = "tools/fypp/muscle_meta.py"
+old = "['{}{}{}*{}{}{}'.format(w, x.voigt[0], K, t, x.voigt[1], K) for K in rows[x.voigt[1]]])"
+new = "['{}{}{}*{}{}{}'.format(w, x.voigt[0], K, t, K, x.voigt[1]) for K in rows[x.voigt[1]]])"
+[[manual]]
+id = "meta-ddot-voigt-weight"
+file = "tools/fypp/muscle_meta.py"
+old = "return [op_weighted(l4.ref(a, *base[I - 1].idx, *c.idx), l4.base.ref(b, *c.idx), c.mult, kind)"
+new = "return [op_weighted(l4.ref(a, *base[I - 1].idx, *c.idx), l4.base.ref(b, *c.idx), 1, kind)"
+[[manual]]
+id = "meta-ddot-matrix-order"
+file = "tools/fypp/muscle_meta.py"
+old = "return [op_weighted(la.ref(a, *base[I - 1].idx, *c.idx), lb.ref(b, *c.idx, *base[J - 1].idx),"
+new = "return [op_weighted(la.ref(a, *base[I - 1].idx, *c.idx), lb.ref(b, *base[J - 1].idx, *c.idx),"

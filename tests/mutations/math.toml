@@ -1,0 +1,11 @@
+# Mutation check of the math modules with reference tests (tools/mutation_check.py math)
+sources = ["src/math/muscle_math_derivatives.fypp", "src/math/muscle_math_operations.fypp",
+           "src/math/muscle_math_spectral_derivs.fypp", "src/math/muscle_math_linsolvers.fypp"]
+# The reference tests of the four modules were replaced (plan R) by the unit tests and the minimal
+# reference test math_reference: the unit tests detected all but 6 of the 655 mutations (samples all) the
+# references detected; math_reference keeps the records that detect those 6 (see the header of
+# tests/reference/math/math_reference_dp.txt). Measured with the old references as `reference` and
+# math_reference in `unit`: CRITERION OK.
+reference = "^math-math_reference$"
+unit = "^math-"
+samples = 40

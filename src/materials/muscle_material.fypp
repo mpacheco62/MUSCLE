@@ -78,17 +78,19 @@ module ${muscle_meta.material_module(MAT.name)}$
     !!   arguments for every material (`dt`: time step, ${DT_USE}$; the states are
     !!   `${muscle_meta.material_state(MAT, '<k>')[1]}$` of ${STATE_MOD}$).
 #:endif
-    !! - `${muscle_meta.material_batch(MAT.name)}$(mat, ${'F_n, F_np1' if KIN and not COROT else 'eps'}$, dt, hsv_n, hsv_np1, sig, status, iters, ddsdde, idx)`:
+    !! - `${muscle_meta.material_batch(MAT.name)}$(mat, ${'F_n, F_np1' if KIN and not COROT else 'eps'}$, dt, hsv_n, hsv_np1,
+    !!   sig, status, iters, ddsdde, idx)`:
     !!   batch API: `mat_update` on every point (or the points `idx`) of SoA arrays
     !!   (`sig(npts, 6)`, `hsv_n(npts, NSTATE)`, ...), in an OpenMP parallel loop (a target region on
-    !!   device-resident data with MUSCLE_GPU)${', with `mat_step` once per batch' if VISCO else ''}$; tangent `ddsdde(npts, 6, 6)` and
-    !!   `idx` optional;
+    !!   device-resident data with MUSCLE_GPU)${', with `mat_step` once per batch' if VISCO else ''}$; tangent `ddsdde(npts, 6, 6)`
+    !!   and `idx` optional;
     !! - `${muscle_meta.material_batch_dev(MAT.name)}$(...)`: the same batch API on arrays given by their device
     !!   addresses (`omp_target_alloc`, device libraries; `has_device_addr` with MUSCLE_GPU);
     !! - `mat_init_${MAT.name}$(mat, props, status)`: the material from a flat parameter array of an FE
     !!   code, `props(${muscle_meta.material_nprops(MAT.name)}$)` (pure; the order of the parameters is in its
     !!   documentation and printed as a Markdown table by `muscle_meta.py props ${MAT.name}$`);
-    !! - `${muscle_meta.material_point(MAT.name)}$(mat, ${'F_n, F_np1' if KIN and not COROT else 'strain'}$, dt, ${'coefs, ' if VISCO else ''}$hsv_n, hsv_np1, stress, status, iters, ddsdde)`:
+    !! - `${muscle_meta.material_point(MAT.name)}$(mat, ${'F_n, F_np1' if KIN and not COROT else 'strain'}$, dt,
+    !!   ${'coefs, ' if VISCO else ''}$hsv_n, hsv_np1, stress, status, iters, ddsdde)`:
     !!   point API for FE codes (pure, device): `mat_update` on flat arrays with the
     !!   conventions of the batch API; two specifics, without and with the tangent `ddsdde(6, 6)`
     !!   (no optional argument);
