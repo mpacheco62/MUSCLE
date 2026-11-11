@@ -22,30 +22,30 @@ module test_mat_target_points
     !! history, results packed.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
-#:if any(muscle_meta.material_visco(muscle_meta.material(m)) for m in MATS)
+    #:if any(muscle_meta.material_visco(muscle_meta.material(m)) for m in MATS)
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
-#:endif
-#:for mod in sorted({muscle_meta.material_state(muscle_meta.material(m), 'dp')[0] for m in MATS})
-#:set state_names = sorted({state_t(m, k) for m in MATS for k in REAL_KINDS &
-    & if muscle_meta.material_state(muscle_meta.material(m), k)[0] == mod})
+    #:endif
+    #:for mod in sorted({muscle_meta.material_state(muscle_meta.material(m), 'dp')[0] for m in MATS})
+    #:set state_names = sorted({state_t(m, k) for m in MATS for k in REAL_KINDS &
+        & if muscle_meta.material_state(muscle_meta.material(m), k)[0] == mod})
     use ${mod}$, only : ${', '.join(state_names)}$
-#:endfor
-#:for m in MATS
+    #:endfor
+    #:for m in MATS
     use ${muscle_meta.material_module(m)}$, only : mat_update, mat_pack_${m}$, mat_unpack_${m}$, &
         ${muscle_meta.material_nstate(m)}$, ${', '.join(muscle_meta.material_type(m, k) for k in REAL_KINDS)}$
-#:endfor
+    #:endfor
     implicit none
     private
-#:for k in REAL_KINDS
-#:for m in MATS
+    #:for k in REAL_KINDS
+    #:for m in MATS
     public :: point_${m}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
-#:for m in MATS
-#:set NS = muscle_meta.material_nstate(m)
+    #:for k in REAL_KINDS
+    #:for m in MATS
+    #:set NS = muscle_meta.material_nstate(m)
 
     pure subroutine point_${m}$_${k}$(mat, ${coefs_arg(m, 'coefs')[2:] + ', ' if coefs_arg(m, 'coefs') else ''}$e6, dt, out, &
         status, iters)
@@ -53,9 +53,9 @@ contains
         !! history packed in `out`.
         @:DEVICE()
         type(${muscle_meta.material_type(m, k)}$), intent(in) :: mat
-#:if coefs_arg(m, 'coefs')
+        #:if coefs_arg(m, 'coefs')
         type(visco_coefs_${k}$), intent(in) :: coefs
-#:endif
+        #:endif
         real(${k}$), intent(in) :: e6(6)
         real(${k}$), intent(in) :: dt
         real(${k}$), intent(out) :: out(${NOUT(m)}$)
@@ -75,8 +75,8 @@ contains
         out(7:42) = reshape(tangent%vals, [36])
         out(43:) = hsv
     end subroutine point_${m}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 end module test_mat_target_points
 
@@ -108,11 +108,11 @@ program test_mat_kernels_target
         !! Points of the strain ramp.
 
     passed = .true.
-#:for k in REAL_KINDS
-#:for m in MATS
+    #:for k in REAL_KINDS
+    #:for m in MATS
     call run_${m}$_${k}$()
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
     if (.not. passed) then
         print '(a)', ' FAIL: test_mat_kernels_target'
         stop 1
@@ -139,29 +139,29 @@ contains
     end function strain_ramp
 
 $:MAT_CASE_PROCS(MATS, fd_check=False)
-#:for k in REAL_KINDS
-#:for m, elas, visc, hard, yld, dt, a_y, f0 in CASES
-#:set CO = coefs_arg(m, 'coefs')
+    #:for k in REAL_KINDS
+    #:for m, elas, visc, hard, yld, dt, a_y, f0 in CASES
+    #:set CO = coefs_arg(m, 'coefs')
 
     subroutine run_${m}$_${k}$()
         !! `${m}$` in a target region and on the CPU, `real(${k}$)`.
         real(${k}$), parameter :: DT = ${dt}$_${k}$
         type(${muscle_meta.material_type(m, k)}$) :: mat
-#:if CO
+        #:if CO
         type(visco_coefs_${k}$) :: coefs
-#:endif
+        #:endif
         real(${k}$) :: e(6, NPTS), emax(NPTS), out_t(${NOUT(m)}$, NPTS), out_c(${NOUT(m)}$, NPTS)
         integer :: st_t(NPTS), st_c(NPTS), it_t(NPTS), it_c(NPTS), i, status
         logical :: host
 
         call make_${m}$_${k}$(solver_case(0, '${m}$', '${elas}$', '${visc}$', '${hard}$', '${yld}$', 200, ${dt}$_dp, &
             ${a_y}$_dp), mat)
-#:if CO
+        #:if CO
         call mat_step(mat, DT, coefs, status)
         call check_true(passed, '${m}$ time step (${k}$)', status == STATUS_OK)
-#:else
+        #:else
         status = STATUS_OK
-#:endif
+        #:endif
         do i = 1, NPTS
             e(:, i) = real(strain_ramp(i, ${a_y}$_dp, ${f0}$_dp), ${k}$)
             emax(i) = maxval(abs(e(:, i)))
@@ -189,13 +189,13 @@ $:MAT_CASE_PROCS(MATS, fd_check=False)
                 out_c(:, i) = 0.0_${k}$
             end if
         end do
-#:for b, lo, hi in TARGET_CASES.material_output_blocks(m)
+        #:for b, lo, hi in TARGET_CASES.material_output_blocks(m)
         call check_target(passed, '${m}$ (${k}$): target = CPU, ${b}$', &
                           out_t(${lo}$:${hi}$, :), out_c(${lo}$:${hi}$, :), &
                           .not. host${', scale_min=emax' if b in ('strain_p', 'ep') else ''}$)
-#:endfor
+        #:endfor
     end subroutine run_${m}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 end program test_mat_kernels_target

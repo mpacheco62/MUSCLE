@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 
-module muscle_anisotropic_yield
+module muscle_yield_anisotropic
     !! Code shared by the anisotropic yield criteria built on linear transformations of the stress,
     !! \( \boldsymbol\Sigma = \mathbf{L} : \boldsymbol\sigma \) (CPB06, CPB06ex2, Yld2004), where
     !! \( \mathbf{L} \) acts on the normal components through its 3x3 normal block and on each
@@ -19,9 +19,9 @@ module muscle_anisotropic_yield
     !!   2008, Eq. 8), and their second derivatives (with the private `yield_cpb_curvature_<k>`, the
     !!   value chosen at a null principal value).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
-#:endfor
+    #:endfor
     implicit none
     private
 
@@ -30,49 +30,49 @@ module muscle_anisotropic_yield
 
     interface yield_lin_dev_block
         !! Normal block of L = C P_dev from the normal block of C.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure yield_lin_dev_block_${k}$
-#:endfor
+        #:endfor
     end interface yield_lin_dev_block
 
     interface yield_lin_apply
         !! L : stress (normal block with zero row sums, shear factors).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure yield_lin_apply_3D_${k}$
-#:endfor
+        #:endfor
     end interface yield_lin_apply
 
     interface yield_lin_pull_back
         !! L^T : x.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure yield_lin_pull_back_3D_${k}$
-#:endfor
+        #:endfor
     end interface yield_lin_pull_back
 
     interface yield_lin_pull_back_hessian
         !! L^T : H : L.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure yield_lin_pull_back_hessian_3D_${k}$
-#:endfor
+        #:endfor
     end interface yield_lin_pull_back_hessian
 
     interface yield_cpb_terms
         !! psi_i = |lam_i| - k lam_i, p_i = psi_i**(a-1) and s_i = sgn(lam_i) - k.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure yield_cpb_terms_${k}$
-#:endfor
+        #:endfor
     end interface yield_cpb_terms
 
     interface yield_cpb_hessian
         !! Second derivatives of f = B Phi**(1/a) with respect to the principal values.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure yield_cpb_hessian_${k}$
-#:endfor
+        #:endfor
     end interface yield_cpb_hessian
 
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine yield_cpb_terms_${k}$(lam, k, a, psi, p, s)
         !! Terms of Phi = sum_i psi_i**a in `real(${k}$)` (Cazacu et al., 2006, Eq. 9; Plunkett et
@@ -316,6 +316,6 @@ contains
         res%vals(20) = nxz(2)                 ! yyxz
         res%vals(21) = nxz(1)                 ! xxxz
     end function yield_lin_pull_back_hessian_3D_${k}$
-#:endfor
+    #:endfor
 
-end module muscle_anisotropic_yield
+end module muscle_yield_anisotropic

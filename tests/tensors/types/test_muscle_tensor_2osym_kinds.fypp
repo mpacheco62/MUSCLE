@@ -35,11 +35,11 @@ module test_2osym_kinds_lib
     interface vv
         !! `vv(expr)`: the `vals` array of a tensor expression (a component of a function result
         !! cannot be selected directly).
-#:for k in REAL_KINDS
-#:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for d in DIMS
         module procedure vv_${tname(d + '2Osym', k)}$
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end interface vv
 
     type(park_miller) :: rng = park_miller(20261028)
@@ -47,21 +47,21 @@ module test_2osym_kinds_lib
 
 contains
 
-#:for k in REAL_KINDS
-#:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for d in DIMS
     function sym_mat_${d}$_${k}$(v) result(m)
         !! Symmetric 3x3 matrix from (xx, yy, zz, xy, yz, xz)${'; yz and xz are dropped (2D)' if d == '2D' else ''}$.
         real(${k}$), intent(in) :: v(6)
             !! Components.
         real(${k}$) :: m(3,3)
         m = 0.0_${k}$
-#:for p, ij in enumerate(ORDER6, start=1)
-#:set i, j = ij
-#:if d == '3D' or ij not in [(2, 3), (1, 3)]
+        #:for p, ij in enumerate(ORDER6, start=1)
+        #:set i, j = ij
+        #:if d == '3D' or ij not in [(2, 3), (1, 3)]
         m(${i}$,${j}$) = v(${p}$)
         m(${j}$,${i}$) = v(${p}$)
-#:endif
-#:endfor
+        #:endif
+        #:endfor
     end function sym_mat_${d}$_${k}$
 
     function rand_mat_${d}$_${k}$(scale, shift) result(m)
@@ -81,18 +81,18 @@ contains
         m = sym_mat_${d}$_${k}$(real(v, ${k}$))
     end function rand_mat_${d}$_${k}$
 
-#:set L = layout('2Osym', d)
-#:set T = tname(d + '2Osym', k)
+    #:set L = layout('2Osym', d)
+    #:set T = tname(d + '2Osym', k)
     function to_mat_${T}$(t) result(m)
         !! Full 3x3 matrix of a `${T}$` (storage positions from the layout metadata).
         type(${T}$), intent(in) :: t
             !! Tensor.
         real(${k}$) :: m(3,3)
-#:for j in range(1, 4)
-#:for i in range(1, 4)
+        #:for j in range(1, 4)
+        #:for i in range(1, 4)
         m(${i}$,${j}$) = ${L.ref('t%vals', i, j, zero='0.0_' + k)}$
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end function to_mat_${T}$
 
     function from_mat_${T}$(m) result(t)
@@ -129,7 +129,7 @@ contains
         v = [${', '.join('m({},{})'.format(*c.idx) for c in L.comps)}$]
     end function voigt_${T}$
 
-#:endfor
+    #:endfor
     function embed_${k}$(a) result(r)
         !! Embeds a `${tname('2D2Osym', k)}$` into a `${tname('3D2Osym', k)}$` (yz = xz = 0).
         type(${tname('2D2Osym', k)}$), intent(in) :: a
@@ -138,7 +138,7 @@ contains
         call r%init([${', '.join(L2.ref('a%vals', *c.idx, zero='0.0_' + k) for c in L3.comps)}$])
     end function embed_${k}$
 
-#:endfor
+    #:endfor
 #:for k in REAL_KINDS
 #:for d in DIMS
 $:pure_use('2Osym', d, k, 'muscle_tensor_2osym', ['norm', 'det', 'square', 'is_approx', 'inverse'], &
@@ -169,45 +169,45 @@ program test_muscle_tensor_2osym_kinds
     integer :: code
 
     code = 0
-#:set n = 0
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:for t in ['ops', 'inverse', 'approx']
-#:set n = n + 1
+    #:set n = 0
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:for t in ['ops', 'inverse', 'approx']
+    #:set n = n + 1
     call test_${t}$_${d}$_${k}$(passed)
     call record(passed, ${n}$, 'test_${t}$_${d}$_${k}$', code)
-#:endfor
-#:endfor
-#:set n = n + 1
+    #:endfor
+    #:endfor
+    #:set n = n + 1
     call test_embed_${k}$(passed)
     call record(passed, ${n}$, 'test_embed_${k}$', code)
-#:endfor
+    #:endfor
     ! Added after the first version of the test: appended so the earlier exit codes keep
     ! their meaning.
-#:set n = n + 1
+    #:set n = n + 1
     call test_constants(passed)
     call record(passed, ${n}$, 'test_constants', code)
-#:set n = n + 1
+    #:set n = n + 1
     call test_historical_aliases(passed)
     call record(passed, ${n}$, 'test_historical_aliases', code)
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set n = n + 1
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set n = n + 1
     call test_free_generics_${d}$_${k}$(passed)
     call record(passed, ${n}$, 'test_free_generics_${d}$_${k}$', code)
-#:endfor
-#:endfor
-#:if defined('ENABLE_UDTIO')
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set n = n + 1
+    #:endfor
+    #:endfor
+    #:if defined('ENABLE_UDTIO')
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set n = n + 1
     call test_udtio_${d}$_${k}$(passed)
     call record(passed, ${n}$, 'test_udtio_${d}$_${k}$', code)
-#:endfor
-#:endfor
-#:else
+    #:endfor
+    #:endfor
+    #:else
     print '(a)', ' UDTIO tests skipped (built without ENABLE_UDTIO)'
-#:endif
+    #:endif
     if (code /= 0) stop code
 
     print *, "Passed!"
@@ -215,11 +215,11 @@ program test_muscle_tensor_2osym_kinds
 
 contains
 
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set L = layout('2Osym', d)
-#:set N = len(L.comps)
-#:set T = tname(d + '2Osym', k)
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set L = layout('2Osym', d)
+    #:set N = len(L.comps)
+    #:set T = tname(d + '2Osym', k)
     subroutine test_ops_${d}$_${k}$(passed)
         !! Construction, accessors, assignment and the arithmetic of `${T}$`.
         use test_2osym_kinds_lib
@@ -247,9 +247,9 @@ contains
         call check_approx(passed, 'init(named) -> matrix' // TN, to_mat_${T}$(a), ma, tol=ZERO)
         call b%init(voigt_${T}$(ma))
         call check_approx(passed, 'init(array) == init(named)' // TN, b%vals, a%vals, tol=ZERO)
-#:for c in L.comps
+        #:for c in L.comps
         call check_approx(passed, 'accessor ${c.name}$()' // TN, a%${c.name}$(), ma(${c.idx[0]}$,${c.idx[1]}$), tol=ZERO)
-#:endfor
+        #:endfor
 
         ! assignment of a scalar to every stored component
         c = 2.5_${k}$
@@ -331,17 +331,17 @@ contains
         passed = .true.
 
         ! ---- Exact inverse (entries and determinant powers of two) ----------------------
-#:if d == '3D'
+        #:if d == '3D'
         ! [[2,1,1],[1,2,1],[1,1,2]]^-1 = [[3,-1,-1],[-1,3,-1],[-1,-1,3]]/4, kappa_inf = 4 * 5/4 = 5
         ma = sym_mat_${d}$_${k}$([2.0_${k}$, 2.0_${k}$, 2.0_${k}$, 1.0_${k}$, 1.0_${k}$, 1.0_${k}$])
         ri = 0.25_dp*real(sym_mat_${d}$_${k}$([3.0_${k}$, 3.0_${k}$, 3.0_${k}$, -1.0_${k}$, -1.0_${k}$, -1.0_${k}$]), dp)
         kap = 5.0_dp
-#:else
+        #:else
         ! [[2,1,0],[1,1,0],[0,0,4]]^-1 = [[1,-1,0],[-1,2,0],[0,0,1/4]], kappa_inf = 4 * 3 = 12
         ma = sym_mat_${d}$_${k}$([2.0_${k}$, 1.0_${k}$, 4.0_${k}$, 1.0_${k}$, ZERO, ZERO])
         ri = real(sym_mat_${d}$_${k}$([1.0_${k}$, 2.0_${k}$, 0.25_${k}$, -1.0_${k}$, ZERO, ZERO]), dp)
         kap = 12.0_dp
-#:endif
+        #:endif
         a = from_mat_${T}$(ma)
         call inverse(a, x, ok, cond)
         call check_true(passed, 'inverse (exact): ok' // TN, ok)
@@ -407,7 +407,7 @@ $:test_approx('2Osym', d, k, 'test_2osym_kinds_lib', zero_pos=1)
 $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym', scalars=['norm', 'det'], &
     & unary=['square'], inv_shift='4.0_dp', p_mult=1, pure_ref='b%square()*(b%det()/b%norm())')
 
-#:if defined('ENABLE_UDTIO')
+    #:if defined('ENABLE_UDTIO')
     subroutine test_udtio_${d}$_${k}$(passed)
         !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
         !!
@@ -436,13 +436,13 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
         buf = ''
         write(buf(1), '(DT"LIST")', iostat=ios) a
         call check_true(passed, 'list: iostat = 0' // TN, ios == 0)
-#:if d == '3D'
+        #:if d == '3D'
         call check_true(passed, 'list: text' // TN, trim(buf(1)) == &
             '[ 1.5000E+00 -2.0000E+00  7.5000E-01  5.0000E-01 -1.2500E+00  2.5000E+00 ]')
-#:else
+        #:else
         call check_true(passed, 'list: text' // TN, trim(buf(1)) == &
             '[ 1.5000E+00 -2.0000E+00  7.5000E-01  5.0000E-01 ]')
-#:endif
+        #:endif
         if (.not. passed) print '(a)', '   got: "' // trim(buf(1)) // '"'
         line = buf(1)
         nl = len_trim(line)
@@ -451,26 +451,26 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
         read(line(2:nl-1), *, iostat=ios) v
         call check_true(passed, 'list: read back' // TN, ios == 0)
         ! Storage order, written out explicitly (not taken from the layout)
-#:if d == '3D'
+        #:if d == '3D'
         call check_approx(passed, 'list: xx yy zz xy yz xz' // TN, v, &
                           [1.5_${k}$, -2.0_${k}$, 0.75_${k}$, 0.5_${k}$, -1.25_${k}$, 2.5_${k}$], tol=ZERO)
-#:else
+        #:else
         call check_approx(passed, 'list: xx yy zz xy' // TN, v, &
                           [1.5_${k}$, -2.0_${k}$, 0.75_${k}$, 0.5_${k}$], tol=ZERO)
-#:endif
+        #:endif
         call check_approx(passed, 'list == vals' // TN, v, a%vals, tol=ZERO)
 
         ! ---- List mode with (w, d) = (9, 2) --------------------------------------------------
         buf = ''
         write(buf(1), '(DT"LIST"(9,2))', iostat=ios) a
         call check_true(passed, 'list(9,2): iostat = 0' // TN, ios == 0)
-#:if d == '3D'
+        #:if d == '3D'
         call check_true(passed, 'list(9,2): text' // TN, trim(buf(1)) == &
             '[ 1.50E+00 -2.00E+00  7.50E-01  5.00E-01 -1.25E+00  2.50E+00 ]')
-#:else
+        #:else
         call check_true(passed, 'list(9,2): text' // TN, trim(buf(1)) == &
             '[ 1.50E+00 -2.00E+00  7.50E-01  5.00E-01 ]')
-#:endif
+        #:endif
         if (.not. passed) print '(a)', '   got: "' // trim(buf(1)) // '"'
 
         ! ---- Matrix mode ---------------------------------------------------------------------
@@ -490,13 +490,13 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
         call check_true(passed, 'matrix: no 5th record' // TN, ios /= 0)
         close(u)
         call check_true(passed, 'matrix: first record empty' // TN, len_trim(buf(1)) == 0)
-#:if d == '3D'
+        #:if d == '3D'
         call check_true(passed, 'matrix: row 1 text' // TN, trim(buf(2)) == &
             ' 1.5000E+00   5.0000E-01   2.5000E+00')
-#:else
+        #:else
         call check_true(passed, 'matrix: row 3 text' // TN, trim(buf(4)) == &
             ' 0.0000E+00   0.0000E+00   7.5000E-01')
-#:endif
+        #:endif
         if (.not. passed) then
             do i = 1, 4
                 print '(a, i0, a)', '   record ', i, ': "' // trim(buf(i)) // '"'
@@ -509,10 +509,10 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
         call check_approx(passed, 'matrix == to_mat' // TN, m, to_mat_${T}$(a), tol=ZERO)
     end subroutine test_udtio_${d}$_${k}$
 
-#:endif
-#:endfor
-#:set T2 = tname('2D2Osym', k)
-#:set T3 = tname('3D2Osym', k)
+    #:endif
+    #:endfor
+    #:set T2 = tname('2D2Osym', k)
+    #:set T3 = tname('3D2Osym', k)
     subroutine test_embed_${k}$(passed)
         !! 2D vs 3D in `real(${k}$)`: op_2D(a, b) embedded in 3D == op_3D(embed(a), embed(b)).
         !!
@@ -545,9 +545,9 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
             ! Construction and accessors (exact)
             call check_approx(passed, 'embed == init3D(named, yz = xz = 0)' // TN, a3%vals, &
                               vv(from_mat_${T3}$(m)), tol=ZERO)
-#:for c in L2.comps
+            #:for c in L2.comps
             call check_approx(passed, '${c.name}$()' // TN, a2%${c.name}$(), a3%${c.name}$(), tol=ZERO)
-#:endfor
+            #:endfor
             call check_true(passed, 'yz() = xz() = 0' // TN, a3%yz() == ZERO .and. a3%xz() == ZERO)
 
             ! Component-wise operations (exact)
@@ -618,7 +618,7 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
         end do
     end subroutine test_embed_${k}$
 
-#:endfor
+    #:endfor
     subroutine test_constants(passed)
         !! Documents the threshold of `.approx.`/`is_approx`: the default relative tolerances of
         !! `muscle_kinds` (they exist for every kind, whatever `MUSCLE_REAL_KINDS` is).
@@ -671,13 +671,13 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
         call check_true(passed, 'ten_3D2Osym is not ten_2D2Osym', .not. same_type_as(h3, h2))
         call check_true(passed, 'kind(vals) == dp (3D)', kind(h3%vals) == dp .and. size(h3%vals) == 6)
         call check_true(passed, 'kind(vals) == dp (2D)', kind(h2%vals) == dp .and. size(h2%vals) == 4)
-#:if 'sp' in REAL_KINDS
+        #:if 'sp' in REAL_KINDS
         block
             use muscle_tensors, only: ten_3D2Osym_sp
             type(ten_3D2Osym_sp) :: s3
             call check_true(passed, 'ten_3D2Osym is not ten_3D2Osym_sp', .not. same_type_as(h3, s3))
         end block
-#:endif
+        #:endif
         ! Mixed historical / suffixed operands in the generic operators
         q3 = h3 + p3
         call check_approx(passed, 'ten_3D2Osym + ten_3D2Osym_dp', q3%vals, 2.0_dp*p3%vals, tol=0.0_dp)

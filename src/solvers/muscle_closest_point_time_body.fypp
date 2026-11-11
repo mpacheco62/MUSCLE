@@ -20,11 +20,11 @@
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
 #! Values of the composed hardening law (if any) the viscoplastic function `f` receives at `ep`
-#:set HARD = lambda f, ep: muscle_meta.material_comp_args(MAT, 'vp', f, ep)
-#:set COMPOSED = muscle_meta.material_composed(MAT, 'vp') is not None
+    #:set HARD = lambda f, ep: muscle_meta.material_comp_args(MAT, 'vp', f, ep)
+    #:set COMPOSED = muscle_meta.material_composed(MAT, 'vp') is not None
 #! Derivative of the flow stress for the Newton direction: the right-hand rate derivative on the rate
 #! floor of a law with one (VISCOPLASTIC_FLOOR, D-018.19b), else dstress_dep (also in the tangent)
-#:set NEWTON_DH = 'vp_newton_dstress_dep' if 'newton_dstress_dep' in muscle_meta.model_procs('vp', MAT.vp) else 'vp_dstress_dep'
+    #:set NEWTON_DH = 'vp_newton_dstress_dep' if 'newton_dstress_dep' in muscle_meta.model_procs('vp', MAT.vp) else 'vp_dstress_dep'
 
     pure subroutine ${SOLVE}$(mat, elas, strain, dt, state_n, state_np1, stress, tangent, status, iters)
         !! Rate-dependent closest point return mapping of material `${MAT.name}$` at one point,
@@ -42,12 +42,12 @@
         use muscle_kinds, only : TOL_ELASTIC_${k}$, SY_MIN_${k}$
         use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
         use muscle_tensors, only : operator(-), assignment(=)
-        use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
-        use muscle_yield_criteria, only : yield_stress_eq
+        use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_stress_eq
         use muscle_vp_laws, only : vp_flow_stress
-#:if COMPOSED
+        #:if COMPOSED
         use muscle_hard_laws, only : hard_stress
-#:endif
+        #:endif
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat
@@ -117,12 +117,12 @@
         use muscle_kinds, only : SY_MIN_${k}$
         use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
             operator(.inv.)
-        use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
-        use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq
+        use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq
         use muscle_vp_laws, only : vp_flow_stress, ${NEWTON_DH}$
-#:if COMPOSED
+        #:if COMPOSED
         use muscle_hard_laws, only : hard_stress, hard_dstress_dep
-#:endif
+        #:endif
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat
@@ -207,12 +207,12 @@
         !! + \Delta\lambda\,\partial^2 f/\partial\boldsymbol\sigma^2]^{-1} \).
         use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
             operator(.inv.), operator(.tdotsym.), assignment(=)
-        use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
-        use muscle_yield_criteria, only : yield_dstress_eq, yield_ddstress_eq
+        use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_dstress_eq, yield_ddstress_eq
         use muscle_vp_laws, only : vp_dstress_dep
-#:if COMPOSED
+        #:if COMPOSED
         use muscle_hard_laws, only : hard_stress, hard_dstress_dep
-#:endif
+        #:endif
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat

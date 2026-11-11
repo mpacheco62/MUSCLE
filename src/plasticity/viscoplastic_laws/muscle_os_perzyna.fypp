@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 
-module muscle_vp_perzyna
+module muscle_os_perzyna
     !! Perzyna overstress law:
     !! \[ g(\sigma_{eq}, \epsilon_p) = \frac{1}{\eta} \langle \psi \rangle^N, \quad
     !!    \psi = \frac{\sigma_{eq}}{\sigma_y(\epsilon_p)} - 1 \]
@@ -20,17 +20,17 @@ module muscle_vp_perzyna
     !! Kernel API: parameter types `os_perzyna_<k>` and `pure` functions
     !! `os_flow_rate_perzyna_<k>(prm, sigma_eq, ep, sy)`, `os_dflow_dsigma_perzyna_<k>(prm, sigma_eq,
     !! ep, sy)` and `os_dflow_dep_perzyna_<k>(prm, sigma_eq, ep, sy, dsy_dep)` for each real kind,
-    !! also through the generics `os_*` of `muscle_vp_overstress_laws`.
+    !! also through the generics `os_*` of `muscle_os_laws`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: os_perzyna_${k}$
     public :: os_flow_rate_perzyna_${k}$, os_dflow_dsigma_perzyna_${k}$, os_dflow_dep_perzyna_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: os_perzyna_${k}$
         !! Parameters of the Perzyna model in `real(${k}$)`.
         real(${k}$) :: eta = 1.0_${k}$
@@ -38,10 +38,10 @@ module muscle_vp_perzyna
         real(${k}$) :: n = 1.0_${k}$
             !! Rate sensitivity exponent \( N \).
     end type os_perzyna_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function os_perzyna_dpsi_${k}$(prm, psi) result(res)
         !! Derivative \( g_\psi \) of the Perzyna law in `real(${k}$)` (0 for \( \psi \le 0 \)).
         implicit none
@@ -123,5 +123,5 @@ contains
         res = -os_perzyna_dpsi_${k}$(prm, sigma_eq/sy - 1.0_${k}$)*sigma_eq*dsy_dep/sy**2
     end function os_dflow_dep_perzyna_${k}$
 
-#:endfor
-end module muscle_vp_perzyna
+    #:endfor
+end module muscle_os_perzyna

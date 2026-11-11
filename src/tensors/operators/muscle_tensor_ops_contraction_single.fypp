@@ -27,16 +27,16 @@ $:OP_USES(MODULE)
 $:OP_INTERFACES(MODULE)
 contains
 
-#:for d in DIMS
-#:for k in REAL_KINDS
-#:for e in op_entries('*', d, k)
-#:set x, y = op_args(e)
-#:set iden = op_iden(e.tag_a) or op_iden(e.tag_b)
-#:set A, B, _ = op_symbols(e)
-#:if iden
+    #:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for e in op_entries('*', d, k)
+    #:set x, y = op_args(e)
+    #:set iden = op_iden(e.tag_a) or op_iden(e.tag_b)
+    #:set A, B, _ = op_symbols(e)
+    #:if iden
 #! Identity * tensor = tensor * identity: c A (the identity is the first or second operand)
-#:set scaled = iden[1]
-#:set doc = 'Single contraction \\({} \\cdot {} = {}\\mathbf{{A}}\\)'.format(A, B, 'c' if scaled else '')
+    #:set scaled = iden[1]
+    #:set doc = 'Single contraction \\({} \\cdot {} = {}\\mathbf{{A}}\\)'.format(A, B, 'c' if scaled else '')
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -44,16 +44,16 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-#:if scaled
+        #:if scaled
         res%vals = I2%val * a%vals
-#:else
+        #:else
         res%vals = a%vals
-#:endif
+        #:endif
     end function ${e.name}$
 
-#:else
-#:set la, lb = op_layout(e.tag_a), op_layout(e.tag_b)
-#:set doc = 'Single contraction \\(\\mathbf{A}\\cdot\\mathbf{B}\\), \\( C_{ij} = A_{ik} B_{kj} \\)'
+    #:else
+    #:set la, lb = op_layout(e.tag_a), op_layout(e.tag_b)
+    #:set doc = 'Single contraction \\(\\mathbf{A}\\cdot\\mathbf{B}\\), \\( C_{ij} = A_{ik} B_{kj} \\)'
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -61,13 +61,13 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-#:for c in op_layout(e.tag_res).comps
+        #:for c in op_layout(e.tag_res).comps
         res%vals(${c.pos[0]}$) = ${' + '.join(op_dot_terms(la, 'a%vals', lb, 'b%vals', *c.idx))}$ ! ${c.name}$
-#:endfor
+        #:endfor
     end function ${e.name}$
 
-#:endif
-#:endfor
-#:endfor
-#:endfor
+    #:endif
+    #:endfor
+    #:endfor
+    #:endfor
 end module muscle_tensor_ops_${MODULE}$

@@ -60,6 +60,10 @@ FYPP does only what Fortran cannot; a template reads as a Fortran file (decision
   signatures with `intent`, bodies and closings (`end function`, `end type`, `end module`).
 - **Forbidden:** macros that build declarations from Python metadata or logic; macros that take statements or
   blocks as arguments; nested `#:include`.
+- Control directives (`#:if`, `#:for`, `#:set`, `#:assert`, ...) are indented to the level of the code they
+  control, and their content keeps the indentation of the Fortran (no extra level for the directive); `#:else`,
+  `#:elif` and the closing directive align with their opening one. `#:include`, `#:def`/`#:enddef` and the
+  outermost guard of a whole file stay in column 0 (decision D-026).
 - Python metadata (`tools/fypp/muscle_meta.py`) holds data (registries, names, the parameter order of
   `mat_init`), not Fortran code. No `cpp` directives in templates; build switches arrive as FYPP defines.
 

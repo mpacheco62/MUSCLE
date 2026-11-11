@@ -40,9 +40,9 @@ program bench_batch_gpu
     use, intrinsic :: iso_fortran_env, only : output_unit, int64
     use omp_lib, only : omp_get_wtime, omp_get_max_threads, omp_set_num_threads, omp_target_alloc, &
         omp_target_free, omp_target_memcpy, omp_get_initial_device
-#:if defined('MUSCLE_GPU')
+    #:if defined('MUSCLE_GPU')
     use omp_lib, only : omp_get_default_device
-#:endif
+    #:endif
     use muscle_kinds, only : ${k}$${'' if k == 'dp' else ', dp'}$
     use muscle_status, only : STATUS_OK
     use ${muscle_meta.material_module(M)}$, only : ${MAT_T}$, mat_init_${M}$, muscle_update_${M}$_dev, &
@@ -97,9 +97,9 @@ program bench_batch_gpu
     dev = ${DEVNUM}$
     t_init = real(omp_get_wtime(), dp)
     device = target_on_device()
-#:if defined('MUSCLE_GPU')
+    #:if defined('MUSCLE_GPU')
     !$omp target enter data map(to: mat)
-#:endif
+    #:endif
     t_init = real(omp_get_wtime(), dp) - t_init
     call print_header()
 
@@ -124,9 +124,9 @@ program bench_batch_gpu
     call omp_target_free(c_tan, dev)
     call omp_target_free(c_st, dev)
     call omp_target_free(c_it, dev)
-#:if defined('MUSCLE_GPU')
+    #:if defined('MUSCLE_GPU')
     !$omp target exit data map(delete: mat)
-#:endif
+    #:endif
     if (n_bad > 0) then
         print '(a, i0, a)', ' ERROR: ', n_bad, ' sampled points differ from the point API on the host'
         stop 1
@@ -142,13 +142,13 @@ contains
         real(${k}$) :: props(${muscle_meta.material_nprops(M)}$)
         integer :: st
 
-#:for q in PROPS
-#:if q.component is None
+        #:for q in PROPS
+        #:if q.component is None
         props(${q.index}$) = real(defaults%${q.name}$, ${k}$)
-#:else
+        #:else
         props(${q.index}$) = ${SAMPLES.prop_literal(muscle_meta, MAT, q, k, {})}$
-#:endif
-#:endfor
+        #:endif
+        #:endfor
         call mat_init_${M}$(mat, props, st)
         if (st /= STATUS_OK) then
             print '(a, i0)', ' ERROR: mat_init_${M}$ status ', st
@@ -169,11 +169,11 @@ contains
         real(${k}$) :: f
         real(${k}$) :: d1(6), d2(6)
         integer :: i, r
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         real(dp) :: t_first
-#:else
+        #:else
         integer :: c
-#:endif
+        #:endif
 
         allocate(eps(n, 6), hn(n, ${NS}$), hb(n, ${NS}$), sg(n, 6), tn(n, 6, 6), st(n), it(n))
         d1 = [1.0_${k}$, -0.3_${k}$, -0.3_${k}$, 0.2_${k}$, 0.05_${k}$, 0.1_${k}$]
@@ -200,20 +200,20 @@ contains
             t_h2d = min(t_h2d, real(omp_get_wtime(), dp) - t0)
         end do
 
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         t0 = real(omp_get_wtime(), dp)
         call update()
         t_first = real(omp_get_wtime(), dp) - t0
         t_min = time_updates()
         call print_row(n, merge('gpu        ', 'host-fallbk', device), t_min, t_first)
-#:else
+        #:else
         do c = 1, n_threads
             call omp_set_num_threads(threads(c))
             call update()
             t_min = time_updates()
             call print_row(n, 'cpu-' // itoa(threads(c)), t_min, -1.0_dp)
         end do
-#:endif
+        #:endif
 
         ! Outputs to the host
         t_d2h = huge(1.0_dp)
@@ -373,12 +373,12 @@ contains
 
         build_type = MUSCLE_BUILD_TYPE
         print '(a)', ' MUSCLE benchmark: batch API GPU vs CPU, ' // CASE_NAME // ', dt = ${DT}$'
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         print '(a, l1)', '  batch on a device: ', device
         if (.not. device) print '(a)', '  WARNING: no device, the target regions run on the host (fallback)'
-#:else
+        #:else
         print '(a, i0)', '  CPU build, available threads: ', omp_get_max_threads()
-#:endif
+        #:endif
         write(*, '(a, i0, a, i0)') '  repetitions (minimum time): ', n_repeat, ', checked points: ', n_sample
         print '(a)', '  build type: ' // trim(build_type)
         if (trim(build_type) /= 'Release') print '(a)', '  WARNING: not a Release build; timings are not representative.'

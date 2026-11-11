@@ -43,17 +43,17 @@ module test_mat_batch_cases
     use omp_lib, only : omp_set_num_threads, omp_get_max_threads
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
-#:set ten_names = [tname('3D2Osym', k) + ', ' + tname('3D2O', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS]
+    #:set ten_names = [tname('3D2Osym', k) + ', ' + tname('3D2O', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS]
     use muscle_tensors, only : ${', '.join(ten_names)}$
-    use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_elas_linear, only : elas_linear_init
     use muscle_visco_maxwell, only : visco_maxwell_init
     use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
-#:for m, x, extra in MATS
-#:set visco_states = ''.join(', mat_state_' + m + '_' + k for k in REAL_KINDS) if is_visco(extra) else ''
+    #:for m, x, extra in MATS
+    #:set visco_states = ''.join(', mat_state_' + m + '_' + k for k in REAL_KINDS) if is_visco(extra) else ''
     use muscle_mat_${m}$, only : mat_update, ${'mat_step, ' if is_visco(extra) else ''}$mat_pack_${m}$, mat_unpack_${m}$, &
         muscle_update_${m}$, MAT_${m.upper()}$_NSTATE, ${', '.join('mat_' + m + '_' + k for k in REAL_KINDS)}$${visco_states}$
-#:endfor
+    #:endfor
     use muscle_test_utils, only : check_true, target_on_device, ${', '.join('TOL_DEVICE_' + k for k in REAL_KINDS)}$
     implicit none
     private
@@ -70,18 +70,18 @@ contains
         !! Every material in every kind.
         device = target_on_device()
         print '(a, l1)', ' batch target regions on a device: ', device
-#:for k in REAL_KINDS
-#:for m, x, extra in MATS
+        #:for k in REAL_KINDS
+        #:for m, x, extra in MATS
         call run_${m}$_${k}$()
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end subroutine run_all
-#:for k in REAL_KINDS
-#:for m, x, extra in MATS
-#:set NS = 'MAT_' + m.upper() + '_NSTATE'
-#:set ST = 'mat_state_' + m + '_' + k if is_visco(extra) else 'plastic_state_' + k
-#:set XB = 'x0, x1' if x == 'F' else 'x0'
-#:set L = m + ' (' + k + ')'
+    #:for k in REAL_KINDS
+    #:for m, x, extra in MATS
+    #:set NS = 'MAT_' + m.upper() + '_NSTATE'
+    #:set ST = 'mat_state_' + m + '_' + k if is_visco(extra) else 'plastic_state_' + k
+    #:set XB = 'x0, x1' if x == 'F' else 'x0'
+    #:set L = m + ' (' + k + ')'
 
     subroutine run_${m}$_${k}$()
         !! Batch API of `${m}$` against its point kernel, `real(${k}$)`.
@@ -98,103 +98,103 @@ contains
         type(${ST}$) :: sn, snp1
         type(${tname('3D2Osym', k)}$) :: stress
         type(${tname('3D4O2sym', k)}$) :: tang
-#:if x == 'F'
+        #:if x == 'F'
         real(${k}$) :: x0(N, 9), x1(N, 9)
         type(${tname('3D2O', k)}$) :: fa, fb
-#:else
+        #:else
         real(${k}$) :: x0(N, 6)
         type(${tname('3D2Osym', k)}$) :: strain
-#:endif
+        #:endif
         integer :: st
-#:if is_visco(extra)
+        #:if is_visco(extra)
         type(visco_coefs_${k}$) :: coefs
-#:endif
+        #:endif
 
-#:if is_visco(extra)
+        #:if is_visco(extra)
         call visco_maxwell_init(mat%visco, bulk=150000.0_${k}$, shear_inf=50000.0_${k}$, &
             shear=[20000.0_${k}$, 10000.0_${k}$], tau=[0.05_${k}$, 1.0_${k}$], status=st)
         call check_true(passed, '${L}$: Maxwell init', st == STATUS_OK)
-#:else
+        #:else
         call elas_linear_init(mat%elas, young=210000.0_${k}$, poisson=0.3_${k}$, status=st)
         call check_true(passed, '${L}$: elastic init', st == STATUS_OK)
-#:endif
-#:if 'swift' in m
+        #:endif
+        #:if 'swift' in m
         mat%hard%k = 500.0_${k}$
         mat%hard%e0 = 1.0e-3_${k}$
         mat%hard%n = 0.2_${k}$
-#:else
+        #:else
         mat%hard%y0 = 200.0_${k}$
         mat%hard%K = 1000.0_${k}$
-#:endif
-#:if extra == 'os'
+        #:endif
+        #:if extra == 'os'
         mat%os%eta = 1.0e-2_${k}$
         mat%os%n = 1.0_${k}$
-#:endif
-#:if extra in ('jc', 'maxwell_jc')
+        #:endif
+        #:if extra in ('jc', 'maxwell_jc')
         mat%vp%C = 0.014_${k}$
         mat%vp%epdmax = 1.0_${k}$
-#:endif
-#:if extra == 'hill48'
+        #:endif
+        #:if extra == 'hill48'
         mat%yield%f = 0.25_${k}$
         mat%yield%g = 0.4_${k}$
         mat%yield%h = 0.6_${k}$
         mat%yield%l = 1.3_${k}$
         mat%yield%m = 1.7_${k}$
         mat%yield%n = 1.45_${k}$
-#:endif
+        #:endif
         ! Every third point, in decreasing order (the last point is in the list, the first is not)
         do i = 1, NIDX
             idx(i) = N + 1 - 3*i
         end do
         hn = 0.0_${k}$
         plastic = .false.
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         !$omp target enter data map(to: mat)
-#:endif
+        #:endif
         do step = 1, 3
             ! Inputs: from 0 up to 4e-3*step along a fixed direction (elastic and plastic points)
             do i = 1, N
                 a = real(i, ${k}$)/real(N, ${k}$)*4.0e-3_${k}$*real(step, ${k}$)
-#:if x == 'F'
+                #:if x == 'F'
                 fa%vals = [1.0_${k}$ + 0.8_${k}$*a*real(step - 1, ${k}$)/real(step, ${k}$), 0.1_${k}$*a, 0.0_${k}$, &
                     0.3_${k}$*a, 1.0_${k}$ - 0.3_${k}$*a, 0.2_${k}$*a, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$ - 0.3_${k}$*a]
                 fb = fa
                 fb%vals(1) = 1.0_${k}$ + a
                 x0(i, :) = fa%vals
                 x1(i, :) = fb%vals
-#:else
+                #:else
                 x0(i, :) = a*[1.0_${k}$, -0.3_${k}$, -0.3_${k}$, 0.2_${k}$, 0.05_${k}$, 0.1_${k}$]
-#:endif
+                #:endif
             end do
 
             ! Reference: the point kernel point by point through the history array
-#:if is_visco(extra)
+            #:if is_visco(extra)
             call mat_step(mat, DT, coefs, st)
             call check_true(passed, '${L}$: mat_step', st == STATUS_OK)
-#:endif
+            #:endif
             do i = 1, N
                 hsv = hn(i, :)
                 call mat_unpack_${m}$(hsv, sn)
-#:if x == 'F'
+                #:if x == 'F'
                 fa%vals = x0(i, :)
                 fb%vals = x1(i, :)
                 call mat_update(mat, fa, fb, DT, sn, snp1, stress, tang, str(i), itr(i))
-#:elif is_visco(extra)
+                #:elif is_visco(extra)
                 strain%vals = x0(i, :)
                 call mat_update(mat, strain, DT, coefs, sn, snp1, stress, tang, str(i), itr(i))
-#:else
+                #:else
                 strain%vals = x0(i, :)
                 call mat_update(mat, strain, DT, sn, snp1, stress, tang, str(i), itr(i))
-#:endif
+                #:endif
                 call mat_pack_${m}$(snp1, hsv)
                 hr(i, :) = hsv
                 sr(i, :) = stress%vals
                 tr(i, :, :) = tang%vals
             end do
             plastic = plastic .or. any(itr > 0)
-#:if defined('MUSCLE_GPU')
+            #:if defined('MUSCLE_GPU')
             !$omp target enter data map(to: ${XB}$, hn, idx) map(alloc: hb, sb, tb, stb, itb)
-#:endif
+            #:endif
 
             do nth = 1, 4, 3
                 call omp_set_num_threads(nth)
@@ -222,20 +222,20 @@ contains
                 call fetch()
                 call check_idx(.false.)
             end do
-#:if defined('MUSCLE_GPU')
+            #:if defined('MUSCLE_GPU')
             !$omp target exit data map(delete: ${XB}$, hn, idx, hb, sb, tb, stb, itb)
-#:endif
+            #:endif
             hn = hr
         end do
         call check_true(passed, '${L}$: the sequence has plastic points', plastic)
-#:if is_visco(extra)
+        #:if is_visco(extra)
 
         ! Rejected time step: its status for the points to compute, iterations 0, nothing else written
         call mat_step(mat, -DT, coefs, st)
         call check_true(passed, '${L}$: dt < 0 rejected by mat_step', st /= STATUS_OK)
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         !$omp target enter data map(to: x0, hn, idx) map(alloc: hb, sb, tb, stb, itb)
-#:endif
+        #:endif
         call reset()
         call muscle_update_${m}$(mat, x0, -DT, hn, hb, sb, stb, itb, ddsdde=tb)
         call fetch()
@@ -247,13 +247,13 @@ contains
         call check_true(passed, '${L}$: step error, index list', all(stb(idx) == st) .and. all(itb(idx) == 0) &
             .and. count(stb == -7) == N - NIDX .and. count(itb == -7) == N - NIDX &
             .and. all(hb == BAD) .and. all(sb == BAD) .and. all(tb == BAD))
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         !$omp target exit data map(delete: x0, hn, idx, hb, sb, tb, stb, itb)
-#:endif
-#:endif
-#:if defined('MUSCLE_GPU')
+        #:endif
+        #:endif
+        #:if defined('MUSCLE_GPU')
         !$omp target exit data map(delete: mat)
-#:endif
+        #:endif
 
     contains
 
@@ -264,16 +264,16 @@ contains
             tb = BAD
             stb = -7
             itb = -7
-#:if defined('MUSCLE_GPU')
+            #:if defined('MUSCLE_GPU')
             !$omp target update to(hb, sb, tb, stb, itb)
-#:endif
+            #:endif
         end subroutine reset
 
         subroutine fetch()
             !! Copies the outputs of a batch call back from the device (nothing without MUSCLE_GPU).
-#:if defined('MUSCLE_GPU')
+            #:if defined('MUSCLE_GPU')
             !$omp target update from(hb, sb, tb, stb, itb)
-#:endif
+            #:endif
         end subroutine fetch
 
         pure logical function same(a, b)
@@ -335,8 +335,8 @@ contains
             call check_true(passed, trim('${L}$: batch with index list' // merge(' and tangent', '            ', tan)), good)
         end subroutine check_idx
     end subroutine run_${m}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 end module test_mat_batch_cases
 

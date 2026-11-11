@@ -82,10 +82,10 @@ program test_math_spectral_kinds
     integer :: code
 
     code = 0
-#:for i, k in enumerate(REAL_KINDS)
+    #:for i, k in enumerate(REAL_KINDS)
     call record(test_scales_${k}$(), ${i + 1}$, 'spectral routines at several scales ${k}$', code)
     call record(test_zero_${k}$(), ${i + 11}$, 'spectral routines at the zero tensor ${k}$', code)
-#:endfor
+    #:endfor
     if (code /= 0) stop code
 
 contains
@@ -224,9 +224,9 @@ contains
             n_ambiguous
     end function report
 
-#:for k in REAL_KINDS
-#:set T2 = tname('3D2Osym', k)
-#:set T4 = tname('3D4O3sym', k)
+    #:for k in REAL_KINDS
+    #:set T2 = tname('3D2Osym', k)
+    #:set T4 = tname('3D4O3sym', k)
 
     function test_scales_${k}$() result(passed)
         !! All routines in `real(${k}$)` over scales x cases x random rotations.
@@ -455,7 +455,7 @@ contains
         shess = spectral_hessian(lam, v, [0.0_${k}$, 0.0_${k}$, 0.0_${k}$], reshape([(1.0_${k}$, a = 1, 9)], [3, 3]))
         call check_true(passed, '${k}$ zero: spectral_hessian finite', all(abs(shess%vals) < huge(1.0_${k}$)))
     end function test_zero_${k}$
-#:endfor
+    #:endfor
 
     subroutine regimes(drel, thr, regime, nsing, good)
         !! Predicted branch of each root: 1 distinct (drel > 3 thr), 2 singular (drel < thr/3),

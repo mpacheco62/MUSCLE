@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 
-module muscle_elasticity_laws
+module muscle_elas_laws
     !! Elastic models for kernels: the parameter types of every registered model
     !! (`elas_<name>_<k>`) and the family generics
     !! (prefix `elas_`), with the same names for every model, kind and dimension (3D and
@@ -15,69 +15,69 @@ module muscle_elasticity_laws
     !! - `elas_dstress_dstrain_dev(prm, strain)`: deviatoric tangent (a `4O3sym`).
     !!
     !! Models: `linear` (Hooke law) and `frozen` (the algorithmic elasticity of a linear viscoelastic
-    !! model over a time step, written per point by `visco_freeze`; module muscle_visco_frozen).
+    !! model over a time step, written per point by `visco_freeze`; module muscle_elas_frozen).
     !!
     !! `prm` is the parameter type of a model (built with its initializer, e.g. `elas_linear_init`)
     !! and `strain` the strain tensor (`2Osym`) of the same kind and dimension. The transient
     !! overloads of the historical OO API (`dstrain`, `dtime`, `internal`) are not part of the
     !! kernel API: every elastic model ignores them.
     !!
-    !! To add a model: write `muscle_elasticity_<name>.fypp`, then add a `use` statement of its own and its names to the
+    !! To add a model: write `muscle_elas_<name>.fypp`, then add a `use` statement of its own and its names to the
     !! interfaces and the `public` list below (the compiler rejects a name that does not exist).
-#:for k in REAL_KINDS
-#:for d in DIMS
-    use muscle_elasticity_linear, only : elas_stress_linear_${d}$_${k}$, elas_stress_dev_linear_${d}$_${k}$, &
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    use muscle_elas_linear, only : elas_stress_linear_${d}$_${k}$, elas_stress_dev_linear_${d}$_${k}$, &
         & elas_dstress_dstrain_linear_${d}$_${k}$, elas_dstress_dstrain_dev_linear_${d}$_${k}$
-    use muscle_visco_frozen, only : elas_stress_frozen_${d}$_${k}$, elas_stress_dev_frozen_${d}$_${k}$, &
+    use muscle_elas_frozen, only : elas_stress_frozen_${d}$_${k}$, elas_stress_dev_frozen_${d}$_${k}$, &
         & elas_dstress_dstrain_frozen_${d}$_${k}$, elas_dstress_dstrain_dev_frozen_${d}$_${k}$
-#:endfor
-    use muscle_elasticity_linear, only : elas_linear_${k}$
-    use muscle_visco_frozen, only : elas_frozen_${k}$
-#:endfor
+    #:endfor
+    use muscle_elas_linear, only : elas_linear_${k}$
+    use muscle_elas_frozen, only : elas_frozen_${k}$
+    #:endfor
     implicit none
     private
 
     public :: elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: elas_linear_${k}$, elas_frozen_${k}$
-#:endfor
+    #:endfor
 
     interface elas_stress
         !! Stress \( \boldsymbol\sigma(\boldsymbol\varepsilon) \) (every model, kind and dimension of the family).
-#:for k in REAL_KINDS
-#:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for d in DIMS
         module procedure elas_stress_linear_${d}$_${k}$, elas_stress_frozen_${d}$_${k}$
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end interface elas_stress
 
     interface elas_stress_dev
         !! Deviatoric stress \( \operatorname{dev}\boldsymbol\sigma(\boldsymbol\varepsilon) \) (every model, kind and dimension of
         !! the family).
-#:for k in REAL_KINDS
-#:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for d in DIMS
         module procedure elas_stress_dev_linear_${d}$_${k}$, elas_stress_dev_frozen_${d}$_${k}$
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end interface elas_stress_dev
 
     interface elas_dstress_dstrain
         !! Tangent \( \partial\boldsymbol\sigma/\partial\boldsymbol\varepsilon \) (every model, kind and dimension of the family).
-#:for k in REAL_KINDS
-#:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for d in DIMS
         module procedure elas_dstress_dstrain_linear_${d}$_${k}$, elas_dstress_dstrain_frozen_${d}$_${k}$
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end interface elas_dstress_dstrain
 
     interface elas_dstress_dstrain_dev
         !! Deviatoric tangent \( \partial(\operatorname{dev}\boldsymbol\sigma)/\partial\boldsymbol\varepsilon \) (every model, kind
         !! and dimension of the family).
-#:for k in REAL_KINDS
-#:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for d in DIMS
         module procedure elas_dstress_dstrain_dev_linear_${d}$_${k}$, elas_dstress_dstrain_dev_frozen_${d}$_${k}$
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end interface elas_dstress_dstrain_dev
 
-end module muscle_elasticity_laws
+end module muscle_elas_laws

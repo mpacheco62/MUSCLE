@@ -55,26 +55,26 @@ module muscle_tensor_4o
     !!
     !! For more information see [[muscle_tensors]]
     use muscle_kinds, only: sp, dp
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_kinds, only: TOL_APPROX_${k}$, EPS_ABS_${k}$
-#:endfor
+    #:endfor
     use muscle_tensor_4o2sym, only: ${', '.join(tname(d + '4O2sym', k) for d in DIMS for k in REAL_KINDS)}$
     implicit none
     private
 
-#:set F = '4O'
-#:for d in DIMS
-#:set lay = layout(F, d)
-#:set n = lay.shape[0]
-#:set S = d + F
+    #:set F = '4O'
+    #:for d in DIMS
+    #:set lay = layout(F, d)
+    #:set n = lay.shape[0]
+    #:set S = d + F
 #! I(i,j) in column-major order of (i,j), 0 for the pairs that are not stored
-#:set pair_index = [(lay.base.index(i, j) or (0,))[0] for j in range(1, 4) for i in range(1, 4)]
+    #:set pair_index = [(lay.base.index(i, j) or (0,))[0] for j in range(1, 4) for i in range(1, 4)]
     integer, parameter :: PAIR_INDEX_${d}$(3,3) = reshape((/ ${', '.join(map(str, pair_index))}$ /), (/3, 3/))
         !! ${d}$ storage index \( I(i,j) \) of the pair (i,j) (column `j` of the table), 0 for the
         !! pairs that are not stored.
 
-#:for k in REAL_KINDS
-#:set T = tname(S, k)
+    #:for k in REAL_KINDS
+    #:set T = tname(S, k)
     type, public :: ${T}$
         !! General ${d}$ fourth-order tensor in `real(${k}$)`: ${n}$x${n}$ matrix
         !! \( C_{IJ} = C_{ijkl} \) with \( I = I(i,j) \), \( J = I(k,l) \) (storage of `ten_${d}$2O`).
@@ -98,8 +98,8 @@ module muscle_tensor_4o
                 !! Inverse tensor (quiet NaN if singular).
     end type ${T}$
 
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 $:TENSOR_COMMON_INTERFACES(F)
 
     public :: norm
@@ -116,15 +116,15 @@ $:TENSOR_COMMON_INTERFACES(F)
 
 contains
 
-#:for d in DIMS
-#:set lay = layout(F, d)
-#:set n = lay.shape[0]
-#:set S = d + F
+    #:for d in DIMS
+    #:set lay = layout(F, d)
+    #:set n = lay.shape[0]
+    #:set S = d + F
 #! Stored only when every pair is in the base layout (3D): get/set need no zero check
-#:set all_stored = all(lay.base.index(i, j) for i in range(1, 4) for j in range(1, 4))
-#:for k in REAL_KINDS
-#:set T = tname(S, k)
-#:set P = S + '_' + k
+    #:set all_stored = all(lay.base.index(i, j) for i in range(1, 4) for j in range(1, 4))
+    #:for k in REAL_KINDS
+    #:set T = tname(S, k)
+    #:set P = S + '_' + k
     ! ---------------------------------------------------------------------------------------
     ! ${T}$
     ! ---------------------------------------------------------------------------------------
@@ -173,8 +173,8 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
         a_inv%vals = x
     end subroutine inverse_${P}$
 
-#:set lay2 = layout('4O2sym', d)
-#:set T2 = tname(d + '4O2sym', k)
+    #:set lay2 = layout('4O2sym', d)
+    #:set T2 = tname(d + '4O2sym', k)
     pure function convert_2sym_${P}$(a) result(res)
         !! Projects a `${T}$` onto the minor-symmetric `${T2}$` by sampling the rows/columns of the
         !! symmetric pairs (${', '.join(c.name for c in lay2.base.comps)}$); no symmetrization, so it
@@ -185,9 +185,9 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
             !! Tensor to convert.
         type(${T2}$) :: res
             !! Minor-symmetric tensor.
-#:for c in lay2.comps
+        #:for c in lay2.comps
         res%vals(${c.pos[0]}$, ${c.pos[1]}$) = ${lay.ref('a%vals', *c.idx)}$
-#:endfor
+        #:endfor
     end function convert_2sym_${P}$
 
     ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
@@ -212,9 +212,9 @@ $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm'], tensor_ops=['inv'], other='oth
             !! Tensor to initialize.
         real(${k}$), intent(in) :: C4(3,3,3,3)
             !! Full fourth-order array \(C_{ijkl}\).
-#:for c in lay.comps
+        #:for c in lay.comps
         self%vals(${c.pos[0]}$, ${c.pos[1]}$) = C4(${', '.join(map(str, c.idx))}$)
-#:endfor
+        #:endfor
     end subroutine init_array_${P}$_tbp
 
     pure function get_${P}$_tbp(self, i, j, k, l) result(res)
@@ -226,15 +226,15 @@ $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm'], tensor_ops=['inv'], other='oth
             !! Tensor indices (1..3).
         real(${k}$) :: res
             !! Component value.
-#:if all_stored
+        #:if all_stored
         res = self%vals(PAIR_INDEX_${d}$(i, j), PAIR_INDEX_${d}$(k, l))
-#:else
+        #:else
         integer :: row, col
         row = PAIR_INDEX_${d}$(i, j)
         col = PAIR_INDEX_${d}$(k, l)
         res = 0.0_${k}$
         if (row > 0 .and. col > 0) res = self%vals(row, col)
-#:endif
+        #:endif
     end function get_${P}$_tbp
 
     pure subroutine set_${P}$_tbp(self, i, j, k, l, val)
@@ -247,16 +247,16 @@ $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm'], tensor_ops=['inv'], other='oth
             !! Tensor indices (1..3).
         real(${k}$), intent(in) :: val
             !! Value to set.
-#:if all_stored
+        #:if all_stored
         self%vals(PAIR_INDEX_${d}$(i, j), PAIR_INDEX_${d}$(k, l)) = val
-#:else
+        #:else
         integer :: row, col
         row = PAIR_INDEX_${d}$(i, j)
         col = PAIR_INDEX_${d}$(k, l)
         if (row > 0 .and. col > 0) self%vals(row, col) = val
-#:endif
+        #:endif
     end subroutine set_${P}$_tbp
 
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 end module muscle_tensor_4o

@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 
-module muscle_elasticity_linear
+module muscle_elas_linear
     !! Linear isotropic elasticity (Hooke law) in 3D and 2D (plane strain/stress and axisymmetry:
     !! the 33 component is kept):
     !! \[ \sigma_{ij} = \lambda\,\delta_{ij}\,\varepsilon_{kk} + 2\mu\,\varepsilon_{ij}, \qquad
@@ -24,7 +24,7 @@ module muscle_elasticity_linear
     !! functions `elas_stress_linear_<d>_<k>(prm, strain)`, `elas_stress_dev_linear_<d>_<k>`,
     !! `elas_dstress_dstrain_linear_<d>_<k>` and `elas_dstress_dstrain_dev_linear_<d>_<k>` for each
     !! real kind and dimension (3D, 2D), also through the generics `elas_*` of
-    !! `muscle_elasticity_laws`. The tangents do not depend on the strain and are assembled on the
+    !! `muscle_elas_laws`. The tangents do not depend on the strain and are assembled on the
     !! fly.
     !!
     !! ```fortran
@@ -40,16 +40,16 @@ module muscle_elasticity_linear
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: elas_linear_${k}$, elas_linear_init_${k}$
     public :: elas_stress_linear_3D_${k}$, elas_stress_linear_2D_${k}$
     public :: elas_stress_dev_linear_3D_${k}$, elas_stress_dev_linear_2D_${k}$
     public :: elas_dstress_dstrain_linear_3D_${k}$, elas_dstress_dstrain_linear_2D_${k}$
     public :: elas_dstress_dstrain_dev_linear_3D_${k}$, elas_dstress_dstrain_dev_linear_2D_${k}$
-#:endfor
+    #:endfor
     public :: elas_linear_init
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: elas_linear_${k}$
         !! Parameters of the linear isotropic elastic model in `real(${k}$)` (build it with `elas_linear_init`,
         !! which computes the private derived components; do not change the inputs after `elas_linear_init`).
@@ -61,14 +61,14 @@ module muscle_elasticity_linear
             !! Diagonal constant \( e_1 = \lambda + 2\mu \) of Hooke law.
     end type elas_linear_${k}$
 
-#:endfor
+    #:endfor
     interface elas_linear_init
         !! Parameters of the linear elastic model from E and nu.
         module procedure ${', '.join('elas_linear_init_' + k for k in REAL_KINDS)}$
     end interface elas_linear_init
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine elas_linear_init_${k}$(prm, young, poisson, status)
         !! Parameters of the linear elastic model in `real(${k}$)` from the Young modulus and the Poisson
@@ -321,6 +321,6 @@ contains
         res%vals(9) = 0.0_${k}$
         res%vals(10) = 0.0_${k}$
     end function elas_dstress_dstrain_dev_linear_2D_${k}$
-#:endfor
+    #:endfor
 
-end module muscle_elasticity_linear
+end module muscle_elas_linear

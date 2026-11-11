@@ -57,7 +57,7 @@ module test_inverses_helpers
 
 contains
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     subroutine invert_${k}$(n, a, x, ok, kappa)
         !! Calls the `real(${k}$)` inverse routine of size n (`kappa` only for 3x3 and 4x4, else -1).
         integer, intent(in) :: n
@@ -131,7 +131,7 @@ contains
         norm_inf_${k}$ = maxval(sum(abs(a), dim=2))
     end function norm_inf_${k}$
 
-#:endfor
+    #:endfor
 end module test_inverses_helpers
 
 
@@ -146,8 +146,8 @@ program test_muscle_math_inverses
     implicit none
     logical :: passed
 
-#:for k in REAL_KINDS
-#:set b = STOP_BASE[k]
+    #:for k in REAL_KINDS
+    #:set b = STOP_BASE[k]
     call test_exact_cases_${k}$(passed)
     if (.not. passed) stop ${b + 1}$
 
@@ -172,7 +172,7 @@ program test_muscle_math_inverses
     call test_lu_kappa_${k}$(passed)
     if (.not. passed) stop ${b + 8}$
 
-#:endfor
+    #:endfor
     ! The NaN and extreme-scaling cases raise IEEE invalid/overflow/underflow flags on purpose;
     ! clear them so that the runtime does not report them as unexpected at STOP.
     call ieee_set_flag(ieee_all, .false.)

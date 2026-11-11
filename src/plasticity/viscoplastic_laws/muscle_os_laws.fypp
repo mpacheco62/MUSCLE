@@ -2,7 +2,7 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 
-module muscle_vp_overstress_laws
+module muscle_os_laws
     !! Overstress viscoplastic laws for kernels: the parameter types of every
     !! law (`os_<name>_<k>`) and the
     !! family generics (prefix `os_`), with the same names for every law and kind:
@@ -15,44 +15,44 @@ module muscle_vp_overstress_laws
     !! values already evaluated: `sy` = `hard_stress(h, ep)` and `dsy_dep` =
     !! `hard_dstress_dep(h, ep)`.
     !!
-    !! To add a law: write `muscle_vp_<name>.fypp`, then add a `use` statement of its own and its names to the
+    !! To add a law: write `muscle_os_<name>.fypp`, then add a `use` statement of its own and its names to the
     !! interfaces below (the compiler rejects a name that does not exist).
-#:for k in REAL_KINDS
-    use muscle_vp_chaboche, only : os_chaboche_${k}$, os_flow_rate_chaboche_${k}$, &
+    #:for k in REAL_KINDS
+    use muscle_os_chaboche, only : os_chaboche_${k}$, os_flow_rate_chaboche_${k}$, &
         & os_dflow_dsigma_chaboche_${k}$, os_dflow_dep_chaboche_${k}$
-    use muscle_vp_perzyna, only : os_perzyna_${k}$, os_flow_rate_perzyna_${k}$, &
+    use muscle_os_perzyna, only : os_perzyna_${k}$, os_flow_rate_perzyna_${k}$, &
         & os_dflow_dsigma_perzyna_${k}$, os_dflow_dep_perzyna_${k}$
-#:endfor
+    #:endfor
     implicit none
     private
 
     public :: os_flow_rate, os_dflow_dsigma, os_dflow_dep
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: os_chaboche_${k}$, os_perzyna_${k}$
-#:endfor
+    #:endfor
 
     interface os_flow_rate
         !! Plastic multiplier rate \( g(\sigma_{eq}, \epsilon_p) \) (every model and kind of the family).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure os_flow_rate_chaboche_${k}$
         module procedure os_flow_rate_perzyna_${k}$
-#:endfor
+        #:endfor
     end interface os_flow_rate
 
     interface os_dflow_dsigma
         !! Derivative \( \partial g/\partial\sigma_{eq} \) (every model and kind of the family).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure os_dflow_dsigma_chaboche_${k}$
         module procedure os_dflow_dsigma_perzyna_${k}$
-#:endfor
+        #:endfor
     end interface os_dflow_dsigma
 
     interface os_dflow_dep
         !! Derivative \( \partial g/\partial\epsilon_p \) (every model and kind of the family).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure os_dflow_dep_chaboche_${k}$
         module procedure os_dflow_dep_perzyna_${k}$
-#:endfor
+        #:endfor
     end interface os_dflow_dep
 
-end module muscle_vp_overstress_laws
+end module muscle_os_laws

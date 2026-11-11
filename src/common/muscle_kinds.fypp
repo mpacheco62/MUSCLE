@@ -57,7 +57,7 @@ module muscle_kinds
     integer, parameter, public :: dp = real64
         !! Double precision (the kind of the historical, unsuffixed type names).
 
-#:for k in ALL_KINDS
+    #:for k in ALL_KINDS
     real(${k}$), parameter, public :: TOL_APPROX_${k}$ = ${TOL_APPROX[k]}$_${k}$
         !! Default relative tolerance of `.approx.`/`is_approx` for `real(${k}$)` values (most
         !! tensor types; `4O2sym` uses `TOL_APPROX_4O2SYM_${k}$`).
@@ -113,6 +113,10 @@ module muscle_kinds
         !! mappings in `real(${k}$)` (`TOL_ELASTIC`, `NEWTON_TOL`: \( \max(\sigma_y, \) `SY_MIN`\( ) \)),
         !! so that a flow stress of zero neither divides nor stalls the Newton loop (D-018.11b; 1e-10,
         !! the historical value of the elastic predictor, in both kinds).
+    real(${k}$), parameter, public :: DGAMMA_MIN_${k}$ = 1.0e-12_${k}$
+        !! Threshold of the plastic multiplier increment \( \Delta\gamma \) below which the consistent
+        !! tangent of a closest point return mapping is the elastic one, `real(${k}$)` (the historical
+        !! value, in both kinds).
     real(${k}$), parameter, public :: KIN_JACOBI_GAP_LO_${k}$ = ${KIN_JACOBI_GAP_LO[k]}$
         !! Lower end of the band of relative eigenvalue gaps where the finite strain kinematics
         !! decompose C (or b) with Jacobi rotations, `real(${k}$)`: a gap
@@ -122,5 +126,5 @@ module muscle_kinds
         !! Upper end (excluded) of the Jacobi band of `KIN_JACOBI_GAP_LO_${k}$`, `real(${k}$)`:
         !! above it the closed form (eigenvalues and Cayley-Hamilton eigenprojections)
         !! is accurate (~1e-12 relative at 1e-2 in dp). 1e-2 in dp; `huge` in sp (always Jacobi).
-#:endfor
+    #:endfor
 end module muscle_kinds

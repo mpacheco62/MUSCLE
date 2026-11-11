@@ -27,13 +27,19 @@ module muscle_vp_va
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: vp_va_${k}$
     public :: vp_flow_stress_va_${k}$, vp_dflow_dep_va_${k}$, vp_dflow_depd_va_${k}$, &
         & vp_dstress_dep_va_${k}$
-#:endfor
+    #:endfor
+    #:for k in REAL_KINDS
 
-#:for k in REAL_KINDS
+    real(${k}$), parameter :: VA_RATE_MIN_${k}$ = 1.0e-12_${k}$
+        !! Floor of the rate in the power \( \dot{\bar\epsilon}_p^{1/m} \) of the VA law (a zero rate with
+        !! \( 1/m - 1 < 0 \) would divide by zero), `real(${k}$)`.
+    #:endfor
+
+    #:for k in REAL_KINDS
     type :: vp_va_${k}$
         !! Parameters of the VA model in `real(${k}$)`.
         real(${k}$) :: B
@@ -49,10 +55,10 @@ module muscle_vp_va
         real(${k}$) :: sig_u
             !! Athermal stress \( \sigma_u \).
     end type vp_va_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function vp_va_rate_${k}$(prm, epd) result(f)
         !! Rate factor \( 1 + B_1 \dot{\bar\epsilon}_p^{1/m} - B_2 \) of the VA model in `real(${k}$)`
         !! (\( 1 - B_2 \) if \( m = 0 \)), at the floored rate.
@@ -66,7 +72,7 @@ contains
             !! Rate factor.
 
         if (prm%m /= 0.0_${k}$) then
-            f = 1.0_${k}$ + prm%B1*(max(epd, 1.0e-12_${k}$)**(1.0_${k}$/prm%m)) - prm%B2
+            f = 1.0_${k}$ + prm%B1*(max(epd, VA_RATE_MIN_${k}$)**(1.0_${k}$/prm%m)) - prm%B2
         else
             f = 1.0_${k}$ - prm%B2
         end if
@@ -85,7 +91,7 @@ contains
             !! Derivative of the rate factor.
 
         if (prm%m /= 0.0_${k}$) then
-            df = (prm%B1/prm%m)*(max(epd, 1.0e-12_${k}$)**(1.0_${k}$/prm%m - 1.0_${k}$))
+            df = (prm%B1/prm%m)*(max(epd, VA_RATE_MIN_${k}$)**(1.0_${k}$/prm%m - 1.0_${k}$))
         else
             df = 0.0_${k}$
         end if
@@ -165,5 +171,5 @@ contains
               + (prm%B*(ep_eff**prm%n)*vp_va_drate_${k}$(prm, epd))/dt
     end function vp_dstress_dep_va_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_vp_va

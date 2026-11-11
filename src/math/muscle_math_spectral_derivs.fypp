@@ -16,12 +16,8 @@
 #:set FP_BITS = {'sp': ('int32', 8, 23, 126, -149), 'dp': ('int64', 11, 52, 1022, -1074)}
 
 module muscle_math_spectral_derivs
-    !! # Module mod_muscle_math_spectral_derivs
-    !!
-    !! This module provides exact, analytical, eigenvector-free first and second derivatives
-    !! of eigenvalues with respect to their parent symmetric second-order tensor.
-    !!
-    !! ## Mathematical Formulation
+    !! Exact, analytical, eigenvector-free first and second derivatives of eigenvalues with
+    !! respect to their parent symmetric second-order tensor.
     !!
     !! The eigenvalues \(\Sigma_a\) (\(a=1,2,3\)) are roots of the characteristic polynomial:
     !!
@@ -40,9 +36,9 @@ module muscle_math_spectral_derivs
     !! All thresholds are relative to the scale of the eigenvalues, so the results do not
     !! depend on the units of the tensor.
     use muscle_kinds, only : sp, dp
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_kinds, only : EPS_ABS_${k}$
-#:endfor
+    #:endfor
     use muscle_tensors
     use muscle_tensor_2osym, only : square
     use muscle_math_operations, only : eigenvals
@@ -56,19 +52,19 @@ module muscle_math_spectral_derivs
     public :: spectral_gradient
     public :: spectral_hessian
     public :: fp_exponent
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: dEigenvalues_dTensor_${k}$, d2Eigenvalues_dTensor2_${k}$, spectral_decomposition_${k}$
     public :: spectral_gradient_${k}$, spectral_hessian_${k}$, fp_exponent_${k}$
-#:endfor
+    #:endfor
 
-#:for name in ['dEigenvalues_dTensor', 'd2Eigenvalues_dTensor2', 'spectral_decomposition', &
-    & 'spectral_gradient', 'spectral_hessian', 'fp_exponent']
+    #:for name in ['dEigenvalues_dTensor', 'd2Eigenvalues_dTensor2', 'spectral_decomposition', &
+        & 'spectral_gradient', 'spectral_hessian', 'fp_exponent']
     interface ${name}$
         module procedure ${kspecifics('{0}_{1}', name)}$
     end interface ${name}$
 
-#:endfor
-#:for k in REAL_KINDS
+    #:endfor
+    #:for k in REAL_KINDS
     real(${k}$), parameter :: EPS_TOL_${k}$ = ${EPS_TOL[k]}$_${k}$
         !! `real(${k}$)`: smallest \(|3\Sigma_a^2 - 2I_1\Sigma_a + I_2| / \max(\Sigma_1^2, \Sigma_2^2, \Sigma_3^2)\)
         !! taken as a distinct eigenvalue by `dEigenvalues_dTensor` (below it the root is treated as
@@ -80,22 +76,19 @@ module muscle_math_spectral_derivs
         !! `real(${k}$)`: relative eigenvalue gap below which theta_ab of spectral_hessian takes its
         !! limit value. The limit assumes phi is twice differentiable between the two eigenvalues: the
         !! tolerance keeps that band narrow where it is not (CPB06, a = 2, k /= 0: h'' jumps at lam = 0).
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
-#:set T2 = tname('3D2Osym', k)
-#:set T4 = tname('3D4O3sym', k)
+    #:for k in REAL_KINDS
+    #:set T2 = tname('3D2Osym', k)
+    #:set T4 = tname('3D4O3sym', k)
 
     pure function dEigenvalues_dTensor_${k}$(Sigma, eigenvalues) result(res)
-        !!# First Derivative of Eigenvalues (`real(${k}$)`)
-        !!
-        !! Computes the first analytical derivative of all three eigenvalues of a symmetric
-        !! second-order tensor \(\Sigma_{ij}\) with respect to itself:
+        !! First derivative of the eigenvalues (`real(${k}$)`): the first analytical derivative of
+        !! all three eigenvalues of a symmetric second-order tensor \(\Sigma_{ij}\) with respect to itself,
         !!
         !! \[ H_{mn}^{(a)} = \frac{\partial \Sigma_a}{\partial \Sigma_{mn}} \]
         !!
-        !! ## Mathematical Formulation
         !! The computation is based on the implicit differentiation of the characteristic
         !! polynomial and the Cayley-Hamilton theorem. This approach yields a closed-form
         !! expression free of eigenvectors:
@@ -103,26 +96,26 @@ contains
         !! \[ H_{mn}^{(a)} = \frac{\Sigma^2_{mn} - (I_1 - \Sigma_a)\Sigma_{mn} + (\Sigma_a^2 - I_1\Sigma_a + I_2)\delta_{mn}}
         !!   {3\Sigma_a^2 - 2I_1\Sigma_a + I_2} \]
         !!
-        !! ## Singularity Handling (Repeated Roots)
-        !! When eigenvalues coincide (e.g., uniaxial tension or hydrostatic states), the denominator
-        !! approaches zero, leading to an indeterminate form \(0/0\). This routine robustly handles
-        !! such states by exploiting the identity property
+        !! Singularities (repeated roots): when eigenvalues coincide (e.g., uniaxial tension or
+        !! hydrostatic states), the denominator approaches zero, leading to an indeterminate form
+        !! \(0/0\). This routine robustly handles such states by exploiting the identity property
         !! \(\sum_{a=1}^3 \frac{\partial \Sigma_a}{\partial \pmb{\Sigma}} = \mathbf{I}\).
-        !!
-        !! - **Two identical eigenvalues:** The remaining subspace is isotropically divided among the repeated roots.
-        !! - **Three identical eigenvalues:** The identity tensor is isotropically divided by 3.
-        !!
-        !! @note This function is pure and returns an array of three symmetric second-order tensors.
+        !! With two identical eigenvalues, the remaining subspace is isotropically divided among the
+        !! repeated roots; with three, the identity tensor is isotropically divided by 3.
+        implicit none
         @:DEVICE()
-        type(${T2}$), intent(in)  :: Sigma          !! Symmetric second-order tensor \(\Sigma_{ij}\)
-        real(${k}$), intent(in)       :: eigenvalues(3) !! Eigenvalues \(\Sigma_1 \ge \Sigma_2 \ge \Sigma_3\) (as from `eigenvals`)
-        type(${T2}$)              :: res(3)         !! Resulting derivatives \(H_{ij}^{(a)}\) for \(a=1,2,3\)
+        type(${T2}$), intent(in) :: Sigma
+            !! Symmetric second-order tensor \(\Sigma_{ij}\)
+        real(${k}$), intent(in) :: eigenvalues(3)
+            !! Eigenvalues \(\Sigma_1 \ge \Sigma_2 \ge \Sigma_3\) (as from `eigenvals`)
+        type(${T2}$) :: res(3)
+            !! Resulting derivatives \(H_{ij}^{(a)}\) for \(a=1,2,3\)
 
-        real(${k}$)      :: I1, I2, D_scal(3), lam, tol
+        real(${k}$) :: I1, I2, D_scal(3), lam, tol
         type(${T2}$) :: F_tensor
-        type(iden_2O)     :: I2O
-        integer           :: a, num_sing
-        integer           :: good_idx, sing_idx(3)
+        type(iden_2O) :: I2O
+        integer :: a, num_sing
+        integer :: good_idx, sing_idx(3)
 
         ! 1. Compute Invariants
         ! First invariant: trace(\Sigma)
@@ -178,20 +171,23 @@ contains
 
 
     pure function d2Eigenvalues_dTensor2_${k}$(Sigma, eigenvalues, H_tensors) result(res)
-        !!# Second Derivative (Hessian) of Eigenvalues (`real(${k}$)`)
-        !!
-        !! Computes the second analytical derivative of all three eigenvalues of a symmetric
-        !! second-order tensor \(\Sigma_{ij}\) with respect to itself:
+        !! Second derivative (Hessian) of the eigenvalues (`real(${k}$)`): the second analytical
+        !! derivative of all three eigenvalues of a symmetric second-order tensor \(\Sigma_{ij}\)
+        !! with respect to itself,
         !!
         !! \[ \mathcal{H}_{mnop}^{(a)} = \frac{\partial^2 \Sigma_a}{\partial \Sigma_{mn} \partial \Sigma_{op}} \]
         !!
         !! This function is pure and returns an array of three fully symmetric fourth-order tensors.
         implicit none
         @:DEVICE()
-        type(${T2}$), intent(in)   :: Sigma          !! Symmetric second-order tensor \(\Sigma_{ij}\)
-        real(${k}$), intent(in)        :: eigenvalues(3) !! Eigenvalues \(\Sigma_1 \ge \Sigma_2 \ge \Sigma_3\) (as from `eigenvals`)
-        type(${T2}$), intent(in)   :: H_tensors(3)   !! Pre-computed first derivatives \(H_{ij}^{(a)}\)
-        type(${T4}$)              :: res(3)         !! Resulting Hessians for \(a=1,2,3\)
+        type(${T2}$), intent(in) :: Sigma
+            !! Symmetric second-order tensor \(\Sigma_{ij}\)
+        real(${k}$), intent(in) :: eigenvalues(3)
+            !! Eigenvalues \(\Sigma_1 \ge \Sigma_2 \ge \Sigma_3\) (as from `eigenvals`)
+        type(${T2}$), intent(in) :: H_tensors(3)
+            !! Pre-computed first derivatives \(H_{ij}^{(a)}\)
+        type(${T4}$) :: res(3)
+            !! Resulting Hessians for \(a=1,2,3\)
 
         type(${T4}$) :: M_tensor
         type(${T4}$) :: N_tensor
@@ -260,10 +256,14 @@ contains
         !! it, which stays accurate when they (nearly) coincide. That eigenvalue is at least
         !! half the eigenvalue range away from the other two, so the cross product needs no fallback.
         !! Called by the CPB06 and Yld2004-18p derivatives.
+        implicit none
         @:DEVICE()
-        type(${T2}$), intent(in) :: T   !! Symmetric tensor
-        real(${k}$), intent(out) :: lam(3)  !! Eigenvalues, in descending order
-        real(${k}$), intent(out) :: V(3,3)  !! Eigenvectors, column a belongs to lam(a)
+        type(${T2}$), intent(in) :: T
+            !! Symmetric tensor
+        real(${k}$), intent(out) :: lam(3)
+            !! Eigenvalues, in descending order
+        real(${k}$), intent(out) :: V(3,3)
+            !! Eigenvectors, column a belongs to lam(a)
 
         real(${k}$) :: r1(3), r2(3), r3(3), c1(3), c2(3), c3(3), ca(3), u(3), w(3), tu(3), tw(3)
         real(${k}$) :: n1, n2, n3, na, p, q, r, theta, tg, cs, sn
@@ -357,9 +357,12 @@ contains
         !! dphi/dT = sum_a phi_a v_a (x) v_a, with phi_a = dphi/dlam_a supplied by the caller
         !! (de Souza Neto et al., 2008, Eq. A.7), in `real(${k}$)`. Called by the CPB06 and
         !! Yld2004-18p gradients.
+        implicit none
         @:DEVICE()
-        real(${k}$), intent(in) :: V(3,3)   !! Eigenvectors from spectral_decomposition
-        real(${k}$), intent(in) :: dphi(3)  !! phi_a = dphi/dlam_a
+        real(${k}$), intent(in) :: V(3,3)
+            !! Eigenvectors from spectral_decomposition
+        real(${k}$), intent(in) :: dphi(3)
+            !! phi_a = dphi/dlam_a
         type(${T2}$) :: res
 
         res%vals(1) = dphi(1)*V(1,1)*V(1,1) + dphi(2)*V(1,2)*V(1,2) + dphi(3)*V(1,3)*V(1,3)
@@ -378,11 +381,16 @@ contains
         !! theta_ab = (phi_a - phi_b)/(lam_a - lam_b). For (nearly) repeated eigenvalues
         !! theta_ab takes its limit 1/2 (phi_aa + phi_bb) - phi_ab.
         !! Called by the CPB06 and Yld2004-18p Hessians.
+        implicit none
         @:DEVICE()
-        real(${k}$), intent(in) :: lam(3)      !! Eigenvalues from spectral_decomposition
-        real(${k}$), intent(in) :: V(3,3)      !! Eigenvectors from spectral_decomposition
-        real(${k}$), intent(in) :: dphi(3)     !! phi_a = dphi/dlam_a
-        real(${k}$), intent(in) :: d2phi(3,3)  !! phi_ab = d2phi/dlam_a dlam_b
+        real(${k}$), intent(in) :: lam(3)
+            !! Eigenvalues from spectral_decomposition
+        real(${k}$), intent(in) :: V(3,3)
+            !! Eigenvectors from spectral_decomposition
+        real(${k}$), intent(in) :: dphi(3)
+            !! phi_a = dphi/dlam_a
+        real(${k}$), intent(in) :: d2phi(3,3)
+            !! phi_ab = d2phi/dlam_a dlam_b
         type(${T4}$) :: res
 
         type(${T2}$) :: E1, E2, E3, N
@@ -426,6 +434,7 @@ contains
     pure function sym_outer_${k}$(x, y) result(res)
         ! Symmetric part of the outer product of two vectors, sym(x (x) y); x = y gives x (x) x.
         ! Used by spectral_hessian
+        implicit none
         @:DEVICE()
         real(${k}$), intent(in) :: x(3), y(3)
         type(${T2}$) :: res
@@ -440,6 +449,7 @@ contains
 
     pure function cross_${k}$(x, y) result(res)
         ! Cross product x * y; used by spectral_decomposition
+        implicit none
         @:DEVICE()
         real(${k}$), intent(in) :: x(3), y(3)
         real(${k}$) :: res(3)
@@ -447,7 +457,7 @@ contains
         res = [x(2)*y(3) - x(3)*y(2), x(3)*y(1) - x(1)*y(3), x(1)*y(2) - x(2)*y(1)]
     end function cross_${k}$
 
-#:set IK, NE, NF, B1, SUB = FP_BITS[k]
+    #:set IK, NE, NF, B1, SUB = FP_BITS[k]
     pure function fp_exponent_${k}$(x) result(e)
         !! The intrinsic `exponent(x)` of a `real(${k}$)` value from its IEEE bits: 0 for a zero,
         !! `huge(0)` for an Inf or a NaN (the value of gfortran and ifx), the exact exponent of a
@@ -455,6 +465,7 @@ contains
         !! that calls `__isinfd`/`__isnand`, which the emulated FP64 of Intel GPUs does not provide
         !! (the device image fails to load).
         use, intrinsic :: iso_fortran_env, only : ${IK}$
+        implicit none
         @:DEVICE()
         real(${k}$), intent(in) :: x
         integer :: e
@@ -479,6 +490,6 @@ contains
             end do
         end if
     end function fp_exponent_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_math_spectral_derivs

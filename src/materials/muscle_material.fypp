@@ -8,15 +8,22 @@
 #! MATERIAL_SOLVERS (muscle_meta), included with the kind fixed.
 #! Without MUSCLE_MATERIAL (FORD preprocesses every template with no defines) it documents the first
 #! material of the test registry.
+#!
+#! The material: its entry of the registry, its models and its solver
 #:set MAT_REGISTRY = MUSCLE_MATERIALS_FILE if defined('MUSCLE_MATERIALS_FILE') else None
 #:if defined('MUSCLE_MATERIAL')
 #:set MAT = muscle_meta.material(MUSCLE_MATERIAL, MAT_REGISTRY)
 #:else
 #:set MAT = muscle_meta.load_materials(MAT_REGISTRY)[0]
 #:endif
+#! (family prefix, model) of every component of the material type, and the prefixes alone
 #:set COMPS = muscle_meta.material_components(MAT)
-#:set SOLVER = muscle_meta.MATERIAL_SOLVERS[MAT.solver]
 #:set FAMS = [p for p, _ in COMPS]
+#! MaterialSolver entry: families it calls (and those they compose), history size, whether it uses dt, default
+#! iteration limit
+#:set SOLVER = muscle_meta.MATERIAL_SOLVERS[MAT.solver]
+#!
+#! The variant of the material: what the kernel and the APIs generate
 #! Family of the model that writes the elasticity at each point (viscoelastic), or None
 #:set VISCO = muscle_meta.material_visco(MAT)
 #! Kinematics of a finite strain material, or None; with a spatial strain measure
@@ -26,6 +33,12 @@
 #:set COROT = KIN in muscle_meta.KINEMATICS_FE_ROTATED
 #! Spatial measure with an anisotropic yield criterion: return mapping in the frame of R
 #:set ROTATED = muscle_meta.material_rotated(MAT)
+#! The kernel takes the deformation gradients F_n, F_np1 (a finite strain kinematics other than the
+#! corotational one), not a strain
+#:set F_INPUT = not muscle_meta.material_strain_input(MAT)
+#!
+#! Shortcuts: module of the state type (muscle_plastic_state, or this module with a viscoelastic elasticity),
+#! name of the parameter type of a model, family module of a prefix
 #:set STATE_MOD = muscle_meta.material_state(MAT, 'dp')[0]
 #:set model_type = muscle_meta.model_type
 #:set family_module_of = lambda p: muscle_meta.model_family(p).family_module
@@ -36,22 +49,22 @@ module ${muscle_meta.material_module(MAT.name)}$
     !! Return mapping `${MAT.solver}$` (generated from src/materials/muscle_material.fypp;
     !! 3D only) with the models:
     !!
-#:for p, m in COMPS
+    #:for p, m in COMPS
     !! - `${p}$`: ${muscle_meta.model_label(p, m)}$ (`${model_type(p, m, '<k>')}$`);
-#:endfor
-#:if VISCO
+    #:endfor
+    #:if VISCO
     !! - elasticity: ${muscle_meta.model_label('elas', MAT.elas)}$ (`${model_type('elas', MAT.elas, '<k>')}$`), written at
     !!   each point and step from the `${VISCO}$` model and its state, which keeps
     !!   ${MAT.visco_branches}$ history tensors in the FE history array.
-#:endif
+    #:endif
     !!
     !! The module makes public:
     !!
     !! - `mat_${MAT.name}$_<k>`: the material, with the parameter type of each model as a component
     !!   (${', '.join('`{}`'.format(p) for p in FAMS)}$), the iteration limit `iter_nw` and the
     !!   relative tolerance `tol` (default `NEWTON_TOL_<k>`);
-#:set DT_USE = 'used by the solver' if SOLVER.dt else 'not used by this rate-independent solver'
-#:if VISCO
+    #:set DT_USE = 'used by the solver' if SOLVER.dt else 'not used by this rate-independent solver'
+    #:if VISCO
     !! - `mat_step(mat, dt, coefs, status)`: coefficients of a time step (`visco_coefs_<k>`), once per
     !!   step for every point (validates `dt` and the number of branches; pure, device),
     !!   generic over the kinds and over every material module with a viscoelastic elasticity;
@@ -59,26 +72,26 @@ module ${muscle_meta.material_module(MAT.name)}$
     !!   kernel (pure, device), generic over the kinds and over every material module, with the
     !!   arguments of every material and the coefficients of the step (`dt`: time step,
     !!   ${DT_USE}$; the states are `${muscle_meta.material_state(MAT, '<k>')[1]}$` of ${STATE_MOD}$).
-#:elif COROT
+    #:elif COROT
     !! - `mat_update(mat, strain, dt, state_n, state_np1, stress, tangent, status, iters)`: point
     !!   kernel (pure, device) of a corotational material: the strain, stress and plastic
     !!   strain in the corotational frame rotated by the FE code, the tangent `tangent_rate`
     !!   ${MAT.tangent_rate}$; generic over the kinds and over every material module (`dt`: time step,
     !!   ${DT_USE}$; the states are `${muscle_meta.material_state(MAT, '<k>')[1]}$` of ${STATE_MOD}$).
-#:elif KIN
+    #:elif KIN
     !! - `mat_update(mat, F_n, F_np1, dt, state_n, state_np1, stress, tangent, status, iters)`: point
     !!   kernel of a finite strain material (pure, device), generic over the kinds and over
     !!   every material module: the deformation gradients at t_n and t_n+1 (`ten_3D2O_<k>`),
     !!   the Cauchy stress and the spatial tangent (`tangent_rate` ${MAT.tangent_rate}$); `dt`: time
     !!   step, ${DT_USE}$; the states are `${muscle_meta.material_state(MAT, '<k>')[1]}$` of ${STATE_MOD}$,
     !!   with the plastic strain in the strain measure of the kinematics.
-#:else
+    #:else
     !! - `mat_update(mat, strain, dt, state_n, state_np1, stress, tangent, status, iters)`: point
     !!   kernel (pure, device), generic over the kinds and over every material module, with the same
     !!   arguments for every material (`dt`: time step, ${DT_USE}$; the states are
     !!   `${muscle_meta.material_state(MAT, '<k>')[1]}$` of ${STATE_MOD}$).
-#:endif
-    !! - `${muscle_meta.material_batch(MAT.name)}$(mat, ${'F_n, F_np1' if KIN and not COROT else 'eps'}$, dt, hsv_n, hsv_np1,
+    #:endif
+    !! - `${muscle_meta.material_batch(MAT.name)}$(mat, ${'F_n, F_np1' if F_INPUT else 'eps'}$, dt, hsv_n, hsv_np1,
     !!   sig, status, iters, ddsdde, idx)`:
     !!   batch API: `mat_update` on every point (or the points `idx`) of SoA arrays
     !!   (`sig(npts, 6)`, `hsv_n(npts, NSTATE)`, ...), in an OpenMP parallel loop (a target region on
@@ -89,16 +102,16 @@ module ${muscle_meta.material_module(MAT.name)}$
     !! - `mat_init_${MAT.name}$(mat, props, status)`: the material from a flat parameter array of an FE
     !!   code, `props(${muscle_meta.material_nprops(MAT.name)}$)` (pure; the order of the parameters is in its
     !!   documentation and printed as a Markdown table by `muscle_meta.py props ${MAT.name}$`);
-    !! - `${muscle_meta.material_point(MAT.name)}$(mat, ${'F_n, F_np1' if KIN and not COROT else 'strain'}$, dt,
+    !! - `${muscle_meta.material_point(MAT.name)}$(mat, ${'F_n, F_np1' if F_INPUT else 'strain'}$, dt,
     !!   ${'coefs, ' if VISCO else ''}$hsv_n, hsv_np1, stress, status, iters, ddsdde)`:
     !!   point API for FE codes (pure, device): `mat_update` on flat arrays with the
     !!   conventions of the batch API; two specifics, without and with the tangent `ddsdde(6, 6)`
     !!   (no optional argument);
-#:if muscle_meta.material_strain_input(MAT)
+    #:if not F_INPUT
     !! - `${muscle_meta.material_rotate_hsv(MAT.name)}$(hsv, drot)`: rotates the tensorial parts of the history
     !!   array of a point with a rotation increment `drot(3, 3)` (pure, device), for FE codes
     !!   that do not rotate their state variables (Abaqus `STATEV` with `DROT`);
-#:endif
+    #:endif
     !! - `${muscle_meta.material_nstate(MAT.name)}$`: size of the state of a point in an FE history
     !!   array (without the stress), and `mat_pack_${MAT.name}$(state, hsv)` /
     !!   `mat_unpack_${MAT.name}$(hsv, state)` to move a state to / from it (pure, device).
@@ -106,19 +119,19 @@ module ${muscle_meta.material_module(MAT.name)}$
     use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$, &
         ${', '.join(tname('3D4O3sym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D2O', k) for k in REAL_KINDS)}$
-#:if VISCO
+    #:if VISCO
     use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
     use ${family_module_of('elas')}$, only : ${', '.join(model_type('elas', MAT.elas, k) for k in REAL_KINDS)}$
-#:else
+    #:else
     use ${STATE_MOD}$, only : ${', '.join(muscle_meta.material_state(MAT, k)[1] for k in REAL_KINDS)}$
-#:endif
-#:for p, m in COMPS
+    #:endif
+    #:for p, m in COMPS
     use ${family_module_of(p)}$, only : ${', '.join(model_type(p, m, k) for k in REAL_KINDS)}$
-#:if muscle_meta.model_init(p, m)
+    #:if muscle_meta.model_init(p, m)
     use ${muscle_meta.model_module(p, m)}$, only : ${p}$_${m}$_init
-#:endif
-#:endfor
+    #:endif
+    #:endfor
     implicit none
     private
 
@@ -129,26 +142,26 @@ module ${muscle_meta.material_module(MAT.name)}$
     public :: mat_update, mat_pack_${MAT.name}$, mat_unpack_${MAT.name}$, ${muscle_meta.material_batch(MAT.name)}$
     public :: ${muscle_meta.material_batch_dev(MAT.name)}$
     public :: ${muscle_meta.material_point(MAT.name)}$, mat_init_${MAT.name}$
-#:if muscle_meta.material_strain_input(MAT)
+    #:if not F_INPUT
     public :: ${muscle_meta.material_rotate_hsv(MAT.name)}$
-#:endif
-#:if VISCO
+    #:endif
+    #:if VISCO
     public :: mat_step
-#:endif
-#:for k in REAL_KINDS
+    #:endif
+    #:for k in REAL_KINDS
     public :: ${muscle_meta.material_type(MAT.name, k)}$
-#:if VISCO
+    #:if VISCO
     public :: ${muscle_meta.material_state_type(MAT.name, k)}$, ${muscle_meta.material_visco_state(MAT.name, k)}$
-#:endif
-#:endfor
-#:for k in REAL_KINDS
+    #:endif
+    #:endfor
+    #:for k in REAL_KINDS
 
     type :: ${muscle_meta.material_type(MAT.name, k)}$
         !! Material `${MAT.name}$` in `real(${k}$)`: parameters of its models and of the solver.
-#:for p, m in COMPS
+        #:for p, m in COMPS
         type(${model_type(p, m, k)}$) :: ${p}$
             !! Parameters of the ${muscle_meta.model_label(p, m)}$ model (`${p}$_*` generics).
-#:endfor
+        #:endfor
         integer :: iter_nw = ${SOLVER.iter_nw}$
             !! Maximum number of iterations (Newton iterations or corrections of the return mapping).
         real(${k}$) :: tol = NEWTON_TOL_${k}$
@@ -156,7 +169,7 @@ module ${muscle_meta.material_module(MAT.name)}$
             !! against \( tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \), \( \sigma_y \) the current flow (yield)
             !! stress; a dimensionless plastic strain residual against `tol` itself (see `mat_update`).
     end type ${muscle_meta.material_type(MAT.name, k)}$
-#:if VISCO
+    #:if VISCO
 
     type :: ${muscle_meta.material_visco_state(MAT.name, k)}$
         !! Viscoelastic state of a point of material `${MAT.name}$` at an instant, `real(${k}$)`: the
@@ -174,20 +187,20 @@ module ${muscle_meta.material_module(MAT.name)}$
         type(${muscle_meta.material_visco_state(MAT.name, k)}$) :: visco
             !! Viscoelastic state (elastic strain and history tensors).
     end type ${muscle_meta.material_state_type(MAT.name, k)}$
-#:endif
-#:endfor
+    #:endif
+    #:endfor
 
     interface mat_update
         !! Point kernel of the material (every kind).
         module procedure ${', '.join(muscle_meta.material_proc('update', MAT.name, k) for k in REAL_KINDS)}$
     end interface mat_update
-#:if VISCO
+    #:if VISCO
 
     interface mat_step
         !! Coefficients of a time step of the material (every kind).
         module procedure ${', '.join(muscle_meta.material_proc('step', MAT.name, k) for k in REAL_KINDS)}$
     end interface mat_step
-#:endif
+    #:endif
 
     interface ${muscle_meta.material_batch(MAT.name)}$
         !! Batch API of the material over SoA arrays (every kind).
@@ -208,13 +221,13 @@ module ${muscle_meta.material_module(MAT.name)}$
         !! Point API of the material for FE codes, over flat arrays (every kind).
         module procedure ${', '.join(muscle_meta.material_proc(p, MAT.name, k) for k in REAL_KINDS for p in ('point', 'pointdd'))}$
     end interface ${muscle_meta.material_point(MAT.name)}$
-#:if muscle_meta.material_strain_input(MAT)
+    #:if not F_INPUT
 
     interface ${muscle_meta.material_rotate_hsv(MAT.name)}$
         !! Rotation of the tensorial parts of a history array (every kind).
         module procedure ${', '.join(muscle_meta.material_proc('rotate', MAT.name, k) for k in REAL_KINDS)}$
     end interface ${muscle_meta.material_rotate_hsv(MAT.name)}$
-#:endif
+    #:endif
 
     interface mat_pack_${MAT.name}$
         !! State of a point to an FE history array (every kind).
@@ -228,25 +241,38 @@ module ${muscle_meta.material_module(MAT.name)}$
 
 contains
 #:for k in REAL_KINDS
+#! The names below are the contract of the included files (solver bodies, kernel, batch and point APIs:
+#! each header lists the ones it uses).
+#!
+#! Types of kind k: the material, its state, the coefficients of a viscoelastic step, the elasticity of a step
 #:set MAT_T = muscle_meta.material_type(MAT.name, k)
-#:set UPDATE = muscle_meta.material_proc('update', MAT.name, k)
-#:set SOLVE = muscle_meta.material_proc('solve', MAT.name, k)
-#:set STEP = muscle_meta.material_proc('step', MAT.name, k)
+#:set STATE_T = muscle_meta.material_state(MAT, k)[1]
 #:set COEFS_T = 'visco_coefs_' + k
-#:set ITER = muscle_meta.material_proc('iter', MAT.name, k)
-#:set TANGENT = muscle_meta.material_proc('tangent', MAT.name, k)
-#:set PACK = muscle_meta.material_proc('pack', MAT.name, k)
-#:set UNPACK = muscle_meta.material_proc('unpack', MAT.name, k)
-#:set MERIT = muscle_meta.material_proc('merit', MAT.name, k)
-#:set BATCH = muscle_meta.material_proc('batch', MAT.name, k)
-#:set BATCH_DEV = muscle_meta.material_proc('batchdev', MAT.name, k)
-#:set NSTATE = muscle_meta.material_nstate(MAT.name)
+#:set ELAS_T = model_type('elas', MAT.elas, k)
+#! Tensor types of kind k: stress and strain (S2), 4th order with major and minor symmetries (C4: elasticity,
+#! Hessians) and with minor symmetries only (T4: tangents), deformation gradient (G2)
 #:set S2 = tname('3D2Osym', k)
 #:set C4 = tname('3D4O3sym', k)
 #:set T4 = tname('3D4O2sym', k)
 #:set G2 = tname('3D2O', k)
-#:set ELAS_T = model_type('elas', MAT.elas, k)
-#:set STATE_T = muscle_meta.material_state(MAT, k)[1]
+#! Constant with the size of the FE history array of a point
+#:set NSTATE = muscle_meta.material_nstate(MAT.name)
+#!
+#! Generated procedures of kind k (mat_<proc>_<name>_<k>): point kernel and the solver it calls
+#:set UPDATE = muscle_meta.material_proc('update', MAT.name, k)
+#:set SOLVE = muscle_meta.material_proc('solve', MAT.name, k)
+#! Inner procedures of the solver bodies: Newton iteration, consistent tangent, merit function (Perzyna)
+#:set ITER = muscle_meta.material_proc('iter', MAT.name, k)
+#:set TANGENT = muscle_meta.material_proc('tangent', MAT.name, k)
+#:set MERIT = muscle_meta.material_proc('merit', MAT.name, k)
+#! Coefficients of a viscoelastic step; history array to and from the state
+#:set STEP = muscle_meta.material_proc('step', MAT.name, k)
+#:set PACK = muscle_meta.material_proc('pack', MAT.name, k)
+#:set UNPACK = muscle_meta.material_proc('unpack', MAT.name, k)
+#! Batch API on host arrays and on device addresses
+#:set BATCH = muscle_meta.material_proc('batch', MAT.name, k)
+#:set BATCH_DEV = muscle_meta.material_proc('batchdev', MAT.name, k)
+#!
 #! Body of the solver (muscle_meta.material_solver_body). fypp takes only a literal file name in
 #! `#:include`, so the chain lists every solver of MATERIAL_SOLVERS by hand: tests/tools checks that
 #! it matches the metadata, and an unknown solver stops the preprocessing.

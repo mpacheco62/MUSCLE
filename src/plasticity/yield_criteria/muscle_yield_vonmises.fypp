@@ -17,30 +17,30 @@ module muscle_yield_vonmises
     !! `yield_stress_eq_vonmises_3D_<k>(prm, sigma)`, `yield_dstress_eq_vonmises_3D_<k>(prm, sigma)`,
     !! `yield_ddstress_eq_vonmises_3D_<k>(prm, sigma)` and the joint evaluation
     !! `yield_stress_eq_and_derivatives_vonmises_3D_<k>(prm, sigma, f, df[, ddf])` (the three in turn)
-    !! for each real kind, also through the generics `yield_*` of `muscle_yield_criteria`.
+    !! for each real kind, also through the generics `yield_*` of `muscle_yield_laws`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
-#:endfor
+    #:endfor
     use muscle_tensors, only : iden_4O4T, iden_4O3T, operator(.dev.), operator(.ddot.), operator(.tdotsym.), &
         & operator(*), operator(/), operator(-), assignment(=)
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: yield_vonmises_${k}$
     public :: yield_stress_eq_vonmises_3D_${k}$, yield_dstress_eq_vonmises_3D_${k}$, yield_ddstress_eq_vonmises_3D_${k}$
     public :: yield_stress_eq_and_derivatives_vonmises_3D_${k}$, yield_joint_evaluation_vonmises_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: yield_vonmises_${k}$
         !! Parameters of the von Mises model in `real(${k}$)`.
     end type yield_vonmises_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure function yield_stress_eq_vonmises_3D_${k}$(prm, sigma) result(res)
         !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the von Mises model in `real(${k}$)` (3D).
@@ -138,6 +138,6 @@ contains
         df = yield_dstress_eq_vonmises_3D_${k}$(prm, sigma)
         if (present(ddf)) ddf = yield_ddstress_eq_vonmises_3D_${k}$(prm, sigma)
     end subroutine yield_stress_eq_and_derivatives_vonmises_3D_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_yield_vonmises

@@ -6,7 +6,7 @@ program yld2004_private_params
     !! error): the derived parameters Lp and Lpp of the Yld2004 kernel type are private (D-017.10b), so
     !! the type can only be built with `yield_yld2004_init`.
     use muscle_kinds, only : dp
-    use muscle_yield_criteria, only : yield_yld2004_dp
+    use muscle_yield_laws, only : yield_yld2004_dp
     implicit none
     type(yield_yld2004_dp) :: c
 

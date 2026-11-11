@@ -56,17 +56,17 @@ module test_4o2sym_kinds_lib
     implicit none
     public
 
-#:for d in DIMS
+    #:for d in DIMS
     real(dp), parameter :: W_${d}$(${len(W[d])}$) = [${', '.join(str(w) + '.0_dp' for w in W[d])}$]
         !! Multiplicity of each ${d}$ Voigt index (2 for a shear).
-#:endfor
+    #:endfor
     interface vv
         !! `vv(expr)`: the `vals` array of a tensor expression (matrix for 4O2sym, vector for 4O3sym).
-#:for k in REAL_KINDS
-#:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for d in DIMS
         module procedure vv_${tname(d + '4O2sym', k)}$, vv_${tname(d + '4O3sym', k)}$
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end interface vv
 
     type(park_miller) :: rng = park_miller(20261030)
@@ -74,8 +74,8 @@ module test_4o2sym_kinds_lib
 
 contains
 
-#:for d in DIMS
-#:set nb = len(W[d])
+    #:for d in DIMS
+    #:set nb = len(W[d])
     function inv_ref_vals_${d}$(m) result(s)
         !! Reference `vals` of the inverse of the ${d}$ Voigt matrix `m`:
         !! \( S = W^{-1} m^{-1} W^{-1} \) (double precision, Gauss-Jordan).
@@ -91,12 +91,12 @@ contains
         end do
     end function inv_ref_vals_${d}$
 
-#:endfor
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set nb = len(W[d])
-#:set T = tname(d + '4O2sym', k)
-#:set T3 = tname(d + '4O3sym', k)
+    #:endfor
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set nb = len(W[d])
+    #:set T = tname(d + '4O2sym', k)
+    #:set T3 = tname(d + '4O3sym', k)
     function rand_mat_${d}$_${k}$(scale, shift) result(m)
         !! Random (unsymmetric) ${nb}$x${nb}$ Voigt matrix: entries uniform in (-scale, scale), plus
         !! shift*scale on the diagonal (shift > ${nb - 1}$ makes it diagonally dominant).
@@ -161,16 +161,16 @@ contains
         r = convert_3sym(a)
     end function pure_conv_${T}$
 
-#:endfor
+    #:endfor
     function embed_${k}$(a) result(r)
         !! Embeds a `${tname('2D4O2sym', k)}$` into a `${tname('3D4O2sym', k)}$` from the layout
         !! metadata: every 3D component with an out-of-plane shear pair (yz, xz) is zero.
         type(${tname('2D4O2sym', k)}$), intent(in) :: a
             !! 2D tensor.
         type(${tname('3D4O2sym', k)}$) :: r
-#:for c in L3.comps
+        #:for c in L3.comps
         r%vals(${c.pos[0]}$, ${c.pos[1]}$) = ${L2.ref('a%vals', *c.idx, zero='0.0_' + k)}$
-#:endfor
+        #:endfor
     end function embed_${k}$
 
     function embed_tables_${k}$(a) result(r)
@@ -191,7 +191,7 @@ contains
         call r%init([${', '.join(S2.ref('a%vals', *c.idx, zero='0.0_' + k) for c in S3.comps)}$])
     end function embed3s_${k}$
 
-#:endfor
+    #:endfor
 #:for k in REAL_KINDS
 #:for d in DIMS
 $:pure_use('4O2sym', d, k, 'muscle_tensor_4o2sym', ['norm', 'is_approx', 'inverse'], 'a/norm(a)')
@@ -227,38 +227,38 @@ program test_muscle_tensor_4o2sym_kinds
     integer :: code
 
     code = 0
-#:set nt = 0
-#:for t in ['layout_tables', 'tolerances']
-#:set nt = nt + 1
+    #:set nt = 0
+    #:for t in ['layout_tables', 'tolerances']
+    #:set nt = nt + 1
     call test_${t}$(passed)
     call record(passed, ${nt}$, 'test_${t}$', code)
-#:endfor
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:for t in ['ops', 'convert', 'inverse', 'approx', 'free_generics']
-#:set nt = nt + 1
+    #:endfor
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:for t in ['ops', 'convert', 'inverse', 'approx', 'free_generics']
+    #:set nt = nt + 1
     call test_${t}$_${d}$_${k}$(passed)
     call record(passed, ${nt}$, 'test_${t}$_${d}$_${k}$', code)
-#:endfor
-#:endfor
-#:set nt = nt + 1
+    #:endfor
+    #:endfor
+    #:set nt = nt + 1
     call test_embed_${k}$(passed)
     call record(passed, ${nt}$, 'test_embed_${k}$', code)
-#:endfor
-#:set nt = nt + 1
+    #:endfor
+    #:set nt = nt + 1
     call test_historical_aliases(passed)
     call record(passed, ${nt}$, 'test_historical_aliases', code)
-#:if defined('ENABLE_UDTIO')
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set nt = nt + 1
+    #:if defined('ENABLE_UDTIO')
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set nt = nt + 1
     call test_udtio_${d}$_${k}$(passed)
     call record(passed, ${nt}$, 'test_udtio_${d}$_${k}$', code)
-#:endfor
-#:endfor
-#:else
+    #:endfor
+    #:endfor
+    #:else
     print '(a)', ' UDTIO tests skipped (built without ENABLE_UDTIO)'
-#:endif
+    #:endif
     if (code /= 0) stop code
 
     print *, "Passed!"
@@ -273,46 +273,46 @@ contains
         !! upper-triangle map of convert_3sym (`layout('4O3sym', d)` positions and Voigt pairs).
         use test_4o2sym_kinds_lib
         logical, intent(out) :: passed
-#:for d in DIMS
-#:set lay = layout('4O2sym', d)
-#:set lay3 = layout('4O3sym', d)
-#:set nb = len(VP[d])
+        #:for d in DIMS
+        #:set lay = layout('4O2sym', d)
+        #:set lay3 = layout('4O3sym', d)
+        #:set nb = len(VP[d])
         character(len=4), parameter :: NAMES_${d}$(${nb}$,${nb}$) = reshape([character(len=4) :: &
-#:for J in range(nb)
-#:set names_row = ', '.join("'" + VP[d][I] + VP[d][J] + "'" for I in range(nb))
+            #:for J in range(nb)
+            #:set names_row = ', '.join("'" + VP[d][I] + VP[d][J] + "'" for I in range(nb))
             ${names_row}$${', &' if J < nb - 1 else '], [' + str(nb) + ', ' + str(nb) + '])'}$
-#:endfor
+            #:endfor
         character(len=4) :: lay_names_${d}$(${nb}$,${nb}$)
         integer :: lay_pos_${d}$(${len(lay.comps)}$, 2), conv_${d}$(${len(CONV[d])}$, 2)
-#:endfor
+        #:endfor
         integer :: p
         passed = .true.
-#:for d in DIMS
-#:set lay = layout('4O2sym', d)
-#:set lay3 = layout('4O3sym', d)
-#:set nb = len(VP[d])
+        #:for d in DIMS
+        #:set lay = layout('4O2sym', d)
+        #:set lay3 = layout('4O3sym', d)
+        #:set nb = len(VP[d])
         call check_true(passed, 'layout ${d}$: shape (${nb}$, ${nb}$)', &
                         ${len(lay.shape)}$ == 2 .and. ${lay.shape[0]}$ == ${nb}$ .and. ${lay.shape[-1]}$ == ${nb}$)
         ! Name of the component stored at each (I, J)
-#:for c in lay.comps
+        #:for c in lay.comps
         lay_names_${d}$(${c.pos[0]}$, ${c.pos[1]}$) = '${c.name}$'
-#:endfor
+        #:endfor
         call check_true(passed, 'layout ${d}$: names at (I, J) == original', all(lay_names_${d}$ == NAMES_${d}$))
         ! Storage order of the components: column-major
-#:for p, c in enumerate(lay.comps, start=1)
+        #:for p, c in enumerate(lay.comps, start=1)
         lay_pos_${d}$(${p}$, :) = [${c.pos[0]}$, ${c.pos[1]}$]
-#:endfor
+        #:endfor
         call check_true(passed, 'layout ${d}$: column-major storage order', &
                         all([(lay_pos_${d}$(p, 1) == 1 + mod(p - 1, ${nb}$) .and. &
                               lay_pos_${d}$(p, 2) == 1 + (p - 1 - mod(p - 1, ${nb}$))/${nb}$, p = 1, ${len(lay.comps)}$)]))
         ! convert_3sym: the 4O3sym component p is vals(CONV(p)) (its Voigt pair in the layout)
-#:for p, c in enumerate(lay3.comps, start=1)
+        #:for p, c in enumerate(lay3.comps, start=1)
         conv_${d}$(${p}$, :) = [${c.voigt[0]}$, ${c.voigt[1]}$]
-#:endfor
+        #:endfor
         call check_true(passed, 'layout ${d}$: 4O3sym Voigt pairs == convert_3sym of the original', &
                         all(conv_${d}$ == reshape([${', '.join(str(ij[0]) for ij in CONV[d])}$, &
                                                    ${', '.join(str(ij[1]) for ij in CONV[d])}$], [${len(CONV[d])}$, 2])))
-#:endfor
+        #:endfor
     end subroutine test_layout_tables
 
     subroutine test_tolerances(passed)
@@ -323,22 +323,22 @@ contains
         use muscle_test_utils, only: check_true
         logical, intent(out) :: passed
         passed = .true.
-#:if 'dp' in REAL_KINDS
+        #:if 'dp' in REAL_KINDS
         call check_true(passed, 'TOL_APPROX_4O2SYM_dp == 1.0e-8_dp', TOL_APPROX_4O2SYM_dp == 1.0e-8_dp)
         call check_true(passed, 'kind(TOL_APPROX_4O2SYM_dp) == dp', kind(TOL_APPROX_4O2SYM_dp) == dp)
-#:endif
-#:if 'sp' in REAL_KINDS
+        #:endif
+        #:if 'sp' in REAL_KINDS
         call check_true(passed, 'TOL_APPROX_4O2SYM_sp == 1.0e-4_sp', TOL_APPROX_4O2SYM_sp == 1.0e-4_sp)
         call check_true(passed, 'kind(TOL_APPROX_4O2SYM_sp) == sp', kind(TOL_APPROX_4O2SYM_sp) == sp)
-#:endif
+        #:endif
     end subroutine test_tolerances
 
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set nb = len(VP[d])
-#:set N = nb*nb
-#:set T = tname(d + '4O2sym', k)
-#:set T3 = tname(d + '4O3sym', k)
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set nb = len(VP[d])
+    #:set N = nb*nb
+    #:set T = tname(d + '4O2sym', k)
+    #:set T3 = tname(d + '4O3sym', k)
     subroutine test_ops_${d}$_${k}$(passed)
         !! Construction (`init`), assignment, the arithmetic, `norm` and the default tolerance of
         !! `.approx.` of `${T}$`.
@@ -365,15 +365,16 @@ contains
         call c%init(v)
         call check_approx(passed, 'init(array)' // TN, c%vals, v, tol=ZERO)
         call a%init( &
-#:for I in reversed(range(nb))
-#:set names_row = ', '.join('{}{}={}.0_{}'.format(VP[d][I], VP[d][J], 10*(I + 1) + J + 1, k) for J in reversed(range(nb)))
+            #:for I in reversed(range(nb))
+            #:set names_row = ', '.join('{}{}={}.0_{}'.format(VP[d][I], VP[d][J], 10*(I + 1) + J + 1, k) &
+                & for J in reversed(range(nb)))
             ${names_row}$${', &' if I > 0 else ')'}$
-#:endfor
+            #:endfor
         call check_approx(passed, 'init(named): C_ijkl in vals(I(ij), J(kl))' // TN, a%vals, v, tol=ZERO)
         call b%init( &
-#:for I in range(nb)
+            #:for I in range(nb)
             ${', '.join('{}.0_{}'.format(10*(I + 1) + J + 1, k) for J in range(nb))}$${', &' if I < nb - 1 else ')'}$
-#:endfor
+            #:endfor
         call check_approx(passed, 'init(positional): row by row' // TN, b%vals, v, tol=ZERO)
 
         ! ---- assignment of a scalar to every component ----------------------------------------
@@ -473,9 +474,9 @@ contains
             ! own layout) == vals(I, J)
             b%vals = 0.5_${k}$*(ma + transpose(ma))
             q = convert_3sym(b)
-#:for c in layout('4O2sym', d).comps
+            #:for c in layout('4O2sym', d).comps
             mq(${c.pos[0]}$, ${c.pos[1]}$) = ${layout('4O3sym', d).ref('q%vals', *c.idx)}$
-#:endfor
+            #:endfor
             call check_approx(passed, 'convert_3sym of a major-symmetric tensor keeps C_IJ' // TN, mq, b%vals, tol=ZERO)
         end do
         a = ZERO
@@ -521,7 +522,7 @@ contains
         e%vals(2, 3) = -3.0_${k}$
         e%vals(3, 2) = -1.0_${k}$
         e%vals(3, 3) = 2.0_${k}$
-#:if d == '3D'
+        #:if d == '3D'
         a%vals(5, 5) = 2.0_${k}$
         a%vals(5, 6) = 3.0_${k}$
         a%vals(6, 5) = 1.0_${k}$
@@ -530,7 +531,7 @@ contains
         e%vals(5, 6) = -0.75_${k}$
         e%vals(6, 5) = -0.25_${k}$
         e%vals(6, 6) = 0.5_${k}$
-#:endif
+        #:endif
         call inverse(a, x, ok, cond)
         call check_true(passed, 'inverse (exact): ok' // TN, ok)
         call check_approx(passed, 'inverse (exact)' // TN, x%vals, e%vals, tol=ZERO)
@@ -684,13 +685,13 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
     & unary=['convert_3sym'], inv_shift='{}.0_dp'.format(nb + 2), p_mult=7, pure_ref='b/b%norm()', &
     & pure_fresh_b=True, tol_name='TOL_APPROX_4O2SYM')
 
-#:if defined('ENABLE_UDTIO')
-#:set M = nb + 1
-#:set VALS = [(-1)**(p + 1)*p/4 for p in range(1, N + 1)]
+    #:if defined('ENABLE_UDTIO')
+    #:set M = nb + 1
+    #:set VALS = [(-1)**(p + 1)*p/4 for p in range(1, N + 1)]
 #! vals(I, J) = VALS[(J-1)*nb + I - 1] (column-major)
-#:set ROWS = [[VALS[J*nb + I] for J in range(nb)] for I in range(nb)]
-#:set LIST11 = [' {:10.4E}'.format(v) if v >= 0 else '{:11.4E}'.format(v) for v in VALS]
-#:set LIST9 = [' {:8.2E}'.format(v) if v >= 0 else '{:9.2E}'.format(v) for v in VALS]
+    #:set ROWS = [[VALS[J*nb + I] for J in range(nb)] for I in range(nb)]
+    #:set LIST11 = [' {:10.4E}'.format(v) if v >= 0 else '{:11.4E}'.format(v) for v in VALS]
+    #:set LIST9 = [' {:8.2E}'.format(v) if v >= 0 else '{:9.2E}'.format(v) for v in VALS]
     subroutine test_udtio_${d}$_${k}$(passed)
         !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
         !!
@@ -717,9 +718,9 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
         write(buf(1), '(DT"LIST")', iostat=ios) a
         call check_true(passed, 'list: iostat = 0' // TN, ios == 0)
         call check_true(passed, 'list: text' // TN, trim(buf(1)) == '[' // &
-#:for c in range(0, N, 8)
+            #:for c in range(0, N, 8)
             '${' '.join(LIST11[c:c + 8])}$${' ' if c + 8 < N else ' ]'}$'${' // &' if c + 8 < N else ')'}$
-#:endfor
+            #:endfor
         if (.not. passed) print '(a)', '   got: "' // trim(buf(1)) // '"'
         line = buf(1)
         nl = len_trim(line)
@@ -735,9 +736,9 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
         write(buf(1), '(DT"LIST"(9,2))', iostat=ios) a
         call check_true(passed, 'list(9,2): iostat = 0' // TN, ios == 0)
         call check_true(passed, 'list(9,2): text' // TN, trim(buf(1)) == '[' // &
-#:for c in range(0, N, 10)
+            #:for c in range(0, N, 10)
             '${' '.join(LIST9[c:c + 10])}$${' ' if c + 10 < N else ' ]'}$'${' // &' if c + 10 < N else ')'}$
-#:endfor
+            #:endfor
         if (.not. passed) print '(a)', '   got: "' // trim(buf(1)) // '"'
 
         ! ---- Matrix mode: DT (mode 1) and list-directed (mode 2) ----------------------------
@@ -779,11 +780,11 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
             call check_approx(passed, 'matrix: Voigt C_IJ = vals(I, J) by rows' // TN, m, a%vals, tol=ZERO)
         end do
     end subroutine test_udtio_${d}$_${k}$
-#:endif
+    #:endif
 
-#:endfor
-#:set T2 = tname('2D4O2sym', k)
-#:set T3 = tname('3D4O2sym', k)
+    #:endfor
+    #:set T2 = tname('2D4O2sym', k)
+    #:set T3 = tname('3D4O2sym', k)
     subroutine test_embed_${k}$(passed)
         !! 2D vs 3D in `real(${k}$)`: op_2D(a, b) embedded in 3D == op_3D(embed(a), embed(b)).
         !!
@@ -824,11 +825,11 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
             call check_approx(passed, 'embed (layout) == embed (tables)' // TN, a3%vals, &
                               vv(embed_tables_${k}$(a2)), tol=ZERO)
             call c3%init( &
-#:for I in range(6)
-#:set names_row = ', '.join('{}{}={}'.format(VP['3D'][I], VP['3D'][J], 'm({}, {})'.format(I + 1, J + 1) &
-    & if I < 4 and J < 4 else 'ZERO') for J in range(6))
+                #:for I in range(6)
+                #:set names_row = ', '.join('{}{}={}'.format(VP['3D'][I], VP['3D'][J], 'm({}, {})'.format(I + 1, J + 1) &
+                    & if I < 4 and J < 4 else 'ZERO') for J in range(6))
                 ${names_row}$${', &' if I < 5 else ')'}$
-#:endfor
+                #:endfor
             call check_approx(passed, 'embed == 3D init(2D names)' // TN, a3%vals, c3%vals, tol=ZERO)
             call check_true(passed, 'out-of-plane shear rows/columns = 0' // TN, &
                             all(a3%vals(5:6, :) == ZERO) .and. all(a3%vals(:, 5:6) == ZERO))
@@ -929,7 +930,7 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
         end do
     end subroutine test_embed_${k}$
 
-#:endfor
+    #:endfor
     subroutine test_historical_aliases(passed)
         !! The historical names (`ten_3D4O2sym`, `ten_2D4O2sym`) of `muscle_tensors` and of the
         !! compatibility modules are the double precision instances (D-003): intrinsic assignment
@@ -973,7 +974,7 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
         call check_true(passed, 'ten_3D4O2sym is not ten_2D4O2sym', .not. same_type_as(h3, h2))
         call check_true(passed, 'kind(vals) == dp (3D)', kind(h3%vals) == dp .and. all(shape(h3%vals) == [6, 6]))
         call check_true(passed, 'kind(vals) == dp (2D)', kind(h2%vals) == dp .and. all(shape(h2%vals) == [4, 4]))
-#:if 'sp' in REAL_KINDS
+        #:if 'sp' in REAL_KINDS
         block
             use muscle_tensors, only: ten_3D4O2sym_sp, ten_2D4O2sym_sp
             type(ten_3D4O2sym_sp) :: s3
@@ -981,7 +982,7 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
             call check_true(passed, 'ten_3D4O2sym is not ten_3D4O2sym_sp', .not. same_type_as(h3, s3))
             call check_true(passed, 'ten_2D4O2sym is not ten_2D4O2sym_sp', .not. same_type_as(h2, s2))
         end block
-#:endif
+        #:endif
         ! Mixed historical / suffixed operands in the generic operators
         q3 = h3 + p3
         call check_approx(passed, 'ten_3D4O2sym + ten_3D4O2sym_dp', q3%vals, 2.0_dp*p3%vals, tol=0.0_dp)

@@ -26,31 +26,31 @@ module muscle_kin_corotational
     !! `kin_*` of muscle_kin_laws. Back to the corotational frame: `kin_rotate_to_corotational`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2O_${k}$, ten_3D2Osym_${k}$, ten_3D4O2sym_${k}$
     use muscle_kin_finite, only : kin_state_${k}$
-#:endfor
+    #:endfor
     use muscle_kin_finite, only : kin_rotate_from_corotational, kin_rotate_to_corotational, kin_volumetric_tangent
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: kin_corotational_${k}$
     public :: kin_corot_update_corotational_${k}$
     public :: kin_to_cauchy_corotational_${k}$
     public :: kin_to_spatial_tangent_corotational_${k}$
     public :: kin_geometric_tangent_corotational_${k}$
     public :: kin_is_finite_strain_corotational_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: kin_corotational_${k}$
         !! Parameters of the corotational model in `real(${k}$)`.
     end type kin_corotational_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine kin_corot_update_corotational_${k}$(prm, strain, state, status, R)
         !! Kinematic state of a corotational kinematics from the strain in the unrotated frame and the rotation (identity if absent)
@@ -145,6 +145,6 @@ contains
 
         res = .true.
     end function kin_is_finite_strain_corotational_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_kin_corotational

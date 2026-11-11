@@ -53,39 +53,39 @@ module muscle_visco_maxwell
     !! ```
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER, STATUS_INVALID_TIME_STEP
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$
-#:endfor
+    #:endfor
     use muscle_tensors, only : operator(.dev.), operator(-)
     use muscle_visco_types, only : MAX_VISCO_BRANCHES
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_visco_types, only : visco_state_${k}$, visco_coefs_${k}$
-    use muscle_visco_frozen, only : elas_frozen_${k}$
-#:endfor
+    use muscle_elas_frozen, only : elas_frozen_${k}$
+    #:endfor
     implicit none
     private
 
     public :: visco_maxwell_init, visco_maxwell_init_normalized
     public :: visco_maxwell_relaxation_shear, visco_maxwell_shear_instantaneous
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: visco_maxwell_${k}$
     public :: visco_maxwell_init_${k}$, visco_maxwell_init_normalized_${k}$
     public :: visco_maxwell_relaxation_shear_${k}$, visco_maxwell_shear_instantaneous_${k}$
     public :: visco_step_coefficients_maxwell_${k}$, visco_freeze_maxwell_${k}$, visco_update_maxwell_${k}$
     public :: visco_n_branches_maxwell_${k}$, visco_freeze_branches_maxwell_${k}$, visco_update_branches_maxwell_${k}$
-#:endfor
+    #:endfor
 
     ! Switch of gamma = (1 - exp(-x))/x to its series 1 - x/2 + x^2/6 (D-017.13a): optimum near
     ! (24 eps)^(1/4) (truncation x^3/24 against the cancellation ~eps/x of the direct formula),
     ! rounded down to a power of ten: 1e-4 in dp (2.7e-4), 1e-2 in sp (4.1e-2). Measured largest
     ! relative error of gamma: dp 5.5e-13, sp 3.0e-6.
-#:set GAMMA_SERIES = {'sp': '1.0e-2', 'dp': '1.0e-4'}
-#:for k in REAL_KINDS
+    #:set GAMMA_SERIES = {'sp': '1.0e-2', 'dp': '1.0e-4'}
+    #:for k in REAL_KINDS
     real(${k}$), parameter :: MAXWELL_GAMMA_SERIES_${k}$ = ${GAMMA_SERIES[k]}$_${k}$
         !! Below this \( x = \Delta t/\tau_k \), \( \gamma_k \) is its series (`real(${k}$)`).
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: visco_maxwell_${k}$
         !! Parameters of the generalized Maxwell model in `real(${k}$)` (build it with `visco_maxwell_init`, which validates
         !! the private parameters).
@@ -101,33 +101,33 @@ module muscle_visco_maxwell
             !! Branch relaxation times \( \tau_k \) (1 in the unused slots).
     end type visco_maxwell_${k}$
 
-#:endfor
+    #:endfor
     interface visco_maxwell_init
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure visco_maxwell_init_${k}$
-#:endfor
+        #:endfor
     end interface visco_maxwell_init
 
     interface visco_maxwell_init_normalized
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure visco_maxwell_init_normalized_${k}$
-#:endfor
+        #:endfor
     end interface visco_maxwell_init_normalized
 
     interface visco_maxwell_relaxation_shear
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure visco_maxwell_relaxation_shear_${k}$
-#:endfor
+        #:endfor
     end interface visco_maxwell_relaxation_shear
 
     interface visco_maxwell_shear_instantaneous
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure visco_maxwell_shear_instantaneous_${k}$
-#:endfor
+        #:endfor
     end interface visco_maxwell_shear_instantaneous
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure subroutine visco_maxwell_init_${k}$(prm, bulk, shear_inf, shear, tau, status)
         !! Parameters of the generalized Maxwell model in `real(${k}$)` from the Prony series with
         !! absolute moduli. `STATUS_INVALID_PARAMETER` (and the default parameters) if `shear` and
@@ -276,7 +276,7 @@ contains
         type(visco_state_${k}$), intent(in) :: state_n
             !! Converged state at \( t_n \).
         type(elas_frozen_${k}$) :: elas
-            !! Frozen elasticity (`elas_*` generics of muscle_elasticity_laws).
+            !! Frozen elasticity (`elas_*` generics of muscle_elas_laws).
 
         elas = visco_freeze_branches_maxwell_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h)
     end function visco_freeze_maxwell_${k}$
@@ -324,7 +324,7 @@ contains
         real(${k}$), intent(in) :: h_n(6, nb)
             !! History tensors at \( t_n \) (Voigt order of `ten_3D2Osym`).
         type(elas_frozen_${k}$) :: elas
-            !! Frozen elasticity (`elas_*` generics of muscle_elasticity_laws).
+            !! Frozen elasticity (`elas_*` generics of muscle_elas_laws).
         type(ten_3D2Osym_${k}$) :: e_n, hist
         integer :: i
 
@@ -381,5 +381,5 @@ contains
         res = prm%n
     end function visco_n_branches_maxwell_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_visco_maxwell

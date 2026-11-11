@@ -76,11 +76,11 @@
 #! tol_default: Fortran constant used as the default tolerance of `is_approx` (default
 #! `TOL_APPROX_<k>`); a family with its own default (4O2sym) passes it here.
 #:def TENSOR_COMMON_PROCEDURES(d, F, k, tol_default=None)
-#:set S = d + F
-#:set tol_def = tol_default if tol_default else 'TOL_APPROX_' + k
-#:set T = tname(S, k)
-#:set P = S + '_' + k
-#:set n = len(layout(F, d).comps)
+    #:set S = d + F
+    #:set tol_def = tol_default if tol_default else 'TOL_APPROX_' + k
+    #:set T = tname(S, k)
+    #:set P = S + '_' + k
+    #:set n = len(layout(F, d).comps)
     pure subroutine assign_${S}$_real_${k}$(a, b)
         !! `${T}$ = scalar`: assigns `b` to every stored component.
         implicit none
@@ -232,11 +232,11 @@
 #! The named-component `init2` (and `set`) stay in the template: their argument order is family
 #! specific. Expand it inside the `contains` part of the module.
 #:def TENSOR_COMMON_TBP(d, F, k, scalar_ops, tensor_ops, other='b')
-#:set S = d + F
-#:set T = tname(S, k)
-#:set P = S + '_' + k
-#:set lay = layout(F, d)
-#:set n = len(lay.comps)
+    #:set S = d + F
+    #:set T = tname(S, k)
+    #:set P = S + '_' + k
+    #:set lay = layout(F, d)
+    #:set n = len(lay.comps)
     pure subroutine init_${P}$_tbp(self, vals)
         !! `%init(vals)`: initializes a `${T}$` from an array with the shape of `vals`
         !! (${'x'.join(map(str, lay.shape))}$, storage order).
@@ -248,7 +248,7 @@
         self%vals = vals
     end subroutine init_${P}$_tbp
 
-#:for op, rtype in [(o, 'real(' + k + ')') for o in scalar_ops] + [(o, 'type(' + T + ')') for o in tensor_ops]
+    #:for op, rtype in [(o, 'real(' + k + ')') for o in scalar_ops] + [(o, 'type(' + T + ')') for o in tensor_ops]
     pure function ${op}$_${P}$_tbp(self) result(res)
         !! `%${op}$()`: type-bound wrapper of `${op}$_${P}$`.
         implicit none
@@ -259,7 +259,7 @@
         res = ${op}$_${P}$(self)
     end function ${op}$_${P}$_tbp
 
-#:endfor
+    #:endfor
     pure function is_approx_${P}$_tbp(self, ${other}$, tol) result(res)
         !! `%is_approx(${other}$ [, tol])`: type-bound wrapper of `is_approx_${P}$`.
         implicit none
@@ -280,9 +280,9 @@
 #! into the square array `m`, column by column (`m(:,j) = (/ ... /)`); components that are not
 #! stored (2D structural zeros) become `0.0_<k>`.
 #:def LOAD_MATRIX(m, lay, k, src='a%vals')
-#:for j, col in enumerate(zip(*lay.matrix(src, zero='0.0_' + k)), start=1)
+        #:for j, col in enumerate(zip(*lay.matrix(src, zero='0.0_' + k)), start=1)
         ${m}$(:,${j}$) = (/ ${', '.join(col)}$ /)
-#:endfor
+        #:endfor
 #:enddef
 
 #:endmute

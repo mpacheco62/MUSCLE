@@ -55,93 +55,93 @@ module muscle_tensor_iden
     !!
     !! For more information see [[muscle_tensors]]
     use muscle_kinds, only: sp, dp
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_kinds, only: TOL_APPROX_IDEN_${k}$
-#:endfor
+    #:endfor
     implicit none
     private
 
-#:for X in IDENTITIES
+    #:for X in IDENTITIES
     type, public :: ${iname(X)}$
         !! Unscaled ${DESCRIPTION[X]}$ (no components, implicit factor 1, valid for every kind):
         !! \( ${FORMULA[X]}$ \).
     end type ${iname(X)}$
 
-#:for k in REAL_KINDS
-#:set TS = iname(X + 'S', k)
+    #:for k in REAL_KINDS
+    #:set TS = iname(X + 'S', k)
     type, public :: ${TS}$
         !! Scaled ${DESCRIPTION[X]}$ in `real(${k}$)`:
         !! \( c \, ${FORMULA[X]}$ \).
         real(${k}$) :: val
             !! The scaling factor \(c\).
-#:if X in ALGEBRA
+        #:if X in ALGEBRA
         contains
             generic, public :: init => init_I${X}$S_${k}$_tbp
                 !! Sets the scaling factor `val`.
             procedure, private :: init_I${X}$S_${k}$_tbp
-#:endif
+        #:endif
     end type ${TS}$
 
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
     public :: operator(*)
     interface operator (*)
-#:for X in IDENTITIES
+        #:for X in IDENTITIES
         module procedure ${kspecifics('mul_I{0}_real_{1}', X)}$
         module procedure ${kspecifics('mul_real_I{0}_{1}', X)}$
         module procedure ${kspecifics('mul_I{0}S_real_{1}', X)}$
         module procedure ${kspecifics('mul_real_I{0}S_{1}', X)}$
-#:if X in ALGEBRA
+        #:if X in ALGEBRA
         module procedure mul_I${X}$_I${X}$
         module procedure ${kspecifics('mul_I{0}S_I{0}S_{1}', X)}$
-#:endif
-#:endfor
+        #:endif
+        #:endfor
     end interface
 
     public :: operator( / )
     interface operator ( / )
-#:for X in IDENTITIES
+        #:for X in IDENTITIES
         module procedure ${kspecifics('div_I{0}_real_{1}', X)}$
         module procedure ${kspecifics('div_I{0}S_real_{1}', X)}$
-#:endfor
+        #:endfor
     end interface
 
     public :: operator(+)
     interface operator (+)
-#:for X in ALGEBRA
+        #:for X in ALGEBRA
         module procedure sum_I${X}$_I${X}$
         module procedure ${kspecifics('sum_I{0}_I{0}S_{1}', X)}$
         module procedure ${kspecifics('sum_I{0}S_I{0}_{1}', X)}$
         module procedure ${kspecifics('sum_I{0}S_I{0}S_{1}', X)}$
-#:endfor
+        #:endfor
     end interface
 
     public :: operator(-)
     interface operator (-)
-#:for X in ALGEBRA
+        #:for X in ALGEBRA
         module procedure subU_I${X}$
         module procedure sub_I${X}$_I${X}$
         module procedure ${kspecifics('sub_I{0}_I{0}S_{1}', X)}$
         module procedure ${kspecifics('sub_I{0}S_I{0}_{1}', X)}$
         module procedure ${kspecifics('subU_I{0}S_{1}', X)}$
         module procedure ${kspecifics('sub_I{0}S_I{0}S_{1}', X)}$
-#:endfor
+        #:endfor
     end interface
 
     public :: operator(.approx.)
     interface operator (.approx.)
-#:for X in ALGEBRA
+        #:for X in ALGEBRA
         module procedure ${kspecifics('approx_I{0}S_{1}', X)}$
-#:endfor
+        #:endfor
     end interface
 
 contains
 
-#:for X in IDENTITIES
-#:set U = iname(X)
-#:set I = 'I' + X
-#:if X in ALGEBRA
-#:set S = iname(X + 'S', 'dp')
+    #:for X in IDENTITIES
+    #:set U = iname(X)
+    #:set I = 'I' + X
+    #:if X in ALGEBRA
+    #:set S = iname(X + 'S', 'dp')
     ! ---------------------------------------------------------------------------------------
     ! ${U}$ (op) ${U}$: no scalar fixes the kind, the result is double precision
     ! ---------------------------------------------------------------------------------------
@@ -197,10 +197,10 @@ contains
         res = a
     end function mul_${I}$_${I}$
 
-#:endif
-#:for k in REAL_KINDS
-#:set S = iname(X + 'S', k)
-#:set IS = I + 'S'
+    #:endif
+    #:for k in REAL_KINDS
+    #:set S = iname(X + 'S', k)
+    #:set IS = I + 'S'
     ! ---------------------------------------------------------------------------------------
     ! ${U}$ and ${S}$
     ! ---------------------------------------------------------------------------------------
@@ -283,7 +283,7 @@ contains
         res%val = a%val/b
     end function div_${IS}$_real_${k}$
 
-#:if X in ALGEBRA
+    #:if X in ALGEBRA
     pure function sum_${I}$_${IS}$_${k}$(a, b) result(res)
         !! `${U}$ + ${S}$`.
         implicit none
@@ -415,7 +415,7 @@ contains
         self%val = val
     end subroutine init_${IS}$_${k}$_tbp
 
-#:endif
-#:endfor
-#:endfor
+    #:endif
+    #:endfor
+    #:endfor
 end module muscle_tensor_iden

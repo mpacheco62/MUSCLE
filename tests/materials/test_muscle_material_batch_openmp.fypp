@@ -18,7 +18,7 @@ program test_mat_batch_openmp
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
     use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
-    use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_elas_linear, only : elas_linear_init
     use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
     use muscle_mat_cp_vm_swift, only : mat_update, mat_pack_cp_vm_swift, mat_unpack_cp_vm_swift, &
         muscle_update_cp_vm_swift, MAT_CP_VM_SWIFT_NSTATE, ${', '.join('mat_cp_vm_swift_' + k for k in REAL_KINDS)}$
@@ -30,9 +30,9 @@ program test_mat_batch_openmp
     passed = .true.
     device = target_on_device()
     print '(a, l1)', ' batch target regions on a device: ', device
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     call run_${k}$()
-#:endfor
+    #:endfor
     if (.not. passed) then
         print '(a)', ' FAIL: test_mat_batch_openmp'
         stop 1
@@ -40,7 +40,7 @@ program test_mat_batch_openmp
     print '(a)', ' PASS: test_mat_batch_openmp'
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     subroutine run_${k}$()
         !! Every check in `real(${k}$)`.
@@ -66,9 +66,9 @@ contains
         mat%hard%e0 = 1.0e-3_${k}$
         mat%hard%n = 0.2_${k}$
         hn = 0.0_${k}$
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         !$omp target enter data map(to: mat)
-#:endif
+        #:endif
 
         do load = 1, 2
             eps = 0.0_${k}$
@@ -92,9 +92,9 @@ contains
                 sr(i, :) = stress%vals
                 tr(i, :, :) = tang%vals
             end do
-#:if defined('MUSCLE_GPU')
+            #:if defined('MUSCLE_GPU')
             !$omp target enter data map(to: eps, hn) map(alloc: hb, sb, tb, stb, itb)
-#:endif
+            #:endif
             call check_true(passed, 'every point converges (${k}$)', all(str == STATUS_OK))
             if (load == 1) then
                 call check_true(passed, 'uniaxial 0.005: every point plastic (${k}$)', all(itr > 0))
@@ -117,13 +117,13 @@ contains
                 tb = -7.0_${k}$
                 stb = -7
                 itb = -7
-#:if defined('MUSCLE_GPU')
+                #:if defined('MUSCLE_GPU')
                 !$omp target update to(hb, sb, tb, stb, itb)
-#:endif
+                #:endif
                 call muscle_update_cp_vm_swift(mat, eps, DT, hn, hb, sb, stb, itb, ddsdde=tb)
-#:if defined('MUSCLE_GPU')
+                #:if defined('MUSCLE_GPU')
                 !$omp target update from(hb, sb, tb, stb, itb)
-#:endif
+                #:endif
                 if (device) then
                     call check_true(passed, 'batch == sequential: status and iterations (${k}$)', all(stb == str) &
                         .and. all(itb == itr))
@@ -142,14 +142,14 @@ contains
                         .and. all(itb == itr) .and. all(sb == sr) .and. all(hb == hr) .and. all(tb == tr))
                 end if
             end do
-#:if defined('MUSCLE_GPU')
+            #:if defined('MUSCLE_GPU')
             !$omp target exit data map(delete: eps, hn, hb, sb, tb, stb, itb)
-#:endif
+            #:endif
         end do
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         !$omp target exit data map(delete: mat)
-#:endif
+        #:endif
     end subroutine run_${k}$
-#:endfor
+    #:endfor
 
 end program test_mat_batch_openmp

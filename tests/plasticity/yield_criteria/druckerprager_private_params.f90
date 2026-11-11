@@ -6,7 +6,7 @@ program druckerprager_private_params
     !! compiler error): the derived parameters f_factor and I1_factor of the Drucker-Prager kernel type
     !! are private (D-017.10b), so the type can only be built with `yield_druckerprager_init`.
     use muscle_kinds, only : dp
-    use muscle_yield_criteria, only : yield_druckerprager_dp
+    use muscle_yield_laws, only : yield_druckerprager_dp
     implicit none
     type(yield_druckerprager_dp) :: c
 

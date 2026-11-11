@@ -37,19 +37,19 @@ $:OP_USES(MODULE)
 $:OP_INTERFACES(MODULE)
 contains
 
-#:for d in DIMS
-#:for k in REAL_KINDS
-#:for e in op_entries('.ddot.', d, k)
-#:set x, y = op_args(e)
-#:set iden = op_iden(e.tag_a) or op_iden(e.tag_b)
-#:set A, B, _ = op_symbols(e)
-#:if iden and iden[0] == '2O'
+    #:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for e in op_entries('.ddot.', d, k)
+    #:set x, y = op_args(e)
+    #:set iden = op_iden(e.tag_a) or op_iden(e.tag_b)
+    #:set A, B, _ = op_symbols(e)
+    #:if iden and iden[0] == '2O'
 #! ------------------------------------------------------------------------------------------
 #! I : A = A : I = tr(A); cI : A = c tr(A)
 #! ------------------------------------------------------------------------------------------
-#:set la = op_layout(e.tag_b if op_iden(e.tag_a) else e.tag_a)
-#:set trace = ' + '.join(la.ref('a%vals', i, i) for i in (1, 2, 3))
-#:set doc = 'Double contraction \\({} : {} = {}\\operatorname{{tr}}\\mathbf{{A}}\\)'.format(A, B, 'c\\,' if iden[1] else '')
+    #:set la = op_layout(e.tag_b if op_iden(e.tag_a) else e.tag_a)
+    #:set trace = ' + '.join(la.ref('a%vals', i, i) for i in (1, 2, 3))
+    #:set doc = 'Double contraction \\({} : {} = {}\\operatorname{{tr}}\\mathbf{{A}}\\)'.format(A, B, 'c\\,' if iden[1] else '')
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -57,21 +57,21 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-#:if iden[1]
+        #:if iden[1]
         res = I2%val * (${trace}$)
-#:else
+        #:else
         res = ${trace}$
-#:endif
+        #:endif
     end function ${e.name}$
 
-#:elif iden
+    #:elif iden
 #! ------------------------------------------------------------------------------------------
 #! I^S : A = A : I^S = sym(A), (A_ij + A_ji)/2; scaled: c sym(A)
 #! ------------------------------------------------------------------------------------------
-#:set la = op_layout(e.tag_b if op_iden(e.tag_a) else e.tag_a)
-#:set scale = 'I4%val * ' if iden[1] else ''
-#:set doc = 'Double contraction &
-    & \\({} : {} = {}\\frac{{1}}{{2}}(\\mathbf{{A}} + \\mathbf{{A}}^T)\\)'.format(A, B, 'c\\,' if iden[1] else '')
+    #:set la = op_layout(e.tag_b if op_iden(e.tag_a) else e.tag_a)
+    #:set scale = 'I4%val * ' if iden[1] else ''
+    #:set doc = 'Double contraction &
+        & \\({} : {} = {}\\frac{{1}}{{2}}(\\mathbf{{A}} + \\mathbf{{A}}^T)\\)'.format(A, B, 'c\\,' if iden[1] else '')
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -79,27 +79,27 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-#:if la.family == '2Osym'
+        #:if la.family == '2Osym'
         res%vals = ${scale}$a%vals
-#:else
-#:for c in op_layout(e.tag_res).comps
-#:if c.mult == 1
+        #:else
+        #:for c in op_layout(e.tag_res).comps
+        #:if c.mult == 1
         res%vals(${c.pos[0]}$) = ${scale}$${op_sym_sum(la, 'a%vals', *c.idx)}$ ! ${c.name}$
-#:else
+        #:else
         res%vals(${c.pos[0]}$) = 0.5_${k}$ * ${scale}$${op_sym_sum(la, 'a%vals', *c.idx)}$ ! ${c.name}$
-#:endif
-#:endfor
-#:endif
+        #:endif
+        #:endfor
+        #:endif
     end function ${e.name}$
 
-#:elif e.tag_res == 'real'
+    #:elif e.tag_res == 'real'
 #! ------------------------------------------------------------------------------------------
 #! 2O : 2Osym (and mirror) = sum of A_ij B_ij over the stored components of the symmetric one,
 #! the general one entering as (A_ij + A_ji)
 #! ------------------------------------------------------------------------------------------
-#:set gen, sym = ('a', 'b') if e.tag_a.endswith('2O') else ('b', 'a')
-#:set lg, ls = op_layout(e.tag_a if gen == 'a' else e.tag_b), op_layout(e.tag_b if gen == 'a' else e.tag_a)
-#:set doc = 'Double contraction \\(\\mathbf{A} : \\mathbf{B} = A_{ij} B_{ij}\\)'
+    #:set gen, sym = ('a', 'b') if e.tag_a.endswith('2O') else ('b', 'a')
+    #:set lg, ls = op_layout(e.tag_a if gen == 'a' else e.tag_b), op_layout(e.tag_b if gen == 'a' else e.tag_a)
+    #:set doc = 'Double contraction \\(\\mathbf{A} : \\mathbf{B} = A_{ij} B_{ij}\\)'
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -110,12 +110,12 @@ contains
         ${assign_terms('res', [op_sym_sum(lg, gen + '%vals', *c.idx) + '*' + ls.ref(sym + '%vals', *c.idx) for c in ls.comps], 8)}$
     end function ${e.name}$
 
-#:elif e.tag_res.endswith('2Osym') and e.tag_a.endswith('4O2sym')
+    #:elif e.tag_res.endswith('2Osym') and e.tag_a.endswith('4O2sym')
 #! ------------------------------------------------------------------------------------------
 #! 4O2sym : 2Osym, C_I = A_IJ w_J b_J, one column of A per term (array syntax, as the original)
 #! ------------------------------------------------------------------------------------------
-#:set lb = op_layout(e.tag_b)
-#:set doc = 'Double contraction \\(\\mathbb{A} : \\mathbf{B}\\), \\( C_{ij} = A_{ijkl} B_{kl} \\)'
+    #:set lb = op_layout(e.tag_b)
+    #:set doc = 'Double contraction \\(\\mathbb{A} : \\mathbf{B}\\), \\( C_{ij} = A_{ijkl} B_{kl} \\)'
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -123,20 +123,20 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-#:set ddot_terms = [op_weighted('a%vals(:, {})'.format(c.pos[0]), 'b%vals({})'.format(c.pos[0]), c.mult, k) &
-    & for c in lb.comps]
+        #:set ddot_terms = [op_weighted('a%vals(:, {})'.format(c.pos[0]), 'b%vals({})'.format(c.pos[0]), c.mult, k) &
+            & for c in lb.comps]
         ${assign_terms('res%vals(:)', ddot_terms, 8)}$
     end function ${e.name}$
 
-#:elif e.tag_res.endswith('2Osym') and e.tag_b.endswith('4O2sym')
+    #:elif e.tag_res.endswith('2Osym') and e.tag_b.endswith('4O2sym')
 #! ------------------------------------------------------------------------------------------
 #! 2Osym : 4O2sym, C_J = (w_I a_I) A_IJ: weighted vector times the Voigt matrix, I ascending. Written
 #! out instead of the original matmul (D-019.4c): a vector-matrix matmul in a `declare target`
 #! procedure gives broken device code with ifx 2026.2 (spir64); the matmul of libgfortran rounded
 #! differently (<= 2.2e-16 relative to the largest component of the result).
 #! ------------------------------------------------------------------------------------------
-#:set la = op_layout(e.tag_a)
-#:set doc = 'Double contraction \\(\\mathbf{A} : \\mathbb{B}\\), \\( C_{kl} = A_{ij} B_{ijkl} \\)'
+    #:set la = op_layout(e.tag_a)
+    #:set doc = 'Double contraction \\(\\mathbf{A} : \\mathbb{B}\\), \\( C_{kl} = A_{ij} B_{ijkl} \\)'
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -146,21 +146,21 @@ contains
         ${op_res_decl(e)}$ :: res
         real(${k}$) :: a_weighted(${len(la.comps)}$)
             !! Voigt vector of a with the shear weights
-#:for c in la.comps
+        #:for c in la.comps
         a_weighted(${c.pos[0]}$) = ${op_weight('a%vals({})'.format(c.pos[0]), c.mult, k)}$
-#:endfor
-#:for j in la.comps
-#:set ddot_terms = ['a_weighted({0})*b%vals({0}, {1})'.format(i.pos[0], j.pos[0]) for i in la.comps]
+        #:endfor
+        #:for j in la.comps
+        #:set ddot_terms = ['a_weighted({0})*b%vals({0}, {1})'.format(i.pos[0], j.pos[0]) for i in la.comps]
         ${assign_terms('res%vals({})'.format(j.pos[0]), ddot_terms, 8)}$
-#:endfor
+        #:endfor
     end function ${e.name}$
 
-#:elif e.tag_res.endswith('2Osym')
+    #:elif e.tag_res.endswith('2Osym')
 #! ------------------------------------------------------------------------------------------
 #! 4O3sym : 2Osym (and mirror, same body: A_IJ = A_JI), C_I = A_IJ w_J b_J
 #! ------------------------------------------------------------------------------------------
-#:set t4, t2 = ('b', 'a') if e.swapped else ('a', 'b')
-#:set doc = 'Double contraction \\({} : {}\\), \\({}\\) fully symmetric'.format(A, B, B if e.swapped else A)
+    #:set t4, t2 = ('b', 'a') if e.swapped else ('a', 'b')
+    #:set doc = 'Double contraction \\({} : {}\\), \\({}\\) fully symmetric'.format(A, B, B if e.swapped else A)
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -168,18 +168,19 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-#:for c in op_layout(e.tag_res).comps
-#:set ddot_terms = op_ddot_voigt_terms(op_layout(e.tag_b if e.swapped else e.tag_a), t4 + '%vals', t2 + '%vals', c.pos[0], k)
+        #:for c in op_layout(e.tag_res).comps
+        #:set ddot_terms = op_ddot_voigt_terms(op_layout(e.tag_b if e.swapped else e.tag_a), t4 + '%vals', &
+            & t2 + '%vals', c.pos[0], k)
         ${assign_terms('res%vals({})'.format(c.pos[0]), ddot_terms, 8)}$
-#:endfor
+        #:endfor
     end function ${e.name}$
 
-#:else
+    #:else
 #! ------------------------------------------------------------------------------------------
 #! 4O3sym : 4O3sym -> 4O2sym, C_IJ = A_IK w_K B_KJ
 #! ------------------------------------------------------------------------------------------
-#:set lr = op_layout(e.tag_res)
-#:set doc = 'Double contraction \\(\\mathbb{A} : \\mathbb{B}\\), \\( C_{ijkl} = A_{ijmn} B_{mnkl} \\)'
+    #:set lr = op_layout(e.tag_res)
+    #:set doc = 'Double contraction \\(\\mathbb{A} : \\mathbb{B}\\), \\( C_{ijkl} = A_{ijmn} B_{mnkl} \\)'
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -187,15 +188,15 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-#:set la = op_layout(e.tag_a)
-#:for c in lr.comps
-#:set ddot_terms = op_ddot_matrix_terms(la, 'a%vals', la, 'b%vals', *c.pos, k)
+        #:set la = op_layout(e.tag_a)
+        #:for c in lr.comps
+        #:set ddot_terms = op_ddot_matrix_terms(la, 'a%vals', la, 'b%vals', *c.pos, k)
         ${assign_terms('res%vals({})'.format(', '.join(map(str, c.pos))), ddot_terms, 8)}$
-#:endfor
+        #:endfor
     end function ${e.name}$
 
-#:endif
-#:endfor
-#:endfor
-#:endfor
+    #:endif
+    #:endfor
+    #:endfor
+    #:endfor
 end module muscle_tensor_ops_${MODULE}$

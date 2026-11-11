@@ -23,7 +23,7 @@ def registered_models():
 
 
 def template(prefix, model):
-    """Source of the template of a model (``ModelFamily.module`` or ``MODEL_MODULES``)."""
+    """Source of the template of a model (``ModelFamily.module``)."""
     name = mm.model_module(prefix, model)
     found = list((ROOT / 'src').rglob(name + '.fypp'))
     assert len(found) == 1, (name, found)

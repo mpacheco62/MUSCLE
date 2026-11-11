@@ -4,7 +4,7 @@
 #:include "muscle_fd.fypp"
 #!
 #! Kernel API of the yield criteria (D-017) in every kind: von Mises, Hill48, Drucker-Prager, CPB06,
-#! CPB06ex2 and Yld2004 through the family generics of muscle_yield_criteria:
+#! CPB06ex2 and Yld2004 through the family generics of muscle_yield_laws:
 #! - dp: the equivalent stress against closed forms (von Mises sqrt(3 J2), Hill48 quadratic form,
 #!   isotropic CPB06, CPB06ex2 and Yld2004 = von Mises, Drucker-Prager with beta = 0 and K = 1 = von
 #!   Mises), positive homogeneity, and the analytical gradient and Hessian
@@ -58,15 +58,15 @@ module muscle_yield_fdhill
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: yield_fdhill_${k}$
-#:endfor
-#:for k in REAL_KINDS
+    #:endfor
+    #:for k in REAL_KINDS
     public :: yield_stress_eq_fdhill_3D_${k}$, yield_dstress_eq_fdhill_3D_${k}$, yield_ddstress_eq_fdhill_3D_${k}$
     public :: yield_stress_eq_and_derivatives_fdhill_3D_${k}$, yield_joint_evaluation_fdhill_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: yield_fdhill_${k}$
         !! Parameters of the fdhill model in `real(${k}$)`.
         real(${k}$) :: f
@@ -83,9 +83,9 @@ module muscle_yield_fdhill
             !! N.
     end type yield_fdhill_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure function yield_stress_eq_fdhill_3D_${k}$(prm, sigma) result(res)
         !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the fdhill model in `real(${k}$)` (3D).
@@ -162,7 +162,7 @@ contains
         df = yield_dstress_eq_fdhill_3D_${k}$(prm, sigma)
         if (present(ddf)) ddf = yield_ddstress_eq_fdhill_3D_${k}$(prm, sigma)
     end subroutine yield_stress_eq_and_derivatives_fdhill_3D_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_yield_fdhill
 
@@ -170,19 +170,19 @@ module test_yield_point
     !! Point procedures (kernels) that call the yield generics, for every kind.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
-    use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
+    use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
         yield_stress_eq_and_derivatives, yield_joint_evaluation, &
         ${', '.join('yield_{}_{}'.format(m, k) for m in ('vonmises', 'hill48', 'cpb06') for k in REAL_KINDS)}$, &
         ${', '.join('yield_{}_{}'.format(m, k) for m in ('druckerprager', 'cpb06ex2', 'yld2004') for k in REAL_KINDS)}$
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: point_${k}$, point2_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine point_${k}$(v, h, c, s, f, df, ddf, joint)
         !! Everything a return mapping point would call from the criteria `v`, `h` and `c`, in
@@ -240,7 +240,7 @@ contains
         call yield_stress_eq_and_derivatives(y, s, f(6), df(6), ddf(6))
         joint = [yield_joint_evaluation(p), yield_joint_evaluation(x), yield_joint_evaluation(y)]
     end subroutine point2_${k}$
-#:endfor
+    #:endfor
 
 end module test_yield_point
 
@@ -253,11 +253,11 @@ module test_yield_eval
     !! from the joint evaluation without the optional second derivative.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
-    use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
+    use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
         yield_stress_eq_and_derivatives, &
         ${', '.join('yield_{}_{}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$
     use muscle_yield_fdhill, only : ${', '.join('yield_fdhill_' + k for k in REAL_KINDS)}$, &
-#:set fdhill_funcs = ('stress_eq', 'dstress_eq', 'ddstress_eq', 'stress_eq_and_derivatives')
+        #:set fdhill_funcs = ('stress_eq', 'dstress_eq', 'ddstress_eq', 'stress_eq_and_derivatives')
         ${', '.join('yield_{}_fdhill_3D_{}'.format(f, k) for f in fdhill_funcs for k in REAL_KINDS)}$
     implicit none
     private
@@ -265,27 +265,27 @@ module test_yield_eval
     public :: ev, ev_joint, ev_joint_noddf
 
     interface ev
-#:for m in ALLM
+        #:for m in ALLM
         module procedure ${', '.join('ev_{}_{}'.format(m, k) for k in REAL_KINDS)}$
-#:endfor
+        #:endfor
     end interface ev
 
     interface ev_joint
-#:for m in ALLM
+        #:for m in ALLM
         module procedure ${', '.join('ev_joint_{}_{}'.format(m, k) for k in REAL_KINDS)}$
-#:endfor
+        #:endfor
     end interface ev_joint
 
     interface ev_joint_noddf
-#:for m in ALLM
+        #:for m in ALLM
         module procedure ${', '.join('ev_joint_noddf_{}_{}'.format(m, k) for k in REAL_KINDS)}$
-#:endfor
+        #:endfor
     end interface ev_joint_noddf
 
 contains
-#:for k in REAL_KINDS
-#:for m in ALLM
-#:set sfx = '' if m != 'fdhill' else '_fdhill_3D_' + k
+    #:for k in REAL_KINDS
+    #:for m in ALLM
+    #:set sfx = '' if m != 'fdhill' else '_fdhill_3D_' + k
 
     function ev_${m}$_${k}$(y, s) result(r)
         type(yield_${m}$_${k}$), intent(in) :: y
@@ -318,8 +318,8 @@ contains
         call yield_stress_eq_and_derivatives${sfx}$(y, s, f, df)
         r = [f, df%vals]
     end function ev_joint_noddf_${m}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 end module test_yield_eval
 
@@ -327,7 +327,7 @@ module test_yield_cases
     !! Test cases (module procedures, so that they can contain their own helpers).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
-    use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, yield_joint_evaluation, &
+    use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, yield_joint_evaluation, &
         ${', '.join('yield_{}_{}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$
     use muscle_yield_cpb06, only : yield_cpb06_init
     use muscle_yield_druckerprager, only : yield_druckerprager_init, DP_HARDENING_TENSION, DP_HARDENING_COMPRESSION, &
@@ -432,10 +432,10 @@ module test_yield_cases
     integer, parameter :: MULT(6) = [1, 1, 1, 2, 2, 2]
         !! Tensor components represented by each stored component (shears: 2).
     integer, parameter :: POS4(6, 6) = reshape([ &
-#:for J in range(1, 7)
-#:set pos4_row = [str(LAY4.index(*(LAY4.base.comps[I - 1].idx + LAY4.base.comps[J - 1].idx))[0]) for I in range(1, 7)]
+        #:for J in range(1, 7)
+        #:set pos4_row = [str(LAY4.index(*(LAY4.base.comps[I - 1].idx + LAY4.base.comps[J - 1].idx))[0]) for I in range(1, 7)]
         ${', '.join(pos4_row)}$${', &' if J < 6 else '], [6, 6])'}$
-#:endfor
+        #:endfor
         !! Storage position in `ten_3D4O3sym` of the Voigt entry (I, J).
     real(dp) :: states(6, NS)
         !! Stress states (make_states).
@@ -448,26 +448,26 @@ contains
 
         call make_states()
         code = 0
-#:for i, k in enumerate(REAL_KINDS)
+        #:for i, k in enumerate(REAL_KINDS)
         call record(test_null_${k}$(), ${10*i + 1}$, 'null equivalent stress ${k}$ (D-017.9)', code)
         call record(test_generics_${k}$(), ${10*i + 2}$, 'generics, joint evaluation and flag ${k}$', code)
         call record(test_point_${k}$(), ${10*i + 3}$, 'pure point procedure ${k}$', code)
         call record(test_model_fd_${k}$(), ${10*i + 4}$, 'FD_GRAD gradient and FD_HESS Hessian ${k}$', code)
-#:if k != 'dp'
+        #:if k != 'dp'
         call record(test_vs_dp_${k}$(), ${10*i + 5}$, '${k}$ against dp', code)
-#:endif
-#:endfor
+        #:endif
+        #:endfor
         call record(test_formulas(), 91, 'closed forms and homogeneity (dp)', code)
         call record(test_fd_reference(), 92, 'analytical derivatives against central differences (dp)', code)
-#:for i, k in enumerate(REAL_KINDS)
+        #:for i, k in enumerate(REAL_KINDS)
         call record(test_cpb_flat_${k}$(), ${10*i + 6}$, 'CPB06 with |k| = 1 at pure shear, closed forms ${k}$', code)
-#:endfor
+        #:endfor
         call record(test_cpb_flat_fd(), 93, 'CPB06 with |k| = 1 at pure shear, Hessian vs central differences', code)
-#:for i, k in enumerate(REAL_KINDS)
+        #:for i, k in enumerate(REAL_KINDS)
         call record(test_cpb_uniaxial_${k}$(), ${10*i + 7}$, 'CPB06 normalization: uniaxial tension along x, f = s ${k}$', &
                     code)
         call record(test_ex2_swap_${k}$(), ${10*i + 8}$, 'CPB06ex2 swap symmetry and C'' = 0 = CPB06 ${k}$', code)
-#:endfor
+        #:endfor
     end subroutine run_all
 
     subroutine make_states()
@@ -482,7 +482,7 @@ contains
             end do
         end do
     end subroutine make_states
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     function stress_${k}$(j) result(s)
         !! j-th stress state in `real(${k}$)` (j = 0: zero tensor).
@@ -644,10 +644,10 @@ contains
                 call check_noise(r, abs(s%vals(1)))
             end do
         end do
-#:if k == 'dp'
+        #:if k == 'dp'
         ! In dp p = 0.1 does leave a nonzero noise (so the checks above see one)
         call check_true(passed, 'dp CPB06 noisy hydrostatic: some f > 0', noise)
-#:endif
+        #:endif
     contains
         subroutine check_yld_hydro(r, p)
             real(${k}$), intent(in) :: r(28), p
@@ -850,7 +850,7 @@ contains
             end do
         end do
     end function test_model_fd_${k}$
-#:if k != 'dp'
+    #:if k != 'dp'
 
     function test_vs_dp_${k}$() result(passed)
         !! The `real(${k}$)` functions against the dp functions on the same inputs (the ${k}$ inputs are
@@ -963,8 +963,8 @@ contains
             call check_true(passed, 'CPB06 dp init status', status == STATUS_OK)
         end subroutine cpb_from_${k}$
     end function test_vs_dp_${k}$
-#:endif
-#:endfor
+    #:endif
+    #:endfor
 
     function test_formulas() result(passed)
         !! dp: von Mises = sqrt(3 J2); Hill48 = its quadratic form, and = von Mises with the isotropic
@@ -1036,15 +1036,15 @@ contains
         do j = 1, NS
             s = stress_dp(j)
             h = 1.0e-5_dp*sqrt(sum(s%vals**2))
-#:for m, n, sets, y in [('vonmises', 'von Mises', None, 'v'), ('hill48', 'Hill48', 'HILLV', 'hill_dp(i)'), &
-    & ('cpb06', 'CPB06', 'CPBV', 'cpb_dp(i)'), ('druckerprager', 'Drucker-Prager', 'DPV', 'dpr_dp(i)'), &
-    & ('cpb06ex2', 'CPB06ex2', 'EX2V', 'ex2_dp(i)'), ('yld2004', 'Yld2004', 'YLDV', 'yld_dp(i)')]
+            #:for m, n, sets, y in [('vonmises', 'von Mises', None, 'v'), ('hill48', 'Hill48', 'HILLV', 'hill_dp(i)'), &
+                & ('cpb06', 'CPB06', 'CPBV', 'cpb_dp(i)'), ('druckerprager', 'Drucker-Prager', 'DPV', 'dpr_dp(i)'), &
+                & ('cpb06ex2', 'CPB06ex2', 'EX2V', 'ex2_dp(i)'), ('yld2004', 'Yld2004', 'YLDV', 'yld_dp(i)')]
             do i = 1, ${'1' if sets is None else 'size({}, 2)'.format(sets)}$
-#:if m == 'cpb06'
+                #:if m == 'cpb06'
                 ! States 2 and 3 give Sigma a null principal value: with k /= 0 the second derivative
                 ! of |lam| - k lam jumps there and the central differences are only first order
                 if (CPBV(13, i) /= 0.0_dp .and. (j == 2 .or. j == 3)) cycle
-#:endif
+                #:endif
                 r = ev(${y}$, s)
                 do q = 1, 6
                     sp_ = s
@@ -1057,7 +1057,7 @@ contains
                 write(label, '(a, " set ", i0, " state ", i0)') '${n}$', i, j
                 call check_fd(trim(label), r, rp, rm, h)
             end do
-#:endfor
+            #:endfor
         end do
     contains
         subroutine check_fd(name, r, rp, rm, h)
@@ -1076,7 +1076,7 @@ contains
         end subroutine check_fd
     end function test_fd_reference
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     function cpb_flat_${k}$(kk) result(p)
         !! Isotropic CPB06 (C = I) with strength differential parameter kk and a = 2, in `real(${k}$)`.
@@ -1129,9 +1129,9 @@ contains
             call check_true(passed, '${k}$ CPB06 k = -1 shear Hessian not null', maxval(abs(r(8:28))) > 0.1_${k}$/t)
         end do
     end function test_cpb_flat_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     function test_cpb_uniaxial_${k}$() result(passed)
         !! CPB06 normalization (Cazacu et al., 2006, Eq. 12: B makes sigma_eq equal to the yield stress
@@ -1194,7 +1194,7 @@ contains
             end do
         end do
     end function test_ex2_swap_${k}$
-#:endfor
+    #:endfor
 
     function test_cpb_flat_fd() result(passed)
         !! dp: the Hessian of the isotropic CPB06 with a = 2 and k = +-1 at the pure shear xy = t (see

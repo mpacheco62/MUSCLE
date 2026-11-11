@@ -30,11 +30,11 @@ module muscle_tensor_2osym
     !!
     !! - Operators: `.approx.`, `+`, `-` (binary and unary), `*` and `/` by a scalar of the same
     !!   kind, `.dev.`, `.ddot.` (scalar \(a_{ij} b_{ij}\)), `.inv.`, assignment of a scalar.
-    !! - Generic functions (usable in GPU kernels): `norm(a)`, `det(a)`, `square(a)`,
+    !! - Generic functions (usable in GPU kernels): `norm(a)`, `det(a)`, `square(a)`, `is_identity(a)`,
     !!   `is_approx(a, b [, tol])` and `call inverse(a, a_inv, ok [, cond])`.
     !! - Type-bound (historical API, not for kernels): `init` (array or named components),
     !!   accessors `xx()`, `yy()`, `zz()`, `xy()` (3D also `yz()`, `xz()`), `square`, `norm`,
-    !!   `is_approx`, `det`, `inv`.
+    !!   `is_approx`, `det`, `is_identity`, `inv`.
     !!
     !! ```fortran
     !! use muscle_tensors                      ! ten_3D2Osym is ten_3D2Osym_dp
@@ -47,19 +47,19 @@ module muscle_tensor_2osym
     !!
     !! For more information see [[muscle_tensors]]
     use muscle_kinds, only: sp, dp
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_kinds, only: TOL_APPROX_${k}$, EPS_ABS_${k}$
-#:endfor
+    #:endfor
     implicit none
     private
 
-#:set F = '2Osym'
-#:for d in DIMS
-#:set lay = layout(F, d)
-#:set n = len(lay.comps)
-#:set S = d + F
-#:for k in REAL_KINDS
-#:set T = tname(S, k)
+    #:set F = '2Osym'
+    #:for d in DIMS
+    #:set lay = layout(F, d)
+    #:set n = len(lay.comps)
+    #:set S = d + F
+    #:for k in REAL_KINDS
+    #:set T = tname(S, k)
     type, public :: ${T}$
         !! Symmetric ${d}$ second-order tensor in `real(${k}$)`, stored in tensorial Voigt
         !! notation: `vals` = (${', '.join(c.name for c in lay.comps)}$).
@@ -69,10 +69,10 @@ module muscle_tensor_2osym
             generic, public :: init => init_${S}$_${k}$_tbp, init2_${S}$_${k}$_tbp
                 !! Initializes from a ${n}$-element array (Voigt order) or from the named components.
             procedure, private :: init_${S}$_${k}$_tbp, init2_${S}$_${k}$_tbp
-#:for c in lay.comps
+            #:for c in lay.comps
             procedure, public :: ${c.name}$ => ${c.name}$_${S}$_${k}$_tbp
                 !! Accessor for the ${c.name}$ ${c.idx}$ component.
-#:endfor
+            #:endfor
             procedure, public :: square => square_${S}$_${k}$_tbp
                 !! Square \(\mathbf{a}\cdot\mathbf{a}\).
             procedure, public :: norm => norm_${S}$_${k}$_tbp
@@ -81,12 +81,14 @@ module muscle_tensor_2osym
                 !! Component-wise approximate equality.
             procedure, public :: det => det_${S}$_${k}$_tbp
                 !! Determinant.
+            procedure, public :: is_identity => is_identity_${S}$_${k}$_tbp
+                !! Exactly the identity (exact comparison; `.approx.` compares with a tolerance).
             procedure, public :: inv => inv_${S}$_${k}$_tbp
                 !! Inverse tensor (quiet NaN if singular).
     end type ${T}$
 
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 $:TENSOR_COMMON_INTERFACES(F)
 
     public :: operator(.dev.)
@@ -111,6 +113,12 @@ $:TENSOR_COMMON_INTERFACES(F)
         module procedure ${specifics('det_{0}_{1}', F)}$
     end interface
 
+    public :: is_identity
+    interface is_identity
+        !! Exactly the identity (exact comparison, for fast paths; `.approx.` compares with a tolerance).
+        module procedure ${specifics('is_identity_{0}_{1}', F)}$
+    end interface
+
     public :: square
     interface square
         !! Square \(\mathbf{a}\cdot\mathbf{a}\).
@@ -119,16 +127,16 @@ $:TENSOR_COMMON_INTERFACES(F)
 
 contains
 
-#:for d in DIMS
-#:set lay = layout(F, d)
-#:set n = len(lay.comps)
-#:set S = d + F
-#:set normals = [c for c in lay.comps if c.idx[0] == c.idx[1]]
+    #:for d in DIMS
+    #:set lay = layout(F, d)
+    #:set n = len(lay.comps)
+    #:set S = d + F
+    #:set normals = [c for c in lay.comps if c.idx[0] == c.idx[1]]
 #! .dev. and the trace below rely on the normal components being stored first
-#:assert [c.pos[0] for c in normals] == [1, 2, 3]
-#:for k in REAL_KINDS
-#:set T = tname(S, k)
-#:set P = S + '_' + k
+    #:assert [c.pos[0] for c in normals] == [1, 2, 3]
+    #:for k in REAL_KINDS
+    #:set T = tname(S, k)
+    #:set P = S + '_' + k
     ! ---------------------------------------------------------------------------------------
     ! ${T}$
     ! ---------------------------------------------------------------------------------------
@@ -147,6 +155,21 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
         res = ${join_terms(norm_terms(lay, 'a%vals'))}$
     end function norm_${P}$
 
+    pure function is_identity_${P}$(a) result(res)
+        !! `a` is exactly the identity: its normal components 1 and the others 0, `${T}$`. An exact comparison,
+        !! meant for fast paths where a general formula is singular at the identity (0/0 between repeated
+        !! eigenvalues); to compare with a tolerance use `.approx.`.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor.
+        logical :: res
+            !! `.true.` if every component is exactly that of the identity.
+        ! maxval(abs(.)) <= 0: the exact comparison, written without an equality of reals (-Wcompare-reals)
+        res = maxval(abs(a%vals - [${', '.join(('1.0_' if c.idx[0] == c.idx[1] else '0.0_') + k for c in lay.comps)}$])) &
+            <= 0.0_${k}$
+    end function is_identity_${P}$
+
     pure function ddot_${S}$_${P}$(a, b) result(res)
         !! Double contraction of two `${T}$`, \(a_{ij} b_{ij}\) (shear products counted twice).
         implicit none
@@ -157,8 +180,8 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
             !! Second operand.
         real(${k}$) :: res
             !! Scalar result.
-#:set ddot_terms = [('{}*'.format(c.mult) if c.mult > 1 else '') + 'a%vals({0})*b%vals({0})'.format(c.pos[0]) &
-    & for c in lay.comps]
+        #:set ddot_terms = [('{}*'.format(c.mult) if c.mult > 1 else '') + 'a%vals({0})*b%vals({0})'.format(c.pos[0]) &
+            & for c in lay.comps]
         res = ${join_terms(ddot_terms)}$
     end function ddot_${S}$_${P}$
 
@@ -184,19 +207,19 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
             !! Operand.
         type(${T}$) :: res
             !! Squared tensor.
-#:if d == '3D'
+        #:if d == '3D'
         res%vals(1) = a%vals(1)**2 + a%vals(4)**2 + a%vals(6)**2
         res%vals(2) = a%vals(2)**2 + a%vals(4)**2 + a%vals(5)**2
         res%vals(3) = a%vals(3)**2 + a%vals(5)**2 + a%vals(6)**2
         res%vals(4) = a%vals(4)*(a%vals(1) + a%vals(2)) + a%vals(5)*a%vals(6)
         res%vals(5) = a%vals(5)*(a%vals(2) + a%vals(3)) + a%vals(4)*a%vals(6)
         res%vals(6) = a%vals(6)*(a%vals(1) + a%vals(3)) + a%vals(4)*a%vals(5)
-#:else
+        #:else
         res%vals(1) = a%vals(1)**2 + a%vals(4)**2
         res%vals(2) = a%vals(2)**2 + a%vals(4)**2
         res%vals(3) = a%vals(3)**2
         res%vals(4) = a%vals(4)*(a%vals(1) + a%vals(2))
-#:endif
+        #:endif
     end function square_${P}$
 
     pure function det_${P}$(a) result(res)
@@ -207,7 +230,7 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
             !! Tensor.
         real(${k}$) :: res
             !! Determinant.
-#:if d == '3D'
+        #:if d == '3D'
         real(${k}$) :: a11, a22, a33, a12, a23, a13
 
         a11 = a%vals(1); a22 = a%vals(2); a33 = a%vals(3)
@@ -216,10 +239,10 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
         res = a11 * (a22 * a33 - a23**2) &
             - a12 * (a12 * a33 - a23 * a13) &
             + a13 * (a12 * a23 - a22 * a13)
-#:else
+        #:else
         ! (A11 A22 - A12^2) A33
         res = (a%vals(1)*a%vals(2) - a%vals(4)**2) * a%vals(3)
-#:endif
+        #:endif
     end function det_${P}$
 
     pure subroutine inverse_${P}$(a, a_inv, ok, cond)
@@ -248,19 +271,29 @@ $:LOAD_MATRIX('m', lay, k)
             a_inv%vals = QUIET_NAN_${k}$()
             return
         end if
-#:for c in lay.comps
-#:set i, j = c.idx
-#:if i == j
+        #:for c in lay.comps
+        #:set i, j = c.idx
+        #:if i == j
         a_inv%vals(${c.pos[0]}$) = x(${i}$,${j}$)
-#:else
+        #:else
         a_inv%vals(${c.pos[0]}$) = 0.5_${k}$*(x(${i}$,${j}$) + x(${j}$,${i}$))
-#:endif
-#:endfor
+        #:endif
+        #:endfor
     end subroutine inverse_${P}$
 
     ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
 
 $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm', 'det'], tensor_ops=['square', 'inv'])
+
+    pure function is_identity_${P}$_tbp(self) result(res)
+        !! `%is_identity()`: type-bound wrapper of `is_identity_${P}$` (historical API, not for kernels).
+        implicit none
+        class(${T}$), intent(in) :: self
+            !! Tensor.
+        logical :: res
+            !! `.true.` if every component is exactly that of the identity.
+        res = is_identity_${P}$(self)
+    end function is_identity_${P}$_tbp
 
     pure subroutine init2_${P}$_tbp(self, ${', '.join(c.name for c in lay.comps)}$)
         !! `%init(${', '.join(c.name for c in lay.comps)}$)`: initializes a `${T}$` from its
@@ -268,14 +301,14 @@ $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm', 'det'], tensor_ops=['square', '
         implicit none
         class(${T}$), intent(inout) :: self
             !! Tensor to initialize.
-#:for c in lay.comps
+        #:for c in lay.comps
         real(${k}$), intent(in) :: ${c.name}$
             !! Component ${c.idx}$.
-#:endfor
+        #:endfor
         self%vals = (/${', '.join(c.name for c in lay.comps)}$/)
     end subroutine init2_${P}$_tbp
 
-#:for c in lay.comps
+    #:for c in lay.comps
     pure function ${c.name}$_${P}$_tbp(self) result(res)
         !! `%${c.name}$()`: component ${c.idx}$ of a `${T}$` (`vals(${c.pos[0]}$)`).
         implicit none
@@ -286,7 +319,7 @@ $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm', 'det'], tensor_ops=['square', '
         res = self%vals(${c.pos[0]}$)
     end function ${c.name}$_${P}$_tbp
 
-#:endfor
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
+    #:endfor
 end module muscle_tensor_2osym

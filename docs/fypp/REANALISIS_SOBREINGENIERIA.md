@@ -71,7 +71,7 @@ redundancia de los tests heredados (2.4).
 | Prioridad | Cambio | Efecto | Riesgo |
 |---|---|---|---|
 | S1 | **Hecho (2026-11-10)**: `CLAUDE.md` con el ciclo de desarrollo, agentes `test-builder` (sin golden), `muscle-developer` y `reviewer` (renombrados), skill `migrar-modulo` retirada (sin reemplazo, decisión del usuario), `PLAN.md` marcado como histórico. **Pasar el proceso a «desarrollo»**: en `CLAUDE.md`, ciclo por paso para modelos/solvers nuevos (tests unitarios + `mutation_check` → implementación → `check.sh` → revisión); quitar «migra un módulo»; actualizar `test-builder` (sin golden, D-023) y renombrar o retirar `fypp-migrator`/`migrar-modulo`; `PLAN.md` marcado como histórico | Instrucciones coherentes con D-023 y con el estado del proyecto | Bajo; requiere decisión (archivos de reglas del usuario) |
-| S2 | Quitar `prm_intent`/`prm_doc` de `ModelInit` | 2 campos muertos menos | Nulo |
-| S3 | Corregir «one reference reference file»; dejar la infraestructura de referencias como está (o quitar `merge_reference.py` si se acepta que regenerar reescribe el archivo entero) | Menos superficie | Nulo / bajo |
-| S4 | Medir los heredados en el aspecto 6 (P1 del aspecto 2) | Decidir con datos | Nulo |
+| S2 | **Hecho (2026-11-11, `47a21d6`).** Quitar `prm_intent`/`prm_doc` de `ModelInit` | 2 campos muertos menos | Nulo |
+| S3 | **Hecho (errata, 2026-11-11, `0d71ce7`)**; la infraestructura queda como está. Corregir «one reference reference file»; dejar la infraestructura de referencias como está (o quitar `merge_reference.py` si se acepta que regenerar reescribe el archivo entero) | Menos superficie | Nulo / bajo |
+| S4 | **Hecho (re-análisis 6, D-025).** Medir los heredados en el aspecto 6 (P1 del aspecto 2) | Decidir con datos | Nulo |
 | S5 | Decidir sobre 2D en modelos, UDTIO y esqueletos FE (que compilen en `check.sh` o se marquen como ejemplo) | Evita mantener sin dueño | Decisión del usuario (aspectos 8 y 13) |

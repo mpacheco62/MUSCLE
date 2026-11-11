@@ -33,30 +33,30 @@ module muscle_test_helpers
 
     interface inv_ref
         !! Inverse of a regular square matrix (Gauss-Jordan with partial pivoting).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure inv_ref_${k}$
-#:endfor
+        #:endfor
     end interface inv_ref
 
     interface det_ref
         !! Determinant of a 3x3 matrix by the Leibniz formula.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure det_ref_${k}$
-#:endfor
+        #:endfor
     end interface det_ref
 
     interface det_scale
         !! Sum of |terms| of the Leibniz formula of a 3x3 determinant.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure det_scale_${k}$
-#:endfor
+        #:endfor
     end interface det_scale
 
     interface norm_inf
         !! Infinity norm (max row sum) of a matrix.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure norm_inf_${k}$
-#:endfor
+        #:endfor
     end interface norm_inf
 
 contains
@@ -129,7 +129,7 @@ contains
         if (code == 0) code = n
     end subroutine record
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     function inv_ref_${k}$(r) result(x)
         !! Inverse by Gauss-Jordan elimination with partial pivoting (reference, `real(${k}$)`).
         real(${k}$), intent(in) :: r(:,:)
@@ -188,5 +188,5 @@ contains
         res = maxval(sum(abs(r), dim=2))
     end function norm_inf_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_test_helpers

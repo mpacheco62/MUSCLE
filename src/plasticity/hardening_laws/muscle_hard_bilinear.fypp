@@ -16,12 +16,12 @@ module muscle_hard_bilinear
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: hard_bilinear_${k}$
     public :: hard_stress_bilinear_${k}$, hard_dstress_dep_bilinear_${k}$, hard_ddstress_ddep_bilinear_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: hard_bilinear_${k}$
         !! Parameters of the bilinear model in `real(${k}$)`.
         real(${k}$) :: y0
@@ -30,9 +30,9 @@ module muscle_hard_bilinear
             !! Hardening modulus \( K \).
     end type hard_bilinear_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function hard_stress_bilinear_${k}$(prm, ep) result(res)
         !! Flow stress \( \sigma_y(\epsilon_p) \) of the bilinear model in `real(${k}$)`.
         implicit none
@@ -72,5 +72,5 @@ contains
         res = 0.0_${k}$
     end function hard_ddstress_ddep_bilinear_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_hard_bilinear

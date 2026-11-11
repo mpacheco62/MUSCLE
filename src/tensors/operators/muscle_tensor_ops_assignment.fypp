@@ -25,29 +25,29 @@ $:OP_USES(MODULE)
 $:OP_INTERFACES(MODULE)
 contains
 
-#:for g in OP_MODULES[MODULE]
-#:for d in DIMS
-#:for k in REAL_KINDS
-#:for e in op_entries(g, d, k)
-#:set x, y = op_args(e)
-#:set A, B, _ = op_symbols(e)
-#:set la = op_layout(e.tag_a)
-#:if op_iden(e.tag_b) is None
-#:set doc = 'Assignment \\({} = {}\\)'.format(A, B)
+    #:for g in OP_MODULES[MODULE]
+    #:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for e in op_entries(g, d, k)
+    #:set x, y = op_args(e)
+    #:set A, B, _ = op_symbols(e)
+    #:set la = op_layout(e.tag_a)
+    #:if op_iden(e.tag_b) is None
+    #:set doc = 'Assignment \\({} = {}\\)'.format(A, B)
     pure subroutine ${e.name}$(${x}$, ${y}$)
         !! ${op_doc(e, doc)}$
         implicit none
         @:DEVICE()
         type(${e.a}$), intent(out) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
-#:set lb = op_layout(e.tag_b)
-#:for c in la.comps
+        #:set lb = op_layout(e.tag_b)
+        #:for c in la.comps
         ${la.ref(x + '%vals', *c.idx)}$ = ${lb.ref(y + '%vals', *c.idx)}$
-#:endfor
+        #:endfor
     end subroutine ${e.name}$
 
-#:else
-#:set doc = 'Assignment \\({} = {}\\)'.format(A, B)
+    #:else
+    #:set doc = 'Assignment \\({} = {}\\)'.format(A, B)
     pure subroutine ${e.name}$(${x}$, ${y}$)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -55,14 +55,14 @@ contains
         type(${e.a}$), intent(out) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${x}$%vals = 0.0_${k}$
-#:for p, v in iden_combination(la, [op_iden_term(e.tag_b, y + '%val')], k)
+        #:for p, v in iden_combination(la, [op_iden_term(e.tag_b, y + '%val')], k)
         ${x}$%vals(${p}$) = ${v}$
-#:endfor
+        #:endfor
     end subroutine ${e.name}$
 
-#:endif
-#:endfor
-#:endfor
-#:endfor
-#:endfor
+    #:endif
+    #:endfor
+    #:endfor
+    #:endfor
+    #:endfor
 end module muscle_tensor_ops_${MODULE}$

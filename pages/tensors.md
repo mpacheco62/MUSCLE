@@ -149,13 +149,14 @@ A component that is not finite matches only an identical one: Inf with an Inf of
 Two equivalent APIs exist for the named operations:
 
 - **Free functions** (`pure`, `type` arguments, usable in GPU kernels): `norm`, `det`, `square`,
-  `transpose`, `is_approx`, `inverse`, `convert_3sym`, `convert_2sym`. They are not exported by
+  `transpose`, `is_identity` (exact comparison with the identity, for fast paths), `is_approx`, `inverse`,
+  `convert_3sym`, `convert_2sym`. They are not exported by
   `muscle_tensors` (to avoid clashing with user variables named `norm`, `det`, ...): import them
   from `muscle_tensor_functions`, renaming if needed.
 - **Type-bound procedures** (historical API, host code only): `%init()`, the accessors `%xx()`,
-  `%xy()`, ..., `%norm()`, `%det()`, `%inv()`, `%is_approx()`, ... They are thin wrappers over the
-  free functions; being type-bound they take a polymorphic `class` argument, so kernels must not
-  call them.
+  `%xy()`, ..., `%norm()`, `%det()`, `%inv()`, `%is_identity()`, `%is_approx()`, ... They are thin wrappers
+  over the free functions; being type-bound they take a polymorphic `class` argument, so kernels must not
+  call them (with gfortran the device image cannot link the method table of the type, D-011).
 
 ```fortran
 use muscle_tensors

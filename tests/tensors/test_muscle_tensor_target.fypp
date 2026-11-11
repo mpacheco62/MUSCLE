@@ -1,7 +1,7 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
-#! The free functions of muscle_tensor_functions (norm, det, square, transpose, convert_3sym,
+#! The free functions of muscle_tensor_functions (norm, det, square, transpose, is_identity, convert_3sym,
 #! convert_2sym, inverse with its condition number, is_approx) of one family, dimension and kind (fypp
 #! define TARGET_CASE = '<family>_<dim>_<kind>', tests/gpu/target_cases.py) called from a `pure`,
 #! `@:DEVICE()` point procedure inside an `!$omp target teams distribute parallel do` region and on the
@@ -44,23 +44,25 @@ contains
         real(${K}$), intent(in) :: x(N)
         real(${K}$), intent(out) :: out(NOUT)
         type(${T}$) :: a, a_inv
-#:for f in FNS
-#:if f in RES_T
+        #:for f in FNS
+        #:if f in RES_T
         type(${RES_T[f]}$) :: r_${f}$
-#:endif
-#:endfor
+        #:endif
+        #:endfor
         real(${K}$) :: cond
         logical :: ok
 
         a%vals = reshape(x, shape(a%vals))
-#:for f in FNS
-#:if f in RES_T
+        #:for f in FNS
+        #:if f in RES_T
         r_${f}$ = ${f}$(a)
         out(${START[f]}$:${START[f] + RES_N[f] - 1}$) = reshape(r_${f}$%vals, [${RES_N[f]}$])
-#:else
+        #:elif f == 'is_identity'
+        out(${START[f]}$) = merge(1.0_${K}$, 0.0_${K}$, ${f}$(a))
+        #:else
         out(${START[f]}$) = ${f}$(a)
-#:endif
-#:endfor
+        #:endif
+        #:endfor
         call inverse(a, a_inv, ok, cond)
         out(${START['inverse']}$:${START['inverse'] + N - 1}$) = reshape(a_inv%vals, [N])
         out(${START['cond']}$) = cond
@@ -98,10 +100,10 @@ program test_tensor_target
             x(j, i) = real(0.25_dp*rnd(rng), ${K}$)
         end do
         a%vals = reshape(x(:, i), shape(a%vals))
-#:set rows = LAY.matrix('a%vals')
-#:for r in range(len(rows))
+        #:set rows = LAY.matrix('a%vals')
+        #:for r in range(len(rows))
         ${rows[r][r]}$ = ${rows[r][r]}$ + 2.0_${K}$
-#:endfor
+        #:endfor
         x(:, i) = reshape(a%vals, [N])
     end do
 

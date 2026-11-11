@@ -10,278 +10,267 @@ module muscle_math_linsolvers
     !!
     !! Host-only (allocatable work arrays, LAPACK): kernels solve their small systems with
     !! `muscle_math_lu_solve`.
-  use muscle_kinds, only: sp, dp
-#:if defined('USE_MKL')
-  use, intrinsic :: iso_c_binding, only: c_int
-#:endif
-  implicit none
-  private
-  public :: gauss_solve, gauss_seidel
-  public :: mklsolve
-#:for k in REAL_KINDS
-  public :: gauss_solve_${k}$, gauss_seidel_${k}$, mklsolve_${k}$
-#:endfor
+    use muscle_kinds, only: sp, dp
+    #:if defined('USE_MKL')
+    use, intrinsic :: iso_c_binding, only: c_int
+    #:endif
+    implicit none
+    private
+    public :: gauss_solve, gauss_seidel
+    public :: mklsolve
+    #:for k in REAL_KINDS
+    public :: gauss_solve_${k}$, gauss_seidel_${k}$, mklsolve_${k}$
+    #:endfor
 
-#:for name in ['gauss_solve', 'gauss_seidel', 'mklsolve']
-  interface ${name}$
-     module procedure ${kspecifics('{0}_{1}', name)}$
-  end interface ${name}$
+    #:for name in ['gauss_solve', 'gauss_seidel', 'mklsolve']
+    interface ${name}$
+        module procedure ${kspecifics('{0}_{1}', name)}$
+    end interface ${name}$
 
-#:endfor
-  ! Explicit interfaces of LAPACK ?gesv
-  interface
-#:for k in REAL_KINDS
-#:set gesv = ('s' if k == 'sp' else 'd') + 'gesv'
-     subroutine ${gesv}$(n, nrhs, a, lda, ipiv, b, ldb, info)
-       import :: ${k}$
-       integer :: n, nrhs, lda, ldb, info
-       integer :: ipiv(*)
-       real(${k}$) :: a(lda,*), b(ldb,*)
-     end subroutine ${gesv}$
+    #:endfor
+    ! Explicit interfaces of LAPACK ?gesv
+    interface
+        #:for k in REAL_KINDS
+        #:set gesv = ('s' if k == 'sp' else 'd') + 'gesv'
+        subroutine ${gesv}$(n, nrhs, a, lda, ipiv, b, ldb, info)
+            import :: ${k}$
+            integer :: n, nrhs, lda, ldb, info
+            integer :: ipiv(*)
+            real(${k}$) :: a(lda,*), b(ldb,*)
+        end subroutine ${gesv}$
 
-#:endfor
-#:if defined('USE_MKL')
-     ! Bind to the C entry point (by value). The lowercase symbol
-     ! mkl_set_num_threads_local is the MKL Fortran entry (by reference).
-     subroutine mkl_set_num_threads_local(nth) bind(C, name="MKL_Set_Num_Threads_Local")
-       import :: c_int
-       integer(c_int), value :: nth
-     end subroutine mkl_set_num_threads_local
-#:endif
-  end interface
+        #:endfor
+        #:if defined('USE_MKL')
+        ! Bind to the C entry point (by value). The lowercase symbol
+        ! mkl_set_num_threads_local is the MKL Fortran entry (by reference).
+        subroutine mkl_set_num_threads_local(nth) bind(C, name="MKL_Set_Num_Threads_Local")
+            import :: c_int
+            implicit none
+            integer(c_int), value :: nth
+        end subroutine mkl_set_num_threads_local
+        #:endif
+    end interface
 
 contains
 
-#:for k in REAL_KINDS
-#:set gesv = ('s' if k == 'sp' else 'd') + 'gesv'
-  !=========================================================
-  !  gauss_solve: Gaussian elimination with partial pivoting
-  !
-  !  Solves A x = b (dense A) directly. A and b are not
-  !  modified (the elimination works on copies).
-  !=========================================================
-  subroutine gauss_solve_${k}$(A, b, x, info)
-    !! Solves the `real(${k}$)` system \( A x = b \) by Gaussian elimination with partial pivoting
-    !! (on copies of `A` and `b`). `info`: 0 solved, 1 singular (zero pivot), -1 inconsistent shapes.
-    implicit none
-    real(${k}$), intent(inout) :: A(:,:)   !! System matrix (not modified)
-    real(${k}$), intent(inout) :: b(:)     !! RHS (not modified)
-    real(${k}$), intent(out)   :: x(:)     !! Solution
-    integer, intent(out)   :: info     !! =0 OK, /=0 failure
+    #:for k in REAL_KINDS
+    #:set gesv = ('s' if k == 'sp' else 'd') + 'gesv'
+    subroutine gauss_solve_${k}$(A, b, x, info)
+        !! Solves the `real(${k}$)` system \( A x = b \) (dense \( A \)) directly by Gaussian elimination
+        !! with partial pivoting, on copies of `A` and `b`. `info`: 0 solved, 1 singular (zero pivot),
+        !! -1 inconsistent shapes.
+        implicit none
+        real(${k}$), intent(in) :: A(:,:)
+            !! System matrix
+        real(${k}$), intent(in) :: b(:)
+            !! RHS
+        real(${k}$), intent(out) :: x(:)
+            !! Solution
+        integer, intent(out) :: info
+            !! =0 OK, /=0 failure
 
-    integer :: n, k, i, j, pivot_row
-    real(${k}$) :: maxval_col, factor
-    real(${k}$), allocatable :: Awork(:,:), bwork(:)
-    real(${k}$) :: tmp_r
+        integer :: n, k, i, j, pivot_row
+        real(${k}$) :: maxval_col, factor
+        real(${k}$), allocatable :: Awork(:,:), bwork(:)
+        real(${k}$) :: tmp_r
 
-    n = size(A,1)
-    if (size(A,2) /= n .or. size(b,1) /= n .or. size(x,1) /= n) then
-       info = -1
-       return
-    end if
-
-    ! Work on copies so that the originals are kept
-    allocate(Awork(n,n), bwork(n))
-    Awork = A
-    bwork = b
-
-    info = 0
-
-    ! Elimination
-    do k = 1, n-1
-       ! Partial pivoting: row with the largest absolute value
-       maxval_col = 0.0_${k}$
-       pivot_row  = k
-       do i = k, n
-          if (abs(Awork(i,k)) > maxval_col) then
-             maxval_col = abs(Awork(i,k))
-             pivot_row  = i
-          end if
-       end do
-
-       ! Zero pivot: singular matrix
-       if (maxval_col == 0.0_${k}$) then
-          info = 1
-          deallocate(Awork, bwork)
-          return
-       end if
-
-       ! Row interchange
-       if (pivot_row /= k) then
-          do j = 1, n
-             tmp_r = Awork(k,j)
-             Awork(k,j) = Awork(pivot_row,j)
-             Awork(pivot_row,j) = tmp_r
-          end do
-
-          tmp_r = bwork(k)
-          bwork(k) = bwork(pivot_row)
-          bwork(pivot_row) = tmp_r
-       end if
-
-       ! Forward elimination
-       do i = k+1, n
-          factor = Awork(i,k) / Awork(k,k)
-          Awork(i,k) = 0.0_${k}$
-          do j = k+1, n
-             Awork(i,j) = Awork(i,j) - factor * Awork(k,j)
-          end do
-          bwork(i) = bwork(i) - factor * bwork(k)
-       end do
-    end do
-
-    ! Last pivot
-    if (Awork(n,n) == 0.0_${k}$) then
-       info = 1
-       deallocate(Awork, bwork)
-       return
-    end if
-
-    ! Back substitution
-    x(n) = bwork(n) / Awork(n,n)
-    do i = n-1, 1, -1
-       tmp_r = bwork(i)
-       do j = i+1, n
-          tmp_r = tmp_r - Awork(i,j) * x(j)
-       end do
-       x(i) = tmp_r / Awork(i,i)
-    end do
-
-    deallocate(Awork, bwork)
-  end subroutine gauss_solve_${k}$
-
-  !=========================================================
-  !  gauss_seidel: Gauss-Seidel iterative method
-  !
-  !  Useful to study convergence; not the efficient choice
-  !  for a small dense system.
-  !=========================================================
-  subroutine gauss_seidel_${k}$(A, b, x, tol, maxit, its, info)
-    !! Gauss-Seidel iterations on the `real(${k}$)` system \( A x = b \) from the initial `x`.
-    !! `info`: 0 converged (residual 2-norm < `tol`), 1 not converged, 2 zero diagonal,
-    !! -1 inconsistent shapes.
-    implicit none
-    real(${k}$), intent(in)    :: A(:,:), b(:)
-    real(${k}$), intent(inout) :: x(:)        !! initial x, then the solution
-    real(${k}$), intent(in)    :: tol         !! tolerance on the residual norm
-    integer, intent(in)    :: maxit       !! maximum number of iterations
-    integer, intent(out)   :: its         !! iterations done
-    integer, intent(out)   :: info        !! 0=OK, 1=no convergence
-
-    integer :: n, i, j, k
-    real(${k}$) :: sigma, res_norm
-
-    n = size(A,1)
-    if (size(A,2) /= n .or. size(b,1) /= n .or. size(x,1) /= n) then
-       info = -1
-       its  = 0
-       return
-    end if
-
-    info = 1
-    its  = 0
-
-    do k = 1, maxit
-       ! One Gauss-Seidel sweep
-       do i = 1, n
-          sigma = 0.0_${k}$
-          do j = 1, n
-             if (j /= i) sigma = sigma + A(i,j)*x(j)
-          end do
-          if (A(i,i) == 0.0_${k}$) then
-            info = 2   ! zero diagonal
+        n = size(A,1)
+        if (size(A,2) /= n .or. size(b,1) /= n .or. size(x,1) /= n) then
+            info = -1
             return
-          end if
+        end if
 
-          x(i) = (b(i) - sigma) / A(i,i)
-       end do
+        ! Work on copies so that the originals are kept
+        allocate(Awork(n,n), bwork(n))
+        Awork = A
+        bwork = b
 
-       ! Residual norm for the stopping criterion
-       res_norm = 0.0_${k}$
-       do i = 1, n
-          sigma = 0.0_${k}$
-          do j = 1, n
-             sigma = sigma + A(i,j)*x(j)
-          end do
-          res_norm = res_norm + (sigma - b(i))**2
-       end do
-       res_norm = sqrt(res_norm)
+        info = 0
 
-       its = k
-       if (res_norm < tol) then
-          info = 0
-          exit
-       end if
-    end do
+        ! Elimination
+        do k = 1, n-1
+            ! Partial pivoting: row with the largest absolute value
+            maxval_col = 0.0_${k}$
+            pivot_row = k
+            do i = k, n
+                if (abs(Awork(i,k)) > maxval_col) then
+                    maxval_col = abs(Awork(i,k))
+                    pivot_row = i
+                end if
+            end do
 
-  end subroutine gauss_seidel_${k}$
+            ! Zero pivot: singular matrix
+            if (maxval_col == 0.0_${k}$) then
+                info = 1
+                deallocate(Awork, bwork)
+                return
+            end if
+
+            ! Row interchange
+            if (pivot_row /= k) then
+                do j = 1, n
+                    tmp_r = Awork(k,j)
+                    Awork(k,j) = Awork(pivot_row,j)
+                    Awork(pivot_row,j) = tmp_r
+                end do
+
+                tmp_r = bwork(k)
+                bwork(k) = bwork(pivot_row)
+                bwork(pivot_row) = tmp_r
+            end if
+
+            ! Forward elimination
+            do i = k+1, n
+                factor = Awork(i,k) / Awork(k,k)
+                Awork(i,k) = 0.0_${k}$
+                do j = k+1, n
+                    Awork(i,j) = Awork(i,j) - factor * Awork(k,j)
+                end do
+                bwork(i) = bwork(i) - factor * bwork(k)
+            end do
+        end do
+
+        ! Last pivot
+        if (Awork(n,n) == 0.0_${k}$) then
+            info = 1
+            deallocate(Awork, bwork)
+            return
+        end if
+
+        ! Back substitution
+        x(n) = bwork(n) / Awork(n,n)
+        do i = n-1, 1, -1
+            tmp_r = bwork(i)
+            do j = i+1, n
+                tmp_r = tmp_r - Awork(i,j) * x(j)
+            end do
+            x(i) = tmp_r / Awork(i,i)
+        end do
+
+        deallocate(Awork, bwork)
+    end subroutine gauss_solve_${k}$
+
+    subroutine gauss_seidel_${k}$(A, b, x, tol, maxit, its, info)
+        !! Gauss-Seidel iterations on the `real(${k}$)` system \( A x = b \) from the initial `x`.
+        !! Useful to study convergence; not the efficient choice for a small dense system.
+        !! `info`: 0 converged (residual 2-norm < `tol`), 1 not converged, 2 zero diagonal,
+        !! -1 inconsistent shapes.
+        implicit none
+        real(${k}$), intent(in) :: A(:,:), b(:)
+        real(${k}$), intent(inout) :: x(:)
+            !! initial x, then the solution
+        real(${k}$), intent(in) :: tol
+            !! tolerance on the residual norm
+        integer, intent(in) :: maxit
+            !! maximum number of iterations
+        integer, intent(out) :: its
+            !! iterations done
+        integer, intent(out) :: info
+            !! 0=OK, 1=no convergence
+
+        integer :: n, i, j, k
+        real(${k}$) :: sigma, res_norm
+
+        n = size(A,1)
+        if (size(A,2) /= n .or. size(b,1) /= n .or. size(x,1) /= n) then
+            info = -1
+            its = 0
+            return
+        end if
+
+        info = 1
+        its = 0
+
+        do k = 1, maxit
+            ! One Gauss-Seidel sweep
+            do i = 1, n
+                sigma = 0.0_${k}$
+                do j = 1, n
+                    if (j /= i) sigma = sigma + A(i,j)*x(j)
+                end do
+                if (A(i,i) == 0.0_${k}$) then
+                    info = 2   ! zero diagonal
+                    return
+                end if
+
+                x(i) = (b(i) - sigma) / A(i,i)
+            end do
+
+            ! Residual norm for the stopping criterion
+            res_norm = 0.0_${k}$
+            do i = 1, n
+                sigma = 0.0_${k}$
+                do j = 1, n
+                    sigma = sigma + A(i,j)*x(j)
+                end do
+                res_norm = res_norm + (sigma - b(i))**2
+            end do
+            res_norm = sqrt(res_norm)
+
+            its = k
+            if (res_norm < tol) then
+                info = 0
+                exit
+            end if
+        end do
+
+    end subroutine gauss_seidel_${k}$
 
 
-  !===========================================================
-  !  mklsolve: same interface as gauss_seidel
-  !    A(:,:)  -> system matrix (not modified)
-  !    b(:)    -> RHS (not modified)
-  !    x(:)    -> solution (output)
-  !    tol     -> unused (interface compatibility)
-  !    maxit   -> unused (interface compatibility)
-  !    its     -> number of "iterations" (1)
-  !    info    -> exit code of ?gesv
-  !
-  !  Copies A and b (A_loc, b_loc) and calls ?gesv (MKL/LAPACK).
-  !===========================================================
-  subroutine mklsolve_${k}$(A, b, x, tol, maxit, its, info)
-    !! Solves the `real(${k}$)` system \( A x = b \) with LAPACK `${gesv}$`
-    !! (`tol`, `maxit` unused). `info`: that of `${gesv}$`, -1 inconsistent
-    !! shapes; `its` = 1 if solved, else 0.
-    implicit none
-    real(${k}$), intent(in)    :: A(:,:), b(:)
-    real(${k}$), intent(out)   :: x(:)
-    real(${k}$), intent(in)    :: tol
-    integer, intent(in)    :: maxit
-    integer, intent(out)   :: its, info
+    subroutine mklsolve_${k}$(A, b, x, tol, maxit, its, info)
+        !! Solves the `real(${k}$)` system \( A x = b \) with LAPACK `${gesv}$` (MKL/LAPACK) on copies
+        !! of `A` and `b`, with the same interface as `gauss_seidel` (`tol`, `maxit` unused, kept for
+        !! interface compatibility). `info`: that of `${gesv}$`, -1 inconsistent shapes; `its` = 1
+        !! (one "iteration") if solved, else 0.
+        implicit none
+        real(${k}$), intent(in) :: A(:,:), b(:)
+        real(${k}$), intent(out) :: x(:)
+        real(${k}$), intent(in) :: tol
+        integer, intent(in) :: maxit
+        integer, intent(out) :: its, info
 
-    integer :: n, lda, ldb, nrhs
-    real(${k}$), allocatable :: A_loc(:,:), b_loc(:,:)
-    integer, allocatable :: ipiv(:)
-    integer :: i
+        integer :: n, lda, ldb, nrhs
+        real(${k}$), allocatable :: A_loc(:,:), b_loc(:,:)
+        integer, allocatable :: ipiv(:)
+        integer :: i
 
-#:if defined('USE_MKL')
-    ! Only when compiling/linking with Intel MKL
-    call mkl_set_num_threads_local(1_c_int)
-#:endif
+        #:if defined('USE_MKL')
+        ! Only when compiling/linking with Intel MKL
+        call mkl_set_num_threads_local(1_c_int)
+        #:endif
 
-    n = size(A,1)
-    if (size(A,2) /= n .or. size(b) /= n .or. size(x) /= n) then
-       info = -1
-       its  = 0
-       return
-    end if
+        n = size(A,1)
+        if (size(A,2) /= n .or. size(b) /= n .or. size(x) /= n) then
+            info = -1
+            its = 0
+            return
+        end if
 
-    lda  = n
-    ldb  = n
-    nrhs = 1
+        lda = n
+        ldb = n
+        nrhs = 1
 
-    allocate(A_loc(n,n), b_loc(n, nrhs), ipiv(n))
+        allocate(A_loc(n,n), b_loc(n, nrhs), ipiv(n))
 
-    ! Work copies of A and b (?gesv overwrites them)
-    A_loc = A
-    do i = 1, n
-       b_loc(i,1) = b(i)
-    end do
+        ! Work copies of A and b (?gesv overwrites them)
+        A_loc = A
+        do i = 1, n
+            b_loc(i,1) = b(i)
+        end do
 
-    call ${gesv}$(n, nrhs, A_loc, lda, ipiv, b_loc, ldb, info)
+        call ${gesv}$(n, nrhs, A_loc, lda, ipiv, b_loc, ldb, info)
 
-    if (info == 0) then
-       do i = 1, n
-          x(i) = b_loc(i,1)
-       end do
-       its = 1   ! one fictitious "iteration" (direct call)
-    else
-       its = 0
-    end if
+        if (info == 0) then
+            do i = 1, n
+                x(i) = b_loc(i,1)
+            end do
+            its = 1   ! one fictitious "iteration" (direct call)
+        else
+            its = 0
+        end if
 
-    deallocate(A_loc, b_loc, ipiv)
-  end subroutine mklsolve_${k}$
+        deallocate(A_loc, b_loc, ipiv)
+    end subroutine mklsolve_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_math_linsolvers

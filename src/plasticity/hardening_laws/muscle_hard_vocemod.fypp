@@ -20,12 +20,12 @@ module muscle_hard_vocemod
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: hard_vocemod_${k}$
     public :: hard_stress_vocemod_${k}$, hard_dstress_dep_vocemod_${k}$, hard_ddstress_ddep_vocemod_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: hard_vocemod_${k}$
         !! Parameters of the modified Voce model in `real(${k}$)`.
         real(${k}$) :: Sy
@@ -38,9 +38,9 @@ module muscle_hard_vocemod
             !! Saturation rate \( n \).
     end type hard_vocemod_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function hard_stress_vocemod_${k}$(prm, ep) result(res)
         !! Flow stress \( \sigma_y(\epsilon_p) \) of the modified Voce model in `real(${k}$)`.
         implicit none
@@ -80,5 +80,5 @@ contains
         res = -prm%q*prm%n*prm%n*exp(-prm%n*ep)
     end function hard_ddstress_ddep_vocemod_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_hard_vocemod

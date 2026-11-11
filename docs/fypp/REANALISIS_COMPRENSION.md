@@ -89,12 +89,12 @@ siendo la parte opaca (83 `#:if`, igual que antes); la alternativa D sigue archi
   alternativo o que los materiales lo usaran (cambio de layout de `hsv`).
 - C3. **Hecho (2026-11-10).** Glosario: entrada «plan R» (o quitar la mención); `conventions.md`: tolerancias por familia y trato de
   Inf/NaN de `.approx.`; aclarar «three reference tests (+4 mutation checks)».
-- C4. Restos de «golden» en comentarios de tests y `_golden` de `props_samples.py`.
+- C4. **Hecho (2026-11-11, `0d71ce7`).** Restos de «golden» en comentarios de tests y `_golden` de `props_samples.py`.
 - C5. **Hecho (2026-11-10)**, tabla en el README. Una línea en `glossary.md` o `architecture.md` sobre cuándo usar `cp` o `cp2`.
 
 **Esfuerzo medio / a decidir**
 - C6. Partir los monolitos de tests que crecieron (`test_yield_kinds` 1 185, `test_vp_laws_kinds` 951) o
   dejarlos (el recién llegado agregó su test sin problema, como en 3.5).
-- C7. Lint del límite de columnas en plantillas.
-- C8. Legibilidad de la plantilla de material (`#:set` agrupados y comentados, `FIN`/`XS` con un solo
+- C7. **Hecho (2026-11-10, `0989d80`).** Lint del límite de columnas en plantillas.
+- C8. **Hecho (2026-11-11, `09a93ca`, `00ace7e`, `0de664a` y el renombre `P`/`NB`)**: variables agrupadas y comentadas, `F_INPUT` único, índice y marcas de las variantes del kernel. Propuesta original: Legibilidad de la plantilla de material (`#:set` agrupados y comentados, `FIN`/`XS` con un solo
   significado): sólo comentarios y nombres, snapshot idéntico.

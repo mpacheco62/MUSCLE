@@ -24,16 +24,16 @@ module muscle_kin_updated_lagrangian
     !! `kin_is_finite_strain_updated_lagrangian_<k>(prm)`, also through the generics `kin_*` of
     !! muscle_kin_laws.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2O_${k}$, ten_3D2Osym_${k}$, ten_3D4O2sym_${k}$
     use muscle_kin_finite, only : kin_state_${k}$
-#:endfor
+    #:endfor
     use muscle_kin_finite, only : kin_finite_update, kin_finite_update_norot, kin_euler_almansi, &
         kin_almansi_tangent, kin_volumetric_tangent
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: kin_updated_lagrangian_${k}$
     public :: kin_update_updated_lagrangian_${k}$
     public :: kin_update_norot_updated_lagrangian_${k}$
@@ -41,16 +41,16 @@ module muscle_kin_updated_lagrangian
     public :: kin_to_spatial_tangent_updated_lagrangian_${k}$
     public :: kin_geometric_tangent_updated_lagrangian_${k}$
     public :: kin_is_finite_strain_updated_lagrangian_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: kin_updated_lagrangian_${k}$
         !! Parameters of the updated lagrangian model in `real(${k}$)`.
     end type kin_updated_lagrangian_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine kin_update_updated_lagrangian_${k}$(prm, F, state, status)
         !! Kinematic state of a deformation gradient \( \mathbf{F} \) (the deformation gradient is validated) of the updated
@@ -159,6 +159,6 @@ contains
 
         res = .true.
     end function kin_is_finite_strain_updated_lagrangian_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_kin_updated_lagrangian

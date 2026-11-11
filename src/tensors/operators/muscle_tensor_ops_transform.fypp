@@ -59,15 +59,15 @@ $:OP_USES(MODULE)
 $:OP_INTERFACES(MODULE)
 contains
 
-#:for d in DIMS
-#:for k in REAL_KINDS
-#:for e in op_entries('.transform.', d, k)
-#:set F = e.tag_b[2:]
-#:if F == '2Osym'
-#:set tmp, rcomp = op_congruence(d, 'F%vals', 'S%vals')
-#:set doc = 'Congruence transformation &
-    & \\(\\mathbf{res} = \\mathbf{F} \\cdot \\mathbf{S} \\cdot \\mathbf{F}^T\\)'
-#:set x, y = 'F', 'S'
+    #:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for e in op_entries('.transform.', d, k)
+    #:set F = e.tag_b[2:]
+    #:if F == '2Osym'
+    #:set tmp, rcomp = op_congruence(d, 'F%vals', 'S%vals')
+    #:set doc = 'Congruence transformation &
+        & \\(\\mathbf{res} = \\mathbf{F} \\cdot \\mathbf{S} \\cdot \\mathbf{F}^T\\)'
+    #:set x, y = 'F', 'S'
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -78,21 +78,21 @@ contains
         real(${k}$) :: ${', '.join('T{}{}'.format(*iL) for iL, _ in tmp)}$
             !! Entries of \(\mathbf{T} = \mathbf{F} \cdot \mathbf{S}\) that are used.
 
-#:for iL, expr in tmp
+        #:for iL, expr in tmp
         T${iL[0]}$${iL[1]}$ = ${expr}$
-#:endfor
-#:for c in op_layout(e.tag_res).comps
+        #:endfor
+        #:for c in op_layout(e.tag_res).comps
         res%vals(${c.pos[0]}$) = ${rcomp[c.idx]}$ ! ${c.name}$
-#:endfor
+        #:endfor
     end function ${e.name}$
 
-#:else
-#:set lc = op_layout(e.tag_b)
-#:set V = op_voigt_congruence(lc, 'A%vals', 'C_in%vals', k)
-#:set n = V.n
-#:set doc = 'Fourth-order transformation &
-    & \\( res_{ijkl} = A_{iI} A_{jJ} A_{kK} A_{lL} C_{IJKL} \\)'
-#:set x, y = 'A', 'C_in'
+    #:else
+    #:set lc = op_layout(e.tag_b)
+    #:set V = op_voigt_congruence(lc, 'A%vals', 'C_in%vals', k)
+    #:set n = V.n
+    #:set doc = 'Fourth-order transformation &
+        & \\( res_{ijkl} = A_{iI} A_{jJ} A_{kK} A_{lL} C_{IJKL} \\)'
+    #:set x, y = 'A', 'C_in'
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -100,59 +100,59 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-#:if F == '4O2sym' and len(V.T) == n * n
+        #:if F == '4O2sym' and len(V.T) == n * n
 #! Dense T (3D): whole-column products, W = T C then R = W T^T
         real(${k}$) :: T(${n}$,${n}$), W(${n}$,${n}$)
             !! Voigt transformation matrix and \(\mathbf{W} = \mathbf{T}\mathbf{C}\).
         integer :: j
 
-#:for IJ, expr in V.T.items()
+        #:for IJ, expr in V.T.items()
         T(${IJ[0]}$,${IJ[1]}$) = ${expr}$
-#:endfor
+        #:endfor
         do j = 1, ${n}$
             ${assign_terms('W(:,j)', ['T(:,{0})*C_in%vals({0},j)'.format(L) for L in range(1, n + 1)], 12)}$
         end do
         do j = 1, ${n}$
             ${assign_terms('res%vals(:,j)', ['W(:,{0})*T(j,{0})'.format(K) for K in range(1, n + 1)], 12)}$
         end do
-#:else
+        #:else
 #! Otherwise the non-zero entries of T as scalars T<I><J> (sparse in 2D)
-#:for I in range(1, n + 1)
+        #:for I in range(1, n + 1)
         real(${k}$) :: ${', '.join('T{}{}'.format(I, K) for K in V.rows[I])}$
-#:endfor
-#:if F == '4O2sym'
+        #:endfor
+        #:if F == '4O2sym'
         real(${k}$) :: W(${n}$,${n}$)
             !! \(\mathbf{W} = \mathbf{T}\mathbf{C}\).
-#:else
+        #:else
 #! Fully symmetric: only the entries W<I><K> used by the upper triangle R(I,J), I <= J
-#:for I in range(1, n + 1)
+        #:for I in range(1, n + 1)
         real(${k}$) :: ${', '.join('W{}{}'.format(*IK) for IK, _ in V.w if IK[0] == I)}$
-#:endfor
-#:endif
+        #:endfor
+        #:endif
 
-#:for IJ, expr in V.T.items()
+        #:for IJ, expr in V.T.items()
         T${IJ[0]}$${IJ[1]}$ = ${expr}$
-#:endfor
-#:if F == '4O2sym'
-#:for I in range(1, n + 1)
+        #:endfor
+        #:if F == '4O2sym'
+        #:for I in range(1, n + 1)
         ${assign_terms('W({},:)'.format(I), ['T{}{}*C_in%vals({},:)'.format(I, L, L) for L in V.rows[I]], 8)}$
-#:endfor
-#:for J in range(1, n + 1)
+        #:endfor
+        #:for J in range(1, n + 1)
         ${assign_terms('res%vals(:,{})'.format(J), ['W(:,{})*T{}{}'.format(K, J, K) for K in V.rows[J]], 8)}$
-#:endfor
-#:else
-#:for IK, terms in V.w
+        #:endfor
+        #:else
+        #:for IK, terms in V.w
         ${assign_terms('W{}{}'.format(*IK), terms, 8)}$
-#:endfor
-#:for pos, terms in V.res
+        #:endfor
+        #:for pos, terms in V.res
         ${assign_terms('res%vals({})'.format(pos), terms, 8)}$
-#:endfor
-#:endif
-#:endif
+        #:endfor
+        #:endif
+        #:endif
     end function ${e.name}$
 
-#:endif
-#:endfor
-#:endfor
-#:endfor
+    #:endif
+    #:endfor
+    #:endfor
+    #:endfor
 end module muscle_tensor_ops_${MODULE}$

@@ -42,13 +42,19 @@ module muscle_vp_mrk
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: vp_mrk_${k}$
     public :: vp_flow_stress_mrk_${k}$, vp_dflow_dep_mrk_${k}$, vp_dflow_depd_mrk_${k}$, &
         & vp_dstress_dep_mrk_${k}$
-#:endfor
+    #:endfor
+    #:for k in REAL_KINDS
 
-#:for k in REAL_KINDS
+    real(${k}$), parameter :: MRK_RATE_MIN_${k}$ = 1.0e-12_${k}$
+        !! Rate at or below which the derivatives of the MRK law are zero (the rate terms vanish),
+        !! `real(${k}$)`.
+    #:endfor
+
+    #:for k in REAL_KINDS
     type :: vp_mrk_${k}$
         !! Parameters of the modified Rusinek-Klepaczko model in `real(${k}$)`.
         real(${k}$) :: B01
@@ -74,10 +80,10 @@ module muscle_vp_mrk
         real(${k}$) :: sig_u
             !! Athermal stress \( \sigma_u \).
     end type vp_mrk_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function vp_flow_stress_mrk_${k}$(prm, ep, epd) &
         & result(res)
         !! Viscoplastic flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \) of the modified Rusinek-Klepaczko model in
@@ -143,7 +149,7 @@ contains
         real(${k}$) :: dsig0_dep, dsig0_depd, dfactor_depd, dn_depd, dB1_depd, dB2_depd
         real(${k}$) :: log_arg, inv_ln10, epd_eff
 
-        if (epd <= 1.0e-12_${k}$) then
+        if (epd <= MRK_RATE_MIN_${k}$) then
             dep = 0.0_${k}$
             depd = 0.0_${k}$
             return
@@ -230,7 +236,7 @@ contains
             !! \( d\sigma/d\Delta\epsilon_p \).
         real(${k}$) :: dep, depd
 
-        if (epd <= 1.0e-12_${k}$) then
+        if (epd <= MRK_RATE_MIN_${k}$) then
             res = 0.0_${k}$
             return
         end if
@@ -238,5 +244,5 @@ contains
         res = dep + depd/dt
     end function vp_dstress_dep_mrk_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_vp_mrk

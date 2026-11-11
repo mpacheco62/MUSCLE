@@ -30,13 +30,13 @@ module test_math_kernels_funcs
 
     integer, parameter, public :: NOUT = ${NOUT}$
         !! Size of the packed output of a point.
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: point_kernel_${k}$, eig_kernel_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
-#:set T2 = tname('3D2Osym', k)
+    #:for k in REAL_KINDS
+    #:set T2 = tname('3D2Osym', k)
 
     pure function phi_${k}$(s) result(res)
         !! Smooth scalar function of a `${T2}$`: s : s + exp(0.1 tr s).
@@ -91,7 +91,7 @@ contains
         out(40:45) = sol
         out(46) = kappa
     end subroutine point_kernel_${k}$
-#:endfor
+    #:endfor
 
 end module test_math_kernels_funcs
 
@@ -110,15 +110,15 @@ program test_math_kernels_target
     integer :: code
 
     code = 0
-#:for i, k in enumerate(REAL_KINDS)
+    #:for i, k in enumerate(REAL_KINDS)
     call record(test_target_${k}$(), ${i + 1}$, 'math kernels in a target region ${k}$', code)
     call record(test_fp_exponent_${k}$(), ${i + 3}$, 'fp_exponent = exponent ${k}$', code)
     call record(test_eig_repeated_${k}$(), ${i + 5}$, 'eigenvals with repeated roots in a target region ${k}$', code)
-#:endfor
+    #:endfor
     if (code /= 0) stop code
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     function test_fp_exponent_${k}$() result(passed)
         !! fp_exponent = the intrinsic exponent (CPU) in `real(${k}$)`: +-0, the smallest subnormal and
@@ -246,6 +246,6 @@ contains
         call check_target(passed, '${k}$ FD_GRAD: target region = CPU', out_t(34:39, :), out_c(34:39, :), .not. host, &
                           TOL_DEVICE_${k}$/min(FD_STEP_CEN_${k}$, FD_STEP_ZERO_${k}$))
     end function test_target_${k}$
-#:endfor
+    #:endfor
 
 end program test_math_kernels_target

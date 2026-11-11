@@ -16,17 +16,17 @@ module muscle_math_operations
     private
 
     public :: eigenvals
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: eigenvals_3D2Osym_${k}$
-#:endfor
+    #:endfor
 
     interface eigenvals
         module procedure ${kspecifics('{0}_3D2Osym_{1}', 'eigenvals')}$
     end interface eigenvals
 
   contains
-#:for k in REAL_KINDS
-#:set T2 = tname('3D2Osym', k)
+      #:for k in REAL_KINDS
+      #:set T2 = tname('3D2Osym', k)
 
       pure function eigenvals_3D2Osym_${k}$(mat) result(res)
         !! Eigenvalues of a symmetric `${T2}$`, in descending order (closed form, based on
@@ -98,5 +98,5 @@ module muscle_math_operations
         res = res + I1/3.0_${k}$
 
       end function eigenvals_3D2Osym_${k}$
-#:endfor
+      #:endfor
 end module muscle_math_operations

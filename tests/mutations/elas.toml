@@ -1,5 +1,5 @@
 # Mutation check of the elasticity laws (tools/mutation_check.py elas)
-sources = ["src/elasticity/muscle_elasticity_*.fypp"]
+sources = ["src/elasticity/muscle_elas_*.fypp"]
 # The reference test was deleted (plan R): the unit tests detected all the 152 mutations it detected.
 reference = ""
 unit = "^elasticity-"

@@ -53,20 +53,20 @@ module test_4o3sym_kinds_lib
     implicit none
     public
 
-#:for d in DIMS
+    #:for d in DIMS
     integer, parameter :: IDX_${d}$(${len(W[d])}$, ${len(W[d])}$) = reshape([ &
         ${', '.join(str(v) for row in IDX[d] for v in row)}$], [${len(W[d])}$, ${len(W[d])}$])
         !! Storage position of the Voigt entry (I, J) of `ten_${d}$4O3sym` (original sources).
     real(dp), parameter :: W_${d}$(${len(W[d])}$) = [${', '.join(str(w) + '.0_dp' for w in W[d])}$]
         !! Multiplicity of each ${d}$ Voigt index (2 for a shear).
-#:endfor
+    #:endfor
     interface vv
         !! `vv(expr)`: the `vals` array of a tensor expression.
-#:for k in REAL_KINDS
-#:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for d in DIMS
         module procedure vv_${tname(d + '4O3sym', k)}$
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end interface vv
 
     type(park_miller) :: rng = park_miller(20261029)
@@ -74,9 +74,9 @@ module test_4o3sym_kinds_lib
 
 contains
 
-#:for d in DIMS
-#:set nb = len(W[d])
-#:set n = len(NAMES[d])
+    #:for d in DIMS
+    #:set nb = len(W[d])
+    #:set n = len(NAMES[d])
     function inv_stored_ref_${d}$(m) result(v)
         !! Reference stored components of the inverse of the ${d}$ Voigt matrix `m`:
         !! \( S = W^{-1} m^{-1} W^{-1} \) (double precision, Gauss-Jordan), symmetrized.
@@ -107,12 +107,12 @@ contains
         end do
     end function stored_to_mat_${d}$
 
-#:endfor
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set nb = len(W[d])
-#:set n = len(NAMES[d])
-#:set T = tname(d + '4O3sym', k)
+    #:endfor
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set nb = len(W[d])
+    #:set n = len(NAMES[d])
+    #:set T = tname(d + '4O3sym', k)
     function rand_voigt_${d}$_${k}$(scale, shift) result(m)
         !! Random symmetric ${nb}$x${nb}$ Voigt matrix: entries uniform in (-scale, scale), plus
         !! shift*scale on the diagonal (shift > ${nb - 1}$ makes it diagonally dominant).
@@ -180,7 +180,7 @@ contains
         v = t%vals
     end function vv_${T}$
 
-#:endfor
+    #:endfor
     function embed_${k}$(a) result(r)
         !! Embeds a `${tname('2D4O3sym', k)}$` into a `${tname('3D4O3sym', k)}$` from the layout
         !! metadata: every 3D component whose indices are not stored in 2D (a 3 in an
@@ -206,7 +206,7 @@ contains
         end do
     end function embed_tables_${k}$
 
-#:endfor
+    #:endfor
 #:for k in REAL_KINDS
 #:for d in DIMS
 $:pure_use('4O3sym', d, k, 'muscle_tensor_4o3sym', ['norm', 'is_approx', 'inverse'], 'a/norm(a)')
@@ -238,36 +238,36 @@ program test_muscle_tensor_4o3sym_kinds
     integer :: code
 
     code = 0
-#:set nt = 0
-#:set nt = nt + 1
+    #:set nt = 0
+    #:set nt = nt + 1
     call test_layout_tables(passed)
     call record(passed, ${nt}$, 'test_layout_tables', code)
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:for t in ['ops', 'inverse', 'approx', 'free_generics']
-#:set nt = nt + 1
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:for t in ['ops', 'inverse', 'approx', 'free_generics']
+    #:set nt = nt + 1
     call test_${t}$_${d}$_${k}$(passed)
     call record(passed, ${nt}$, 'test_${t}$_${d}$_${k}$', code)
-#:endfor
-#:endfor
-#:set nt = nt + 1
+    #:endfor
+    #:endfor
+    #:set nt = nt + 1
     call test_embed_${k}$(passed)
     call record(passed, ${nt}$, 'test_embed_${k}$', code)
-#:endfor
-#:set nt = nt + 1
+    #:endfor
+    #:set nt = nt + 1
     call test_historical_aliases(passed)
     call record(passed, ${nt}$, 'test_historical_aliases', code)
-#:if defined('ENABLE_UDTIO')
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set nt = nt + 1
+    #:if defined('ENABLE_UDTIO')
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set nt = nt + 1
     call test_udtio_${d}$_${k}$(passed)
     call record(passed, ${nt}$, 'test_udtio_${d}$_${k}$', code)
-#:endfor
-#:endfor
-#:else
+    #:endfor
+    #:endfor
+    #:else
     print '(a)', ' UDTIO tests skipped (built without ENABLE_UDTIO)'
-#:endif
+    #:endif
     if (code /= 0) stop code
 
     print *, "Passed!"
@@ -281,10 +281,10 @@ contains
         use test_4o3sym_kinds_lib
         logical, intent(out) :: passed
         integer :: p, i, j
-#:for d in DIMS
-#:set lay = layout('4O3sym', d)
-#:set nb = len(W[d])
-#:set N = len(NAMES[d])
+        #:for d in DIMS
+        #:set lay = layout('4O3sym', d)
+        #:set nb = len(W[d])
+        #:set N = len(NAMES[d])
         integer, parameter :: POS_${d}$(${N}$) = [(p, p = 1, ${N}$)]
             !! POS_${d}$(p) = p: Layout.matrix('POS_${d}$') is the matrix of storage positions.
         integer :: lay_${d}$(${nb}$, ${nb}$), mult_${d}$(${N}$)
@@ -292,15 +292,15 @@ contains
             ${', '.join("'" + s + "'" for s in NAMES[d])}$]
         character(len=4), parameter :: LAYNAMES_${d}$(${len(lay.comps)}$) = [character(len=4) :: &
             ${', '.join("'" + c.name + "'" for c in lay.comps)}$]
-#:endfor
+        #:endfor
         passed = .true.
-#:for d in DIMS
-#:set lay = layout('4O3sym', d)
-#:set nb = len(W[d])
+        #:for d in DIMS
+        #:set lay = layout('4O3sym', d)
+        #:set nb = len(W[d])
         ! Storage position of each Voigt entry (I, J) according to the layout, column by column
-#:for J, col in enumerate(zip(*lay.matrix('POS_' + d)), start=1)
+        #:for J, col in enumerate(zip(*lay.matrix('POS_' + d)), start=1)
         lay_${d}$(:, ${J}$) = [${', '.join(col)}$]
-#:endfor
+        #:endfor
         call check_true(passed, 'layout ${d}$: storage position of (I, J) == original', all(lay_${d}$ == IDX_${d}$))
         call check_true(passed, 'layout ${d}$: component names == original', all(LAYNAMES_${d}$ == NAMES_${d}$))
         ! Multiplicity of the stored C_IJ: (1 if I == J else 2) * W_I * W_J tensor components
@@ -311,14 +311,14 @@ contains
         end do
         call check_true(passed, 'layout ${d}$: multiplicities', &
                         all([${', '.join(str(c.mult) for c in lay.comps)}$] == mult_${d}$))
-#:endfor
+        #:endfor
     end subroutine test_layout_tables
 
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set nb = len(W[d])
-#:set N = len(NAMES[d])
-#:set T = tname(d + '4O3sym', k)
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set nb = len(W[d])
+    #:set N = len(NAMES[d])
+    #:set T = tname(d + '4O3sym', k)
     subroutine test_ops_${d}$_${k}$(passed)
         !! Construction (`init`, `set`), assignment, the arithmetic and `norm` of `${T}$`.
         use test_4o3sym_kinds_lib
@@ -350,13 +350,13 @@ contains
         b = a
         call b%set()
         call check_approx(passed, 'set() leaves the tensor unchanged' // TN, b%vals, a%vals, tol=ZERO)
-#:for p, name in enumerate(NAMES[d], start=1)
+        #:for p, name in enumerate(NAMES[d], start=1)
         b = a
         call b%set(${name}$=-0.5_${k}$)
         v = a%vals
         v(${p}$) = -0.5_${k}$
         call check_approx(passed, 'set(${name}$) -> vals(${p}$)' // TN, b%vals, v, tol=ZERO)
-#:endfor
+        #:endfor
         b = a
         call b%set(${NAMES[d][-1]}$=7.25_${k}$, ${NAMES[d][0]}$=-3.0_${k}$, ${NAMES[d][3]}$=0.125_${k}$)
         v = a%vals
@@ -442,10 +442,10 @@ contains
         e = ZERO
         ! S = W^-1 C^-1 W^-1, written out: shear-shear /4, normal-shear /2
         call e%set(xxxx=1.0_${k}$, xyxy=0.5_${k}$, xxxy=-0.5_${k}$, yyyy=1.0_${k}$, zzzz=2.0_${k}$, yyzz=-1.0_${k}$)
-#:if d == '3D'
+        #:if d == '3D'
         call a%set(yzyz=2.0_${k}$, xzxz=1.0_${k}$, yzxz=1.0_${k}$)
         call e%set(yzyz=0.25_${k}$, xzxz=0.5_${k}$, yzxz=-0.25_${k}$)
-#:endif
+        #:endif
         call inverse(a, x, ok, cond)
         call check_true(passed, 'inverse (exact): ok' // TN, ok)
         call check_approx(passed, 'inverse (exact)' // TN, x%vals, e%vals, tol=ZERO)
@@ -548,8 +548,8 @@ $:test_approx('4O3sym', d, k, 'test_4o3sym_kinds_lib', zero_pos=N)
 $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3sym', scalars=['norm'], &
     & unary=[], inv_shift='{}.0_dp'.format(nb + 2), p_mult=7, pure_ref='b/b%norm()')
 
-#:if defined('ENABLE_UDTIO')
-#:set M = nb + 1
+    #:if defined('ENABLE_UDTIO')
+    #:set M = nb + 1
     subroutine test_udtio_${d}$_${k}$(passed)
         !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
         !!
@@ -579,12 +579,12 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
         call check_true(passed, 'list: iostat = 0' // TN, ios == 0)
         call check_true(passed, 'list: text' // TN, trim(buf(1)) == &
             '[ 2.5000E-01 -5.0000E-01  7.5000E-01 -1.0000E+00  1.2500E+00 -1.5000E+00  1.7500E+00' // &
-#:if d == '3D'
+            #:if d == '3D'
             ' -2.0000E+00  2.2500E+00 -2.5000E+00  2.7500E+00 -3.0000E+00  3.2500E+00 -3.5000E+00' // &
             '  3.7500E+00 -4.0000E+00  4.2500E+00 -4.5000E+00  4.7500E+00 -5.0000E+00  5.2500E+00 ]')
-#:else
+            #:else
             ' -2.0000E+00  2.2500E+00 -2.5000E+00 ]')
-#:endif
+            #:endif
         if (.not. passed) print '(a)', '   got: "' // trim(buf(1)) // '"'
         line = buf(1)
         nl = len_trim(line)
@@ -600,12 +600,12 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
         call check_true(passed, 'list(9,2): iostat = 0' // TN, ios == 0)
         call check_true(passed, 'list(9,2): text' // TN, trim(buf(1)) == &
             '[ 2.50E-01 -5.00E-01  7.50E-01 -1.00E+00  1.25E+00 -1.50E+00  1.75E+00 -2.00E+00' // &
-#:if d == '3D'
+            #:if d == '3D'
             '  2.25E+00 -2.50E+00  2.75E+00 -3.00E+00  3.25E+00 -3.50E+00  3.75E+00 -4.00E+00' // &
             '  4.25E+00 -4.50E+00  4.75E+00 -5.00E+00  5.25E+00 ]')
-#:else
+            #:else
             '  2.25E+00 -2.50E+00 ]')
-#:endif
+            #:endif
         if (.not. passed) print '(a)', '   got: "' // trim(buf(1)) // '"'
 
         ! ---- Matrix mode: DT (mode 1) and list-directed (mode 2) ----------------------------
@@ -631,17 +631,17 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
             call check_true(passed, 'matrix: first record empty' // TN, len_trim(buf(1)) == 0)
             if (mode == 1) then
                 ! first and last rows: C_1J and C_${nb}$J (the last one reads the upper triangle by columns)
-#:if d == '3D'
+                #:if d == '3D'
                 call check_true(passed, 'matrix: row 1 text' // TN, trim(buf(2)) == &
                     ' 2.5000E-01   1.7500E+00  -3.0000E+00  -4.0000E+00   4.7500E+00   5.2500E+00')
                 call check_true(passed, 'matrix: row 6 text' // TN, trim(buf(7)) == &
                     ' 5.2500E+00  -5.0000E+00  -4.5000E+00   3.7500E+00   2.7500E+00  -1.5000E+00')
-#:else
+                #:else
                 call check_true(passed, 'matrix: row 1 text' // TN, trim(buf(2)) == &
                     ' 2.5000E-01   1.2500E+00  -2.0000E+00  -2.5000E+00')
                 call check_true(passed, 'matrix: row 4 text' // TN, trim(buf(5)) == &
                     '-2.5000E+00   2.2500E+00   1.7500E+00  -1.0000E+00')
-#:endif
+                #:endif
             end if
             if (.not. passed) then
                 do i = 1, ${M}$
@@ -655,11 +655,11 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
             call check_true(passed, 'matrix: symmetric' // TN, all(m == transpose(m)))
         end do
     end subroutine test_udtio_${d}$_${k}$
-#:endif
+    #:endif
 
-#:endfor
-#:set T2 = tname('2D4O3sym', k)
-#:set T3 = tname('3D4O3sym', k)
+    #:endfor
+    #:set T2 = tname('2D4O3sym', k)
+    #:set T3 = tname('3D4O3sym', k)
     subroutine test_embed_${k}$(passed)
         !! 2D vs 3D in `real(${k}$)`: op_2D(a, b) embedded in 3D == op_3D(embed(a), embed(b)).
         !!
@@ -701,7 +701,7 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
             c3 = ZERO
             call c3%set(${', '.join('{0}=a2%vals({1})'.format(nm, p + 1) for p, nm in enumerate(NAMES['2D']))}$)
             call check_approx(passed, 'embed == 3D set(2D names)' // TN, a3%vals, c3%vals, tol=ZERO)
-#:set oop_vals = ['a3%vals({})'.format(p + 1) for p, nm in enumerate(NAMES['3D']) if nm not in NAMES['2D']]
+            #:set oop_vals = ['a3%vals({})'.format(p + 1) for p, nm in enumerate(NAMES['3D']) if nm not in NAMES['2D']]
             call check_true(passed, 'out-of-plane shear components = 0' // TN, &
                             all([${', '.join(oop_vals)}$] == ZERO))
 
@@ -789,7 +789,7 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
         end do
     end subroutine test_embed_${k}$
 
-#:endfor
+    #:endfor
     subroutine test_historical_aliases(passed)
         !! The historical names (`ten_3D4O3sym`, `ten_2D4O3sym`) of `muscle_tensors` and of the
         !! compatibility modules are the double precision instances (D-003): intrinsic assignment
@@ -834,7 +834,7 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
         call check_true(passed, 'ten_3D4O3sym is not ten_2D4O3sym', .not. same_type_as(h3, h2))
         call check_true(passed, 'kind(vals) == dp (3D)', kind(h3%vals) == dp .and. size(h3%vals) == 21)
         call check_true(passed, 'kind(vals) == dp (2D)', kind(h2%vals) == dp .and. size(h2%vals) == 10)
-#:if 'sp' in REAL_KINDS
+        #:if 'sp' in REAL_KINDS
         block
             use muscle_tensors, only: ten_3D4O3sym_sp, ten_2D4O3sym_sp
             type(ten_3D4O3sym_sp) :: s3
@@ -842,7 +842,7 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
             call check_true(passed, 'ten_3D4O3sym is not ten_3D4O3sym_sp', .not. same_type_as(h3, s3))
             call check_true(passed, 'ten_2D4O3sym is not ten_2D4O3sym_sp', .not. same_type_as(h2, s2))
         end block
-#:endif
+        #:endif
         ! Mixed historical / suffixed operands in the generic operators
         q3 = h3 + p3
         call check_approx(passed, 'ten_3D4O3sym + ten_3D4O3sym_dp', q3%vals, 2.0_dp*p3%vals, tol=0.0_dp)

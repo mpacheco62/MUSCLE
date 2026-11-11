@@ -36,7 +36,7 @@ program test_vp_limits
     integer :: code
 
     code = 0
-#:for i, k in enumerate(REAL_KINDS)
+    #:for i, k in enumerate(REAL_KINDS)
     call record(test_jcfull_${k}$(), ${10*i + 1}$, 'full Johnson-Cook thermal factor and rate floor ${k}$', code)
     call record(test_jc_${k}$(), ${10*i + 2}$, 'Johnson-Cook rate floor ${k}$', code)
     call record(test_perzyna_${k}$(), ${10*i + 3}$, 'Perzyna at psi = 0 ${k}$', code)
@@ -45,12 +45,12 @@ program test_vp_limits
     call record(test_mrk_${k}$(), ${10*i + 6}$, 'MRK floor of L in the derivatives ${k}$', code)
     call record(test_nnl_${k}$(), ${10*i + 7}$, 'NNL clamp of X ${k}$', code)
     call record(test_jc_newton_${k}$(), ${10*i + 8}$, 'Johnson-Cook newton_dstress_dep at and off the rate floor ${k}$', code)
-#:endfor
+    #:endfor
     if (code /= 0) stop code
     print '(a)', ' Passed!'
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     function test_jcfull_${k}$() result(passed)
         !! Full Johnson-Cook in `real(${k}$)`: sigma = sigma_y (1 + C ln(epd/epd0)) (1 - T*^m),
@@ -226,7 +226,7 @@ contains
     function test_perzyna_${k}$() result(passed)
         !! Perzyna in `real(${k}$)` with n = 1: g_psi = n psi^(n - 1)/eta = 1/eta for psi > 0 and 0 for
         !! psi <= 0, so the derivatives jump at sigma_eq = sigma_y.
-        use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_perzyna_${k}$
+        use muscle_os_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_perzyna_${k}$
         logical :: passed
         real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
         type(os_perzyna_${k}$) :: o
@@ -441,6 +441,6 @@ contains
         sf = 1.0_dp - d1*log10(emax/e)
         if (sf > 1.0e-10_dp) res = res + real(sig0_k, dp)*real(m_k, dp)*sf**(real(m_k, dp) - 1.0_dp)*d1/(e*ln10)
     end function rk_drate_ref_${k}$
-#:endfor
+    #:endfor
 
 end program test_vp_limits

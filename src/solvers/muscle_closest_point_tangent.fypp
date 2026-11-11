@@ -21,9 +21,10 @@
         !! may converge to \( \Delta\gamma < 0 \), D-018.10c, and gets the consistent tangent of that state).
         use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
             operator(.inv.), operator(.tdotsym.), assignment(=)
-        use muscle_elasticity_laws, only : elas_dstress_dstrain
-        use muscle_yield_criteria, only : yield_dstress_eq, yield_ddstress_eq
+        use muscle_elas_laws, only : elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_dstress_eq, yield_ddstress_eq
         use muscle_hard_laws, only : hard_dstress_dep
+        use muscle_kinds, only : DGAMMA_MIN_${k}$
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat
@@ -39,15 +40,13 @@
         type(${T4}$), intent(out) :: tangent
             !! Consistent tangent.
 
-        real(${k}$), parameter :: DGAMMA_MIN = 1.0e-12_${k}$
-            ! Elastic step threshold of the plastic multiplier increment (historical value, both kinds)
         type(${S2}$) :: df
         type(${C4}$) :: elas_tan, hess, ddf
         real(${k}$) :: dhard, dgamma
 
         dgamma = state_np1%strain_pf - state_n%strain_pf
         elas_tan = elas_dstress_dstrain(elas, strain - state_np1%strain_p)
-        if (abs(dgamma) <= DGAMMA_MIN) then
+        if (abs(dgamma) <= DGAMMA_MIN_${k}$) then
             tangent = elas_tan
             return
         end if

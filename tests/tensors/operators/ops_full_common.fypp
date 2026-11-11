@@ -77,16 +77,16 @@ module ${FULL_NAME}$_lib
     implicit none
     public
 
-#:for d in DIMS
-#:for f in TENSOR_FAMILIES
-#:set L = layout(f, d)
-#:set IDX = IDX2 if f.startswith('2') else IDX4
+    #:for d in DIMS
+    #:for f in TENSOR_FAMILIES
+    #:set L = layout(f, d)
+    #:set IDX = IDX2 if f.startswith('2') else IDX4
     integer, parameter :: POS_${d}$${f}$(${len(IDX)}$) = [ &
         & ${wrap([lin(L, idx) for idx in IDX])}$]
         !! Linear storage position (column-major `vals`) of each full component (i fastest), 0 if
         !! it is a structural zero of ten_${d}$${f}$.
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
     type(park_miller) :: rng = park_miller(20261030)
         !! Random sequence of this test (deterministic).
@@ -94,13 +94,13 @@ module ${FULL_NAME}$_lib
 contains
 
     ! ---- expansion to full tensors ------------------------------------------------------------
-#:for d in DIMS
-#:for f in TENSOR_FAMILIES
-#:for k in REAL_KINDS
-#:set L = layout(f, d)
-#:set n = 9 if f.startswith('2') else 81
-#:set nv = L.shape[0] if len(L.shape) == 1 else L.shape[0]*L.shape[1]
-#:set shp = '3, 3' if n == 9 else '3, 3, 3, 3'
+    #:for d in DIMS
+    #:for f in TENSOR_FAMILIES
+    #:for k in REAL_KINDS
+    #:set L = layout(f, d)
+    #:set n = 9 if f.startswith('2') else 81
+    #:set nv = L.shape[0] if len(L.shape) == 1 else L.shape[0]*L.shape[1]
+    #:set shp = '3, 3' if n == 9 else '3, 3, 3, 3'
     pure function full_${d}$${f}$_${k}$(x) result(t)
         !! Full tensor of a `${tname(d + f, k)}$`.
         type(${tname(d + f, k)}$), intent(in) :: x
@@ -125,9 +125,9 @@ contains
         x%vals = reshape(real(v, ${k}$), shape(x%vals))
     end subroutine fill_${d}$${f}$_${k}$
 
-#:endfor
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
+    #:endfor
     pure function delta2() result(t)
         !! \( \delta_{ij} \).
         real(dp) :: t(3, 3)
@@ -196,7 +196,7 @@ contains
         t = delta4v()
     end function full_I4O3T
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function full_I2OS_${k}$(x) result(t)
         !! Full tensor of `iden_2OS_${k}$`.
         type(iden_2OS_${k}$), intent(in) :: x
@@ -231,7 +231,7 @@ contains
         c = real(-1.3_dp + 0.3_dp*rnd(rng), ${k}$)
     end function scale_${k}$
 
-#:endfor
+    #:endfor
     ! ---- reference operations on full tensors (value and sum of |terms|) ----------------------
     pure subroutine ddot22(a, b, r, s)
         !! \( r = A_{ij} B_{ij} \).
@@ -418,122 +418,122 @@ program ${FULL_NAME}$
     logical :: passed
 
     code = 0
-#:for n, e in enumerate(ALL_ENTRIES, start=1)
+    #:for n, e in enumerate(ALL_ENTRIES, start=1)
     call test_${e.name}$(passed)
     call record(passed, ${min(n, 255)}$, '${e.name}$ (${e.dim}$)', code)
-#:endfor
+    #:endfor
     if (code /= 0) stop code
     print '(a, i0, a)', ' ${FULL_NAME}$: ', ${len(ALL_ENTRIES)}$, ' entries passed'
 
 contains
 
-#:for e in ALL_ENTRIES
-#:set k = e.kind
-#:set g = e.generic
-#:set oa = order(e.tag_a)
-#:set ob = order(e.tag_b) if e.tag_b else oa
-#:set tag_r = e.tag_a if g == '=' else e.tag_res
-#:set orr = order(tag_r)
-#:set sr = '' if orr == 0 else '(' + fshape(orr) + ')'
+    #:for e in ALL_ENTRIES
+    #:set k = e.kind
+    #:set g = e.generic
+    #:set oa = order(e.tag_a)
+    #:set ob = order(e.tag_b) if e.tag_b else oa
+    #:set tag_r = e.tag_a if g == '=' else e.tag_res
+    #:set orr = order(tag_r)
+    #:set sr = '' if orr == 0 else '(' + fshape(orr) + ')'
     subroutine test_${e.name}$(passed)
-#:if g == '='
+        #:if g == '='
         !! `${e.a}$ = ${e.b}$` (left-hand side pre-filled with random values; exact).
-#:elif e.b is None
+        #:elif e.b is None
         !! `${g}$ ${e.a}$ -> ${e.res}$`.
-#:else
+        #:else
         !! `${e.a}$ ${g}$ ${e.b}$ -> ${e.res}$`.
-#:endif
+        #:endif
         logical, intent(out) :: passed
             !! Result.
         type(${e.a}$) :: a
-#:if e.b is not None
+        #:if e.b is not None
         type(${e.b}$) :: b
-#:endif
-#:if g == '='
-#:elif e.res.startswith('real')
+        #:endif
+        #:if g == '='
+        #:elif e.res.startswith('real')
         ${e.res}$ :: r
-#:else
+        #:else
         type(${e.res}$) :: r
-#:endif
-#:if g != '='
+        #:endif
+        #:if g != '='
         real(dp) :: fa(${fshape(oa)}$)
-#:endif
-#:if e.b is not None and g != '='
+        #:endif
+        #:if e.b is not None and g != '='
         real(dp) :: fb(${fshape(ob)}$)
-#:endif
+        #:endif
         real(dp) :: fr${sr}$, ref${sr}$, s${sr}$
         real(dp) :: tol
 
         passed = .true.
-#:if g == '='
+        #:if g == '='
         tol = 0.0_dp
-#:else
+        #:else
         tol = ${tol_factor(e)}$.0_dp*real(epsilon(1.0_${k}$), dp)
-#:endif
-#:for var, tag in (('a', e.tag_a), ('b', e.tag_b))
-#:set iden = op_iden(tag)
-#:if tag is None
-#:elif iden is None
+        #:endif
+        #:for var, tag in (('a', e.tag_a), ('b', e.tag_b))
+        #:set iden = op_iden(tag)
+        #:if tag is None
+        #:elif iden is None
         call fill_${tag}$_${k}$(${var}$)
-#:elif iden[1]
+        #:elif iden[1]
         ${var}$%val = scale_${k}$()
-#:endif
-#:endfor
-#:if g == '='
+        #:endif
+        #:endfor
+        #:if g == '='
         a = b
         fr = ${full(e.tag_a, k, 'a')}$
         ref = ${full(e.tag_b, k, 'b')}$
         s = 1.0_dp
-#:else
-#:if e.b is None
+        #:else
+        #:if e.b is None
         r = ${g}$ a
-#:else
+        #:else
         r = a ${g}$ b
-#:endif
+        #:endif
         fa = ${full(e.tag_a, k, 'a')}$
-#:if e.b is not None
+        #:if e.b is not None
         fb = ${full(e.tag_b, k, 'b')}$
-#:endif
-#:if g == '+'
+        #:endif
+        #:if g == '+'
         ref = fa + fb
         s = abs(fa) + abs(fb)
-#:elif g == '-'
+        #:elif g == '-'
         ref = fa - fb
         s = abs(fa) + abs(fb)
-#:elif g == '*'
+        #:elif g == '*'
         call dot22(fa, fb, ref, s)
-#:elif g == '.ddot.'
+        #:elif g == '.ddot.'
         call ddot${oa}$${ob}$(fa, fb, ref, s)
-#:elif g == '.tdot.'
+        #:elif g == '.tdot.'
         call dyad(fa, fb, ref, s)
-#:elif g == '.tdotsym.' and e.b is None
+        #:elif g == '.tdotsym.' and e.b is None
         call dyad_sym(fa, fa, ref, s)
-#:elif g == '.tdotsym.'
+        #:elif g == '.tdotsym.'
         call dyad_sym(fa, fb, ref, s)
-#:elif g == '.transform.'
+        #:elif g == '.transform.'
         call transform2${ob}$(fa, fb, ref, s)
-#:else
-#:stop 'ops_full_common.fypp: no reference for generic ' + g
-#:endif
-#:endif
-#:if orr == 0
+        #:else
+        #:stop 'ops_full_common.fypp: no reference for generic ' + g
+        #:endif
+        #:endif
+        #:if orr == 0
         fr = real(r, dp)
         call compare(passed, '${e.name}$', [fr], [ref], [s], tol)
-#:else
-#:if g != '='
+        #:else
+        #:if g != '='
         fr = ${full(tag_r, k, 'r')}$
-#:endif
-#:if 0 in [lin(op_layout(tag_r), idx) for idx in (IDX2 if orr == 2 else IDX4)]
+        #:endif
+        #:if 0 in [lin(op_layout(tag_r), idx) for idx in (IDX2 if orr == 2 else IDX4)]
         ! 2D: only the components that ${tname(tag_r, k)}$ can hold (13/23 are structural zeros)
         where (reshape(POS_${tag_r}$, [${fshape(orr)}$]) == 0)
             ref = 0.0_dp
             s = 0.0_dp
         end where
-#:endif
+        #:endif
         call compare(passed, '${e.name}$', reshape(fr, [size(fr)]), reshape(ref, [size(ref)]), &
                      reshape(s, [size(s)]), tol)
-#:endif
+        #:endif
     end subroutine test_${e.name}$
 
-#:endfor
+    #:endfor
 end program ${FULL_NAME}$

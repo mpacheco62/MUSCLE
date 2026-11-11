@@ -269,7 +269,7 @@ class TestSolverBodies(unittest.TestCase):
     def test_template_chain_matches_metadata(self):
         import re
         text = (self.ROOT / 'src' / 'materials' / 'muscle_material.fypp').read_text()
-        chain = re.findall(r"^#:(?:el)?if MAT\.solver == '(\w+)'\n+#:include \"\.\./solvers/([\w.]+)\"", text,
+        chain = re.findall(r"^\s*#:(?:el)?if MAT\.solver == '(\w+)'\n+\s*#:include \"\.\./solvers/([\w.]+)\"", text,
                            re.MULTILINE)
         self.assertEqual(chain, [(s, mm.material_solver_body(s)) for s in mm.MATERIAL_SOLVERS])
 

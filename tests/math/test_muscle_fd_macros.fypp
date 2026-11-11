@@ -43,18 +43,18 @@ module test_fd_macros_funcs
     use muscle_tensor_4o3sym, only : ${', '.join(tname(d + '4O3sym', k) for d in DIMS for k in REAL_KINDS)}$
     implicit none
     private
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: f1_${k}$, d1_${k}$, d1_h_${k}$, d1_s_${k}$, d2_${k}$, d2_h_${k}$, d2_s_${k}$, d1_l_${k}$, d2_l_${k}$
-#:for d in DIMS
+    #:for d in DIMS
     public :: f2o_${d}$_${k}$, grad2o_${d}$_${k}$, grad2o_h_${d}$_${k}$
     public :: fs_${d}$_${k}$, gs_${d}$_${k}$, grad_${d}$_${k}$, jac_${d}$_${k}$, hess_${d}$_${k}$
     public :: grad_h_${d}$_${k}$, jac_h_${d}$_${k}$, hess_h_${d}$_${k}$
     public :: grad_s_${d}$_${k}$, jac_s_${d}$_${k}$, hess_s_${d}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure function f1_${k}$(x) result(res)
         !! exp(0.5 x) + x^3 in `real(${k}$)`.
@@ -154,10 +154,10 @@ contains
         @:FD_DERIV2(res, f1_${k}$({x}), x, ${k}$, scale=1.0_${k}$, lower=x)
     end function d2_l_${k}$
 
-#:for d in DIMS
-#:set lay = layout('2Osym', d)
-#:set T = tname(d + '2Osym', k)
-#:set n2 = len(layout('2O', d).comps)
+    #:for d in DIMS
+    #:set lay = layout('2Osym', d)
+    #:set T = tname(d + '2Osym', k)
+    #:set n2 = len(layout('2O', d).comps)
 
     pure function f2o_${d}$_${k}$(t) result(res)
         !! sum_i (1 + 0.1 i) t_i^2 + exp(0.2 (t_1 - t_2 + t_${n2}$)) of a `${tname(d + '2O', k)}$`.
@@ -203,9 +203,9 @@ contains
         real(${k}$) :: res
             !! Value.
         res = exp(0.3_${k}$*(${' + '.join('{}*s%vals({})'.format(wl(c.pos[0], k), c.pos[0]) for c in lay.comps)}$))
-#:for c in lay.comps
+        #:for c in lay.comps
         res = res + ${A[c.pos[0] - 1]}$_${k}$*s%vals(${c.pos[0]}$)**2
-#:endfor
+        #:endfor
     end function fs_${d}$_${k}$
 
     pure function gs_${d}$_${k}$(s) result(res)
@@ -227,26 +227,26 @@ contains
     end function gs_${d}$_${k}$
 
 #! Default step, explicit step `h`, scale `sc` of the argument (D-017.5a)
-#:set SDOC = {None: '', 'h': ' with an explicit step', 'sc': ' with a scale of the argument'}
-#:for sfx, sarg, sdecl in [('', '', None), ('_h', ', h', 'h'), ('_s', ', sc', 'sc')]
+    #:set SDOC = {None: '', 'h': ' with an explicit step', 'sc': ' with a scale of the argument'}
+    #:for sfx, sarg, sdecl in [('', '', None), ('_h', ', h', 'h'), ('_s', ', sc', 'sc')]
     pure function grad${sfx}$_${d}$_${k}$(s${sarg}$) result(res)
         !! `FD_GRAD` of `fs_${d}$_${k}$`${SDOC[sdecl]}$.
         @:DEVICE()
         type(${T}$), intent(in) :: s
             !! Argument.
-#:if sdecl
+        #:if sdecl
         real(${k}$), intent(in) :: ${sdecl}$
             !! ${'Step.' if sdecl == 'h' else 'Scale.'}$
-#:endif
+        #:endif
         type(${T}$) :: res
             !! Gradient.
-#:if sdecl == 'h'
+        #:if sdecl == 'h'
         @:FD_GRAD(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$, step=h)
-#:elif sdecl == 'sc'
+        #:elif sdecl == 'sc'
         @:FD_GRAD(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$, scale=sc)
-#:else
+        #:else
         @:FD_GRAD(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$)
-#:endif
+        #:endif
     end function grad${sfx}$_${d}$_${k}$
 
     pure function jac${sfx}$_${d}$_${k}$(s${sarg}$) result(res)
@@ -254,19 +254,19 @@ contains
         @:DEVICE()
         type(${T}$), intent(in) :: s
             !! Argument.
-#:if sdecl
+        #:if sdecl
         real(${k}$), intent(in) :: ${sdecl}$
             !! ${'Step.' if sdecl == 'h' else 'Scale.'}$
-#:endif
+        #:endif
         type(${tname(d + '4O2sym', k)}$) :: res
             !! Jacobian.
-#:if sdecl == 'h'
+        #:if sdecl == 'h'
         @:FD_JAC(res, gs_${d}$_${k}$({x}), s, ${k}$, ${d}$, step=h)
-#:elif sdecl == 'sc'
+        #:elif sdecl == 'sc'
         @:FD_JAC(res, gs_${d}$_${k}$({x}), s, ${k}$, ${d}$, scale=sc)
-#:else
+        #:else
         @:FD_JAC(res, gs_${d}$_${k}$({x}), s, ${k}$, ${d}$)
-#:endif
+        #:endif
     end function jac${sfx}$_${d}$_${k}$
 
     pure function hess${sfx}$_${d}$_${k}$(s${sarg}$) result(res)
@@ -274,24 +274,24 @@ contains
         @:DEVICE()
         type(${T}$), intent(in) :: s
             !! Argument.
-#:if sdecl
+        #:if sdecl
         real(${k}$), intent(in) :: ${sdecl}$
             !! ${'Step.' if sdecl == 'h' else 'Scale.'}$
-#:endif
+        #:endif
         type(${tname(d + '4O3sym', k)}$) :: res
             !! Second derivative.
-#:if sdecl == 'h'
+        #:if sdecl == 'h'
         @:FD_HESS(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$, step=h)
-#:elif sdecl == 'sc'
+        #:elif sdecl == 'sc'
         @:FD_HESS(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$, scale=sc)
-#:else
+        #:else
         @:FD_HESS(res, fs_${d}$_${k}$({x}), s, ${k}$, ${d}$)
-#:endif
+        #:endif
     end function hess${sfx}$_${d}$_${k}$
 
-#:endfor
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
+    #:endfor
 end module test_fd_macros_funcs
 
 program test_math_fd_macros
@@ -299,10 +299,10 @@ program test_math_fd_macros
     !! dimension, at a generic argument and at the zero argument, D-016.4) and, in double
     !! precision 3D, the historical minimum step at a tiny non-zero argument.
     use muscle_kinds, only : sp, dp
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_kinds, only : FD_STEP_CEN_${k}$, FD_STEP_CEN2_${k}$, FD_STEP_MIN_${k}$, FD_STEP_CEN_2OSYM_${k}$, &
         FD_STEP_CEN_JAC_${k}$
-#:endfor
+    #:endfor
     use muscle_tensor_2o, only : ${', '.join(tname(d + '2O', k) for d in DIMS for k in REAL_KINDS)}$
     use muscle_tensor_2osym, only : ${', '.join(tname(d + '2Osym', k) for d in DIMS for k in REAL_KINDS)}$
     use muscle_tensor_4o2sym, only : ${', '.join(tname(d + '4O2sym', k) for d in DIMS for k in REAL_KINDS)}$
@@ -314,22 +314,22 @@ program test_math_fd_macros
     logical :: passed
 
     passed = .true.
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     call check_scalar_${k}$(0.6_${k}$, 'x = 0.6', .true.)
     call check_scalar_${k}$(0.0_${k}$, 'x = 0', .true.)
     ! Small non-zero argument of a function with f(0) /= 0: the default step (relative to |x|)
     ! collapses there (rounding error ~ eps |f|/h); the scale keeps it (D-017.5a)
     call check_scalar_${k}$(1.0e-6_${k}$, 'x = 1e-6', .false.)
-#:for d in DIMS
+    #:for d in DIMS
     call check_${d}$_${k}$([0.7_${k}$, -0.4_${k}$, 0.9_${k}$, 0.3_${k}$, -0.6_${k}$, 0.5_${k}$], '${d}$ ${k}$ generic')
     call check_${d}$_${k}$(spread(0.0_${k}$, 1, 6), '${d}$ ${k}$ zero')
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
     call check_tiny_dp(1.0e-36_dp*[0.7_dp, -0.4_dp, 0.9_dp, 0.3_dp, -0.6_dp, 0.5_dp])
     if (.not. passed) stop 1
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     subroutine check_scalar_${k}$(x, label, default_step)
         !! `FD_DERIV` against f1' = 0.5 exp(0.5 x) + 3 x^2 and `FD_DERIV2` against
@@ -362,11 +362,11 @@ contains
                           d2_h_${k}$(x, merge(max(abs(x)*FD_STEP_CEN2_${k}$, FD_STEP_MIN_${k}$), FD_STEP_CEN2_${k}$, &
                           abs(x) > 0.0_${k}$)), 0.0_${k}$)
     end subroutine check_scalar_${k}$
-#:for d in DIMS
-#:set lay = layout('2Osym', d)
-#:set n = len(lay.comps)
-#:set T = tname(d + '2Osym', k)
-#:set n2 = len(layout('2O', d).comps)
+    #:for d in DIMS
+    #:set lay = layout('2Osym', d)
+    #:set n = len(lay.comps)
+    #:set T = tname(d + '2Osym', k)
+    #:set n2 = len(layout('2O', d).comps)
 
     subroutine check_${d}$_${k}$(v, label)
         !! `FD_GRAD` (2Osym and 2O), `FD_JAC` and `FD_HESS` (${d}$, `real(${k}$)`)
@@ -398,10 +398,10 @@ contains
         tg = grad2o_${d}$_${k}$(t)
         call check_approx(passed, 'FD_GRAD(2O) ' // label, tg%vals, eg2, ${TOL1[k]}$_${k}$)
         e = exp(0.3_${k}$*(${' + '.join('{}*s%vals({})'.format(wl(c.pos[0], k), c.pos[0]) for c in lay.comps)}$))
-#:for c in lay.comps
-#:set p = c.pos[0]
+        #:for c in lay.comps
+        #:set p = c.pos[0]
         eg(${p}$) = ${cf(c, k)}$*(2.0_${k}$*${A[p - 1]}$_${k}$*s%vals(${p}$) + 0.3_${k}$*${wl(p, k)}$*e)
-#:endfor
+        #:endfor
         g = grad_${d}$_${k}$(s)
         call check_approx(passed, 'FD_GRAD ' // label, g%vals, eg, ${TOL1[k]}$_${k}$)
 
@@ -415,19 +415,19 @@ contains
             end do
             ej(q, q) = ej(q, q) + 0.2_${k}$*q*s%vals(q)
         end do
-#:for c in lay.comps
+        #:for c in lay.comps
         ej(:, ${c.pos[0]}$) = ${cf(c, k)}$*ej(:, ${c.pos[0]}$)
-#:endfor
+        #:endfor
         jc = jac_${d}$_${k}$(s)
         call check_approx(passed, 'FD_JAC ' // label, reshape(jc%vals, [${n*n}$]), reshape(ej, [${n*n}$]), &
                           ${TOL1[k]}$_${k}$)
 
-#:for c in layout('4O3sym', d).comps
-#:set r, t = c.voigt
-#:set diag = ' + 2.0_{}*{}_{}'.format(k, A[r - 1], k) if r == t else ''
+        #:for c in layout('4O3sym', d).comps
+        #:set r, t = c.voigt
+        #:set diag = ' + 2.0_{}*{}_{}'.format(k, A[r - 1], k) if r == t else ''
         eh(${c.pos[0]}$) = ${cf(lay.comps[r - 1], k)}$*${cf(lay.comps[t - 1], k)}$ &
             *(0.09_${k}$*${wl(r, k)}$*${wl(t, k)}$*e${diag}$)
-#:endfor
+        #:endfor
         hs = hess_${d}$_${k}$(s)
         call check_approx(passed, 'FD_HESS ' // label, hs%vals, eh, ${TOL2[k]}$_${k}$)
 
@@ -450,8 +450,8 @@ contains
         hs2 = hess_h_${d}$_${k}$(s, FD_STEP_CEN2_${k}$*max(s%norm(), 0.5_${k}$))
         call check_approx(passed, 'FD_HESS(scale) = FD_HESS(rel max(|s|, scale)) ' // label, hs%vals, hs2%vals, 0.0_${k}$)
     end subroutine check_${d}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
     subroutine check_tiny_dp(v)
         !! At a tiny non-zero argument the default step is the historical one, max(|x| rel, min)

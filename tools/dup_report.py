@@ -50,7 +50,7 @@ for f,ls in seqs.items():
 clusters.sort(reverse=True)
 intra=sum(c[0]-c[1] for c in clusters if len({a for a,_ in c[2]})==1)
 inter=sum(c[0]-c[1] for c in clusters if len({a for a,_ in c[2]})>1)
-print(f"líneas redundantes (copias extra): dentro del mismo archivo {intra}, entre archivos {inter}")
+print(f"redundant lines (extra copies): within a file {intra}, across files {inter}")
 for tot,L,occ in clusters[:topn]:
     fs=collections.Counter(a.split('/')[-1] for a,_ in occ)
-    print(f"{L:4d} líneas x{len(occ)} ({tot-L} redundantes)  "+", ".join(f"{k}{'' if v==1 else '*%d'%v}" for k,v in list(fs.items())[:5]))
+    print(f"{L:4d} lines x{len(occ)} ({tot-L} redundant)  "+", ".join(f"{k}{'' if v==1 else '*%d'%v}" for k,v in list(fs.items())[:5]))

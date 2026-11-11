@@ -68,7 +68,7 @@ program test_mat_closest_point_time
         solver_case(0, 'tm_jc_cpb06_ludwik', 'steel', 'jc2', 'ludwik', 'cpb06-4', 3, 1.0e-3_dp, 7.10e-4_dp), &
         solver_case(0, 'tm_mrk_vm', 'steel', 'mrk', '-', 'vonmises', 200, 10.0_dp, 1.15e-3_dp), &
         solver_case(0, 'tm_jc_cpb06ex2_swift', 'steel', 'jc2', 'swift', 'cpb06ex2-1', 200, 1.0e-3_dp, 5.61e-4_dp)]
-        !! Cases of test_time_golden (case number of the reference records, 0 for none; material, reference
+        !! Cases of the historical test_time_golden (case number of the reference records, 0 for none; material, reference
         !! names, Newton limit, time step, A_Y; tolerance of the tangent check, sp checks).
         !! - Modified Rusinek-Klepaczko: NaN from the first plastic step in case 4 (D-018.2, plastic
         !!   strain rates above epdmax), case 15 below epdmax.

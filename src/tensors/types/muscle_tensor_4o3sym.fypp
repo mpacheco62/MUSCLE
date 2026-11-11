@@ -53,20 +53,20 @@ module muscle_tensor_4o3sym
     !!
     !! For more information see [[muscle_tensors]]
     use muscle_kinds, only: sp, dp
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_kinds, only: TOL_APPROX_${k}$, EPS_ABS_${k}$
-#:endfor
+    #:endfor
     implicit none
     private
 
-#:set F = '4O3sym'
-#:for d in DIMS
-#:set lay = layout(F, d)
-#:set n = len(lay.comps)
-#:set nb = len(lay.base.comps)
-#:set S = d + F
-#:for k in REAL_KINDS
-#:set T = tname(S, k)
+    #:set F = '4O3sym'
+    #:for d in DIMS
+    #:set lay = layout(F, d)
+    #:set n = len(lay.comps)
+    #:set nb = len(lay.base.comps)
+    #:set S = d + F
+    #:for k in REAL_KINDS
+    #:set T = tname(S, k)
     type, public :: ${T}$
         !! ${d}$ fourth-order tensor with major and minor symmetries in `real(${k}$)`: upper
         !! triangle of the symmetric ${nb}$x${nb}$ Voigt matrix, stored diagonal by diagonal.
@@ -86,8 +86,8 @@ module muscle_tensor_4o3sym
                 !! Inverse tensor (quiet NaN if singular).
     end type ${T}$
 
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 $:TENSOR_COMMON_INTERFACES(F)
 
     public :: norm
@@ -98,21 +98,21 @@ $:TENSOR_COMMON_INTERFACES(F)
 
 contains
 
-#:for d in DIMS
-#:set lay = layout(F, d)
-#:set n = len(lay.comps)
-#:set base = lay.base.comps
-#:set nb = len(base)
-#:set S = d + F
+    #:for d in DIMS
+    #:set lay = layout(F, d)
+    #:set n = len(lay.comps)
+    #:set base = lay.base.comps
+    #:set nb = len(base)
+    #:set S = d + F
 #! Component names grouped by diagonal of the Voigt matrix (storage order), for argument lists
-#:set diags = [[c.name for c in lay.comps if c.voigt[1] - c.voigt[0] == o] for o in range(nb)]
+    #:set diags = [[c.name for c in lay.comps if c.voigt[1] - c.voigt[0] == o] for o in range(nb)]
 #! norm relies on the Voigt diagonal (weight 1) being stored first
-#:assert [c.voigt[0] == c.voigt[1] for c in lay.comps] == [True] * nb + [False] * (n - nb)
-#:for k in REAL_KINDS
-#:set T = tname(S, k)
-#:set P = S + '_' + k
+    #:assert [c.voigt[0] == c.voigt[1] for c in lay.comps] == [True] * nb + [False] * (n - nb)
+    #:for k in REAL_KINDS
+    #:set T = tname(S, k)
+    #:set P = S + '_' + k
 #! Inverse of the nb x nb Voigt matrix (M66INV_<k> in 3D, M44INV_<k> in 2D)
-#:set minv = 'M{0}{0}INV_{1}'.format(nb, k)
+    #:set minv = 'M{0}{0}INV_{1}'.format(nb, k)
     ! ---------------------------------------------------------------------------------------
     ! ${T}$
     ! ---------------------------------------------------------------------------------------
@@ -163,15 +163,15 @@ $:LOAD_MATRIX('mat_a', lay, k)
             return
         end if
         x = 0.5_${k}$*(x + transpose(x))
-#:for c in lay.comps
-#:set I, J = c.voigt
-#:set w = base[I - 1].mult * base[J - 1].mult
-#:if w == 1
+        #:for c in lay.comps
+        #:set I, J = c.voigt
+        #:set w = base[I - 1].mult * base[J - 1].mult
+        #:if w == 1
         a_inv%vals(${c.pos[0]}$) = x(${I}$,${J}$)
-#:else
+        #:else
         a_inv%vals(${c.pos[0]}$) = x(${I}$,${J}$)/${w}$.0_${k}$
-#:endif
-#:endfor
+        #:endif
+        #:endfor
     end subroutine inverse_${P}$
 
     ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
@@ -179,44 +179,44 @@ $:LOAD_MATRIX('mat_a', lay, k)
 $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm'], tensor_ops=['inv'])
 
     pure subroutine init2_${P}$_tbp(self, &
-#:for o, names in enumerate(diags)
+                                        #:for o, names in enumerate(diags)
                                         ${', '.join(names)}$${', &' if o < nb - 1 else ')'}$
-#:endfor
+                                        #:endfor
         !! `%init(...)`: initializes a `${T}$` from its ${n}$ individual components (keywords and
         !! positional order = storage order).
         implicit none
         class(${T}$), intent(inout) :: self
             !! Tensor to initialize.
-#:for c in lay.comps
+        #:for c in lay.comps
         real(${k}$), intent(in) :: ${c.name}$
             !! Component ${c.idx}$, Voigt entry ${c.voigt}$.
-#:endfor
+        #:endfor
         self%vals = (/ &
-#:for o, names in enumerate(diags)
+                     #:for o, names in enumerate(diags)
                      ${', '.join(names)}$${', &' if o < nb - 1 else ' &'}$
-#:endfor
+                     #:endfor
                      /)
     end subroutine init2_${P}$_tbp
 
     pure subroutine set_${P}$_tbp(self, &
-#:for o, names in enumerate(diags)
+                                      #:for o, names in enumerate(diags)
                                       ${', '.join(names)}$${', &' if o < nb - 1 else ')'}$
-#:endfor
+                                      #:endfor
         !! `%set(...)`: sets the components of a `${T}$` given as keyword arguments; the others are
         !! left unchanged.
         implicit none
         class(${T}$), intent(inout) :: self
             !! Tensor to modify.
-#:for c in lay.comps
+        #:for c in lay.comps
         real(${k}$), optional, intent(in) :: ${c.name}$
             !! Component ${c.idx}$, Voigt entry ${c.voigt}$.
-#:endfor
+        #:endfor
 
-#:for c in lay.comps
+        #:for c in lay.comps
         if (present(${c.name}$)) self%vals(${c.pos[0]}$) = ${c.name}$
-#:endfor
+        #:endfor
     end subroutine set_${P}$_tbp
 
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 end module muscle_tensor_4o3sym

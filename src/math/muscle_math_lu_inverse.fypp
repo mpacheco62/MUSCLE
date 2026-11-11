@@ -96,9 +96,9 @@
         $:lu_factor(rk, 'AINV')
         if (.not. OK_FLAG) then
             AINV = 0.0_${rk}$
-#:if kappa
+            #:if kappa
             if (present(KAPPA)) KAPPA = huge(1.0_${rk}$)
-#:endif
+            #:endif
             return
         end if
         ! --- 2. inv(U) in place ---
@@ -137,9 +137,9 @@
                 end do
             end if
         end do
-#:if kappa
+        #:if kappa
         if (present(KAPPA)) KAPPA = COND_INF_${rk}$(A, AINV)
-#:endif
+        #:endif
 #:enddef
 
 #:def lu_solve_body(rk)

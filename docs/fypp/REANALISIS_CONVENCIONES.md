@@ -58,14 +58,14 @@ límite de 132 columnas (nadie lo comprueba) y la doc de argumentos en math.
 
 **Internas, sin decisión de API (≈ 0.5 día; snapshot idéntico salvo comentarios):**
 - V1. **Hecho (2026-11-10, `0989d80`)**: regla `line-length` sobre toda fuente (comentarios incluidos) y las 128 líneas corregidas; el generado mantiene su regla sin comentarios. Antes: Lint de 132 columnas sobre el generado de `src` (y corregir las 127 + 188 líneas).
-- V2. `muscle_math_spectral_derivs` y `linsolvers` al estilo de los modelos (`implicit none`, `@:DEVICE()`,
+- V2. **Hecho (2026-11-11)** (y `gauss_solve` con `A`, `b` `intent(in)`, decisión del usuario). `muscle_math_spectral_derivs` y `linsolvers` al estilo de los modelos (`implicit none`, `@:DEVICE()`,
   `!!` en la línea siguiente, 4 espacios); comentarios en inglés en `src/CMakeLists.txt` y `dup_report.py`.
-- V3. Cabeceras: `kin_laws` (`stress`), `vp_laws` (`vp_newton_dstress_dep`); `DGAMMA_MIN` en un solo lugar;
+- V3. **Hecho (2026-11-11).** Cabeceras: `kin_laws` (`stress`), `vp_laws` (`vp_newton_dstress_dep`); `DGAMMA_MIN` en un solo lugar;
   `1.0e-12` de MRK/VA como constante por kind.
-- V4. Tests: unificar nombres de los `*_kinds` y quitar el prefijo `test_muscle_` de las plantillas nuevas
+- V4. **Hecho de otra forma (2026-11-10, D-025)**: nombres `test_muscle_<x>[_<tema>]` espejo de `src`. Propuesta original: Tests: unificar nombres de los `*_kinds` y quitar el prefijo `test_muscle_` de las plantillas nuevas
   (cambia nombres de ctest); helpers locales a `muscle_test_utils`. Puede ir junto con Q2 (retiro de heredados).
 
-- V9. **Tarea acordada con el usuario (2026-11-10):** indentar las directivas de control de FYPP (`#:if`, `#:for`,
+- V9. **Hecho (2026-11-11, D-026).** Tarea acordada con el usuario (2026-11-10):** indentar las directivas de control de FYPP (`#:if`, `#:for`,
   `#:set`, `#:assert`, sus cierres) al nivel del código que controlan; `#:include` y `#:def` siguen en la columna 0.
   FYPP 3.1 lo acepta (probado) y borra la línea de la directiva, así que el generado no cambia (`gen_snapshot.sh`
   idéntico). Hoy 1 467 directivas en columna 0 en `src`. Commit sólo de formato, decisión en `DECISIONES.md` y regla
@@ -73,9 +73,9 @@ límite de 132 columnas (nadie lo comprueba) y la doc de argumentos en math.
   a mano de los casos raros (directivas dentro de listas de continuación).
 
 **Públicas (requieren decisión; alias de compatibilidad durante una versión):**
-- V5. I1: validar en el `init` de cada modelo y que `mat_init` lo reuse (cambia comportamiento: parámetros
+- V5. **Descartado por ahora** (el usuario descartó el punto de robustez, 2026-11-10). I1: validar en el `init` de cada modelo y que `mat_init` lo reuse (cambia comportamiento: parámetros
   hoy aceptados devolverían `STATUS_INVALID_PARAMETER`). **Recomendado**, junto con el aspecto 10.
-- V6. I6: renombrar módulos de `os`/`elas`/`yield` a `muscle_<prefix>_*` con módulos alias. Beneficio en
+- V6. **Hecho (2026-11-11, D-027, sin alias).** I6: renombrar módulos de `os`/`elas`/`yield` a `muscle_<prefix>_*` con módulos alias. Beneficio en
   comprensión; costo en usuarios con `use`. Alternativa barata: la tabla familia → archivo → módulo (C1).
 - V7. I3/I2: nombres de math en snake_case con alias en mayúsculas; un solo par `ok`/`cond`.
 - V8. I4/I5/I9: sufijo de dimensión, nombres de derivadas y `sigma`/`stress`: **no recomiendo** cambiarlos

@@ -14,40 +14,40 @@
 #:mute
 
 #! Table queries (see the docstrings in muscle_meta.py)
-#:set OP_MODULES = muscle_meta.OP_MODULES
-#:set op_entries = muscle_meta.op_entries
-#:set op_interface = muscle_meta.op_interface
-#:set op_iden = muscle_meta.op_iden
-#:set op_layout = muscle_meta.op_layout
-#:set op_uses = muscle_meta.op_uses
-#:set op_congruence = muscle_meta.op_congruence
-#:set op_voigt_transform = muscle_meta.op_voigt_transform
-#:set iden_combination = muscle_meta.iden_combination
+    #:set OP_MODULES = muscle_meta.OP_MODULES
+    #:set op_entries = muscle_meta.op_entries
+    #:set op_interface = muscle_meta.op_interface
+    #:set op_iden = muscle_meta.op_iden
+    #:set op_layout = muscle_meta.op_layout
+    #:set op_uses = muscle_meta.op_uses
+    #:set op_congruence = muscle_meta.op_congruence
+    #:set op_voigt_transform = muscle_meta.op_voigt_transform
+    #:set iden_combination = muscle_meta.iden_combination
 
 #! `use` statements of the kinds and of every type taken or returned by the operators of
 #! `module` (key of OP_MODULES): family modules and muscle_tensor_iden.
 #:def OP_USES(module)
     use muscle_kinds, only: ${', '.join(REAL_KINDS)}$
-#:for mod, types in op_uses(module, REAL_KINDS)
+    #:for mod, types in op_uses(module, REAL_KINDS)
     use ${mod}$, only: ${', '.join(types)}$
-#:endfor
+    #:endfor
 #:enddef
 
 #! Public generic interfaces of the operators of `module`, every dimension and kind.
 #:def OP_INTERFACES(module)
-#:for g in OP_MODULES[module]
+    #:for g in OP_MODULES[module]
     public :: ${op_interface(g)}$
     interface ${op_interface(g)}$
-#:for d in DIMS
-#:for k in REAL_KINDS
-#:for e in op_entries(g, d, k)
+        #:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for e in op_entries(g, d, k)
         module procedure ${e.name}$
-#:endfor
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
+        #:endfor
     end interface
 
-#:endfor
+    #:endfor
 #:enddef
 
 #! Generated documentation and names of the procedures (see the docstrings in muscle_meta.py)

@@ -22,9 +22,9 @@ module muscle_visco_types
     !! `state_n` and writes `state_np1` (separate arguments): the caller keeps the converged state
     !! (the FE program, in its history array).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$
-#:endfor
+    #:endfor
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER
     implicit none
     private
@@ -33,11 +33,11 @@ module muscle_visco_types
         !! Maximum number of branches (history tensors) of a viscoelastic state
 
     public :: visco_state_init
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: visco_state_${k}$, visco_coefs_${k}$, visco_state_init_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: visco_state_${k}$
         !! Viscoelastic state of a material point at an instant, `real(${k}$)`.
         integer :: n_branches = 0
@@ -63,16 +63,16 @@ module muscle_visco_types
             !! Per branch strain weight.
     end type visco_coefs_${k}$
 
-#:endfor
+    #:endfor
     interface visco_state_init
         !! Zero history with a number of branches (every kind).
         #:for k in REAL_KINDS
         module procedure visco_state_init_${k}$
-#:endfor
+        #:endfor
     end interface visco_state_init
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure subroutine visco_state_init_${k}$(state, n_branches, status, strain_e)
         !! State with `n_branches` zero history tensors and the elastic strain `strain_e` (zero if
         !! absent), `real(${k}$)`. `status`: `STATUS_INVALID_PARAMETER` (and the default state) if
@@ -97,6 +97,6 @@ contains
         if (present(strain_e)) state%strain_e = strain_e
     end subroutine visco_state_init_${k}$
 
-#:endfor
+    #:endfor
 
 end module muscle_visco_types

@@ -4,7 +4,7 @@
 #:include "muscle_fd.fypp"
 #!
 #! Kernel API of the elastic family (D-017.12) in every kind and dimension, through the generics of
-#! muscle_elasticity_laws:
+#! muscle_elas_laws:
 #! - the linear model against Hooke law written here on full 3x3 / 3x3x3x3 tensors, in dp from the
 #!   same inputs (sp inputs converted to dp): stress, deviatoric stress, tangent and deviatoric
 #!   tangent (assembled on the fly, D-017.12e), for several E, nu;
@@ -24,19 +24,19 @@ module test_elas_point
     !! Point procedures (kernels) that call the elastic generics, for every kind and dimension.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in DIMS for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
-    use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain, ${', '.join('elas_linear_' + k for k in REAL_KINDS)}$
+    use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain, ${', '.join('elas_linear_' + k for k in REAL_KINDS)}$
     implicit none
     private
 
-#:for k in REAL_KINDS
-#:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for d in DIMS
     public :: point_${d}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
-#:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for d in DIMS
 
     pure subroutine point_${d}$_${k}$(prm, eps, sig, c)
         !! What an elastic predictor computes at a point in `real(${k}$)`, ${d}$: stress and tangent.
@@ -54,8 +54,8 @@ contains
         sig = elas_stress(prm, eps)
         c = elas_dstress_dstrain(prm, eps)
     end subroutine point_${d}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 end module test_elas_point
 
@@ -65,11 +65,11 @@ module test_elas_cases
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$, ${', '.join('TOL_APPROX_' + k for k in REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname(d + F, k) for d in DIMS for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$, &
         operator(.ddot.), operator(*)
-    use muscle_elasticity_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev, &
+    use muscle_elas_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev, &
         ${', '.join('elas_linear_' + k for k in REAL_KINDS)}$
-    use muscle_elasticity_linear, only : elas_linear_init, &
-#:set elas_specifics = [muscle_meta.model_specific('elas', f.name, 'linear', 'dp', d) &
-    & for f in muscle_meta.model_family('elas').funcs for d in DIMS]
+    use muscle_elas_linear, only : elas_linear_init, &
+        #:set elas_specifics = [muscle_meta.model_specific('elas', f.name, 'linear', 'dp', d) &
+            & for f in muscle_meta.model_family('elas').funcs for d in DIMS]
         ${', '.join(elas_specifics)}$
     use test_elas_point, only : ${', '.join('point_{}_{}'.format(d, k) for k in REAL_KINDS for d in DIMS)}$
     use muscle_status, only : STATUS_OK
@@ -161,12 +161,12 @@ contains
         end select
         v = w(1:nc)
     end function strain_vals
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:set L2 = layout('2Osym', d)
-#:set L4 = layout('4O3sym', d)
-#:set T2 = tname(d + '2Osym', k)
-#:set T4 = tname(d + '4O3sym', k)
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:set L2 = layout('2Osym', d)
+    #:set L4 = layout('4O3sym', d)
+    #:set T2 = tname(d + '2Osym', k)
+    #:set T4 = tname(d + '4O3sym', k)
 
     subroutine test_analytic_${d}$_${k}$(passed)
         !! `real(${k}$)` ${d}$ functions against Hooke law (dp reference from the same inputs).
@@ -189,18 +189,18 @@ contains
                 write(lab, '(a, i0, a, i0)') '${d}$ ${k}$ E,nu #', ip, ' strain ', n
                 eps%vals = real(strain_vals(n, ${len(L2.comps)}$), ${k}$)
                 e = 0.0_dp
-#:for c in L2.comps
+                #:for c in L2.comps
                 e(${c.idx[0]}$, ${c.idx[1]}$) = real(eps%vals(${c.pos[0]}$), dp)
                 e(${c.idx[1]}$, ${c.idx[0]}$) = real(eps%vals(${c.pos[0]}$), dp)
-#:endfor
-#:for c in L2.comps
+                #:endfor
+                #:for c in L2.comps
                 rs(${c.pos[0]}$) = ref_sigma(e, lam, mu, ${c.idx[0]}$, ${c.idx[1]}$, .false.)
                 rsd(${c.pos[0]}$) = ref_sigma(e, lam, mu, ${c.idx[0]}$, ${c.idx[1]}$, .true.)
-#:endfor
-#:for c in L4.comps
+                #:endfor
+                #:for c in L4.comps
                 rc(${c.pos[0]}$) = ref_c(lam, mu, ${', '.join(map(str, c.idx))}$, .false.)
                 rcd(${c.pos[0]}$) = ref_c(lam, mu, ${', '.join(map(str, c.idx))}$, .true.)
-#:endfor
+                #:endfor
                 s = elas_stress(prm, eps)
                 sd = elas_stress_dev(prm, eps)
                 c = elas_dstress_dstrain(prm, eps)
@@ -218,7 +218,7 @@ contains
             end do
         end do
     end subroutine test_analytic_${d}$_${k}$
-#:endfor
+    #:endfor
 
     subroutine test_embedding_${k}$(passed)
         !! 2D vs 3D (dims-2d-3d.md) in `real(${k}$)`: each 2D function equals the 3D one of the
@@ -265,10 +265,10 @@ contains
                     ! every stored 2D component = the 3D component of the same indices
                     call compare(passed, trim(lab) // merge(' dstress_dstrain_dev', ' dstress_dstrain    ', idev == 1) &
                         // ' components', real(c2%vals, dp), real([ &
-#:for n, c in enumerate(layout('4O3sym', '2D').comps)
-#:set comma_sep = ',' if n < len(layout('4O3sym', '2D').comps) - 1 else ''
+                        #:for n, c in enumerate(layout('4O3sym', '2D').comps)
+                        #:set comma_sep = ',' if n < len(layout('4O3sym', '2D').comps) - 1 else ''
                         c3%vals(${layout('4O3sym', '3D').index(*c.idx)[0]}$)${comma_sep}$ &
-#:endfor
+                        #:endfor
                         ], dp), TOL)
                     ! C2 : p2 embedded = C3 : p3
                     q2 = c2 .ddot. p2
@@ -290,33 +290,33 @@ contains
         real(dp), parameter :: TOL = real(TOL_APPROX_${k}$, dp)
         real(dp) :: e(3, 3), lam, mu
         integer :: status
-#:for d in DIMS
-#:set L2 = layout('2Osym', d)
-#:set L4 = layout('4O3sym', d)
+        #:for d in DIMS
+        #:set L2 = layout('2Osym', d)
+        #:set L4 = layout('4O3sym', d)
         type(${tname(d + '2Osym', k)}$) :: eps_${d}$, s_${d}$
         type(${tname(d + '4O3sym', k)}$) :: c_${d}$
         real(dp) :: rsd_${d}$(${len(L2.comps)}$), rcd_${d}$(${len(L4.comps)}$)
-#:endfor
+        #:endfor
 
         call elas_linear_init(prm, 1000.0_${k}$, 0.5_${k}$, status)
         call check_true(passed, '${k}$ nu = 0.5: init status (not validated)', status == STATUS_OK)
         call lame(1000.0_dp, 0.5_dp, lam, mu)
         call check_true(passed, '${k}$ nu = 0.5: lambda = +Inf', lam > huge(1.0_dp))
-#:for d in DIMS
-#:set L2 = layout('2Osym', d)
-#:set L4 = layout('4O3sym', d)
+        #:for d in DIMS
+        #:set L2 = layout('2Osym', d)
+        #:set L4 = layout('4O3sym', d)
         eps_${d}$%vals = real(strain_vals(1, ${len(L2.comps)}$), ${k}$)
         e = 0.0_dp
-#:for c in L2.comps
+        #:for c in L2.comps
         e(${c.idx[0]}$, ${c.idx[1]}$) = real(eps_${d}$%vals(${c.pos[0]}$), dp)
         e(${c.idx[1]}$, ${c.idx[0]}$) = real(eps_${d}$%vals(${c.pos[0]}$), dp)
-#:endfor
-#:for c in L2.comps
+        #:endfor
+        #:for c in L2.comps
         rsd_${d}$(${c.pos[0]}$) = ref_sigma(e, lam, mu, ${c.idx[0]}$, ${c.idx[1]}$, .true.)
-#:endfor
-#:for c in L4.comps
+        #:endfor
+        #:for c in L4.comps
         rcd_${d}$(${c.pos[0]}$) = ref_c(lam, mu, ${', '.join(map(str, c.idx))}$, .true.)
-#:endfor
+        #:endfor
         s_${d}$ = elas_stress(prm, eps_${d}$)
         call check_true(passed, '${k}$ ${d}$ nu = 0.5: normal stresses not finite', &
             all(.not. ieee_is_finite(s_${d}$%vals(1:3))))
@@ -330,9 +330,9 @@ contains
         c_${d}$ = elas_dstress_dstrain_dev(prm, eps_${d}$)
         call check_true(passed, '${k}$ ${d}$ nu = 0.5: deviatoric tangent finite', all(ieee_is_finite(c_${d}$%vals)))
         call compare(passed, '${k}$ ${d}$ nu = 0.5: dstress_dstrain_dev', real(c_${d}$%vals, dp), rcd_${d}$, TOL)
-#:endfor
+        #:endfor
     end subroutine test_incompressible_${k}$
-#:endfor
+    #:endfor
 
     subroutine test_generics(passed)
         !! The family generics give the bits of the dp specific functions.
@@ -384,13 +384,13 @@ contains
         logical :: passed
 
         passed = .true.
-#:for k in REAL_KINDS
-#:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for d in DIMS
         call test_analytic_${d}$_${k}$(passed)
-#:endfor
+        #:endfor
         call test_embedding_${k}$(passed)
         call test_incompressible_${k}$(passed)
-#:endfor
+        #:endfor
         call test_generics(passed)
         code = merge(0, 1, passed)
     end subroutine run_all

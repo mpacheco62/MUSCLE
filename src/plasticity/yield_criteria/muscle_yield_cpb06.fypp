@@ -24,7 +24,7 @@ module muscle_yield_cpb06
     !! threshold (1e-10 in dp) that discards small shears on a hydrostatic stress (e.g. a shear of
     !! 1e-10 on a unit pressure gives \( \sigma_{eq} = 0 \)); with \( k = \pm 1 \) and a null
     !! principal value the Hessian takes the value chosen in `yield_cpb_curvature_<k>` of
-    !! `muscle_anisotropic_yield` (for \( 1 \le a < 2 \) the second derivative is not bounded there,
+    !! `muscle_yield_anisotropic` (for \( 1 \le a < 2 \) the second derivative is not bounded there,
     !! and for \( a = 1 \) the first).
     !!
     !! Kernel API: parameter types `yield_cpb06_<k>` (built only with `yield_cpb06_init`, which
@@ -32,29 +32,29 @@ module muscle_yield_cpb06
     !! `yield_dstress_eq_cpb06_3D_<k>(prm, sigma)`, `yield_ddstress_eq_cpb06_3D_<k>(prm, sigma)` and
     !! the joint evaluation `yield_stress_eq_and_derivatives_cpb06_3D_<k>(prm, sigma, f, df[, ddf])` (the
     !! three in turn) for each real kind, also through the generics `yield_*` of
-    !! `muscle_yield_criteria`.
+    !! `muscle_yield_laws`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
-#:endfor
+    #:endfor
     use muscle_tensors, only : operator(.dev.)
     use muscle_math_operations, only : eigenvals
     use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian, fp_exponent
-    use muscle_anisotropic_yield, only : yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, &
+    use muscle_yield_anisotropic, only : yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, &
         & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: yield_cpb06_${k}$
     public :: yield_stress_eq_cpb06_3D_${k}$, yield_dstress_eq_cpb06_3D_${k}$, yield_ddstress_eq_cpb06_3D_${k}$
     public :: yield_stress_eq_and_derivatives_cpb06_3D_${k}$, yield_joint_evaluation_cpb06_${k}$
     public :: yield_cpb06_init_${k}$
-#:endfor
+    #:endfor
     public :: yield_cpb06_init
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: yield_cpb06_${k}$
         !! Parameters of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in `real(${k}$)` (build it with `yield_cpb06_init`, which
         !! computes the private derived components; do not change the inputs after `yield_cpb06_init`).
@@ -71,17 +71,17 @@ module muscle_yield_cpb06
         real(${k}$), private :: L(3,3)
             !! Normal block of \( \mathbf{L} = \mathbf{C} \mathbb{P}_{dev} \) (Eq. 8), from C1.
     end type yield_cpb06_${k}$
-#:endfor
+    #:endfor
 
     interface yield_cpb06_init
         !! Parameters of the CPB06 model from the components of C, k and a (computes B and L).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure yield_cpb06_init_${k}$
-#:endfor
+        #:endfor
     end interface yield_cpb06_init
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine yield_cpb06_init_${k}$(prm, c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k, a, status)
         !! Parameters of the CPB06 model in `real(${k}$)` from the components of the linear
@@ -314,6 +314,6 @@ contains
         df = yield_dstress_eq_cpb06_3D_${k}$(prm, sigma)
         if (present(ddf)) ddf = yield_ddstress_eq_cpb06_3D_${k}$(prm, sigma)
     end subroutine yield_stress_eq_and_derivatives_cpb06_3D_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_yield_cpb06

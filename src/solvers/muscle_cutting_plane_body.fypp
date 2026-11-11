@@ -35,8 +35,8 @@
         use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
         use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
             operator(.tdotsym.), assignment(=)
-        use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
-        use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq
+        use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq
         use muscle_hard_laws, only : hard_stress, hard_dstress_dep
         implicit none
         @:DEVICE()

@@ -25,14 +25,14 @@ module muscle_hard_fdvoce
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: hard_fdvoce_${k}$
-#:endfor
-#:for k in REAL_KINDS
+    #:endfor
+    #:for k in REAL_KINDS
     public :: hard_stress_fdvoce_${k}$, hard_dstress_dep_fdvoce_${k}$, hard_ddstress_ddep_fdvoce_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: hard_fdvoce_${k}$
         !! Parameters of the fdvoce model in `real(${k}$)`.
         real(${k}$) :: Sy
@@ -45,9 +45,9 @@ module muscle_hard_fdvoce
             !! Saturation rate.
     end type hard_fdvoce_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure function hard_stress_fdvoce_${k}$(prm, ep) result(res)
         !! Flow stress \( \sigma_y(\epsilon_p) \) of the fdvoce model in `real(${k}$)`.
@@ -89,7 +89,7 @@ contains
             !! \( d^2\sigma_y/d\epsilon_p^2 \).
         @:FD_DERIV2(res, hard_stress_fdvoce_${k}$(prm, {x}), ep, ${k}$, scale=1.0_${k}$, lower=0.0_${k}$)
     end function hard_ddstress_ddep_fdvoce_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_hard_fdvoce
 
@@ -99,14 +99,14 @@ module muscle_hard_fdvoce1
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: hard_fdvoce1_${k}$
-#:endfor
-#:for k in REAL_KINDS
+    #:endfor
+    #:for k in REAL_KINDS
     public :: hard_stress_fdvoce1_${k}$, hard_dstress_dep_fdvoce1_${k}$, hard_ddstress_ddep_fdvoce1_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: hard_fdvoce1_${k}$
         !! Parameters of the fdvoce1 model in `real(${k}$)`.
         real(${k}$) :: Sy
@@ -119,9 +119,9 @@ module muscle_hard_fdvoce1
             !! Saturation rate.
     end type hard_fdvoce1_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure function hard_stress_fdvoce1_${k}$(prm, ep) result(res)
         !! Flow stress \( \sigma_y(\epsilon_p) \) of the fdvoce1 model in `real(${k}$)`.
@@ -164,7 +164,7 @@ contains
             !! \( d^2\sigma_y/d\epsilon_p^2 \).
         @:FD_DERIV(res, hard_dstress_dep_fdvoce1_${k}$(prm, {x}), ep, ${k}$, scale=1.0_${k}$, lower=0.0_${k}$)
     end function hard_ddstress_ddep_fdvoce1_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_hard_fdvoce1
 
@@ -174,14 +174,14 @@ module muscle_hard_fdpow
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: hard_fdpow_${k}$
-#:endfor
-#:for k in REAL_KINDS
+    #:endfor
+    #:for k in REAL_KINDS
     public :: hard_stress_fdpow_${k}$, hard_dstress_dep_fdpow_${k}$, hard_ddstress_ddep_fdpow_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: hard_fdpow_${k}$
         !! Parameters of the fdpow model in `real(${k}$)`.
         real(${k}$) :: Sy
@@ -190,9 +190,9 @@ module muscle_hard_fdpow
             !! Coefficient.
     end type hard_fdpow_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure function hard_stress_fdpow_${k}$(prm, ep) result(res)
         !! Flow stress \( \sigma_y(\epsilon_p) \) of the fdpow model in `real(${k}$)`.
@@ -234,7 +234,7 @@ contains
             !! \( d^2\sigma_y/d\epsilon_p^2 \).
         @:FD_DERIV2(res, hard_stress_fdpow_${k}$(prm, {x}), ep, ${k}$, scale=1.0_${k}$, lower=0.0_${k}$)
     end function hard_ddstress_ddep_fdpow_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_hard_fdpow
 
@@ -249,12 +249,12 @@ module test_hard_laws_point
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: point_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine point_${k}$(b, v, ep, out)
         !! Everything a return mapping point would call from a hardening law, in `real(${k}$)`:
@@ -272,7 +272,7 @@ contains
         out(5) = hard_dstress_dep_fdvoce_${k}$(v, ep)
         out(6) = hard_ddstress_ddep_fdvoce_${k}$(v, ep)
     end subroutine point_${k}$
-#:endfor
+    #:endfor
 
 end module test_hard_laws_point
 
@@ -291,19 +291,19 @@ program test_hard_laws_kinds
     integer :: code
 
     code = 0
-#:for i, k in enumerate(REAL_KINDS)
+    #:for i, k in enumerate(REAL_KINDS)
     call record(test_bilinear_${k}$(), ${10*i + 1}$, 'bilinear free functions ${k}$', code)
     call record(test_fd_${k}$(), ${10*i + 2}$, 'finite-difference derivatives of the contract ${k}$', code)
     call record(test_point_${k}$(), ${10*i + 3}$, 'pure point procedure ${k}$', code)
     call record(test_ludwik_${k}$(), ${10*i + 4}$, 'Ludwik free functions ${k}$', code)
     call record(test_swift_${k}$(), ${10*i + 5}$, 'Swift free functions ${k}$', code)
     call record(test_vocemod_${k}$(), ${10*i + 6}$, 'modified Voce free functions ${k}$', code)
-#:endfor
+    #:endfor
     if (code /= 0) stop code
     print '(a)', ' Passed!'
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     function test_bilinear_${k}$() result(passed)
         !! Family generics on `hard_bilinear_${k}$` against \( y_0 + K \epsilon_p \), \( K \), 0.
@@ -393,11 +393,11 @@ contains
     function test_ludwik_${k}$() result(passed)
         !! Family generics on `hard_ludwik_${k}$` against \( \sigma_0 + K \epsilon_p^n \) and the
         !! derivatives of the regularized law, at \( \epsilon_p + \delta \) (`LUDWIK_EP_OFFSET_${k}$`,
-#:if k == 'sp'
+        #:if k == 'sp'
         !! 1e-10 in every kind); sp also against the exact derivatives where the offset vanishes in rounding (ep >= 2e-3);
-#:else
+        #:else
         !! 1e-10 in every kind);
-#:endif
+        #:endif
         !! finite derivatives at ep = 0 (including n = 1).
         use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_ddstress_ddep, hard_ludwik_${k}$
         use muscle_hard_ludwik, only : LUDWIK_EP_OFFSET_${k}$
@@ -426,14 +426,14 @@ contains
                                   real(kd*nd*exp((nd - 1.0_dp)*log(ed)), ${k}$))
                 call check_approx(passed, '${k}$ Ludwik ddstress_ddep', hard_ddstress_ddep(p, ep), &
                                   real(kd*nd*(nd - 1.0_dp)*exp((nd - 2.0_dp)*log(ed)), ${k}$))
-#:if k == 'sp'
+                #:if k == 'sp'
                 if (ep >= 2.0e-3_sp) then
                     call check_approx(passed, 'sp Ludwik exact dstress_dep', hard_dstress_dep(p, ep), &
                                       real(kd*nd*exp((nd - 1.0_dp)*log(epd)), sp))
                     call check_approx(passed, 'sp Ludwik exact ddstress_ddep', hard_ddstress_ddep(p, ep), &
                                       real(kd*nd*(nd - 1.0_dp)*exp((nd - 2.0_dp)*log(epd)), sp))
                 end if
-#:endif
+                #:endif
             end do
             ! Regularized derivatives: finite at ep = 0 (singular there without the offset if n < 1)
             d1 = hard_dstress_dep(p, 0.0_${k}$)
@@ -508,6 +508,6 @@ contains
             end do
         end do
     end function test_vocemod_${k}$
-#:endfor
+    #:endfor
 
 end program test_hard_laws_kinds

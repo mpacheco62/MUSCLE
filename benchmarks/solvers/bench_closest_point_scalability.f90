@@ -33,7 +33,7 @@ program bench_closest_point_scalability
     use omp_lib
     use muscle_kinds, only : dp
     use muscle_status, only : STATUS_OK
-    use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_elas_linear, only : elas_linear_init
     use muscle_yield_druckerprager, only : yield_druckerprager_init, DP_HARDENING_TENSION
     use muscle_mat_cp_vm_swift, only : mat_cp_vm_swift_dp, muscle_update_cp_vm_swift, MAT_CP_VM_SWIFT_NSTATE
     use muscle_mat_cp_dp_swift, only : mat_cp_dp_swift_dp, muscle_update_cp_dp_swift, MAT_CP_DP_SWIFT_NSTATE

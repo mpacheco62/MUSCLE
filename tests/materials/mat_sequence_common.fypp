@@ -50,25 +50,25 @@
     use muscle_kinds, only : sp, dp
     use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
     use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
-#:for mod in state_mods
-#:set state_names = sorted({state_t(m, k) for m in mats for k in REAL_KINDS &
-    & if muscle_meta.material_state(muscle_meta.material(m), k)[0] == mod})
+    #:for mod in state_mods
+    #:set state_names = sorted({state_t(m, k) for m in mats for k in REAL_KINDS &
+        & if muscle_meta.material_state(muscle_meta.material(m), k)[0] == mod})
     use ${mod}$, only : ${', '.join(state_names)}$
-#:endfor
-    use muscle_elasticity_linear, only : elas_linear_init
-#:for y in yields
+    #:endfor
+    use muscle_elas_linear, only : elas_linear_init
+    #:for y in yields
     use ${PARAMS.YIELD_USES[y][0]}$, only : ${', '.join(PARAMS.YIELD_USES[y][1])}$
-#:endfor
-#:for v in viscos
+    #:endfor
+    #:for v in viscos
     use ${PARAMS.VISCO_USES[v][0]}$, only : ${', '.join(PARAMS.VISCO_USES[v][1])}$
-#:endfor
-#:for m in mats
+    #:endfor
+    #:for m in mats
     use ${muscle_meta.material_module(m)}$, only : mat_update, ${', '.join(muscle_meta.material_type(m, k) for k in REAL_KINDS)}$, &
         mat_pack_${m}$, mat_unpack_${m}$, ${muscle_meta.material_nstate(m)}$${coefs_arg(m, 'mat_step')}$
-#:endfor
-#:if viscos
+    #:endfor
+    #:if viscos
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
-#:endif
+    #:endif
     use muscle_test_reference, only : reference_init, reference_finish, REFERENCE_TOL_SOLVER
     use muscle_test_utils, only : check_approx, check_true
     use muscle_test_solver_sequence, only : NSTEP, seq_strain, first_strain, step_key, record_result, record_tangent, &
@@ -124,36 +124,36 @@
     integer :: i
 
     passed = .true.
-#:if reference
+    #:if reference
     if (mutation_requested()) mutate_name = '${mutate}$'
     call reference_init('${reference}$', tol=REFERENCE_TOL_SOLVER)
-#:else
+    #:else
     if (any(CASES%ic /= 0)) error stop '${name}$: a case with a case number but no reference file'
-#:endif
+    #:endif
     do i = 1, size(CASES)
         select case (trim(CASES(i)%material))
-#:for m in mats
+        #:for m in mats
         case ('${m}$')
             call run_${m}$(CASES(i))
-#:endfor
+        #:endfor
         case default
             error stop '${name}$: CASES names a material that is not in the registry'
         end select
     end do
-#:if extra
+    #:if extra
     call ${extra}$()
-#:endif
-#:for m in mats
+    #:endif
+    #:for m in mats
     call check_true(passed, 'material ${m}$ has a case (add a solver_case for it, case number 0, to CASES in ' // &
         '${name}$.fypp)', any(CASES%material == '${m}$'))
-#:endfor
+    #:endfor
     if (.not. passed) then
         print '(a)', ' FAIL: ${name}$ (sp, tangent or coverage checks)'
         stop 5
     end if
-#:if reference
+    #:if reference
     call reference_finish()
-#:endif
+    #:endif
 #:enddef
 
 #! Procedures of a test program for the materials `mats`: `make_<m>_<k>(c, mat)` builds the material
@@ -162,36 +162,36 @@
 #! for every material (`fd_check` True), none (False) or those listed (`<m>` in every kind, `<m>:<k>` in
 #! kind k)
 #:def MAT_CASE_PROCS(mats, fd_check=True)
-#:for k in REAL_KINDS
-#:for m in mats
-#:set mat = muscle_meta.material(m)
-#:set comps = muscle_meta.material_components(mat)
-#:set fd_on = fd_check is True or (fd_check is not False and (m in fd_check or m + ':' + k in fd_check))
+    #:for k in REAL_KINDS
+    #:for m in mats
+    #:set mat = muscle_meta.material(m)
+    #:set comps = muscle_meta.material_components(mat)
+    #:set fd_on = fd_check is True or (fd_check is not False and (m in fd_check or m + ':' + k in fd_check))
 
     subroutine make_${m}$_${k}$(c, mat)
         !! Material `${m}$` with the parameters of the reference case `c`, `real(${k}$)`.
         type(solver_case), intent(in) :: c
         type(${muscle_meta.material_type(m, k)}$), intent(out) :: mat
         integer :: status
-#:if not mat.visco
+        #:if not mat.visco
         call elas_linear_init(mat%elas, young=merge(210000.0_${k}$, 1000.0_${k}$, c%elas == 'steel'), &
             poisson=0.3_${k}$, status=status)
         if (status /= STATUS_OK) error stop 'elas_linear_init failed'
-#:endif
-#:for p, model in comps
-#:if p != 'elas'
-#:if (p, model) not in PARAMS.CASE_PARAMS
-#:stop 'no reference parameter sets for ' + p + ' ' + model + ': add the entry (' + repr(p) + ', ' + repr(model) &
-    & + ') to CASE_PARAMS in tests/materials/case_params.py'
-#:endif
+        #:endif
+        #:for p, model in comps
+        #:if p != 'elas'
+        #:if (p, model) not in PARAMS.CASE_PARAMS
+        #:stop 'no reference parameter sets for ' + p + ' ' + model + ': add the entry (' + repr(p) + ', ' + repr(model) &
+            & + ') to CASE_PARAMS in tests/materials/case_params.py'
+        #:endif
         select case (trim(c%${CASE_FIELD[p]}$))
-#:for name in PARAMS.CASE_PARAMS[(p, model)]
+        #:for name in PARAMS.CASE_PARAMS[(p, model)]
         case ('${name}$')
-#:if PARAMS.CASE_PARAMS[(p, model)][name]
+            #:if PARAMS.CASE_PARAMS[(p, model)][name]
             ${param_set(p, model, name, 'mat%' + p, k, 12)}$
-#:endif
-#:set mf = param_field(PARAMS.CASE_PARAMS[(p, model)][name])
-#:if mf
+            #:endif
+            #:set mf = param_field(PARAMS.CASE_PARAMS[(p, model)][name])
+            #:if mf
             if (trim(mutate_name) == '${name}$') then
                 if (mutation_ulp()) then
                     mat%${p}$%${mf}$ = nearest(mat%${p}$%${mf}$, 1.0_${k}$)
@@ -199,25 +199,25 @@
                     mat%${p}$%${mf}$ = mat%${p}$%${mf}$*(1.0_${k}$ + real(MUTATE_REL, ${k}$))
                 end if
             end if
-#:endif
-#:endfor
+            #:endif
+        #:endfor
         case default
             error stop 'make_${m}$_${k}$: no ${p}$ parameters for the parameter set name ' // trim(c%${CASE_FIELD[p]}$)
         end select
-#:endif
-#:endfor
+        #:endif
+        #:endfor
         mat%iter_nw = c%iter_nw
     end subroutine make_${m}$_${k}$
-#:if fd_on
+    #:if fd_on
 
     pure function stress_${m}$_${k}$(mat, strain, dt${coefs_arg(m, 'coefs')}$, state_n) result(stress)
         !! Stress of the kernel of `${m}$` from `state_n` (the function differentiated by FD_JAC).
         type(${muscle_meta.material_type(m, k)}$), intent(in) :: mat
         type(${tname('3D2Osym', k)}$), intent(in) :: strain
         real(${k}$), intent(in) :: dt
-#:if mat.visco
+        #:if mat.visco
         type(visco_coefs_${k}$), intent(in) :: coefs
-#:endif
+        #:endif
         type(${state_t(m, k)}$), intent(in) :: state_n
         type(${tname('3D2Osym', k)}$) :: stress
         type(${state_t(m, k)}$) :: state_np1
@@ -232,9 +232,9 @@
         type(${muscle_meta.material_type(m, k)}$), intent(in) :: mat
         type(${tname('3D2Osym', k)}$), intent(in) :: strain
         real(${k}$), intent(in) :: dt
-#:if mat.visco
+        #:if mat.visco
         type(visco_coefs_${k}$), intent(in) :: coefs
-#:endif
+        #:endif
         type(${state_t(m, k)}$), intent(in) :: state_n
         type(${tname('3D4O2sym', k)}$), intent(in) :: tangent
         real(${k}$), intent(in) :: tol
@@ -242,9 +242,9 @@
         @:FD_JAC(tn, stress_${m}$_${k}$(mat, {x}, dt${coefs_arg(m, 'coefs')}$, state_n), strain, ${k}$, 3D)
         call check_approx(passed, label // ' analytic vs FD tangent (${k}$)', tangent%vals, tn%vals, tol)
     end subroutine fd_check_${m}$_${k}$
-#:endif
-#:endfor
-#:endfor
+    #:endif
+    #:endfor
+    #:endfor
 #:enddef
 
 #! Reference record `tangent_num` of a step of material `m` from the state at t_n (inside run_<m>)
@@ -270,9 +270,9 @@
 #:stop 'MAT_TEST_PROCS: tangent_num must be after, before or None, not {}'.format(tangent_num)
 #:endif
 $:MAT_CASE_PROCS(mats, fd_check)
-#:for m in mats
-#:set PS = plastic_of(m)
-#:if tangent_num
+    #:for m in mats
+    #:set PS = plastic_of(m)
+    #:if tangent_num
 
     function num_stress_${m}$(mat, strain, dt${coefs_arg(m, 'coefs')}$, state_n) result(stress)
         !! Stress of the kernel of `${m}$` from `state_n` as the historical solver returns it (the
@@ -280,66 +280,66 @@ $:MAT_CASE_PROCS(mats, fd_check)
         type(${muscle_meta.material_type(m, 'dp')}$), intent(in) :: mat
         type(${tname('3D2Osym', 'dp')}$), intent(in) :: strain
         real(dp), intent(in) :: dt
-#:if PS
+        #:if PS
         type(visco_coefs_dp), intent(in) :: coefs
-#:endif
+        #:endif
         type(${state_t(m, 'dp')}$), intent(in) :: state_n
         type(${tname('3D2Osym', 'dp')}$) :: stress
         type(${state_t(m, 'dp')}$) :: state_np1
         type(${tname('3D4O2sym', 'dp')}$) :: tangent
         integer :: status, iters
         call mat_update(mat, strain, dt${coefs_arg(m, 'coefs')}$, state_n, state_np1, stress, tangent, status, iters)
-#:if zero_stress
+        #:if zero_stress
         if (status /= STATUS_OK) stress%vals = 0.0_dp
-#:endif
+        #:endif
     end function num_stress_${m}$
-#:endif
+    #:endif
 
     subroutine run_${m}$(c)
         !! Reference case `c` with material `${m}$`: the strain sequence and the first increment in dp
         !! (reference, unless c%ic = 0) and sp (against dp), with the finite difference checks of the
         !! tangent.
         type(solver_case), intent(in) :: c
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         type(${muscle_meta.material_type(m, k)}$) :: mat_${k}$
         type(${state_t(m, k)}$) :: sn_${k}$, snp1_${k}$
         type(${tname('3D2Osym', k)}$) :: strain_${k}$, stress_${k}$
         type(${tname('3D4O2sym', k)}$) :: tan_${k}$
         integer :: status_${k}$, iters_${k}$
         real(${k}$) :: hsv_${k}$(${muscle_meta.material_nstate(m)}$)
-#:if PS
+        #:if PS
         type(visco_coefs_${k}$) :: coefs_${k}$
-#:endif
-#:endfor
+        #:endif
+        #:endfor
         type(${tname('3D2Osym', 'dp')}$) :: stress_rec
-#:if tangent_num
+        #:if tangent_num
         type(${tname('3D4O2sym', 'dp')}$) :: tan_num
-#:endif
+        #:endif
         character(len=:), allocatable :: key, prefix
         character(len=8) :: buf
         integer :: is, s0, s1, pass_first
         logical :: first
 
         write(buf, '(i0)') c%ic
-#:if has_visc(solver)
+        #:if has_visc(solver)
         prefix = '${tag}$ | ' // trim(buf) // ' ' // trim(c%elas) // ' ' // trim(c%visc) // '+' // &
             trim(c%hard) // ' ' // trim(c%yld)
-#:else
+        #:else
         prefix = '${tag}$ | ' // trim(buf) // ' ' // trim(c%elas) // ' ' // trim(c%hard) // ' ' // trim(c%yld)
-#:endif
-#:for k in REAL_KINDS
+        #:endif
+        #:for k in REAL_KINDS
         call make_${m}$_${k}$(c, mat_${k}$)
-#:if PS
+        #:if PS
         ! Coefficients of the time step: once for every step of the case (constant dt)
         call mat_step(mat_${k}$, real(c%dt, ${k}$), coefs_${k}$, status_${k}$)
         if (status_${k}$ /= STATUS_OK) error stop 'run_${m}$: mat_step failed (${k}$)'
-#:endif
-#:endfor
+        #:endif
+        #:endfor
         do pass_first = 0, 1
             first = pass_first == 1
-#:for k in REAL_KINDS
+            #:for k in REAL_KINDS
             sn_${k}$ = ${state_t(m, k)}$()
-#:endfor
+            #:endfor
             s0 = merge(-1, 0, first)
             s1 = merge(-1, NSTEP - 1, first)
             do is = s0, s1
@@ -349,51 +349,51 @@ $:MAT_CASE_PROCS(mats, fd_check)
                 else
                     strain_dp = seq_strain(is, c%a_y)
                 end if
-#:if 'sp' in REAL_KINDS
+                #:if 'sp' in REAL_KINDS
                 strain_sp%vals = real(strain_dp%vals, sp)
-#:endif
-#:for k in REAL_KINDS
+                #:endif
+                #:for k in REAL_KINDS
                 call mat_update(mat_${k}$, strain_${k}$, real(c%dt, ${k}$)${coefs_arg(m, 'coefs_' + k)}$, sn_${k}$, &
                     snp1_${k}$, stress_${k}$, tan_${k}$, status_${k}$, iters_${k}$)
-#:endfor
+                #:endfor
                 ! dp: the reference records of the OO solver
                 if (c%ic > 0) then
                     stress_rec = stress_dp
-#:if zero_stress
+                    #:if zero_stress
                     if (status_dp /= STATUS_OK) stress_rec%vals = 0.0_dp
-#:endif
-#:if flag_codes
+                    #:endif
+                    #:if flag_codes
                     call record_result(key, strain_dp, stress_rec, snp1_dp${PS}$%strain_pf, snp1_dp${PS}$%strain_p, &
                         merge(1, 0, status_dp /= STATUS_OK), 0)
-#:else
+                    #:else
                     call record_result(key, strain_dp, stress_rec, snp1_dp${PS}$%strain_pf, snp1_dp${PS}$%strain_p, &
                         oo_status(status_dp, iters_dp), iters_dp)
-#:endif
+                    #:endif
 #:if tangent_num == 'before'
 $:NUM_TANGENT(m)
 #:endif
-#:if reference_tangent == 'always'
+                    #:if reference_tangent == 'always'
                     call record_tangent(key, 'tangent', tan_dp)
-#:elif reference_tangent == 'plastic'
+                    #:elif reference_tangent == 'plastic'
                     if (iters_dp > 0) call record_tangent(key, 'tangent', tan_dp)
-#:endif
+                    #:endif
 #:if tangent_num == 'after'
 $:NUM_TANGENT(m)
 #:endif
                 end if
-#:for k in REAL_KINDS
+                #:for k in REAL_KINDS
                 if (c%iters_exact >= 0 .and. status_${k}$ == STATUS_OK) then
                     call check_true(passed, key // ' iters (${k}$)', (iters_${k}$ == 0 .or. iters_${k}$ == c%iters_exact) &
                         .and. ((iters_${k}$ == 0) .eqv. (snp1_${k}$${PS}$%strain_pf == sn_${k}$${PS}$%strain_pf)))
                 end if
-#:endfor
-#:if fd_check
+                #:endfor
+                #:if fd_check
                 if (status_dp == STATUS_OK .and. iters_dp > 0) then
                     call fd_check_${m}$_dp(key, mat_dp, strain_dp, c%dt${coefs_arg(m, 'coefs_dp')}$, sn_dp, tan_dp, &
                         max(TOL_DP_FD, c%fd_tol))
                 end if
-#:endif
-#:if 'sp' in REAL_KINDS
+                #:endif
+                #:if 'sp' in REAL_KINDS
                 ! sp: converges where dp converges, elastic where dp is elastic, agrees with dp
                 if (c%check_sp) then
                     call check_true(passed, key // ' sp status', status_sp == status_dp .or. &
@@ -408,23 +408,23 @@ $:NUM_TANGENT(m)
                             [real(snp1_dp${PS}$%strain_pf, sp)], TOL_SP_EP)
                         call check_approx(passed, key // ' sp tangent', tan_sp%vals, real(tan_dp%vals, sp), &
                             TOL_SP_TANGENT)
-#:if fd_check
+                        #:if fd_check
                         if (iters_sp > 0) then
                             call fd_check_${m}$_sp(key, mat_sp, strain_sp, real(c%dt, sp)${coefs_arg(m, 'coefs_sp')}$, &
                                 sn_sp, tan_sp, max(TOL_SP_FD, real(c%fd_tol, sp)))
                         end if
-#:endif
+                        #:endif
                     end if
                 end if
-#:endif
-#:for k in REAL_KINDS
+                #:endif
+                #:for k in REAL_KINDS
                 call mat_pack_${m}$(snp1_${k}$, hsv_${k}$)
                 call mat_unpack_${m}$(hsv_${k}$, sn_${k}$)
-#:endfor
+                #:endfor
             end do
         end do
     end subroutine run_${m}$
-#:endfor
+    #:endfor
 
     pure integer function oo_status(status, iters)
         !! Result code of the historical OO solver from the status and iterations of the kernel.

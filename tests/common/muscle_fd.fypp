@@ -88,7 +88,7 @@ block
     ${fd_use_kind(k, step, rel, 'FD_STEP_MIN', ZERO, scale)}$
     real(${k}$) :: fd_h, fd_xv, fd_fp, fd_fm${', fd_f0' if lower is not None else ''}$${fd_decl_n(step)}$
     $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', ['abs({})'.format(x)], ZERO, scale=scale), 4)
-#:if lower is not None
+    #:if lower is not None
     if (${x}$ - fd_h < ${lower}$) then
         fd_xv = ${x}$
         fd_f0 = ${f}$
@@ -100,9 +100,9 @@ block
     else
         $:fd_indent(_FD_CENTRAL1(res, f, x, k), 8)
     end if
-#:else
+    #:else
     $:fd_indent(_FD_CENTRAL1(res, f, x, k), 4)
-#:endif
+    #:endif
 end block
 #:enddef
 #:def _FD_CENTRAL1(res, f, x, k)
@@ -131,7 +131,7 @@ block
     $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', ['abs({})'.format(x)], scale=scale), 4)
     fd_xv = ${x}$
     fd_f0 = ${f}$
-#:if lower is not None
+    #:if lower is not None
     if (${x}$ - fd_h < ${lower}$) then
         fd_xv = ${x}$ + fd_h
         fd_fp = ${f}$
@@ -143,9 +143,9 @@ block
     else
         $:fd_indent(_FD_CENTRAL2(res, f, x, k), 8)
     end if
-#:else
+    #:else
     $:fd_indent(_FD_CENTRAL2(res, f, x, k), 4)
-#:endif
+    #:endif
 end block
 #:enddef
 #:def _FD_CENTRAL2(res, f, x, k)
@@ -175,15 +175,15 @@ block
     real(${k}$) :: fd_h, fd_fp, fd_fm${fd_decl_n(step)}$
     $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', norm_terms(lay, x + '%vals'), ZERO, scale=scale), 4)
     fd_xv = ${x}$
-#:for c in lay.comps
-#:set p = c.pos[0]
+    #:for c in lay.comps
+    #:set p = c.pos[0]
     fd_xv%vals(${p}$) = ${x}$%vals(${p}$) + ${fd_pert(fam, c, k)}$
     fd_fp = ${f}$
     fd_xv%vals(${p}$) = ${x}$%vals(${p}$) - ${fd_pert(fam, c, k)}$
     fd_fm = ${f}$
     ${res}$%vals(${p}$) = (fd_fp - fd_fm)/(2.0_${k}$*fd_h)
     fd_xv%vals(${p}$) = ${x}$%vals(${p}$)
-#:endfor
+    #:endfor
 end block
 #:enddef
 
@@ -206,15 +206,15 @@ block
     real(${k}$) :: fd_h${fd_decl_n(step)}$
     $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN_JAC', norm_terms(lay, x + '%vals'), ZERO, scale=scale), 4)
     fd_xv = ${x}$
-#:for c in lay.comps
-#:set p = c.pos[0]
+    #:for c in lay.comps
+    #:set p = c.pos[0]
     fd_xv%vals(${p}$) = ${x}$%vals(${p}$) + ${fd_pert('2Osym', c, k)}$
     fd_fp = ${f}$
     fd_xv%vals(${p}$) = ${x}$%vals(${p}$) - ${fd_pert('2Osym', c, k)}$
     fd_fm = ${f}$
     ${res}$%vals(:, ${p}$) = (fd_fp%vals - fd_fm%vals)/(2.0_${k}$*fd_h)
     fd_xv%vals(${p}$) = ${x}$%vals(${p}$)
-#:endfor
+    #:endfor
 end block
 #:enddef
 
@@ -242,20 +242,20 @@ block
     $:fd_indent(FD_STEP(k, step, rel, 'FD_STEP_MIN', norm_terms(lay, x + '%vals'), scale=scale), 4)
     fd_xv = ${x}$
     fd_f0 = ${f}$
-#:for c in layout('4O3sym', d).comps
-#:set r, s = c.voigt
-#:if r == s
-#:set st = 'fd_h' if shear[r - 1] else '2.0_{}*fd_h'.format(k)
+    #:for c in layout('4O3sym', d).comps
+    #:set r, s = c.voigt
+    #:if r == s
+    #:set st = 'fd_h' if shear[r - 1] else '2.0_{}*fd_h'.format(k)
     fd_xv%vals(${r}$) = ${x}$%vals(${r}$) + ${st}$
     fd_fpp = ${f}$
     fd_xv%vals(${r}$) = ${x}$%vals(${r}$) - ${st}$
     fd_fmm = ${f}$
     ${res}$%vals(${c.pos[0]}$) = (fd_fpp - 2.0_${k}$*fd_f0 + fd_fmm)/(4.0_${k}$*fd_h*fd_h)
     fd_xv%vals(${r}$) = ${x}$%vals(${r}$)
-#:else
-#:set i, j = (s, r) if shear[s - 1] and not shear[r - 1] else (r, s)
-#:set si = fd_pert('2Osym', base[i - 1], k)
-#:set sj = fd_pert('2Osym', base[j - 1], k)
+    #:else
+    #:set i, j = (s, r) if shear[s - 1] and not shear[r - 1] else (r, s)
+    #:set si = fd_pert('2Osym', base[i - 1], k)
+    #:set sj = fd_pert('2Osym', base[j - 1], k)
     fd_xv%vals(${i}$) = ${x}$%vals(${i}$) + ${si}$
     fd_xv%vals(${j}$) = ${x}$%vals(${j}$) + ${sj}$
     fd_fpp = ${f}$
@@ -269,8 +269,8 @@ block
     ${res}$%vals(${c.pos[0]}$) = (fd_fpp - fd_fpm - fd_fmp + fd_fmm)/(4.0_${k}$*fd_h*fd_h)
     fd_xv%vals(${i}$) = ${x}$%vals(${i}$)
     fd_xv%vals(${j}$) = ${x}$%vals(${j}$)
-#:endif
-#:endfor
+    #:endif
+    #:endfor
 end block
 #:enddef
 

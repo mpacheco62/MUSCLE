@@ -15,11 +15,11 @@ module test_functions_lib
 
 contains
 
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:for F, fns in CASES
-#:set T = tname(d + F, k)
-#:set lay = layout(F, d)
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:for F, fns in CASES
+    #:set T = tname(d + F, k)
+    #:set lay = layout(F, d)
     subroutine test_${d}$${F}$_${k}$(passed)
         !! Free functions of `${T}$` == type-bound ones; is_approx and inverse free == operators.
         logical, intent(inout) :: passed
@@ -31,23 +31,39 @@ contains
         ! Small distinct components (exact in sp and dp) plus 8 on the diagonal of the matrix
         ! shown by Layout.matrix(): diagonally dominant, hence regular
         a%vals = reshape([(0.125_${k}$*real(mod(7*i, 11) - 5, ${k}$), i = 1, size(a%vals))], shape(a%vals))
-#:set rows = lay.matrix('a%vals')
-#:for i in range(len(rows))
+        #:set rows = lay.matrix('a%vals')
+        #:for i in range(len(rows))
         ${rows[i][i]}$ = ${rows[i][i]}$ + 8.0_${k}$
-#:endfor
-#:for fn in fns
-#:if fn in ('norm', 'det')
+        #:endfor
+        #:for fn in fns
+        #:if fn in ('norm', 'det')
         call check_approx(passed, '${fn}$(a) == a%${fn}$()' // TN, ${fn}$(a), a%${fn}$(), tol=0.0_${k}$)
-#:else
-#:set RT = {'convert_3sym': tname(d + '4O3sym', k), 'convert_2sym': tname(d + '4O2sym', k)}.get(fn, T)
+        #:elif fn == 'is_identity'
+        call check_true(passed, 'is_identity(a) == a%is_identity()' // TN, is_identity(a) .eqv. a%is_identity())
+        ! Exact identity: 1 on the normal components, 0 elsewhere; any component one ulp away is not
+        x1%vals = 0.0_${k}$
+        #:for c in lay.comps
+        #:if c.idx[0] == c.idx[1]
+        x1%vals(${', '.join(map(str, c.pos))}$) = 1.0_${k}$
+        #:endif
+        #:endfor
+        call check_true(passed, 'is_identity(I) and I%is_identity()' // TN, is_identity(x1) .and. x1%is_identity())
+        call check_true(passed, 'not is_identity(a)' // TN, .not. is_identity(a))
+        #:for c in lay.comps
+        x2 = x1
+        x2%vals(${', '.join(map(str, c.pos))}$) = nearest(x1%vals(${', '.join(map(str, c.pos))}$), 1.0_${k}$)
+        call check_true(passed, 'not is_identity(I + 1 ulp in ${c.name}$)' // TN, .not. is_identity(x2))
+        #:endfor
+        #:else
+        #:set RT = {'convert_3sym': tname(d + '4O3sym', k), 'convert_2sym': tname(d + '4O2sym', k)}.get(fn, T)
         block
             type(${RT}$) :: r_free, r_tbp
             r_free = ${fn}$(a)
             r_tbp = a%${fn}$()
             call check_true(passed, '${fn}$(a) == a%${fn}$()' // TN, all(r_free%vals == r_tbp%vals))
         end block
-#:endif
-#:endfor
+        #:endif
+        #:endfor
         call check_true(passed, 'is_approx(a, a)' // TN, is_approx(a, a))
         x1 = a
         x1%vals = 2.0_${k}$*a%vals
@@ -59,9 +75,9 @@ contains
         call check_true(passed, 'inverse(a) == .inv. a' // TN, all(x1%vals == x2%vals))
     end subroutine test_${d}$${F}$_${k}$
 
-#:endfor
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
+    #:endfor
     subroutine test_not_leaked(passed)
         !! muscle_tensors does not export the free functions: a local `norm`/`det` compiles
         !! next to `use muscle_tensors`, and renaming on import works.
@@ -88,13 +104,13 @@ program test_muscle_tensor_functions
     logical :: passed
 
     passed = .true.
-#:for k in REAL_KINDS
-#:for d in DIMS
-#:for F, fns in CASES
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:for F, fns in CASES
     call test_${d}$${F}$_${k}$(passed)
-#:endfor
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
+    #:endfor
     call test_not_leaked(passed)
     if (.not. passed) stop 1
     print '(a)', 'All tests for muscle_tensor_functions passed successfully!'

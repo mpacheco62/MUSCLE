@@ -55,63 +55,63 @@ module muscle_test_utils
     private
 
     public :: check_approx, check_true, check_scaled, check_target, check_target_ran, target_on_device
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: TOL_DEVICE_${k}$
-#:endfor
+    #:endfor
 
 #! check_target on a device: tolerance in units of epsilon(1.0_k) relative to the scale of a point (times
 #! its amplification). Measured on the Intel UHD 770 (ifx 2026.2, sp native, dp emulated): math kernels
 #! <= 2.0 eps, LU6SOLVE <= 0.1 eps kappa_inf(A), kinematics <= 19 eps kappa(C) (dp material logarithmic
 #! tangent; sp <= 7.4), closest point batch (IGC optimizations off) <= 10 eps; 64 leaves a margin of ~3.
-#:set TOL_DEVICE_ULPS = 64
+    #:set TOL_DEVICE_ULPS = 64
 #! Tensor types checked: every (family, dim), double precision only until the sp types exist.
-#:set TENSORS = [(fam, dim) for dim in DIMS for fam in FAMILIES]
-#:for k in REAL_KINDS
+    #:set TENSORS = [(fam, dim) for dim in DIMS for fam in FAMILIES]
+    #:for k in REAL_KINDS
     real(${k}$), parameter :: DEFAULT_TOL_${k}$ = TOL_APPROX_${k}$
         !! Default relative tolerance for `real(${k}$)` values (same as `.approx.` for most tensor types).
-#:endfor
-#:for k in REAL_KINDS
+    #:endfor
+    #:for k in REAL_KINDS
     real(${k}$), parameter :: TOL_DEVICE_${k}$ = ${TOL_DEVICE_ULPS}$*epsilon(1.0_${k}$)
         !! Default tolerance of `check_target` on a device, `real(${k}$)`: relative to the largest
         !! component of each point. Another compiler back end (FMA contraction, operation order,
         !! device math library) changes the rounding of every operation; a point kernel then differs
         !! by a few eps relative to its scale (see `TOL_DEVICE_ULPS`).
-#:endfor
+    #:endfor
     real(dp), parameter :: DEFAULT_TOL_4O2SYM = 1.0e-8_dp
         !! Default tolerance of `.approx.` for the minor-symmetric 4th-order types.
 
-#:for fam, dim in TENSORS
-#:set comps = layout(fam, dim).comps
+    #:for fam, dim in TENSORS
+    #:set comps = layout(fam, dim).comps
     character(len=4), parameter :: NAMES_${dim}$${fam}$(${len(comps)}$) = [character(len=4) :: &
         ${', '.join("'" + c.name + "'" for c in comps)}$]
         !! Storage labels of `ten_${dim}$${fam}$` (column-major for matrix storage).
-#:endfor
+    #:endfor
 
     interface check_approx
         !! Approximate (or, with `tol = 0`, exact) comparison with a detailed failure report.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure check_real_${k}$
         module procedure check_real_1d_${k}$
         module procedure check_real_2d_${k}$
-#:endfor
-#:for fam, dim in TENSORS
+        #:endfor
+        #:for fam, dim in TENSORS
         module procedure check_${dim}$${fam}$
-#:endfor
+        #:endfor
     end interface check_approx
 
     interface check_target
         !! Kernel results of a target region against the CPU, `(nout, npts)`: exact on the host,
         !! within a tolerance relative to each point on a device.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure check_target_${k}$
-#:endfor
+        #:endfor
     end interface check_target
 
     interface check_scaled
         !! Scalar comparison with an explicit error scale: \( |got - expected| \le tol \cdot scale \).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure check_scaled_${k}$
-#:endfor
+        #:endfor
     end interface check_scaled
 
 contains
@@ -135,17 +135,17 @@ contains
     function target_on_device() result(device)
         !! A target region runs on a device: always false without the fypp define MUSCLE_GPU (no
         !! device code); with it, as decided at run time (OMP_TARGET_OFFLOAD, available devices).
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         use omp_lib, only : omp_is_initial_device
-#:endif
+        #:endif
         logical :: device
             !! The region ran on a device.
         device = .false.
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         !$omp target map(from: device)
         device = .not. omp_is_initial_device()
         !$omp end target
-#:endif
+        #:endif
     end function target_on_device
 
     subroutine check_target_ran(passed, label, host)
@@ -158,13 +158,13 @@ contains
             !! Region under test.
         logical, intent(in) :: host
             !! The region ran on the initial (host) device.
-#:if defined('MUSCLE_GPU')
+        #:if defined('MUSCLE_GPU')
         print '(a)', ' ' // label // ': target region ran on the ' // merge('host  ', 'device', host)
-#:else
+        #:else
         call check_true(passed, label // ': target region ran on the host (no offload in this build)', host)
-#:endif
+        #:endif
     end subroutine check_target_ran
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     subroutine check_target_${k}$(passed, label, got, expected, device, tol, amp, scale_min)
         !! `real(${k}$)` results of a kernel in a target region (`got(:, p)`, point `p`) against the
@@ -218,9 +218,9 @@ contains
             merge(' eps amp', ' eps    ', present(amp)) // ' relative to the point' &
             // merge(' (or scale_min)', '               ', present(scale_min))
     end subroutine check_target_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     subroutine check_real_${k}$(passed, label, got, expected, tol)
         !! Scalar `real(${k}$)` comparison: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \).
         logical, intent(inout) :: passed
@@ -332,10 +332,10 @@ contains
                      names, t)
     end subroutine check_real_2d_${k}$
 
-#:endfor
-#:for fam, dim in TENSORS
-#:set tol_name = 'DEFAULT_TOL_4O2SYM' if fam == '4O2sym' else 'DEFAULT_TOL_dp'
-#:set n = len(layout(fam, dim).comps)
+    #:endfor
+    #:for fam, dim in TENSORS
+    #:set tol_name = 'DEFAULT_TOL_4O2SYM' if fam == '4O2sym' else 'DEFAULT_TOL_dp'
+    #:set n = len(layout(fam, dim).comps)
     subroutine check_${dim}$${fam}$(passed, label, got, expected, tol)
         !! Compares two `ten_${dim}$${fam}$` (verdict: `is_approx`).
         logical, intent(inout) :: passed
@@ -355,12 +355,12 @@ contains
                        reshape(got%vals, [${n}$]), reshape(expected%vals, [${n}$]), NAMES_${dim}$${fam}$, t)
     end subroutine check_${dim}$${fam}$
 
-#:endfor
+    #:endfor
     ! -------------------------------------------------------------------------
     ! Private helpers
     ! -------------------------------------------------------------------------
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     subroutine compare_${k}$(passed, label, got, expected, names, tol, scale_min)
         !! Applies the component-wise relative criterion to `real(${k}$)` values and reports on failure.
         logical, intent(inout) :: passed
@@ -453,5 +453,5 @@ contains
         print '(a)', '   scale = ' // scale_def
     end subroutine print_criterion_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_test_utils

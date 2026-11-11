@@ -962,20 +962,19 @@ class TestModelFamilies(unittest.TestCase):
     ROOT = pathlib.Path(__file__).resolve().parents[2]
 
     #: Templates of a family that follow ``ModelFamily.module`` but are not models (shared types).
-    SUPPORT = {'visco': {'muscle_visco_types'}, 'kin': {'muscle_kin_finite'}}
+    SUPPORT = {'visco': {'muscle_visco_types'}, 'kin': {'muscle_kin_finite'}, 'yield': {'muscle_yield_anisotropic'}}
 
     def test_registry_matches_family_files(self):
         # Every model template of a family is registered, and every registered model has one
-        # (families may share the module pattern: viscoplastic and overstress laws; a model may
-        # keep its historical module, MODEL_MODULES, e.g. the frozen elasticity in muscle_visco_*;
-        # support templates of a family are not models)
+        # (the module of a model is muscle_<prefix>_<model>, D-027; support templates of a family are not
+        # models)
         fams = mm.MODEL_FAMILIES.values()
         family_modules = {f.family_module for f in fams}
         for fam in fams:
             pattern = fam.module.format('*') + '.fypp'
             others = {mm.model_module(o.prefix, m) for o in fams if o is not fam for m in o.models}
             files = {p.stem for p in (self.ROOT / 'src').rglob(pattern)} - family_modules - others
-            own = {fam.module.format(m) for m in fam.models if (fam.prefix, m) not in mm.MODEL_MODULES}
+            own = {fam.module.format(m) for m in fam.models}
             self.assertEqual(files, own | self.SUPPORT.get(fam.prefix, set()), fam.prefix)
             for m in fam.models:
                 self.assertTrue(list((self.ROOT / 'src').rglob(mm.model_module(fam.prefix, m) + '.fypp')),
@@ -1086,9 +1085,9 @@ class TestModelFamilies(unittest.TestCase):
                                                    'freeze_branches', 'update_branches'])
         self.assertEqual(mm.model_specific('visco', 'update', 'maxwell', 'sp'), 'visco_update_maxwell_sp')
         self.assertEqual(mm.model_dims('visco'), [None])
-        # The frozen elasticity is an elastic model in the historical viscoelastic module
+        # The frozen elasticity is an elastic model (its file is in src/viscoelasticity)
         self.assertIn('frozen', mm.model_family('elas').models)
-        self.assertEqual(mm.model_module('elas', 'frozen'), 'muscle_visco_frozen')
+        self.assertEqual(mm.model_module('elas', 'frozen'), 'muscle_elas_frozen')
         self.assertEqual(mm.model_module('visco', 'kelvin'), 'muscle_visco_kelvin')
 
     def test_target_case_signatures(self):

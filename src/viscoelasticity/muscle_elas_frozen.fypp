@@ -2,8 +2,8 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 
-module muscle_visco_frozen
-    !! Module muscle_visco_frozen
+module muscle_elas_frozen
+    !! Module muscle_elas_frozen
     !! ==========================
     !! Algorithmic ("frozen") elasticity of a linear viscoelastic model over one time step.
     !!
@@ -27,25 +27,25 @@ module muscle_visco_frozen
     !! `visco_freeze` of muscle_visco_laws) and the `pure` functions `elas_stress_frozen_<d>_<k>`,
     !! `elas_stress_dev_frozen_<d>_<k>`, `elas_dstress_dstrain_frozen_<d>_<k>` and
     !! `elas_dstress_dstrain_dev_frozen_<d>_<k>` in 3D and 2D, also through the generics `elas_*`
-    !! of muscle_elasticity_laws. In 2D the history stress contributes its in-plane components
+    !! of muscle_elas_laws. In 2D the history stress contributes its in-plane components
     !! (11, 22, 33, 12): its 23 and 13 components are ignored (D-017.13c).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$, ten_2D2Osym_${k}$, ten_2D4O3sym_${k}$
-#:endfor
+    #:endfor
     use muscle_tensors, only : operator(.dev.), operator(*), operator(+)
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: elas_frozen_${k}$
     public :: elas_stress_frozen_3D_${k}$, elas_stress_frozen_2D_${k}$
     public :: elas_stress_dev_frozen_3D_${k}$, elas_stress_dev_frozen_2D_${k}$
     public :: elas_dstress_dstrain_frozen_3D_${k}$, elas_dstress_dstrain_frozen_2D_${k}$
     public :: elas_dstress_dstrain_dev_frozen_3D_${k}$, elas_dstress_dstrain_dev_frozen_2D_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: elas_frozen_${k}$
         !! Parameters of the frozen (algorithmic) viscoelastic model in `real(${k}$)`.
         real(${k}$) :: k_alg = 0.0_${k}$
@@ -57,9 +57,9 @@ module muscle_visco_frozen
             !! History stress \( \boldsymbol\sigma^{hist}_n \) (constant over the step).
     end type elas_frozen_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure function elas_stress_frozen_3D_${k}$(prm, strain) result(res)
         !! Stress \( \boldsymbol\sigma(\boldsymbol\varepsilon) \) of the frozen (algorithmic) viscoelastic model in
@@ -285,6 +285,6 @@ contains
         res%vals(9) = 0.0_${k}$
         res%vals(10) = 0.0_${k}$
     end function elas_dstress_dstrain_dev_frozen_2D_${k}$
-#:endfor
+    #:endfor
 
-end module muscle_visco_frozen
+end module muscle_elas_frozen

@@ -30,13 +30,13 @@ module muscle_vp_nnl
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: vp_nnl_${k}$
     public :: vp_flow_stress_nnl_${k}$, vp_dflow_dep_nnl_${k}$, vp_dflow_depd_nnl_${k}$, &
         & vp_dstress_dep_nnl_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: vp_nnl_${k}$
         !! Parameters of the Nemat-Nasser-Li model in `real(${k}$)`.
         real(${k}$) :: sig_a
@@ -62,10 +62,10 @@ module muscle_vp_nnl
         real(${k}$) :: eps_base = 1.0e-12_${k}$
             !! Floor of \( 1 - X^{1/q} \).
     end type vp_nnl_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function vp_flow_stress_nnl_${k}$(prm, ep, epd) &
         & result(res)
         !! Viscoplastic flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \) of the Nemat-Nasser-Li model in `real(${k}$)`.
@@ -210,5 +210,5 @@ contains
         res = dep + depd/dt
     end function vp_dstress_dep_nnl_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_vp_nnl

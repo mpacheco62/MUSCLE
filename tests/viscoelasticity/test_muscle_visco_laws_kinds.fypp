@@ -4,7 +4,7 @@
 #:include "muscle_fd.fypp"
 #!
 #! Kernel API of the viscoelastic family (D-017.13) in every kind, through the generics of
-#! muscle_visco_laws (step coefficients, freeze, update with explicit states) and muscle_elasticity_laws
+#! muscle_visco_laws (step coefficients, freeze, update with explicit states) and muscle_elas_laws
 #! (the frozen elasticity):
 #! - load histories of Maxwell and Kelvin-Voigt parameter sets: sp against dp (sp inputs converted to
 #!   dp; the dp values are fixed by the physical checks of test_muscle_visco_maxwell/kelvin);
@@ -28,18 +28,18 @@ module test_visco_point
     use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$
     use muscle_visco_laws, only : visco_step_coefficients, visco_freeze, visco_update, &
         ${', '.join('visco_maxwell_{0}, visco_state_{0}, visco_coefs_{0}, elas_frozen_{0}'.format(k) for k in REAL_KINDS)}$
-    use muscle_elasticity_laws, only : elas_stress
+    use muscle_elas_laws, only : elas_stress
     implicit none
     private
 
     integer, parameter, public :: NSTEPS = ${NSTEPS}$
         !! Steps of the load histories.
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: maxwell_steps_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine maxwell_steps_${k}$(prm, dts, eps, state, sig, status)
         !! What a kernel does at a point over several steps in `real(${k}$)`: coefficients, frozen
@@ -76,7 +76,7 @@ contains
             state = state_np1
         end do
     end subroutine maxwell_steps_${k}$
-#:endfor
+    #:endfor
 
 end module test_visco_point
 
@@ -92,7 +92,7 @@ module test_visco_cases
     use muscle_visco_maxwell, only : visco_maxwell_init, visco_maxwell_init_normalized, &
         visco_maxwell_shear_instantaneous
     use muscle_visco_kelvin, only : visco_kelvin_init
-    use muscle_elasticity_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev
+    use muscle_elas_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev
     use muscle_tensors, only : operator(.dev.)
     use test_visco_point, only : NSTEPS, ${', '.join('maxwell_steps_' + k for k in REAL_KINDS)}$
     use muscle_test_utils, only : check_true, check_scaled
@@ -103,10 +103,10 @@ module test_visco_cases
 
     integer, parameter :: NSETS = 5
         !! Parameter sets: 1-3 Maxwell, 4-5 Kelvin-Voigt.
-#:if 'sp' in REAL_KINDS
+    #:if 'sp' in REAL_KINDS
     real(dp), parameter :: TOL_SP = real(TOL_APPROX_sp, dp)
         !! sp vs dp, relative to the largest value of each group (see the header).
-#:endif
+    #:endif
     real(dp), parameter :: DTS(NSTEPS) = [1.0e-3_dp, 0.01_dp, 0.05_dp, 0.1_dp, 0.0_dp, 0.5_dp, 1.0_dp, &
         0.0_dp, 5.0_dp]
         !! Time steps (dt = 0 only in Maxwell; Kelvin-Voigt takes the next positive one).
@@ -140,7 +140,7 @@ contains
         same_bits = size(a) == size(b)
         if (same_bits) same_bits = all(transfer(a, 1_int64, size(a)) == transfer(b, 1_int64, size(b)))
     end function same_bits
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     subroutine maxwell_set_${k}$(iset, prm, status)
         !! Maxwell parameter set iset (1-3) in `real(${k}$)`.
@@ -170,7 +170,7 @@ contains
             call visco_kelvin_init(prm, 0.0_${k}$, 0.0_${k}$, 30.0_${k}$, 5.0_${k}$, status)
         end if
     end subroutine kelvin_set_${k}$
-#:for m in MODELS
+    #:for m in MODELS
 
     subroutine history_${m}$_${k}$(iset, rec)
         !! Load history of parameter set iset with the `real(${k}$)` kernel API: per step the
@@ -199,17 +199,17 @@ contains
             state_n = state_np1
         end do
     end subroutine history_${m}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
     subroutine test_histories(passed)
         !! sp vs dp of every parameter set.
         logical, intent(inout) :: passed
         real(dp) :: rd(NREC, NSTEPS)
-#:if 'sp' in REAL_KINDS
+        #:if 'sp' in REAL_KINDS
         real(dp) :: rs(NREC, NSTEPS), sc
         integer :: j
-#:endif
+        #:endif
         character(len=48) :: lab
         integer :: iset
 
@@ -217,16 +217,16 @@ contains
             write(lab, '(a, i0)') 'visco history, parameter set ', iset
             if (iset <= 3) then
                 call history_maxwell_dp(iset, rd)
-#:if 'sp' in REAL_KINDS
+                #:if 'sp' in REAL_KINDS
                 call history_maxwell_sp(iset, rs)
-#:endif
+                #:endif
             else
                 call history_kelvin_dp(iset, rd)
-#:if 'sp' in REAL_KINDS
+                #:if 'sp' in REAL_KINDS
                 call history_kelvin_sp(iset, rs)
-#:endif
+                #:endif
             end if
-#:if 'sp' in REAL_KINDS
+            #:if 'sp' in REAL_KINDS
             ! sp vs dp: each group of values (coefficients, stress, state) with its own scale
             do j = 1, NREC
                 sc = maxval(abs(rd(j, :)))
@@ -237,11 +237,11 @@ contains
                 end if
                 call check_vals(passed, trim(lab) // ': sp vs dp', rs(j, :), rd(j, :), sc)
             end do
-#:endif
+            #:endif
         end do
     end subroutine test_histories
 
-#:if 'sp' in REAL_KINDS
+    #:if 'sp' in REAL_KINDS
     subroutine check_vals(passed, label, got, expected, sc)
         !! Values of one record over the history, relative to the scale `sc`.
         logical, intent(inout) :: passed
@@ -252,8 +252,8 @@ contains
             call check_scaled(passed, label, got(i), expected(i), sc, TOL_SP)
         end do
     end subroutine check_vals
-#:endif
-#:for k in REAL_KINDS
+    #:endif
+    #:for k in REAL_KINDS
 
     subroutine test_status_${k}$(passed)
         !! Status of the kernel API in `real(${k}$)` (D-017.13b) and of the initializers.
@@ -346,19 +346,19 @@ contains
         cd2 = elas_dstress_dstrain_dev(el, e2)
         sc = maxval(abs(s3%vals))
         scc = maxval(abs(c3%vals))
-#:for c in layout('2Osym', '2D').comps
+        #:for c in layout('2Osym', '2D').comps
         call check_scaled(passed, 'frozen 2D vs 3D stress ${c.name}$ ${k}$', s2%vals(${c.pos[0]}$), &
             s3%vals(${layout('2Osym', '3D').index(*c.idx)[0]}$), sc, TOL_APPROX_${k}$)
         call check_scaled(passed, 'frozen 2D vs 3D stress_dev ${c.name}$ ${k}$', d2%vals(${c.pos[0]}$), &
             d3%vals(${layout('2Osym', '3D').index(*c.idx)[0]}$), sc, TOL_APPROX_${k}$)
-#:endfor
+        #:endfor
         call check_true(passed, 'frozen 3D out-of-plane shears ${k}$', all(s3%vals(5:6) == 0.0_${k}$))
-#:for c in layout('4O3sym', '2D').comps
+        #:for c in layout('4O3sym', '2D').comps
         call check_scaled(passed, 'frozen 2D vs 3D tangent ${c.name}$ ${k}$', c2%vals(${c.pos[0]}$), &
             c3%vals(${layout('4O3sym', '3D').index(*c.idx)[0]}$), scc, TOL_APPROX_${k}$)
         call check_scaled(passed, 'frozen 2D vs 3D dev tangent ${c.name}$ ${k}$', cd2%vals(${c.pos[0]}$), &
             cd3%vals(${layout('4O3sym', '3D').index(*c.idx)[0]}$), scc, TOL_APPROX_${k}$)
-#:endfor
+        #:endfor
     end subroutine test_frozen_2d_3d_${k}$
 
     subroutine test_point_${k}$(passed)
@@ -392,7 +392,7 @@ contains
         call maxwell_steps_${k}$(prm, dts, eps, state, sig, status)
         call check_true(passed, 'point procedure ${k}$: dt < 0', status == STATUS_INVALID_TIME_STEP)
     end subroutine test_point_${k}$
-#:endfor
+    #:endfor
 
     subroutine test_frozen_dev_2d(passed)
         !! Kernel 2D deviatoric stress of the frozen elasticity (analytic) against `.dev.` of its 2D
@@ -423,7 +423,7 @@ contains
         passed = .true.
         call test_histories(passed)
         if (.not. passed .and. code == 0) code = 1
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         passed = .true.
         call test_status_${k}$(passed)
         if (.not. passed .and. code == 0) code = 2
@@ -433,7 +433,7 @@ contains
         passed = .true.
         call test_point_${k}$(passed)
         if (.not. passed .and. code == 0) code = 4
-#:endfor
+        #:endfor
         passed = .true.
         call test_frozen_dev_2d(passed)
         if (.not. passed .and. code == 0) code = 5

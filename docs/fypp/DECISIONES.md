@@ -228,6 +228,27 @@ cambios de comportamiento listados abajo)
   3D, por columnas en 2D, como los originales).
 Resto de operaciones: idénticas bit a bit. Benchmark `closest_point` Release: sin cambio.
 
+**Evidencia (2026-11-11, experimento del usuario):** ¿sirve un procedimiento ligado al tipo en una región `target` si
+se llama desde una variable `type(t)` del mismo tipo? Programa aislado con función libre, método del mismo tipo (también
+`non_overridable`), método heredado y sobrescrito de un tipo extendido, y despacho dinámico real (`class(t)` decidido en
+ejecución), dentro de `!$omp target teams distribute parallel do`:
+
+| Caso | ifx → Intel UHD 770, sp | ifx, dp emulado | gfortran 15.2 → NVPTX / AMDGCN (sólo build: no hay GPU) |
+|---|---|---|---|
+| Función libre con `type(t)` | funciona | funciona | enlaza |
+| Método del mismo tipo (y `non_overridable`) | funciona | funciona (programa mínimo) | **no enlaza con `-O0`**; enlaza con `-O2` |
+| Heredado / sobrescrito en tipo extendido | funciona | el JIT no termina (> 240 s) | no enlaza con `-O0` |
+| Despacho dinámico | funciona | el JIT no termina | no enlaza con `-O0` |
+
+Causa con gfortran: Fortran exige `class(t)` en el argumento del método aunque se llame con `type(t)`, y gfortran le
+pasa un contenedor con puntero a la tabla de métodos: «variable '__vtab_min_m_T' has been referenced in offloaded code
+but hasn't been marked to be included in the offloaded code». La tabla la genera el compilador y no se puede marcar
+`declare target`; con `-O2` la referencia desaparece por optimización (dependería del nivel de optimización). ifx sí lo
+soporta. **La regla se mantiene** (los kernels sólo llaman funciones libres; los `%metodo()` son API histórica de host)
+mientras el proyecto apunte a NVIDIA y AMD con gfortran; revisarla si gfortran lo corrige o si se usara sólo ifx.
+A raíz de esto, `is_identity` (antes privada de `muscle_kin_finite`) pasó a ser función libre de `2Osym` y `2O`
+(exportada por `muscle_tensor_functions`, comparación exacta) con su envoltorio `%is_identity()`.
+
 ## D-012 — Enmienda a D-011: código común de las plantillas de tipo
 **Estado:** Aceptada (2026-10-30; refactor pedido por el usuario como prioridad antes de la
 segunda tanda de la Fase 3)
@@ -1309,3 +1330,39 @@ incluido el de OpenMP; math 2; viscoplásticas 1; cinemáticas 1), criterio de D
 tema (`test_muscle_material_<solver>`, `test_muscle_fypp_smoke`). Se renombraron 44 archivos con `git mv`; los
 nombres de ctest (`<carpeta>-<nombre>`) no cambian, así que los filtros `-R` y las áreas de `mutation_check`
 siguen valiendo.
+
+## D-026 — Directivas FYPP indentadas al nivel del código que controlan (2026-11-11)
+
+**Contexto:** las ~3 000 directivas de control de las plantillas estaban en la columna 0, lo que corta la lectura
+del Fortran (re-análisis de convenciones, tarea V9). FYPP 3.1 acepta espacios antes de una directiva y borra la
+línea entera al preprocesar, así que su sangría no llega al código generado.
+**Decisión del usuario:** una directiva de control (`#:if`, `#:for`, `#:set`, `#:assert`, `#:call`, `#:block`…)
+toma la sangría de la línea de código que le sigue; `#:elif`, `#:else` y el cierre, la de su apertura. El
+contenido **no** gana un nivel extra (opción A): la sangría sigue mostrando el anidamiento del Fortran, el
+generado no cambia y las líneas no se alargan. Quedan en columna 0 `#:include`, `#:def`/`#:enddef`, la guarda más
+externa de un archivo entero (p. ej. `#:if defined('MAT')` de un cuerpo incluido) y los comentarios `#!`.
+Aplicado a las 119 plantillas de `src/`, `include/`, `tests/` y `benchmarks/` con un script de una sola vez
+(3 164 líneas, sólo espacios iniciales); `gen_snapshot.sh` idéntico y el Fortran generado de los tests idéntico.
+Regla en `pages/conventions.md` y `.claude/rules/fypp-templates.md`.
+
+## D-027 — Módulos de las familias `os`, `elas` y `yield` con el prefijo de sus funciones (2026-11-11)
+
+**Contexto:** re-análisis de convenciones (V6, I6): tres familias no seguían la regla «la familia `x` vive en
+`muscle_x_<modelo>` y `muscle_x_laws`», y eso confundió a la prueba del recién llegado (ley Perić).
+**Decisión del usuario:** renombrar archivos y módulos, **sin alias** de compatibilidad (la API FYPP no se publicó:
+vive en esta rama sin integrar; `main` es el código OO anterior):
+
+| Antes | Ahora |
+|---|---|
+| `muscle_vp_overstress_laws` | `muscle_os_laws` |
+| `muscle_vp_perzyna`, `muscle_vp_chaboche` | `muscle_os_perzyna`, `muscle_os_chaboche` |
+| `muscle_elasticity_laws`, `muscle_elasticity_linear` | `muscle_elas_laws`, `muscle_elas_linear` |
+| `muscle_visco_frozen` | `muscle_elas_frozen` (sigue en `src/viscoelasticity/`) |
+| `muscle_yield_criteria` | `muscle_yield_laws` |
+| `muscle_anisotropic_yield` | `muscle_yield_anisotropic` |
+
+Las carpetas no cambian. Desaparece el caso especial `MODEL_MODULES` de `muscle_meta.py` (el módulo de un modelo es
+siempre `ModelFamily.module`). Los tests siguen D-025 (`test_muscle_elas_laws_kinds`, `test_muscle_yield_laws_kinds`,
+`test_muscle_os_chaboche`); los nombres de ctest no cambian. Verificado: el Fortran generado y la tabla de símbolos son
+idénticos a los de antes con los nombres cambiados. Los documentos anteriores de `docs/fypp/` conservan los nombres de
+su fecha.

@@ -85,12 +85,13 @@ module muscle_kin_finite
     !! ```
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK, STATUS_INVALID_DEFORMATION
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_kinds, only : KIN_JACOBI_GAP_LO_${k}$, KIN_JACOBI_GAP_HI_${k}$, EPS_ABS_${k}$
     use muscle_tensor_2o, only : ten_3D2O_${k}$
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O2sym_${k}$
-#:endfor
+    #:endfor
     use muscle_tensor_2o, only : det, transpose, inverse
+    use muscle_tensor_2osym, only : is_identity
     use muscle_tensors, only : operator(+), operator(*), operator(/), operator(.transform.), operator(.ddot.), &
         & assignment(=)
     use muscle_math_operations, only : eigenvals
@@ -105,7 +106,7 @@ module muscle_kin_finite
         & kin_pull_back_tangent, kin_rotate_to_corotational, kin_rotate_from_corotational, kin_jaumann_tangent, &
         & kin_volumetric_tangent, kin_spin_tangent, kin_log_tangent, kin_spatial_log_tangent, &
         & kin_almansi_tangent
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: kin_state_${k}$, KIN_EIG_MIN_${k}$
     public :: kin_finite_update_${k}$, kin_finite_update_norot_${k}$, kin_log_measure_${k}$, &
         & kin_green_lagrange_${k}$, kin_euler_almansi_${k}$, kin_material_log_${k}$, kin_spatial_log_${k}$, &
@@ -117,9 +118,9 @@ module muscle_kin_finite
         & kin_spin_tangent_${k}$, kin_log_tangent_${k}$, kin_spatial_log_tangent_${k}$, &
         & kin_almansi_tangent_${k}$, kin_rotate_to_corotational_tangent_${k}$, &
         & kin_rotate_from_corotational_tangent_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     real(${k}$), parameter :: KIN_EIG_MIN_${k}$ = ${EIG_MIN[k]}$_${k}$
         !! Smallest admissible eigenvalue of \( \mathbf{C} \) in `real(${k}$)`: the smaller
@@ -153,146 +154,146 @@ module muscle_kin_finite
         type(ten_3D2Osym_${k}$) :: strain = ten_3D2Osym_${k}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
             !! Strain measure of the kinematics (written by `kin_update`; zero after `kin_finite_update`).
     end type kin_state_${k}$
-#:endfor
+    #:endfor
 
     interface kin_finite_update
         !! Kinematic state of a deformation gradient, except the strain (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_finite_update_${k}$
-#:endfor
+        #:endfor
     end interface kin_finite_update
 
     interface kin_finite_update_norot
         !! Kinematic state of a deformation gradient, except the strain and the rotation (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_finite_update_norot_${k}$
-#:endfor
+        #:endfor
     end interface kin_finite_update_norot
 
     interface kin_log_measure
         !! Hencky strain from the eigenvalues and eigenprojections of C or b (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_log_measure_${k}$
-#:endfor
+        #:endfor
     end interface kin_log_measure
 
     interface kin_green_lagrange
         !! Green-Lagrange strain \( \mathbf{E} = \tfrac{1}{2}(\mathbf{C} - \mathbf{I}) \) of a kinematic state
         !! (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_green_lagrange_${k}$
-#:endfor
+        #:endfor
     end interface kin_green_lagrange
 
     interface kin_euler_almansi
         !! Euler-Almansi strain \( \mathbf{e} = \tfrac{1}{2}(\mathbf{I} - \mathbf{b}^{-1}) \) of a kinematic
         !! state (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_euler_almansi_${k}$
-#:endfor
+        #:endfor
     end interface kin_euler_almansi
 
     interface kin_material_log
         !! Material Hencky strain \( \mathbf{H} = \tfrac{1}{2}\ln\mathbf{C} = \ln\mathbf{U} \) of a kinematic
         !! state (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_material_log_${k}$
-#:endfor
+        #:endfor
     end interface kin_material_log
 
     interface kin_spatial_log
         !! Spatial Hencky strain \( \mathbf{h} = \tfrac{1}{2}\ln\mathbf{b} = \ln\mathbf{V} \) of a kinematic
         !! state (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_spatial_log_${k}$
-#:endfor
+        #:endfor
     end interface kin_spatial_log
 
     interface kin_pk2_to_cauchy
         !! Stress conversion \( \boldsymbol\sigma = J^{-1}\mathbf{F}\mathbf{S}\mathbf{F}^T \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_pk2_to_cauchy_${k}$
-#:endfor
+        #:endfor
     end interface kin_pk2_to_cauchy
 
     interface kin_cauchy_to_pk2
         !! Stress conversion \( \mathbf{S} = J\mathbf{F}^{-1}\boldsymbol\sigma\mathbf{F}^{-T} \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_cauchy_to_pk2_${k}$
-#:endfor
+        #:endfor
     end interface kin_cauchy_to_pk2
 
     interface kin_pk2_to_kirchhoff
         !! Stress conversion \( \boldsymbol\tau = \mathbf{F}\mathbf{S}\mathbf{F}^T \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_pk2_to_kirchhoff_${k}$
-#:endfor
+        #:endfor
     end interface kin_pk2_to_kirchhoff
 
     interface kin_kirchhoff_to_pk2
         !! Stress conversion \( \mathbf{S} = \mathbf{F}^{-1}\boldsymbol\tau\mathbf{F}^{-T} \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_kirchhoff_to_pk2_${k}$
-#:endfor
+        #:endfor
     end interface kin_kirchhoff_to_pk2
 
     interface kin_cauchy_to_kirchhoff
         !! Stress conversion \( \boldsymbol\tau = J\boldsymbol\sigma \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_cauchy_to_kirchhoff_${k}$
-#:endfor
+        #:endfor
     end interface kin_cauchy_to_kirchhoff
 
     interface kin_kirchhoff_to_cauchy
         !! Stress conversion \( \boldsymbol\sigma = J^{-1}\boldsymbol\tau \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_kirchhoff_to_cauchy_${k}$
-#:endfor
+        #:endfor
     end interface kin_kirchhoff_to_cauchy
 
     interface kin_pk2_to_pk1
         !! Stress conversion \( \mathbf{P} = \mathbf{F}\mathbf{S} \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_pk2_to_pk1_${k}$
-#:endfor
+        #:endfor
     end interface kin_pk2_to_pk1
 
     interface kin_pk1_to_pk2
         !! Stress conversion \( \mathbf{S} = \mathbf{F}^{-1}\mathbf{P} \) (symmetric part read from the upper
         !! triangle) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_pk1_to_pk2_${k}$
-#:endfor
+        #:endfor
     end interface kin_pk1_to_pk2
 
     interface kin_cauchy_to_pk1
         !! Stress conversion \( \mathbf{P} = J\boldsymbol\sigma\mathbf{F}^{-T} \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_cauchy_to_pk1_${k}$
-#:endfor
+        #:endfor
     end interface kin_cauchy_to_pk1
 
     interface kin_pk1_to_cauchy
         !! Stress conversion \( \boldsymbol\sigma = J^{-1}\mathbf{P}\mathbf{F}^T \) (symmetric part read from
         !! the upper triangle) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_pk1_to_cauchy_${k}$
-#:endfor
+        #:endfor
     end interface kin_pk1_to_cauchy
 
     interface kin_push_forward_tangent
         !! Push-forward of a tangent, \( c_{ijkl} = J^{-1} F_{iI} F_{jJ} F_{kK} F_{lL} C_{IJKL} \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_push_forward_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_push_forward_tangent
 
     interface kin_pull_back_tangent
         !! Pull-back of a tangent, \( C_{IJKL} = J F^{-1}_{Ii} F^{-1}_{Jj} F^{-1}_{Kk} F^{-1}_{Ll} c_{ijkl} \)
         !! (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_pull_back_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_pull_back_tangent
 
     interface kin_jaumann_tangent
@@ -300,35 +301,35 @@ module muscle_kin_finite
         !! \tfrac{1}{2}(\delta_{ik}\sigma_{jl} + \delta_{il}\sigma_{jk} + \sigma_{ik}\delta_{jl} +
         !! \sigma_{il}\delta_{jk}) \) (\( \delta\boldsymbol\varepsilon\,\boldsymbol\sigma +
         !! \boldsymbol\sigma\,\delta\boldsymbol\varepsilon \)) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_jaumann_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_jaumann_tangent
 
     interface kin_volumetric_tangent
         !! Geometric term of the volume change, \( \boldsymbol\sigma\otimes\mathbf{I} \) (\(
         !! \operatorname{tr}(\delta\boldsymbol\varepsilon)\,\boldsymbol\sigma \)) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_volumetric_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_volumetric_tangent
 
     interface kin_spin_tangent
         !! Geometric term of the rotation of the polar decomposition, \( \boldsymbol\Omega\boldsymbol\sigma -
         !! \boldsymbol\sigma\boldsymbol\Omega \), \( \boldsymbol\Omega = \delta\mathbf{R}\,\mathbf{R}^T \)
         !! (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_spin_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_spin_tangent
 
     interface kin_log_tangent
         !! Material part of a stress in the material Hencky strain rotated with R, \( \mathbf{R}(\mathbb{A} :
         !! \delta\mathbf{H})\mathbf{R}^T \), \( \delta\mathbf{H} = \tfrac{1}{2}\,d\ln\mathbf{C}/d\mathbf{C} :
         !! 2\mathbf{F}^T\delta\boldsymbol\varepsilon\mathbf{F} \) (no division by J) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_log_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_log_tangent
 
     interface kin_spatial_log_tangent
@@ -336,38 +337,38 @@ module muscle_kin_finite
         !! \delta\mathbf{h} = \tfrac{1}{2}\,d\ln\mathbf{b}/d\mathbf{b} :
         !! (\delta\boldsymbol\varepsilon\mathbf{b} + \mathbf{b}\delta\boldsymbol\varepsilon) \) (no division
         !! by J) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_spatial_log_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_spatial_log_tangent
 
     interface kin_almansi_tangent
         !! Material part of a stress in the Euler-Almansi strain, \( \mathbb{A} : \delta\mathbf{e} \), \(
         !! \delta\mathbf{e} = \tfrac{1}{2}(\delta\boldsymbol\varepsilon\mathbf{b}^{-1} +
         !! \mathbf{b}^{-1}\delta\boldsymbol\varepsilon) \) (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_almansi_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_almansi_tangent
 
     interface kin_rotate_to_corotational
         !! Rotation to the corotational frame, \( \mathbf{R}^T\mathbf{T}\mathbf{R} \), of a symmetric second
         !! order tensor or of a tangent (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_rotate_to_corotational_${k}$, kin_rotate_to_corotational_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_rotate_to_corotational
 
     interface kin_rotate_from_corotational
         !! Rotation from the corotational frame, \( \mathbf{R}\mathbf{T}\mathbf{R}^T \), of a symmetric second
         !! order tensor or of a tangent (every kind).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure kin_rotate_from_corotational_${k}$, kin_rotate_from_corotational_tangent_${k}$
-#:endfor
+        #:endfor
     end interface kin_rotate_from_corotational
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine kin_finite_update_${k}$(F, state, status, eig_c, proj_c)
         !! Kinematic state of the deformation gradient `F` in `real(${k}$)`, except the strain (zero):
@@ -407,10 +408,10 @@ contains
         state%R = F * U_inv
 
         status = finite_status_${k}$(ok, state%J, eig)
-#:if k == 'sp'
+        #:if k == 'sp'
         ! sp: the rotation of the scaled Newton iteration of the polar decomposition (D-018.15f)
         if (status == STATUS_OK) state%R = polar_rotation_${k}$(F)
-#:endif
+        #:endif
         if (present(eig_c)) eig_c = eig
         if (present(proj_c)) proj_c = proj
     end subroutine kin_finite_update_${k}$
@@ -933,7 +934,7 @@ contains
             proj(a)%vals = [v(1, i)**2, v(2, i)**2, v(3, i)**2, v(1, i)*v(2, i), v(2, i)*v(3, i), v(1, i)*v(3, i)]
         end do
     end subroutine jacobi_eigen_${k}$
-#:if k == 'sp'
+    #:if k == 'sp'
 
     pure function polar_rotation_${k}$(F) result(R)
         !! Rotation of the polar decomposition \( \mathbf{F} = \mathbf{R}\mathbf{U} \), `real(${k}$)`, by the
@@ -968,7 +969,7 @@ contains
         end do
         @:MAT33_TO_VEC9(R%vals, x)
     end function polar_rotation_${k}$
-#:endif
+    #:endif
 
     pure function mat33_${k}$(t) result(m)
         !! Symmetric tensor as a 3x3 matrix, `real(${k}$)`.
@@ -1061,18 +1062,6 @@ contains
         active = lam > KIN_EIG_MIN_${k}$
     end subroutine spectral_${k}$
 
-    pure function is_identity_${k}$(s) result(res)
-        !! The symmetric tensor is exactly the identity, `real(${k}$)`.
-        implicit none
-        @:DEVICE()
-        type(ten_3D2Osym_${k}$), intent(in) :: s
-            !! Tensor.
-        logical :: res
-            !! `s` = I.
-
-        res = maxval(abs(s%vals - [1.0_${k}$, 1.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])) <= 0.0_${k}$
-    end function is_identity_${k}$
-
     pure function kin_jaumann_tangent_${k}$(sigma) result(res)
         !! Geometric term of a Kirchhoff stress pushed forward with F, \( G_{ijkl} =
         !! \tfrac{1}{2}(\delta_{ik}\sigma_{jl} + \delta_{il}\sigma_{jk} + \sigma_{ik}\delta_{jl} +
@@ -1131,7 +1120,7 @@ contains
         integer :: a, b, c
 
         res%vals = 0.0_${k}$
-        if (is_identity_${k}$(st%C)) return
+        if (is_identity(st%C)) return
         call spectral_${k}$(st%C, lam, proj, active)
         u = sqrt(merge(lam, 0.0_${k}$, active))
         @:VEC9_TO_MAT33(r, st%R%vals)
@@ -1180,7 +1169,7 @@ contains
         type(ten_3D2Osym_${k}$) :: ds, dsym
         integer :: a, b, c
 
-        if (is_identity_${k}$(st%C)) then
+        if (is_identity(st%C)) then
             res = st%R .transform. tangent
             return
         end if
@@ -1234,7 +1223,7 @@ contains
         type(ten_3D2Osym_${k}$) :: ds, dsym
         integer :: a, b, c
 
-        if (is_identity_${k}$(st%b)) then
+        if (is_identity(st%b)) then
             res = tangent
             return
         end if
@@ -1283,6 +1272,6 @@ contains
             res%vals(:, c) = ds%vals
         end do
     end function kin_almansi_tangent_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_kin_finite

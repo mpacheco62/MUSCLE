@@ -10,9 +10,9 @@ module muscle_tensor_minus
     !! specifics) with the binary one of `muscle_tensor_ops_addition_subtraction` and other
     !! generics, a program that uses it loses the unary minus (`b = -a`: error #6549). Merging
     !! `operator(-)` alone here and importing it from this module only avoids it.
-#:for F in FAMILIES
+    #:for F in FAMILIES
     use muscle_tensor_${F.lower()}$, only: operator(-)
-#:endfor
+    #:endfor
     use muscle_tensor_iden, only: operator(-)
     use muscle_tensor_ops_addition_subtraction, only: operator(-)
     implicit none

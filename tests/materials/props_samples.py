@@ -18,7 +18,7 @@ _DP_MODES = {'TENSION': '1', 'COMPRESSION': '2', 'SHEAR': '3'}
 _NUM = r'-?[0-9.]+(?:e-?[0-9]+)?'
 
 
-def _golden(mm):
+def _case_params(mm):
     return mm.load_python_file(os.path.join(_HERE, 'case_params.py')).CASE_PARAMS
 
 
@@ -39,7 +39,7 @@ def sample_inputs(mm, prefix, model):
     if (prefix, model) == ('elas', 'linear'):
         return {'young': '210000.0', 'poisson': '0.3'}
     res = {}
-    sets = _golden(mm).get((prefix, model), {})
+    sets = _case_params(mm).get((prefix, model), {})
     stmts = ' '.join(next(iter(sets.values()))) if sets else ''
     stmts = stmts.replace('@@', ' ')
     for name, val in re.findall(r'\{v\}%(\w+) = (' + _NUM + r'_\{k\})', stmts):

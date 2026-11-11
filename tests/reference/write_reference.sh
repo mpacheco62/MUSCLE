@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #
-# Writes one reference reference file for the regenerate.sh scripts: runs the reference test EXE with
+# Writes one reference file for the regenerate.sh scripts: runs the reference test EXE with
 # `--write`, and keeps the comment header of an existing OUT (its capture, approved updates and
 # removals) and every record that the new one matches for the reference comparison (NaN = NaN,
 # merge_reference.py); a new OUT gets the capture header (CAPTURE: commit, compiler, build type; BY: the

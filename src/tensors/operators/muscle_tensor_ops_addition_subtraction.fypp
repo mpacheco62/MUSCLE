@@ -32,15 +32,15 @@ $:OP_USES(MODULE)
 $:OP_INTERFACES(MODULE)
 contains
 
-#:for g in OP_MODULES[MODULE]
-#:for d in DIMS
-#:for k in REAL_KINDS
-#:for e in op_entries(g, d, k)
-#:set x, y = op_args(e)
-#:set A, B, R = op_symbols(e)
-#:set ia, ib = op_iden(e.tag_a), op_iden(e.tag_b)
-#:set what = 'Sum' if g == '+' else 'Difference'
-#:set doc = '{} \\({} = {} {} {}\\)'.format(what, R, A, g, B)
+    #:for g in OP_MODULES[MODULE]
+    #:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for e in op_entries(g, d, k)
+    #:set x, y = op_args(e)
+    #:set A, B, R = op_symbols(e)
+    #:set ia, ib = op_iden(e.tag_a), op_iden(e.tag_b)
+    #:set what = 'Sum' if g == '+' else 'Difference'
+    #:set doc = '{} \\({} = {} {} {}\\)'.format(what, R, A, g, B)
     pure function ${e.name}$(${x}$, ${y}$) result(res)
         !! ${op_doc(e, doc)}$
         implicit none
@@ -48,32 +48,32 @@ contains
         type(${e.a}$), intent(in) :: ${x}$
         type(${e.b}$), intent(in) :: ${y}$
         ${op_res_decl(e)}$ :: res
-#:if ia is None and ib is None
-#:set la, lb, lr = op_layout(e.tag_a), op_layout(e.tag_b), op_layout(e.tag_res)
-#:for c in lr.comps
+        #:if ia is None and ib is None
+        #:set la, lb, lr = op_layout(e.tag_a), op_layout(e.tag_b), op_layout(e.tag_res)
+        #:for c in lr.comps
         ${lr.ref('res%vals', *c.idx)}$ = ${la.ref(x + '%vals', *c.idx)}$ ${g}$ ${lb.ref(y + '%vals', *c.idx)}$
-#:endfor
-#:elif ia is None or ib is None
+        #:endfor
+        #:elif ia is None or ib is None
 #! t: the tensor operand, I: the identity; `I - T` negates the tensor, `T - I` subtracts the
 #! identity.
-#:set t, I, tag = (x, y, e.tag_b) if ia is None else (y, x, e.tag_a)
-#:set neg = '-' if g == '-' and t == y else ''
-#:set op = '-' if g == '-' and t == x else '+'
+        #:set t, I, tag = (x, y, e.tag_b) if ia is None else (y, x, e.tag_a)
+        #:set neg = '-' if g == '-' and t == y else ''
+        #:set op = '-' if g == '-' and t == x else '+'
         res%vals = ${neg}$${t}$%vals
-#:for p, v in iden_combination(op_layout(e.tag_res), [op_iden_term(tag, I + '%val')], k)
+        #:for p, v in iden_combination(op_layout(e.tag_res), [op_iden_term(tag, I + '%val')], k)
         res%vals(${p}$) = res%vals(${p}$) ${op}$ ${v}$
-#:endfor
-#:else
+        #:endfor
+        #:else
         res%vals = 0.0_${k}$
-#:set terms = [op_iden_term(e.tag_a, x + '%val'), op_iden_term(e.tag_b, y + '%val', g)]
-#:for p, v in iden_combination(op_layout(e.tag_res), terms, k)
+        #:set terms = [op_iden_term(e.tag_a, x + '%val'), op_iden_term(e.tag_b, y + '%val', g)]
+        #:for p, v in iden_combination(op_layout(e.tag_res), terms, k)
         res%vals(${p}$) = ${v}$
-#:endfor
-#:endif
+        #:endfor
+        #:endif
     end function ${e.name}$
 
-#:endfor
-#:endfor
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
+    #:endfor
+    #:endfor
 end module muscle_tensor_ops_${MODULE}$

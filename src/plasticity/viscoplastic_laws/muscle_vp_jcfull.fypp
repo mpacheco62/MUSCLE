@@ -32,13 +32,13 @@ module muscle_vp_jcfull
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: vp_jcfull_${k}$
     public :: vp_flow_stress_jcfull_${k}$, vp_dflow_dep_jcfull_${k}$, vp_dflow_depd_jcfull_${k}$, &
         & vp_dstress_dep_jcfull_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: vp_jcfull_${k}$
         !! Parameters of the full Johnson-Cook model in `real(${k}$)`.
         real(${k}$) :: C = 0.0_${k}$
@@ -54,10 +54,10 @@ module muscle_vp_jcfull
         real(${k}$) :: T_current = 0.0_${k}$
             !! Current temperature \( T \) (K), set by the caller.
     end type vp_jcfull_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function vp_jcfull_temp_${k}$(prm) result(res)
         !! Thermal factor \( 1 - T^{*m} \) of the full Johnson-Cook model in `real(${k}$)`.
         implicit none
@@ -179,5 +179,5 @@ contains
         res = vp_dflow_dep_jcfull_${k}$(prm, ep, epd, sy, dsy_dep) + vp_dflow_depd_jcfull_${k}$(prm, ep, epd, sy)/dt
     end function vp_dstress_dep_jcfull_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_vp_jcfull

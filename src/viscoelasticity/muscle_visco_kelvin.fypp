@@ -31,26 +31,26 @@ module muscle_visco_kelvin
     !! `visco_n_branches_kelvin_<k>` (generics `visco_*` of muscle_visco_laws).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER, STATUS_INVALID_TIME_STEP
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$
-#:endfor
+    #:endfor
     use muscle_tensors, only : iden_2O, operator(.dev.), operator(.ddot.), operator(*), operator(-)
     use muscle_visco_types, only : MAX_VISCO_BRANCHES
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_visco_types, only : visco_state_${k}$, visco_coefs_${k}$
-    use muscle_visco_frozen, only : elas_frozen_${k}$
-#:endfor
+    use muscle_elas_frozen, only : elas_frozen_${k}$
+    #:endfor
     implicit none
     private
 
     public :: visco_kelvin_init
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: visco_kelvin_${k}$, visco_kelvin_init_${k}$
     public :: visco_step_coefficients_kelvin_${k}$, visco_freeze_kelvin_${k}$, visco_update_kelvin_${k}$
     public :: visco_n_branches_kelvin_${k}$, visco_freeze_branches_kelvin_${k}$, visco_update_branches_kelvin_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: visco_kelvin_${k}$
         !! Parameters of the Kelvin-Voigt model in `real(${k}$)` (build it with `visco_kelvin_init`, which validates the
         !! private parameters).
@@ -64,16 +64,16 @@ module muscle_visco_kelvin
             !! Deviatoric viscosity of the dashpot \( \mu_v \).
     end type visco_kelvin_${k}$
 
-#:endfor
+    #:endfor
     interface visco_kelvin_init
         !! Parameters of the Kelvin-Voigt solid.
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure visco_kelvin_init_${k}$
-#:endfor
+        #:endfor
     end interface visco_kelvin_init
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure subroutine visco_kelvin_init_${k}$(prm, bulk, shear, bulk_viscosity, shear_viscosity, status)
         !! Parameters of the Kelvin-Voigt solid in `real(${k}$)`: elastic moduli and viscosities.
         !! `STATUS_INVALID_PARAMETER` (and the default parameters) if any of them is negative.
@@ -146,7 +146,7 @@ contains
         type(visco_state_${k}$), intent(in) :: state_n
             !! Converged state at \( t_n \).
         type(elas_frozen_${k}$) :: elas
-            !! Frozen elasticity (`elas_*` generics of muscle_elasticity_laws).
+            !! Frozen elasticity (`elas_*` generics of muscle_elas_laws).
 
         elas = visco_freeze_branches_kelvin_${k}$(prm, coefs, state_n%strain_e, MAX_VISCO_BRANCHES, state_n%h)
     end function visco_freeze_kelvin_${k}$
@@ -193,7 +193,7 @@ contains
         real(${k}$), intent(in) :: h_n(6, nb)
             !! History tensors at \( t_n \) (Voigt order of `ten_3D2Osym`).
         type(elas_frozen_${k}$) :: elas
-            !! Frozen elasticity (`elas_*` generics of muscle_elasticity_laws).
+            !! Frozen elasticity (`elas_*` generics of muscle_elas_laws).
         type(ten_3D2Osym_${k}$) :: e_n
 
         e_n = strain_e_n
@@ -239,5 +239,5 @@ contains
         res = 0
     end function visco_n_branches_kelvin_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_visco_kelvin

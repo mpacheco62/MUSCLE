@@ -18,7 +18,7 @@ How the pieces of MUSCLE fit together, from the tensor types to the API that an 
  solver body  src/solvers/muscle_<solver>_body.fypp   ← one text, included in every material module
         │  calls the family generics only: elas_stress, yield_stress_eq, hard_stress, kin_update, ...
         ▼
- model families  muscle_<family>_laws / muscle_yield_criteria   ← generic interfaces, written by hand
+ model families  muscle_<family>_laws / muscle_yield_laws   ← generic interfaces, written by hand
         │  resolve at compile time by the type of the parameters (hard_swift_dp, yield_vonmises_dp, ...)
         ▼
  models  muscle_<family>_<model>                ← one file per model: type + pure functions

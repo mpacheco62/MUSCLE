@@ -24,8 +24,8 @@ program test_mat_cp_anisotropic
     !!   plastic incompressibility), quantities independent of the iterations.
     $:MAT_TEST_USES(MATS)
     use muscle_tensors, only : operator(-)
-    use muscle_elasticity_laws, only : elas_stress
-    use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq
+    use muscle_elas_laws, only : elas_stress
+    use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq
     use muscle_hard_laws, only : hard_stress
     use muscle_test_utils, only : check_scaled
     implicit none
@@ -69,17 +69,17 @@ program test_mat_cp_anisotropic
         !! Plastic incompressibility, sp [8.7e-8] (dp: measured 0).
 
     passed = .true.
-#:for k in REAL_KINDS
-#:for c in ANISO.CASES
+    #:for k in REAL_KINDS
+    #:for c in ANISO.CASES
     call step_${c['material']}$_${k}$('${c['name']}$', '${c['yld']}$', &
         ${dp_vec(c['strain'])}$, &
         ${dp_vec(c['stress'])}$, &
         ${dp_vec(c['strain_p'])}$, &
         ${dp_vec(c.get('width', ('0.0',) * 6))}$, ${c.get('r', '0.0')}$_dp, &
         ${dp_vec(c.get('ratio', ('0.0', '0.0')))}$, ${c.get('tol_tan', '0.0')}$_dp)
-#:endfor
+    #:endfor
     call large_increments_${k}$()
-#:endfor
+    #:endfor
     if (.not. passed) then
         print '(a)', ' FAIL: test_mat_cp_anisotropic'
         stop 1
@@ -87,8 +87,8 @@ program test_mat_cp_anisotropic
 
 contains
 $:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in ANISO.CASES if 'tol_tan' in c])
-#:for k in REAL_KINDS
-#:for m in MATS
+    #:for k in REAL_KINDS
+    #:for m in MATS
 
     subroutine step_${m}$_${k}$(label, yld, strain_in, stress_ex, strain_p_ex, width, r_ex, ratio, tol_tan)
         !! Single plastic step of `${m}$` from the virgin state (parameter set `yld`), `real(${k}$)`.
@@ -133,27 +133,27 @@ $:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in ANISO.CASES if 'tol_tan'
                 real(ratio(1), ${k}$)/abs(stress%vals(1)), real(ratio(2), ${k}$), TOL_R_${k}$)
         end if
         if (tol_tan > 0.0_dp) then
-#:if k == 'dp'
+            #:if k == 'dp'
             call fd_check_${m}$_${k}$(label, mat, strain, 0.0_${k}$, sn, tangent, tol_tan)
-#:else
+            #:else
             call fd_check_${m}$_${k}$(label, mat, strain, 0.0_${k}$, sn, tangent, TOL_TAN_${k}$)
-#:endif
+            #:endif
         end if
     end subroutine step_${m}$_${k}$
-#:endfor
+    #:endfor
 
     subroutine large_increments_${k}$()
         !! Increments of 100, 300 and 1000 yield strains of CPB06 from the virgin state along six
         !! directions (uniaxial RD and TD, equibiaxial, plane strain RD, shear xy, general), scaled to
         !! a largest component of lambda times the yield strain, `real(${k}$)` (sp: 100 and 300).
         real(${k}$), parameter :: YOUNG = 70000.0_${k}$, LAMBDAS(3) = [100.0_${k}$, 300.0_${k}$, 1000.0_${k}$]
-#:if k == 'dp'
+        #:if k == 'dp'
         integer, parameter :: NLAMBDA = 3
-#:else
+        #:else
         integer, parameter :: NLAMBDA = 2
             !! 1000 yield strains do not converge in sp along four of the directions (the Newton
             !! tolerance 1e-5 sigma_y is near the rounding of the stress of such an increment).
-#:endif
+        #:endif
         real(${k}$), parameter :: D(6, 6) = reshape([ &
             1.0_${k}$, -0.5_${k}$, -0.5_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
             -0.5_${k}$, 1.0_${k}$, -0.5_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
@@ -195,6 +195,6 @@ $:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in ANISO.CASES if 'tol_tan'
             end do
         end do
     end subroutine large_increments_${k}$
-#:endfor
+    #:endfor
 
 end program test_mat_cp_anisotropic

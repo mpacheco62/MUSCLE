@@ -55,21 +55,21 @@ module muscle_tensor_4o2sym
     !!
     !! For more information see [[muscle_tensors]]
     use muscle_kinds, only: sp, dp
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_kinds, only: TOL_APPROX_4O2SYM_${k}$, EPS_ABS_${k}$
-#:endfor
+    #:endfor
     use muscle_tensor_4o3sym, only: ${', '.join(tname(d + '4O3sym', k) for d in DIMS for k in REAL_KINDS)}$
     implicit none
     private
 
-#:set F = '4O2sym'
-#:for d in DIMS
-#:set lay = layout(F, d)
-#:set n = len(lay.comps)
-#:set nb = lay.shape[0]
-#:set S = d + F
-#:for k in REAL_KINDS
-#:set T = tname(S, k)
+    #:set F = '4O2sym'
+    #:for d in DIMS
+    #:set lay = layout(F, d)
+    #:set n = len(lay.comps)
+    #:set nb = lay.shape[0]
+    #:set S = d + F
+    #:for k in REAL_KINDS
+    #:set T = tname(S, k)
     type, public :: ${T}$
         !! ${d}$ fourth-order tensor with minor symmetries in `real(${k}$)`: full ${nb}$x${nb}$ Voigt
         !! matrix \( C_{IJ} \) (generally unsymmetric).
@@ -89,8 +89,8 @@ module muscle_tensor_4o2sym
                 !! Inverse tensor (quiet NaN if singular).
     end type ${T}$
 
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 $:TENSOR_COMMON_INTERFACES(F)
 
     public :: norm
@@ -107,23 +107,23 @@ $:TENSOR_COMMON_INTERFACES(F)
 
 contains
 
-#:for d in DIMS
-#:set lay = layout(F, d)
-#:set n = len(lay.comps)
-#:set base = lay.base.comps
-#:set nb = lay.shape[0]
-#:set S = d + F
+    #:for d in DIMS
+    #:set lay = layout(F, d)
+    #:set n = len(lay.comps)
+    #:set base = lay.base.comps
+    #:set nb = lay.shape[0]
+    #:set S = d + F
 #! Component names row by row of the Voigt matrix (argument order of init2)
-#:set rows = [[c.name for c in lay.comps if c.pos[0] == i] for i in range(1, nb + 1)]
+    #:set rows = [[c.name for c in lay.comps if c.pos[0] == i] for i in range(1, nb + 1)]
 #! norm keeps the summation order of the original code: row by row in 3D (nested loops),
 #! column by column (storage order, intrinsic sum) in 2D
-#:set norm_comps = sorted(lay.comps, key=lambda c: c.pos) if d == '3D' else lay.comps
-#:for k in REAL_KINDS
-#:set T = tname(S, k)
-#:set P = S + '_' + k
-#:set T3 = tname(d + '4O3sym', k)
+    #:set norm_comps = sorted(lay.comps, key=lambda c: c.pos) if d == '3D' else lay.comps
+    #:for k in REAL_KINDS
+    #:set T = tname(S, k)
+    #:set P = S + '_' + k
+    #:set T3 = tname(d + '4O3sym', k)
 #! Inverse of the nb x nb Voigt matrix (M66INV_<k> in 3D, M44INV_<k> in 2D)
-#:set minv = 'M{0}{0}INV_{1}'.format(nb, k)
+    #:set minv = 'M{0}{0}INV_{1}'.format(nb, k)
     ! ---------------------------------------------------------------------------------------
     ! ${T}$
     ! ---------------------------------------------------------------------------------------
@@ -151,9 +151,9 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k, tol_default='TOL_APPROX_4O2SYM_' + k)
             !! Tensor to convert.
         type(${T3}$) :: res
             !! Fully symmetric tensor.
-#:for c in layout('4O3sym', d).comps
+        #:for c in layout('4O3sym', d).comps
         res%vals(${c.pos[0]}$) = a%vals(${c.voigt[0]}$, ${c.voigt[1]}$)
-#:endfor
+        #:endfor
     end function convert_3sym_${P}$
 
     pure subroutine inverse_${P}$(a, a_inv, ok, cond)
@@ -188,15 +188,15 @@ $:LOAD_MATRIX('mat_a', lay, k)
             a_inv%vals = QUIET_NAN_${k}$()
             return
         end if
-#:for c in lay.comps
-#:set I, J = c.voigt
-#:set w = base[I - 1].mult * base[J - 1].mult
-#:if w == 1
+        #:for c in lay.comps
+        #:set I, J = c.voigt
+        #:set w = base[I - 1].mult * base[J - 1].mult
+        #:if w == 1
         a_inv%vals(${I}$,${J}$) = x(${I}$,${J}$)
-#:else
+        #:else
         a_inv%vals(${I}$,${J}$) = x(${I}$,${J}$)/${w}$.0_${k}$
-#:endif
-#:endfor
+        #:endif
+        #:endfor
     end subroutine inverse_${P}$
 
     ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
@@ -214,23 +214,23 @@ $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm'], tensor_ops=['inv'])
     end function convert_3sym_${P}$_tbp
 
     pure subroutine init2_${P}$_tbp(self, &
-#:for i, names in enumerate(rows)
+                                        #:for i, names in enumerate(rows)
                                         ${', '.join(names)}$${', &' if i < nb - 1 else ')'}$
-#:endfor
+                                        #:endfor
         !! `%init(...)`: initializes a `${T}$` from its ${n}$ individual components, given row by row
         !! of the Voigt matrix (${rows[0][0]}$ = C(1,1), ${rows[0][1]}$ = C(1,2), ..., ${rows[-1][-1]}$ = C(${nb}$,${nb}$)).
         implicit none
         class(${T}$), intent(inout) :: self
             !! Tensor to initialize.
-#:for i, names in enumerate(rows, start=1)
+        #:for i, names in enumerate(rows, start=1)
         real(${k}$), intent(in) :: ${', '.join(names)}$
             !! Row ${i}$ of the Voigt matrix.
-#:endfor
-#:for j, col in enumerate(zip(*rows), start=1)
+        #:endfor
+        #:for j, col in enumerate(zip(*rows), start=1)
         self%vals(:,${j}$) = (/ ${', '.join(col)}$ /)
-#:endfor
+        #:endfor
     end subroutine init2_${P}$_tbp
 
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 end module muscle_tensor_4o2sym

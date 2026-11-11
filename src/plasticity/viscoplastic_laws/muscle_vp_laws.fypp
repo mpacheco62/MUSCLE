@@ -13,7 +13,11 @@ module muscle_vp_laws
     !! - `vp_dstress_dep(prm, ep, epd, dt[, sy, dsy_dep])`: derivative with respect to the plastic
     !!   strain increment at \( \dot\epsilon_p = \Delta\epsilon_p/\Delta t \),
     !!   \( \partial\sigma/\partial\epsilon_p + \partial\sigma/\partial\dot\epsilon_p/\Delta t \)
-    !!   (the historical `dstress_dep` of the return mapping).
+    !!   (the historical `dstress_dep` of the return mapping);
+    !! - `vp_newton_dstress_dep(prm, ep, epd, dt, sy, dsy_dep)`: only the laws with a rate floor
+    !!   (`VISCOPLASTIC_FLOOR` of `muscle_meta.py`: Johnson-Cook), the derivative of the Newton direction of
+    !!   `closest_point_time`: on the floor, the right-hand rate derivative instead of the 0 of the constant part;
+    !!   elsewhere `vp_dstress_dep` (the solver calls `vp_dstress_dep` for the other laws).
     !!
     !! `prm` is the parameter type of a law, `ep` the equivalent plastic strain and `epd` its rate,
     !! of the same kind. The laws that compose a hardening law (`VISCOPLASTIC_COMPOSED`, e.g.
@@ -23,7 +27,7 @@ module muscle_vp_laws
     !!
     !! To add a law: write `muscle_vp_<name>.fypp`, then add a `use` statement of its own and its names to the
     !! interfaces below (the compiler rejects a name that does not exist).
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_vp_jc, only : vp_jc_${k}$, vp_flow_stress_jc_${k}$, vp_dflow_dep_jc_${k}$, &
         & vp_dflow_depd_jc_${k}$, vp_dstress_dep_jc_${k}$, vp_newton_dstress_dep_jc_${k}$
     use muscle_vp_jcfull, only : vp_jcfull_${k}$, vp_flow_stress_jcfull_${k}$, &
@@ -36,65 +40,65 @@ module muscle_vp_laws
         & vp_dflow_depd_rk_${k}$, vp_dstress_dep_rk_${k}$
     use muscle_vp_va, only : vp_va_${k}$, vp_flow_stress_va_${k}$, vp_dflow_dep_va_${k}$, &
         & vp_dflow_depd_va_${k}$, vp_dstress_dep_va_${k}$
-#:endfor
+    #:endfor
     implicit none
     private
 
     public :: vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, vp_newton_dstress_dep
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: vp_jc_${k}$, vp_jcfull_${k}$, vp_mrk_${k}$, vp_nnl_${k}$, vp_rk_${k}$, vp_va_${k}$
-#:endfor
+    #:endfor
 
     interface vp_flow_stress
         !! Viscoplastic flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \) (every model and kind of the family).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure vp_flow_stress_jc_${k}$
         module procedure vp_flow_stress_jcfull_${k}$
         module procedure vp_flow_stress_mrk_${k}$
         module procedure vp_flow_stress_nnl_${k}$
         module procedure vp_flow_stress_rk_${k}$
         module procedure vp_flow_stress_va_${k}$
-#:endfor
+        #:endfor
     end interface vp_flow_stress
 
     interface vp_dflow_dep
         !! Partial derivative \( \partial\sigma/\partial\epsilon_p \) (at constant \( \dot\epsilon_p \)) (every model and
         !! kind of the family).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure vp_dflow_dep_jc_${k}$
         module procedure vp_dflow_dep_jcfull_${k}$
         module procedure vp_dflow_dep_mrk_${k}$
         module procedure vp_dflow_dep_nnl_${k}$
         module procedure vp_dflow_dep_rk_${k}$
         module procedure vp_dflow_dep_va_${k}$
-#:endfor
+        #:endfor
     end interface vp_dflow_dep
 
     interface vp_dflow_depd
         !! Partial derivative \( \partial\sigma/\partial\dot\epsilon_p \) (at constant \( \epsilon_p \)) (every model and
         !! kind of the family).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure vp_dflow_depd_jc_${k}$
         module procedure vp_dflow_depd_jcfull_${k}$
         module procedure vp_dflow_depd_mrk_${k}$
         module procedure vp_dflow_depd_nnl_${k}$
         module procedure vp_dflow_depd_rk_${k}$
         module procedure vp_dflow_depd_va_${k}$
-#:endfor
+        #:endfor
     end interface vp_dflow_depd
 
     interface vp_dstress_dep
         !! Derivative of the flow stress with respect to the plastic strain increment,
         !! \( \partial\sigma/\partial\epsilon_p + \partial\sigma/\partial\dot\epsilon_p/\Delta t \) (every model and kind of
         !! the family).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure vp_dstress_dep_jc_${k}$
         module procedure vp_dstress_dep_jcfull_${k}$
         module procedure vp_dstress_dep_mrk_${k}$
         module procedure vp_dstress_dep_nnl_${k}$
         module procedure vp_dstress_dep_rk_${k}$
         module procedure vp_dstress_dep_va_${k}$
-#:endfor
+        #:endfor
     end interface vp_dstress_dep
 
     interface vp_newton_dstress_dep
@@ -102,9 +106,9 @@ module muscle_vp_laws
         !! floor of a law with one, the right-hand rate derivative at the floor instead of the 0 of the
         !! constant part, so that an iteration started at a zero rate sees the rate sensitivity (D-018.19b;
         !! elsewhere `dstress_dep`) (every applicable model and kind of the family).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure vp_newton_dstress_dep_jc_${k}$
-#:endfor
+        #:endfor
     end interface vp_newton_dstress_dep
 
 end module muscle_vp_laws

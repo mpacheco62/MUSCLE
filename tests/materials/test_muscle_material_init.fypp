@@ -51,19 +51,19 @@ module test_mat_init_cases
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER
     use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
-    use muscle_elasticity_linear, only : elas_linear_init
+    use muscle_elas_linear, only : elas_linear_init
     use muscle_visco_maxwell, only : visco_maxwell_init
     use muscle_visco_kelvin, only : visco_kelvin_init
     use muscle_yield_druckerprager, only : yield_druckerprager_init
     use muscle_yield_cpb06, only : yield_cpb06_init
     use muscle_yield_cpb06ex2, only : yield_cpb06ex2_init
     use muscle_yield_yld2004, only : yield_yld2004_init
-#:for MAT in MATS
-#:set mat_kinds = ', '.join(muscle_meta.material_type(MAT.name, k) for k in REAL_KINDS)
+    #:for MAT in MATS
+    #:set mat_kinds = ', '.join(muscle_meta.material_type(MAT.name, k) for k in REAL_KINDS)
     use ${muscle_meta.material_module(MAT.name)}$, only : mat_init_${MAT.name}$, muscle_point_${MAT.name}$, &
         ${muscle_meta.material_nprops(MAT.name)}$, ${muscle_meta.material_nstate(MAT.name)}$, &
         ${'mat_step, ' if muscle_meta.material_visco(MAT) else ''}$${mat_kinds}$
-#:endfor
+    #:endfor
     use muscle_test_utils, only : check_true
     implicit none
     private
@@ -76,13 +76,13 @@ contains
 
     subroutine run_all()
         !! Every material in every kind.
-#:for k in REAL_KINDS
-#:for MAT in MATS
+        #:for k in REAL_KINDS
+        #:for MAT in MATS
         call run_${MAT.name}$_${k}$()
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end subroutine run_all
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     elemental logical function same_${k}$(a, b)
         !! Same value, or both NaN (the sign and payload of a NaN depend on the order of the operands).
@@ -90,15 +90,15 @@ contains
 
         same_${k}$ = a == b .or. (a /= a .and. b /= b)
     end function same_${k}$
-#:for MAT in MATS
-#:set PROPS = muscle_meta.material_props(MAT)
-#:set NP = muscle_meta.material_nprops(MAT.name)
-#:set NS = muscle_meta.material_nstate(MAT.name)
-#:set MAT_T = muscle_meta.material_type(MAT.name, k)
-#:set VISCO = muscle_meta.material_visco(MAT)
-#:set FIN = not muscle_meta.material_strain_input(MAT)
-#:set L = MAT.name + ' (' + k + ')'
-#:set CO = 'coefs, ' if VISCO else ''
+    #:for MAT in MATS
+    #:set PROPS = muscle_meta.material_props(MAT)
+    #:set NP = muscle_meta.material_nprops(MAT.name)
+    #:set NS = muscle_meta.material_nstate(MAT.name)
+    #:set MAT_T = muscle_meta.material_type(MAT.name, k)
+    #:set VISCO = muscle_meta.material_visco(MAT)
+    #:set FIN = not muscle_meta.material_strain_input(MAT)
+    #:set L = MAT.name + ' (' + k + ')'
+    #:set CO = 'coefs, ' if VISCO else ''
 
     subroutine run_${MAT.name}$_${k}$()
         !! Initializer of `${MAT.name}$` from a parameter array, `real(${k}$)`.
@@ -107,18 +107,18 @@ contains
         real(${k}$) :: hp(${NS}$), hr(${NS}$), sp_(6), sr(6), hn(${NS}$)
         real(${k}$) :: a
         integer :: st, stp, str, itp, itr
-#:if FIN
+        #:if FIN
         real(${k}$) :: f0(9), f1(9)
-#:else
+        #:else
         real(${k}$) :: strain(6)
-#:endif
-#:if VISCO
+        #:endif
+        #:if VISCO
         type(visco_coefs_${k}$) :: coefs
-#:endif
+        #:endif
 
-#:for q in PROPS
+        #:for q in PROPS
         props(${q.index}$) = ${prop_value(MAT, q, k, GIVEN)}$
-#:endfor
+        #:endfor
         props(${NP}$ + 1) = -99.0_${k}$
         call mat_init_${MAT.name}$(mat, props(1:${NP}$), st)
         call check_true(passed, '${L}$: init status', st == STATUS_OK)
@@ -126,76 +126,76 @@ contains
         call check_true(passed, '${L}$: init status (extra value)', st == STATUS_OK)
         ! Public components and settings, bit for bit the values of the array at their positions
         call check_true(passed, '${L}$: components at the positions of the table', .true. &
-#:for q in PROPS
-#:if q.component is None
-#:set init_value = 'nint(props(' + str(q.index) + '))' if q.type == 'integer' else 'props(' + str(q.index) + ')'
+            #:for q in PROPS
+            #:if q.component is None
+            #:set init_value = 'nint(props(' + str(q.index) + '))' if q.type == 'integer' else 'props(' + str(q.index) + ')'
             .and. mat%${q.name}$ == ${init_value}$ &
-#:elif muscle_meta.model_init(q.component, getattr(MAT, muscle_meta.MATERIAL_FIELDS[q.component])) is None
+            #:elif muscle_meta.model_init(q.component, getattr(MAT, muscle_meta.MATERIAL_FIELDS[q.component])) is None
             .and. mat%${q.component}$%${q.name}$ == props(${q.index}$) &
-#:endif
-#:endfor
+            #:endif
+            #:endfor
             )
 
         ! Reference built by hand from the same inputs, by name
-#:for p, m in muscle_meta.material_components(MAT)
-#:set S = sample(p, m)
-#:set init = muscle_meta.model_init(p, m)
-#:if init
+        #:for p, m in muscle_meta.material_components(MAT)
+        #:set S = sample(p, m)
+        #:set init = muscle_meta.model_init(p, m)
+        #:if init
         call ${p}$_${m}$_init(ref%${p}$, &
-#:for n, i in enumerate(init.inputs)
-#:set v = S[i.name]
-#:set init_row = ('[' + ', '.join(x + '_' + k for x in v) + ']') if i.shape else lit(v, k, i.type)
+            #:for n, i in enumerate(init.inputs)
+            #:set v = S[i.name]
+            #:set init_row = ('[' + ', '.join(x + '_' + k for x in v) + ']') if i.shape else lit(v, k, i.type)
             ${i.name}$=${init_row}$${', &' if n < len(init.inputs) - 1 or init.status else ')'}$
-#:endfor
-#:if init.status
+            #:endfor
+            #:if init.status
             status=st)
         call check_true(passed, '${L}$: reference init', st == STATUS_OK)
-#:endif
-#:else
-#:for i in muscle_meta.model_inputs(p, m)
+            #:endif
+        #:else
+        #:for i in muscle_meta.model_inputs(p, m)
         ref%${p}$%${i.name}$ = ${lit(S[i.name], k)}$
-#:endfor
-#:endif
-#:endfor
+        #:endfor
+        #:endif
+        #:endfor
         ref%tol = 3.0e-5_${k}$
         ref%iter_nw = 37
 
         ! Same behaviour: a plastic step from the zero state
         hn = 0.0_${k}$
-#:if FIN
+        #:if FIN
         f0 = [1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$]
         f1 = f0 + [8.0e-3_${k}$, 1.0e-3_${k}$, 0.0_${k}$, 3.0e-3_${k}$, -2.4e-3_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
             -2.4e-3_${k}$]
         call muscle_point_${MAT.name}$(mat, f0, f1, 0.01_${k}$, hn, hp, sp_, stp, itp)
         call muscle_point_${MAT.name}$(ref, f0, f1, 0.01_${k}$, hn, hr, sr, str, itr)
-#:else
+        #:else
         strain = 3.0e-3_${k}$*[1.0_${k}$, -0.3_${k}$, -0.3_${k}$, 0.2_${k}$, 0.05_${k}$, 0.1_${k}$]
-#:if VISCO
+        #:if VISCO
         call mat_step(mat, 0.01_${k}$, coefs, st)
         call check_true(passed, '${L}$: mat_step', st == STATUS_OK)
-#:endif
+        #:endif
         call muscle_point_${MAT.name}$(mat, strain, 0.01_${k}$, ${CO}$hn, hp, sp_, stp, itp)
-#:if VISCO
+        #:if VISCO
         call mat_step(ref, 0.01_${k}$, coefs, st)
-#:endif
+        #:endif
         call muscle_point_${MAT.name}$(ref, strain, 0.01_${k}$, ${CO}$hn, hr, sr, str, itr)
-#:endif
+        #:endif
         call check_true(passed, '${L}$: same behaviour as the material built by hand', all(same_${k}$(hp, hr)) &
             .and. all(same_${k}$(sp_, sr)) .and. stp == str .and. itp == itr .and. any(sr /= 0.0_${k}$))
 
-#:if MAT.name == 'tm_jcfull_vm_vocemod'
+        #:if MAT.name == 'tm_jcfull_vm_vocemod'
         ! Contract written out: the temperature of Johnson-Cook is parameter 8
         call check_true(passed, '${L}$: T_current is props(8)', mat%vp%T_current == props(8) &
             .and. mat%vp%T_current == 700.0_${k}$)
-#:endif
+        #:endif
 
         ! Too short an array
         call mat_init_${MAT.name}$(mat, props(1:${NP}$ - 1), st)
         call check_true(passed, '${L}$: short array', st == STATUS_INVALID_PARAMETER)
-#:for q in PROPS
-#:if q.domain
-#:assert q.name in BAD, 'no invalid values for the domain of ' + q.name
-#:for bad in BAD[q.name]
+        #:for q in PROPS
+        #:if q.domain
+        #:assert q.name in BAD, 'no invalid values for the domain of ' + q.name
+        #:for bad in BAD[q.name]
 
         ! ${q.name}$ = ${bad}$ outside its domain
         a = props(${q.index}$)
@@ -203,12 +203,12 @@ contains
         call mat_init_${MAT.name}$(mat, props, st)
         call check_true(passed, '${L}$: invalid ${q.name}$ = ${bad}$', st == STATUS_INVALID_PARAMETER)
         props(${q.index}$) = a
-#:endfor
-#:endif
-#:endfor
-#:if MAT.vp == 'jc'
-#:set JC = {q.name: q for q in PROPS if q.component == 'vp'}
-#:assert len(muscle_meta.material_domain_checks(MAT, k)) == 1
+        #:endfor
+        #:endif
+        #:endfor
+        #:if MAT.vp == 'jc'
+        #:set JC = {q.name: q for q in PROPS if q.component == 'vp'}
+        #:assert len(muscle_meta.material_domain_checks(MAT, k)) == 1
 
         ! Johnson-Cook rate factor on the floor (D-018.19c): C |ln(epmin/epdmax)| < 1, at 0.99 and 1.01 of
         ! the limit (also with epmin > epdmax: the absolute value)
@@ -226,18 +226,18 @@ contains
             st == STATUS_INVALID_PARAMETER)
         props(${JC['C'].index}$) = a
         props(${JC['epmin'].index}$) = ${prop_value(MAT, JC['epmin'], k, GIVEN)}$
-#:endif
-#:if MAT.visco == 'maxwell' and MAT.visco_branches > 0
-#:set TAU = [q for q in PROPS if q.name == 'tau'][0]
+        #:endif
+        #:if MAT.visco == 'maxwell' and MAT.visco_branches > 0
+        #:set TAU = [q for q in PROPS if q.name == 'tau'][0]
 
         ! Invalid input of the Maxwell initializer (tau <= 0)
         props(${TAU.index}$) = -1.0_${k}$
         call mat_init_${MAT.name}$(mat, props, st)
         call check_true(passed, '${L}$: Maxwell tau <= 0', st == STATUS_INVALID_PARAMETER)
-#:endif
+        #:endif
     end subroutine run_${MAT.name}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 end module test_mat_init_cases
 

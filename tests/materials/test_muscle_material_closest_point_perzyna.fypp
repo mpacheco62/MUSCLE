@@ -58,7 +58,7 @@ program test_mat_closest_point_perzyna
         solver_case(0, 'pz_vm_swift', 'lin1000', 'per1', 'swift_small', 'vonmises', 200, 1.0_dp, 3.80e-2_dp), &
         solver_case(0, 'pz_cpb06_ludwik', 'steel', 'per1', 'ludwik', 'cpb06-4', 2, 1.0e-2_dp, 9.16e-4_dp), &
         solver_case(0, 'pz_hill48_swift', 'steel', 'per1', 'swift', 'hill48-2', 200, 1.0e-2_dp, 5.68e-4_dp)]
-        !! Cases of test_perzyna_golden (case number of the reference records, 0 for none; material, reference
+        !! Cases of the historical test_perzyna_golden (case number of the reference records, 0 for none; material, reference
         !! names, Newton limit, time step, A_Y). Case 6 (Chaboche n = 0.5, infinite slope at the threshold): steps 3 and 4 do not
         !! converge in 200 iterations and step 5 starts from their last iterate; there the analytic
         !! tangent differs from finite differences by 0.24 of the largest component (also the OO

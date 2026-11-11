@@ -28,13 +28,13 @@ module muscle_hard_ludwik
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: hard_ludwik_${k}$
     public :: hard_stress_ludwik_${k}$, hard_dstress_dep_ludwik_${k}$, hard_ddstress_ddep_ludwik_${k}$
     public :: LUDWIK_EP_OFFSET_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     real(${k}$), parameter :: LUDWIK_EP_OFFSET_${k}$ = 1.0e-10_${k}$
         !! Offset \( \delta \) added to \( \epsilon_p \) in the derivatives in `real(${k}$)`: regularization
         !! at \( \epsilon_p = 0 \), same value in every kind (see the module documentation).
@@ -49,9 +49,9 @@ module muscle_hard_ludwik
             !! Hardening exponent \( n \).
     end type hard_ludwik_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function hard_stress_ludwik_${k}$(prm, ep) result(res)
         !! Flow stress \( \sigma_y(\epsilon_p) \) of the Ludwik model in `real(${k}$)`.
         implicit none
@@ -93,5 +93,5 @@ contains
         res = prm%k*prm%n*(prm%n - 1.0_${k}$)*(ep + LUDWIK_EP_OFFSET_${k}$)**(prm%n - 2.0_${k}$)
     end function hard_ddstress_ddep_ludwik_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_hard_ludwik

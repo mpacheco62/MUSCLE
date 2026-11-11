@@ -17,16 +17,16 @@ module muscle_plastic_state
     !! Kernels keep the converged and candidate states as separate arguments: the caller (the FE
     !! program, in its history array) keeps the converged one.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$
-#:endfor
+    #:endfor
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: plastic_state_${k}$
-#:endfor
-#:for k in REAL_KINDS
+    #:endfor
+    #:for k in REAL_KINDS
 
     type :: plastic_state_${k}$
         !! Physical state of an elastoplastic material point at an instant, `real(${k}$)`.
@@ -37,6 +37,6 @@ module muscle_plastic_state
         type(ten_3D2Osym_${k}$) :: stress = ten_3D2Osym_${k}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
             !! Constitutive stress tensor.
     end type plastic_state_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_plastic_state

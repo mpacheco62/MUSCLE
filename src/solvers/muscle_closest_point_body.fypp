@@ -37,8 +37,8 @@
         use muscle_kinds, only : TOL_ELASTIC_${k}$, SY_MIN_${k}$
         use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
         use muscle_tensors, only : operator(-)
-        use muscle_elasticity_laws, only : elas_stress
-        use muscle_yield_criteria, only : yield_stress_eq
+        use muscle_elas_laws, only : elas_stress
+        use muscle_yield_laws, only : yield_stress_eq
         use muscle_hard_laws, only : hard_stress
         implicit none
         @:DEVICE()
@@ -113,8 +113,8 @@
         !! `real(${k}$)`, with under-relaxation `omega` of \( \Delta\gamma \) and of the plastic strain.
         use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
             operator(.inv.)
-        use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
-        use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
+        use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
             yield_stress_eq_and_derivatives, yield_joint_evaluation
         use muscle_kinds, only : SY_MIN_${k}$
         use muscle_hard_laws, only : hard_stress, hard_dstress_dep

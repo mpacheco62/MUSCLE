@@ -48,12 +48,12 @@ module muscle_yield_druckerprager
     !! `yield_dstress_eq_druckerprager_3D_<k>(prm, sigma)`, `yield_ddstress_eq_druckerprager_3D_<k>(prm, sigma)`
     !! and the joint evaluation `yield_stress_eq_and_derivatives_druckerprager_3D_<k>(prm, sigma, f, df[, ddf])`
     !! (the three in turn) for each real kind, also through the generics `yield_*` of
-    !! `muscle_yield_criteria`, with the calibration modes `DP_HARDENING_*`.
+    !! `muscle_yield_laws`, with the calibration modes `DP_HARDENING_*`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
-#:endfor
+    #:endfor
     use muscle_tensors, only : iden_2O, iden_4O4T, iden_4O3T, operator(.dev.), operator(.ddot.), operator(.tdotsym.), &
         & operator(*), operator(+), operator(-), operator(/), assignment(=)
     use muscle_tensor_functions, only : square
@@ -68,12 +68,12 @@ module muscle_yield_druckerprager
     integer, parameter, public :: DP_HARDENING_SHEAR       = 3
         !! Calibration with the yield stress in shear.
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: yield_druckerprager_${k}$
     public :: yield_stress_eq_druckerprager_3D_${k}$, yield_dstress_eq_druckerprager_3D_${k}$, &
         & yield_ddstress_eq_druckerprager_3D_${k}$
     public :: yield_stress_eq_and_derivatives_druckerprager_3D_${k}$, yield_joint_evaluation_druckerprager_${k}$
-#:endfor
+    #:endfor
     public :: yield_druckerprager_init, ${', '.join('yield_druckerprager_init_' + k for k in REAL_KINDS)}$
 
     ! Thresholds of the zero stress (absolute, on |sigma|) and of the hydrostatic axis (relative,
@@ -82,18 +82,18 @@ module muscle_yield_druckerprager
     ! loses its deviatoric part stays small, relevant in strongly confined states); the absolute one is
     ! any value below the smallest nonzero |sigma| of sp (~4e-23, sqrt of the smallest subnormal), i.e.
     ! |sigma| == 0.
-#:if 'sp' in REAL_KINDS
+    #:if 'sp' in REAL_KINDS
     real(sp), parameter :: DP_TOL_ABS_sp = 1.0e-30_sp
         !! Zero stress: |sigma| below this (`real(sp)`).
     real(sp), parameter :: DP_TOL_REL_sp = 1.0e-5_sp
         !! Hydrostatic axis: q/|sigma| below this (`real(sp)`).
-#:endif
+    #:endif
     real(dp), parameter :: DP_TOL_ABS_dp = 1.0e-40_dp
         !! Zero stress: |sigma| below this (`real(dp)`).
     real(dp), parameter :: DP_TOL_REL_dp = 1.0e-9_dp
         !! Hydrostatic axis: q/|sigma| below this (`real(dp)`).
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: yield_druckerprager_${k}$
         !! Parameters of the extended linear Drucker-Prager model in `real(${k}$)` (build it with `yield_druckerprager_init`, which
         !! computes the private derived components; do not change the inputs after `yield_druckerprager_init`).
@@ -107,14 +107,14 @@ module muscle_yield_druckerprager
             !! Hardening calibration mode (`DP_HARDENING_TENSION`, `DP_HARDENING_COMPRESSION` or `DP_HARDENING_SHEAR`).
     end type yield_druckerprager_${k}$
 
-#:endfor
+    #:endfor
     interface yield_druckerprager_init
         !! Parameters of the Drucker-Prager model from beta (degrees), K and the hardening mode.
         module procedure ${', '.join('yield_druckerprager_init_' + k for k in REAL_KINDS)}$
     end interface yield_druckerprager_init
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine yield_druckerprager_init_${k}$(prm, beta_deg, K, hardening_mode, status)
         !! Parameters of the Drucker-Prager model in `real(${k}$)` matching the Abaqus material
@@ -344,6 +344,6 @@ contains
         df = yield_dstress_eq_druckerprager_3D_${k}$(prm, sigma)
         if (present(ddf)) ddf = yield_ddstress_eq_druckerprager_3D_${k}$(prm, sigma)
     end subroutine yield_stress_eq_and_derivatives_druckerprager_3D_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_yield_druckerprager

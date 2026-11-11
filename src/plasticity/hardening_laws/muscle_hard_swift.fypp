@@ -23,12 +23,12 @@ module muscle_hard_swift
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: hard_swift_${k}$
     public :: hard_stress_swift_${k}$, hard_dstress_dep_swift_${k}$, hard_ddstress_ddep_swift_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: hard_swift_${k}$
         !! Parameters of the Swift model in `real(${k}$)`.
         real(${k}$) :: k
@@ -39,9 +39,9 @@ module muscle_hard_swift
             !! Hardening exponent \( n \).
     end type hard_swift_${k}$
 
-#:endfor
+    #:endfor
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function hard_stress_swift_${k}$(prm, ep) result(res)
         !! Flow stress \( \sigma_y(\epsilon_p) \) of the Swift model in `real(${k}$)`.
         implicit none
@@ -81,5 +81,5 @@ contains
         res = prm%k*prm%n*(prm%n - 1.0_${k}$)*(prm%e0 + ep)**(prm%n - 2.0_${k}$)
     end function hard_ddstress_ddep_swift_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_hard_swift

@@ -32,45 +32,45 @@ module muscle_tensor_io
     !!   ones: \(c\) in the normal 3x3 block for `iden_4O3T` (\(\delta_{ij}\delta_{kl}\)),
     !!   `diag(c, c, c, c/2, c/2, c/2)` for `iden_4O4T` (symmetric identity).
     use muscle_kinds, only: sp, dp
-#:for f in IO_FAMILIES
+    #:for f in IO_FAMILIES
     use muscle_tensor_${f.lower()}$, only: ${', '.join(tname(d + f, k) for d in DIMS for k in REAL_KINDS)}$
-#:endfor
+    #:endfor
     use muscle_tensor_iden, only: ${', '.join(iname(X) for X in IDENTITIES)}$
-#:for X in IDENTITIES
+    #:for X in IDENTITIES
     use muscle_tensor_iden, only: ${', '.join(iname(X + 'S', k) for k in REAL_KINDS)}$
-#:endfor
+    #:endfor
     implicit none
     private
-#:if defined('ENABLE_UDTIO')
+    #:if defined('ENABLE_UDTIO')
 
     public :: write(formatted)
     interface write(formatted)
-#:for f in IO_FAMILIES
+        #:for f in IO_FAMILIES
         module procedure ${specifics('print_{0}_{1}', f)}$
-#:endfor
-#:for X in IDENTITIES
+        #:endfor
+        #:for X in IDENTITIES
         module procedure print_I${X}$, ${kspecifics('print_I{0}S_{1}', X)}$
-#:endfor
+        #:endfor
     end interface
 
 contains
 
-#:for f in IO_FAMILIES
-#:for d in DIMS
-#:set lay = layout(f, d)
-#:set n = len(lay.comps)
-#:for k in REAL_KINDS
-#:set T = tname(d + f, k)
-#:set rows = lay.matrix('dtv%vals', zero='0.0_' + k)
-#:set m = len(rows)
+    #:for f in IO_FAMILIES
+    #:for d in DIMS
+    #:set lay = layout(f, d)
+    #:set n = len(lay.comps)
+    #:for k in REAL_KINDS
+    #:set T = tname(d + f, k)
+    #:set rows = lay.matrix('dtv%vals', zero='0.0_' + k)
+    #:set m = len(rows)
     subroutine print_${d + f}$_${k}$(dtv, unit, iotype, v_list, iostat, iomsg)
-#:if f in IO_MATRIX_ONLY
+        #:if f in IO_MATRIX_ONLY
         !! Formatted output of a `${T}$`: the ${m}$x${m}$ matrix `vals`, one record per row, in
         !! every mode.
-#:else
+        #:else
         !! Formatted output of a `${T}$`: list mode prints the ${n}$ stored components
         !! (${', '.join(c.name for c in lay.comps)}$), matrix mode the ${m}$x${m}$ matrix.
-#:endif
+        #:endif
         class(${T}$), intent(in) :: dtv  ! lint: allow(oop) the standard requires class in UDTIO
             !! Tensor to print.
         integer, intent(in) :: unit
@@ -85,9 +85,9 @@ contains
             !! I/O error message.
         character(len=100) :: fmt_string
         integer :: w, d
-#:if f in IO_MATRIX_ONLY
+        #:if f in IO_MATRIX_ONLY
         integer :: r
-#:endif
+        #:endif
 
         w = 11
         d = 4
@@ -95,14 +95,14 @@ contains
         if (size(v_list) >= 1) w = v_list(1)
         if (size(v_list) >= 2) d = v_list(2)
 
-#:if f in IO_MATRIX_ONLY
-#:assert rows == [['dtv%vals({}, {})'.format(i, j) for j in range(1, m + 1)] for i in range(1, m + 1)]
+        #:if f in IO_MATRIX_ONLY
+        #:assert rows == [['dtv%vals({}, {})'.format(i, j) for j in range(1, m + 1)] for i in range(1, m + 1)]
         ! Historical output of this family, whatever iotype: one record per row of the matrix
         write(fmt_string, "('(/, ${m}$(ES', I0, '.', I0, ', 1X))')") w, d
         do r = 1, ${m}$
             write(unit, fmt_string, iostat=iostat) dtv%vals(r, :)
         end do
-#:else
+        #:else
         if (iotype == "DTLIST" .or. iotype == "LIST") then
             write(fmt_string, "('(A, ${n}$(ES', I0, '.', I0, ', 1X), A)')") w, d
             write(unit, fmt_string, iostat=iostat) "[", dtv%vals, "]"
@@ -110,29 +110,29 @@ contains
             ! One format with a '/' line break before each row of the ${m}$x${m}$ matrix
             write(fmt_string, "('(${m}$(/, ${m}$(ES', I0, '.', I0, ', 2X)))')") w, d
             write(unit, fmt_string, iostat=iostat) &
-#:for i, row in enumerate(rows)
+                #:for i, row in enumerate(rows)
                 ${', '.join(row)}$${', &' if i < m - 1 else ''}$
-#:endfor
+                #:endfor
         end if
-#:endif
+        #:endif
 
         if (iostat /= 0) then
             iomsg = "Error in print_${d + f}$_${k}$: Failed to write to the specified unit."
         end if
     end subroutine print_${d + f}$_${k}$
 
-#:endfor
-#:endfor
-#:endfor
-#:for X in IDENTITIES
-#:for k in [None] + REAL_KINDS
+    #:endfor
+    #:endfor
+    #:endfor
+    #:for X in IDENTITIES
+    #:for k in [None] + REAL_KINDS
 #! Unscaled: factor 1 with dp literals (as the original print_ten_I2O); scaled: dtv%val
-#:set P = 'print_I' + X + ('S_' + k if k else '')
-#:set T = iname(X + 'S', k) if k else iname(X)
-#:set c = 'dtv%val' if k else '1.0_dp'
-#:set ck = k if k else 'dp'
-#:set rows = iden_matrix(X, one=c, half='0.5_{0} * {1}'.format(ck, c) if k else '0.5_dp', zero='0.0_' + ck)
-#:set m = len(rows)
+    #:set P = 'print_I' + X + ('S_' + k if k else '')
+    #:set T = iname(X + 'S', k) if k else iname(X)
+    #:set c = 'dtv%val' if k else '1.0_dp'
+    #:set ck = k if k else 'dp'
+    #:set rows = iden_matrix(X, one=c, half='0.5_{0} * {1}'.format(ck, c) if k else '0.5_dp', zero='0.0_' + ck)
+    #:set m = len(rows)
     subroutine ${P}$(dtv, unit, iotype, v_list, iostat, iomsg)
         !! Formatted output of a `${T}$`: list mode prints the factor, matrix mode the ${m}$x${m}$
         !! ${'matrix' if m == 3 else 'Voigt matrix'}$ of the identity.
@@ -164,9 +164,9 @@ contains
             ! One format with a '/' line break before each row of the ${m}$x${m}$ matrix
             write(fmt_string, "('(${m}$(/, ${m}$(F', I0, '.', I0, ', 2X)))')") w, d
             write(unit, fmt_string, iostat=iostat) &
-#:for i, row in enumerate(rows)
+                #:for i, row in enumerate(rows)
                 ${', '.join(row)}$${', &' if i < m - 1 else ''}$
-#:endfor
+                #:endfor
         end if
 
         if (iostat /= 0) then
@@ -174,7 +174,7 @@ contains
         end if
     end subroutine ${P}$
 
-#:endfor
-#:endfor
-#:endif
+    #:endfor
+    #:endfor
+    #:endif
 end module muscle_tensor_io

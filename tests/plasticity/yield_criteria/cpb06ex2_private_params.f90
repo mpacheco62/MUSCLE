@@ -6,7 +6,7 @@ program cpb06ex2_private_params
     !! error): the derived parameters L, Lp and B of the CPB06ex2 kernel type are private (D-017.10b),
     !! so the type can only be built with `yield_cpb06ex2_init`.
     use muscle_kinds, only : dp
-    use muscle_yield_criteria, only : yield_cpb06ex2_dp
+    use muscle_yield_laws, only : yield_cpb06ex2_dp
     implicit none
     type(yield_cpb06ex2_dp) :: c
 

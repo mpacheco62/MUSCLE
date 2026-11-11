@@ -46,7 +46,7 @@ $:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var
 #! needed in kernels (D-011). It returns `expr + .inv. b`, `expr` written with the free generics
 #! of `a` (`a` must make it finite, `b` must be regular).
 #:def pure_use(fam, d, k, mod, free, expr)
-#:set T = tname(d + fam, k)
+    #:set T = tname(d + fam, k)
     pure function pure_use_${T}$(a, b) result(r)
         !! Compile-time check: the free generics of `${mod}$` (${', '.join(free)}$) and the
         !! operators are `pure` (needed in kernels, D-011). Returns ${expr}$ + .inv. b.
@@ -75,8 +75,8 @@ $:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var
 #!   EPS_ABS_<k>, the scale max(max|a|, max|b|), the inclusive threshold, NaN and Inf (an Inf
 #!   component matches only the same Inf and does not make the scale infinite).
 #:def test_approx(fam, d, k, lib, zero_pos, loop_checks=(), tol_name='TOL_APPROX')
-#:set T = tname(d + fam, k)
-#:set N = len(layout(fam, d).comps)
+    #:set T = tname(d + fam, k)
+    #:set N = len(layout(fam, d).comps)
     subroutine test_approx_${d}$_${k}$(passed)
         !! `is_approx` (default tolerance ${tol_name}$_${k}$ and explicit `tol`) and `.approx.` of `${T}$`.
         use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_positive_inf, ieee_negative_inf
@@ -115,9 +115,9 @@ $:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var
                 call check_true(passed, 'is_approx(tol=1e-4): 1e-3' // trim(lab), &
                                 .not. a%is_approx(b, tol=1.0e-4_${k}$))
             end do
-#:for label, cond in loop_checks
+            #:for label, cond in loop_checks
             call check_true(passed, '${label}$ [${T}$]', ${cond}$)
-#:endfor
+            #:endfor
         end do
         ! Relative criterion: two zero tensors are equal, zero and a tiny tensor are not
         z = ZERO
@@ -187,9 +187,9 @@ $:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var
 #! D-012 (2O, 2Osym, 4O3sym); new families can use p_mult=7 and pure_fresh_b=True.
 #:def test_free_generics(fam, d, k, lib, mod, scalars, unary, inv_shift, p_mult, pure_ref, pure_fresh_b=False, &
     & tol_name='TOL_APPROX')
-#:set T = tname(d + fam, k)
-#:set N = len(layout(fam, d).comps)
-#:set free = scalars + unary + ['is_approx', 'inverse']
+    #:set T = tname(d + fam, k)
+    #:set N = len(layout(fam, d).comps)
+    #:set free = scalars + unary + ['is_approx', 'inverse']
     subroutine test_free_generics_${d}$_${k}$(passed)
         !! The free generics of `${mod}$` (${', '.join('`' + f + '`' for f in free)}$, the
         !! GPU-callable API) give exactly (tol = 0) the results of the type-bound procedures of
@@ -212,12 +212,12 @@ $:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var
             do it = 1, 10
                 ! Scales 1e-2, 1, 1e2
                 a = rand_${T}$(10.0_dp**(2*is - 4), 0.0_dp)
-#:for fn in scalars
+                #:for fn in scalars
                 call check_approx(passed, '${fn}$(a)' // TN, ${fn}$(a), a%${fn}$(), tol=ZERO)
-#:endfor
-#:for fn in unary
+                #:endfor
+                #:for fn in unary
                 call check_approx(passed, '${fn}$(a)' // TN, vv(${fn}$(a)), vv(a%${fn}$()), tol=ZERO)
-#:endfor
+                #:endfor
                 ! is_approx around the threshold (0.25 .. 4 times the tolerance), default and explicit tol
                 p = 1 + mod(${'' if p_mult == 1 else str(p_mult) + '*'}$it, ${N}$)
                 f = real(0.25_dp + 3.75_dp*(0.5_dp + 0.5_dp*rnd(rng)), ${k}$)
@@ -241,9 +241,9 @@ $:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var
                 call check_approx(passed, 'inverse(a) == a%inv()' // TN, x%vals, vv(a%inv()), tol=ZERO)
                 call check_approx(passed, 'inverse(a) == .inv. a' // TN, x%vals, vv(.inv. a), tol=ZERO)
                 ! pure caller (compile-time purity check), same result as the inline expression
-#:if pure_fresh_b
+                #:if pure_fresh_b
                 b = rand_${T}$(10.0_dp**(2*is - 4), 0.0_dp)
-#:endif
+                #:endif
                 call check_approx(passed, 'pure caller' // TN, vv(pure_use_${T}$(b, a)), &
                                   vv(${pure_ref}$ + a%inv()), tol=ZERO)
             end do
@@ -255,8 +255,8 @@ $:'{0}(1 + mod({1} - 1, {2}), 1 + ({1} - 1 - mod({1} - 1, {2}))/{2})'.format(var
         call check_true(passed, 'inverse (singular): NaN, as a%inv()' // TN, &
                         all(ieee_is_nan(x%vals)) .and. all(ieee_is_nan(vv(a%inv()))))
         ! Zero tensor: ${' and '.join(scalars)}$ vanish in both APIs
-#:for fn in scalars
+        #:for fn in scalars
         call check_approx(passed, '${fn}$(0)' // TN, ${fn}$(a), ZERO, tol=ZERO)
-#:endfor
+        #:endfor
     end subroutine test_free_generics_${d}$_${k}$
 #:enddef test_free_generics

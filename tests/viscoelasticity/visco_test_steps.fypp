@@ -38,7 +38,7 @@ module visco_test_steps
     end interface advance
 
 contains
-#:for m in VISCO
+    #:for m in VISCO
 
     function step_coefs_${m}$(model, dt) result(coefs)
         !! Coefficients of the step `dt` of the ${m}$ model.
@@ -94,6 +94,6 @@ contains
         call visco_update(model, coefs, state, strain_e, state_np1)
         state = state_np1
     end subroutine advance_${m}$
-#:endfor
+    #:endfor
 
 end module visco_test_steps

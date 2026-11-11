@@ -53,7 +53,7 @@ module test_lu_solve_kernels
 
 contains
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure subroutine kernel_solve6_${k}$(a, b, x, ok)
         !! 6x6 `real(${k}$)` solve through the size-specific generic, as a kernel would do it.
         @:DEVICE()
@@ -84,7 +84,7 @@ contains
         call lu_solve(a, b, x, ok, kappa)
     end subroutine kernel_solve_${k}$
 
-#:endfor
+    #:endfor
 end module test_lu_solve_kernels
 
 
@@ -101,15 +101,15 @@ program test_math_lu_solve
     integer :: code
 
     code = 0
-#:for k in REAL_KINDS
-#:set b = STOP_BASE[k]
+    #:for k in REAL_KINDS
+    #:set b = STOP_BASE[k]
     call record(test_random_${k}$(), ${b + 1}$, 'random systems ${k}$', code)
     call record(test_pivoting_${k}$(), ${b + 2}$, 'pivoting ${k}$', code)
     call record(test_singular_${k}$(), ${b + 3}$, 'singular and invalid shapes ${k}$', code)
     call record(test_near_singular_${k}$(), ${b + 4}$, 'near singular ${k}$', code)
     call record(test_gauss_seidel_${k}$(), ${b + 5}$, 'gauss_seidel ${k}$', code)
     call record(test_host_status_${k}$(), ${b + 6}$, 'host solvers: pivoting and singular systems ${k}$', code)
-#:endfor
+    #:endfor
     ! The NaN cases raise the IEEE invalid flag on purpose; clear it so that the runtime does not
     ! report it as unexpected at STOP.
     call ieee_set_flag(ieee_all, .false.)
@@ -118,7 +118,7 @@ program test_math_lu_solve
 
 contains
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     logical function test_random_${k}$() result(passed)
         !! `real(${k}$)` random systems with kappa_inf < ${KAPPA_MAX}$, n = 1..9: backward error,
         !! forward error and KAPPA against dp references; the same x with and without KAPPA, from
@@ -190,7 +190,7 @@ contains
                                     ok2 .and. all(x2 == x))
                 end if
 
-                ! Host solvers: gauss_solve (its A and b are intent(inout) but not modified)
+                ! Host solvers: gauss_solve (A and b intent(in))
                 call gauss_solve(a, b, x2, info)
                 call check_true(passed, 'gauss_solve info: ' // trim(label), info == 0)
                 call check_true(passed, 'gauss_solve forward error: ' // trim(label), &
@@ -510,5 +510,5 @@ contains
         deallocate(a, b, x)
     end function test_singular_${k}$
 
-#:endfor
+    #:endfor
 end program test_math_lu_solve

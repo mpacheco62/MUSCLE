@@ -126,6 +126,6 @@ Queda sin test: F_n inválido en las cinemáticas espaciales (segunda llamada a 
 |---|---|---|
 | Q1 | **Hecho para 1–5 (sección 4.1).** Agregar los chequeos de los huecos 1–5 (y 6–11 según decida el usuario), con verdad independiente; volver a correr `mutation_check` de las áreas tocadas | 1–1.5 días |
 | Q2 | **Hecho (2026-11-10, D-025)**, con los renombres espejo de `src` (`test_muscle_<x>[_<tema>]`). Con Q1 hecho, **retirar los 38 tests heredados** (criterio D-023) o conservarlos como documentación; **decisión del usuario** (la regla vigente dice «no se mueven ni se reescriben») | 0.25 |
-| Q3 | Versionar las áreas nuevas (`types`, `linalg`, `materials`) y las opciones `--reference/--unit` | hecho en el árbol, falta commit |
+| Q3 | **Hecho (`41ea7bf`).** Versionar las áreas nuevas (`types`, `linalg`, `materials`) y las opciones `--reference/--unit` | hecho en el árbol, falta commit |
 | Q4 | `mutation_check` con build `sp;dp` opcional (o un área sp para `polar_rotation`) | 0.5 |
-| Q5 | Borrar los `fd_check` no usados de `test_mat_return_mapping` (avisos, aspecto 4) | < 0.1 |
+| Q5 | **Hecho (`e12d1c2`).** Borrar los `fd_check` no usados de `test_mat_return_mapping` (avisos, aspecto 4) | < 0.1 |

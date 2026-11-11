@@ -16,15 +16,16 @@ module muscle_tensor_functions
     !!
     !! - `norm(a)`: every family.
     !! - `is_approx(a, b [, tol])`, `call inverse(a, a_inv, ok [, cond])`: every family.
-    !! - `det(a)`: `2Osym`, `2O`. `square(a)`: `2Osym`. `transpose(a)`: `2O` (extends the intrinsic).
+    !! - `det(a)`, `is_identity(a)` (exact comparison): `2Osym`, `2O`. `square(a)`: `2Osym`. `transpose(a)`: `2O`
+    !!   (extends the intrinsic).
     !! - `convert_3sym(a)`: `4O2sym` → `4O3sym`. `convert_2sym(a)`: `4O` → `4O2sym`.
-    use muscle_tensor_2osym, only: norm, det, square, is_approx, inverse
-    use muscle_tensor_2o, only: norm, det, transpose, is_approx, inverse
+    use muscle_tensor_2osym, only: norm, det, square, is_identity, is_approx, inverse
+    use muscle_tensor_2o, only: norm, det, transpose, is_identity, is_approx, inverse
     use muscle_tensor_4o3sym, only: norm, is_approx, inverse
     use muscle_tensor_4o2sym, only: norm, convert_3sym, is_approx, inverse
     use muscle_tensor_4o, only: norm, convert_2sym, is_approx, inverse
     implicit none
     private
 
-    public :: norm, det, square, transpose, is_approx, inverse, convert_3sym, convert_2sym
+    public :: norm, det, square, transpose, is_identity, is_approx, inverse, convert_3sym, convert_2sym
 end module muscle_tensor_functions

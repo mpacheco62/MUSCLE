@@ -7,7 +7,7 @@ muscle_add_fypp_sources(muscle
                  muscle_vp_rk.fypp
                  muscle_vp_va.fypp
                  muscle_vp_laws.fypp
-                 muscle_vp_chaboche.fypp
-                 muscle_vp_perzyna.fypp
-                 muscle_vp_overstress_laws.fypp
+                 muscle_os_chaboche.fypp
+                 muscle_os_perzyna.fypp
+                 muscle_os_laws.fypp
                  )

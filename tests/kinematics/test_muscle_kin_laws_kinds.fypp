@@ -47,15 +47,15 @@ module test_kin_point
 
     integer, parameter, public :: NSTATE = ${NSTATE}$, NOUT = ${NOUT}$
         !! Sizes of a packed state and of the packed output of a point.
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: pack_state_${k}$
-#:for m in ALL
+    #:for m in ALL
     public :: point_${m}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure function pack_state_${k}$(st) result(v)
         !! Every component of a `real(${k}$)` kinematic state.
@@ -73,16 +73,16 @@ contains
         v(41:46) = st%b_inv%vals
         v(47:52) = st%strain%vals
     end function pack_state_${k}$
-#:for m in ALL
+    #:for m in ALL
 
     pure subroutine point_${m}$_${k}$(f9, s6, c36, out, status)
         !! What a kernel does at a point with the ${m}$ kinematics in `real(${k}$)`: update, Cauchy
-#:if m == 'corotational'
+        #:if m == 'corotational'
         !! stress and spatial tangent; results packed in `out`. The strain and rotation of the corotational update are those
         !! of the material logarithmic kinematics of F.
-#:else
+        #:else
         !! stress and spatial tangent; results packed in `out`.
-#:endif
+        #:endif
         @:DEVICE()
         real(${k}$), intent(in) :: f9(9), s6(6), c36(6, 6)
         real(${k}$), intent(out) :: out(NOUT)
@@ -92,30 +92,30 @@ contains
         type(${tname('3D2O', k)}$) :: F
         type(${tname('3D2Osym', k)}$) :: s
         type(${tname('3D4O2sym', k)}$) :: c
-#:if m == 'corotational'
+        #:if m == 'corotational'
         type(kin_material_logarithmic_${k}$) :: mlog
         type(kin_state_${k}$) :: st_mlog
         integer :: status_corot
-#:endif
+        #:endif
 
         F%vals = f9
         s%vals = s6
         c%vals = c36
-#:if m == 'corotational'
+        #:if m == 'corotational'
         call kin_update(mlog, F, st_mlog, status)
         call kin_corot_update(kin, st_mlog%strain, st, status_corot, st_mlog%R)
         status = max(status, status_corot)
-#:else
+        #:else
         call kin_update(kin, F, st, status)
-#:endif
+        #:endif
         s = kin_to_cauchy(kin, st, s)
         c = kin_to_spatial_tangent(kin, st, c)
         out(1:NSTATE) = pack_state_${k}$(st)
         out(NSTATE+1:NSTATE+6) = s%vals
         out(NSTATE+7:NOUT) = reshape(c%vals, [36])
     end subroutine point_${m}$_${k}$
-#:endfor
-#:endfor
+    #:endfor
+    #:endfor
 
 end module test_kin_point
 
@@ -143,12 +143,12 @@ module test_kin_cases
     private
 
     public :: test_status, test_point_target
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: test_objectivity_${k}$
-#:endfor
-#:if 'sp' in REAL_KINDS
+    #:endfor
+    #:if 'sp' in REAL_KINDS
     public :: test_sp_vs_dp
-#:endif
+    #:endif
 
     integer, parameter :: NCASES = 9
         !! Admissible deformation gradients.
@@ -223,7 +223,7 @@ contains
         end do
     end function input_C
 
-#:if 'sp' in REAL_KINDS
+    #:if 'sp' in REAL_KINDS
 
     subroutine test_sp_vs_dp(passed)
         !! sp kernel against the dp kernel (sp inputs converted to dp): state, Cauchy stress and
@@ -254,25 +254,25 @@ contains
             Cd%vals = ref(29:34)
             lam = eigenvals(Cd)
             tol = max(4.0_dp*real(TOL_APPROX_sp, dp), 8.0_dp*real(epsilon(1.0_sp), dp)*lam(1)/lam(3))
-#:for m in ALL
+            #:for m in ALL
             call point_${m}$_sp(real(f9, sp), real(s6, sp), real(c36, sp), out_sp, status_sp)
             call point_${m}$_dp(f9, s6, c36, ref, status_dp)
             got = real(out_sp, dp)
             call check_true(passed, 'sp ${m}$ status OK, case ' // tag, status_sp == STATUS_OK .and. &
                             status_dp == STATUS_OK)
             do g = 1, size(GROUPS)
-#:if m == 'small_strain'
+                #:if m == 'small_strain'
                 if (g < 8) cycle  ! the rest is the reference configuration
-#:endif
+                #:endif
                 floor = merge(0.0_dp, 1.0_dp, g >= 9)
                 call check_true(passed, 'sp vs dp ${m}$ ' // trim(GROUPS(g)) // ', case ' // tag, &
                                 maxval(abs(got(lo(g):hi(g)) - ref(lo(g):hi(g)))) &
                                 <= tol*max(maxval(abs(ref(lo(g):hi(g)))), floor))
             end do
-#:endfor
+            #:endfor
         end do
     end subroutine test_sp_vs_dp
-#:endif
+    #:endif
 
     subroutine test_status(passed)
         !! Status of kin_update (D-017.14a) in every kind, also with det F < 0, a singular or nearly
@@ -283,15 +283,15 @@ contains
         real(dp) :: f9(9)
         integer :: ic, status, status_nr
         character(len=40) :: label
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         type(kin_state_${k}$) :: st_${k}$, st_nr_${k}$, st_id_${k}$
         real(${k}$) :: v_${k}$(NSTATE), v_nr_${k}$(NSTATE)
         type(${tname('3D2O', k)}$) :: F_${k}$
-#:for m in ALL
+        #:for m in ALL
         type(kin_${m}$_${k}$) :: k_${m}$_${k}$
-#:endfor
+        #:endfor
         type(${tname('3D2Osym', k)}$) :: e_${k}$
-#:endfor
+        #:endfor
 
         do ic = 1, 7
             select case (ic)
@@ -319,9 +319,9 @@ contains
                 f9 = case_F(8)
                 label = 'admissible'
             end select
-#:for k in REAL_KINDS
+            #:for k in REAL_KINDS
             F_${k}$%vals = real(f9, ${k}$)
-#:for m in FINITE
+            #:for m in FINITE
             call kin_update(k_${m}$_${k}$, F_${k}$, st_${k}$, status)
             if (ic == 7 .or. (ic == 5 .and. '${k}$' == 'dp')) then
                 call check_true(passed, '${k}$ ${m}$ STATUS_OK: ' // trim(label), status == STATUS_OK)
@@ -330,14 +330,14 @@ contains
                                 status == STATUS_INVALID_DEFORMATION)
             end if
             call kin_update_norot(k_${m}$_${k}$, F_${k}$, st_nr_${k}$, status_nr)
-#:if m != 'material_logarithmic'
+            #:if m != 'material_logarithmic'
             st_${k}$%R = st_id_${k}$%R
-#:endif
+            #:endif
             v_${k}$ = pack_state_${k}$(st_${k}$)
             v_nr_${k}$ = pack_state_${k}$(st_nr_${k}$)
             call check_true(passed, '${k}$ ${m}$ without the rotation, same status and state: ' // trim(label), &
                 status_nr == status .and. all(v_nr_${k}$ == v_${k}$ .or. (v_nr_${k}$ /= v_nr_${k}$ .and. v_${k}$ /= v_${k}$)))
-#:endfor
+            #:endfor
             ! Small strain does not validate
             call kin_update(k_small_strain_${k}$, F_${k}$, st_${k}$, status)
             call check_true(passed, '${k}$ small_strain STATUS_OK: ' // trim(label), status == STATUS_OK)
@@ -345,10 +345,10 @@ contains
             e_${k}$%vals = real([-3.0_dp, 1.0_dp, 0.5_dp, 0.2_dp, 0.0_dp, 0.0_dp], ${k}$)
             call kin_corot_update(k_corotational_${k}$, e_${k}$, st_${k}$, status, F_${k}$)
             call check_true(passed, '${k}$ corotational STATUS_OK: ' // trim(label), status == STATUS_OK)
-#:endfor
+            #:endfor
         end do
     end subroutine test_status
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     subroutine test_objectivity_${k}$(passed)
         !! Pure rotation Q: R = Q, J = 1, zero strain. Superposed rotation Q F: same J, R -> Q R; a
@@ -362,9 +362,9 @@ contains
         type(${tname('3D2Osym', k)}$) :: S, s1, s2
         type(${tname('3D4O2sym', k)}$) :: C, c1, c2
         type(kin_state_${k}$) :: st, st2
-#:for m in FINITE
+        #:for m in FINITE
         type(kin_${m}$_${k}$) :: k_${m}$
-#:endfor
+        #:endfor
         real(${k}$), parameter :: TOL = 10.0_${k}$*TOL_APPROX_${k}$
         real(dp) :: q9(9)
         real(${k}$) :: out1(NOUT), out2(NOUT)
@@ -376,37 +376,37 @@ contains
         do i = 1, 4
             q9 = reshape(rotation_ref(rng), [9])
             Q%vals = real(q9, ${k}$)
-#:for m in FINITE
+            #:for m in FINITE
             call kin_update(k_${m}$, Q, st, status)
             call check_true(passed, '${k}$ ${m}$ pure rotation: status', status == STATUS_OK)
             call check_approx(passed, '${k}$ ${m}$ pure rotation: R = Q', st%R%vals, Q%vals, TOL)
             call check_approx(passed, '${k}$ ${m}$ pure rotation: J = 1, zero strain', [st%J, st%strain%vals], &
                               [1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$], TOL)
-#:endfor
+            #:endfor
             do ic = 6, 8
                 F%vals = real(case_F(ic), ${k}$)
                 QF = Q * F
-#:for m in FINITE
+                #:for m in FINITE
                 call kin_update(k_${m}$, F, st, status)
                 call kin_update(k_${m}$, QF, st2, status)
                 call check_approx(passed, '${k}$ ${m}$ Q F: same J', st2%J, st%J, TOL)
                 call check_approx(passed, '${k}$ ${m}$ Q F: R -> Q R', st2%R%vals, pack9_${k}$(Q * st%R), TOL)
-#:if m in SPATIAL
+                #:if m in SPATIAL
                 s1 = kin_rotate_from_corotational(st%strain, Q)
                 call check_approx(passed, '${k}$ ${m}$ Q F: strain rotated', st2%strain%vals, s1%vals, TOL)
                 s1 = kin_to_cauchy(k_${m}$, st2, kin_rotate_from_corotational(S, Q))
                 c1 = kin_to_spatial_tangent(k_${m}$, st2, Q .transform. C)
-#:else
+                #:else
                 call check_approx(passed, '${k}$ ${m}$ Q F: same strain', st2%strain%vals, st%strain%vals, TOL)
                 s1 = kin_to_cauchy(k_${m}$, st2, S)
                 c1 = kin_to_spatial_tangent(k_${m}$, st2, C)
-#:endif
+                #:endif
                 s2 = kin_rotate_from_corotational(kin_to_cauchy(k_${m}$, st, S), Q)
                 call check_approx(passed, '${k}$ ${m}$ Q F: Cauchy stress rotated', s1%vals, s2%vals, TOL)
                 c2 = Q .transform. kin_to_spatial_tangent(k_${m}$, st, C)
                 call check_approx(passed, '${k}$ ${m}$ Q F: spatial tangent rotated', reshape(c1%vals, [36]), &
                                   reshape(c2%vals, [36]), TOL)
-#:endfor
+                #:endfor
                 ! Corotational with the strain and R of the material logarithmic kinematics
                 call point_corotational_${k}$(F%vals, S%vals, C%vals, out1, status)
                 call point_corotational_${k}$(QF%vals, S%vals, C%vals, out2, status)
@@ -429,7 +429,7 @@ contains
         real(${k}$) :: v(9)
         v = t%vals
     end function pack9_${k}$
-#:endfor
+    #:endfor
 
     subroutine test_point_target(passed)
         !! The point procedures inside an `!$omp target` region and on the CPU, every kind and
@@ -443,10 +443,10 @@ contains
         logical :: host
         real(dp) :: lam(3), fm(3, 3), amp(NPTS)
         type(ten_3D2Osym_dp) :: Cd
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         real(${k}$) :: f_${k}$(9, NPTS), s_${k}$(6), c_${k}$(6, 6), out_t_${k}$(NOUT, NPTS), out_c_${k}$(NOUT, NPTS)
         integer :: st_t_${k}$(NPTS), st_c_${k}$(NPTS)
-#:endfor
+        #:endfor
 
         rng = park_miller(20261102)
         do i = 1, NPTS
@@ -458,11 +458,11 @@ contains
             lam = eigenvals(Cd)
             amp(i) = lam(1)/lam(3)
         end do
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         f_${k}$ = real(f9, ${k}$)
         s_${k}$ = real(input_S(), ${k}$)
         c_${k}$ = real(input_C(), ${k}$)
-#:for m in ALL
+        #:for m in ALL
         host = .true.
         !$omp target teams distribute parallel do map(to: f_${k}$, s_${k}$, c_${k}$) &
         !$omp& map(from: out_t_${k}$, st_t_${k}$) map(tofrom: host)
@@ -478,8 +478,8 @@ contains
         call check_true(passed, '${k}$ ${m}$ target = CPU status, all OK', &
                         all(st_t_${k}$ == st_c_${k}$) .and. all(st_c_${k}$ == STATUS_OK))
         call check_target(passed, '${k}$ ${m}$ target = CPU', out_t_${k}$, out_c_${k}$, .not. host, amp=real(amp, ${k}$))
-#:endfor
-#:endfor
+        #:endfor
+        #:endfor
     end subroutine test_point_target
 
 end module test_kin_cases
@@ -493,19 +493,19 @@ program test_kin_kinds
     integer :: code
 
     code = 0
-#:if 'sp' in REAL_KINDS
+    #:if 'sp' in REAL_KINDS
     passed = .true.
     call test_sp_vs_dp(passed)
     call record(passed, 2, 'sp vs dp', code)
-#:endif
+    #:endif
     passed = .true.
     call test_status(passed)
     call record(passed, 3, 'status', code)
-#:for i, k in enumerate(REAL_KINDS)
+    #:for i, k in enumerate(REAL_KINDS)
     passed = .true.
     call test_objectivity_${k}$(passed)
     call record(passed, ${4 + i}$, 'objectivity ${k}$', code)
-#:endfor
+    #:endfor
     passed = .true.
     call test_point_target(passed)
     call record(passed, 6, 'point procedures in a target region', code)

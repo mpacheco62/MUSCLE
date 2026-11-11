@@ -6,7 +6,7 @@
 #! Physical checks of the Chaboche overstress law through the kernel API (dp), with the values of the
 #! composed hardening law evaluated by hard_stress/hard_dstress_dep (D-017.6b).
 
-program test_muscle_vp_chaboche
+program test_muscle_os_chaboche
     implicit none
     logical :: passed
     call test_chaboche_voce_value(passed)
@@ -18,14 +18,14 @@ program test_muscle_vp_chaboche
     call test_chaboche_inactive_threshold(passed)
     if (.not. passed) STOP 4
     print *, "Passed!", passed
-end program test_muscle_vp_chaboche
+end program test_muscle_os_chaboche
 
 subroutine test_chaboche_voce_value(passed)
     ! Nonlinear C11000 hardening distinguishes viscous K from the current yield stress.
     ! Voce parameters: Navarrete et al. (2025), Table 2.
     use muscle_kinds, only : dp
     use muscle_hard_laws, only : hard_stress, hard_vocemod_dp
-    use muscle_vp_overstress_laws, only : os_flow_rate, os_chaboche_dp
+    use muscle_os_laws, only : os_flow_rate, os_chaboche_dp
     use muscle_test_utils, only : check_approx
     implicit none
     logical, intent(out) :: passed
@@ -47,7 +47,7 @@ subroutine test_chaboche_derivatives(passed)
     ! finite-difference macros, the one of the historical `derivative`).
     use muscle_kinds, only : dp
     use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_vocemod_dp
-    use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp
+    use muscle_os_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp
     use muscle_test_utils, only : check_approx
     implicit none
     logical, intent(out) :: passed
@@ -78,7 +78,7 @@ subroutine test_chaboche_perzyna_equivalence(passed)
     ! fixed while Y moves; Perzyna divides by the current Y.
     use muscle_kinds, only : dp
     use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_bilinear_dp
-    use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp, &
+    use muscle_os_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp, &
         os_perzyna_dp
     use muscle_test_utils, only : check_approx
     implicit none
@@ -106,7 +106,7 @@ subroutine test_chaboche_inactive_threshold(passed)
     ! Fractional n<1 exposes accidental powers of negative/zero overstress in derivatives.
     use muscle_kinds, only : dp
     use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_bilinear_dp
-    use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp
+    use muscle_os_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep, os_chaboche_dp
     use muscle_test_utils, only : check_approx
     implicit none
     logical, intent(out) :: passed

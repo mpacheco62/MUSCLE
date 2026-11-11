@@ -36,28 +36,28 @@ module muscle_math_lu_solve
         !! Largest system size solved by `lu_solve`.
 
     public :: lu_solve
-#:for n in LU_SIZES
+    #:for n in LU_SIZES
     public :: LU${n}$SOLVE
-#:endfor
-#:for k in REAL_KINDS
+    #:endfor
+    #:for k in REAL_KINDS
     public :: lu_solve_${k}$
     public :: ${', '.join('LU{0}SOLVE_{1}'.format(n, k) for n in LU_SIZES)}$
-#:endfor
+    #:endfor
 
     interface lu_solve
         module procedure ${kspecifics('{0}_{1}', 'lu_solve')}$
     end interface lu_solve
 
-#:for n in LU_SIZES
+    #:for n in LU_SIZES
     interface LU${n}$SOLVE
         module procedure ${kspecifics('{0}_{1}', 'LU{}SOLVE'.format(n))}$
     end interface LU${n}$SOLVE
 
-#:endfor
+    #:endfor
 contains
 
-#:for k in REAL_KINDS
-#:for n in LU_SIZES
+    #:for k in REAL_KINDS
+    #:for n in LU_SIZES
     pure subroutine LU${n}$SOLVE_${k}$(A, b, x, OK_FLAG, KAPPA)
         !! Solves the ${n}$x${n}$ `real(${k}$)` system \( A x = b \) by LU with partial pivoting.
         implicit none
@@ -77,7 +77,7 @@ contains
         $:lu_solve_body(k)
     end subroutine LU${n}$SOLVE_${k}$
 
-#:endfor
+    #:endfor
     pure subroutine lu_solve_${k}$(A, b, x, OK_FLAG, KAPPA)
         !! Solves the `real(${k}$)` system \( A x = b \) with the `LU<n>SOLVE` routine of
         !! n = `size(A,1)` (host and tests; kernels call `LU<n>SOLVE` with a fixed n). A size
@@ -100,7 +100,7 @@ contains
         n = size(A, 1)
         if (size(A, 2) /= n .or. size(b) /= n .or. size(x) /= n) n = 0
         select case (n)
-#:for n in LU_SIZES
+        #:for n in LU_SIZES
         case (${n}$)
             ! Copies of fixed size: passing the assumed-shape arrays packs them into heap temporaries
             ! in device code (malloc, tools/audit_kernels.sh)
@@ -112,7 +112,7 @@ contains
                 call LU${n}$SOLVE_${k}$(a_n, b_n, x_n, OK_FLAG, KAPPA)
                 x = x_n
             end block
-#:endfor
+        #:endfor
         case (1)
             if (abs(A(1,1)) > 0.0_${k}$) then      ! also .false. for NaN
                 x(1) = b(1) / A(1,1)
@@ -130,5 +130,5 @@ contains
         end select
     end subroutine lu_solve_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_math_lu_solve

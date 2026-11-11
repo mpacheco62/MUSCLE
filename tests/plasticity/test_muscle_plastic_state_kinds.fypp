@@ -14,12 +14,12 @@ module test_plastic_state_point
     use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
     implicit none
     private
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: point_step_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine point_step_${k}$(state_n, dep, state_np1)
         !! Copies the converged state to a candidate state and adds `dep` to its equivalent plastic
@@ -36,7 +36,7 @@ contains
         state_np1 = state_n
         state_np1%strain_pf = state_n%strain_pf + dep
     end subroutine point_step_${k}$
-#:endfor
+    #:endfor
 
 end module test_plastic_state_point
 
@@ -54,15 +54,15 @@ program test_plastic_state_kinds
 
     passed = .true.
     ref = [(0.37_dp*i - 1.1_dp*sin(real(i, dp)), i = 1, 13)]
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     call test_${k}$()
-#:endfor
+    #:endfor
 
     if (.not. passed) stop 1
     print '(a)', ' test_plastic_state_kinds: PASSED'
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     subroutine test_${k}$()
         !! Defaults and the point procedure, `real(${k}$)`.
@@ -78,6 +78,6 @@ contains
             all(out%strain_p%vals == s%strain_p%vals) .and. out%strain_pf == s%strain_pf + 0.25_${k}$)
         call check_true(passed, '${k}$ converged state untouched', s%strain_pf == real(ref(13), ${k}$))
     end subroutine test_${k}$
-#:endfor
+    #:endfor
 
 end program test_plastic_state_kinds

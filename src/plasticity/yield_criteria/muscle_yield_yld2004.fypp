@@ -38,28 +38,28 @@ module muscle_yield_yld2004
     !! `yield_stress_eq_and_derivatives_yld2004_3D_<k>(prm, sigma, f, df[, ddf])` (one spectral
     !! decomposition of Sp and one of Spp; the Hessian only if `ddf` is present; the same bits as the
     !! three functions) for each real kind, also through the generics `yield_*` of
-    !! `muscle_yield_criteria` (`yield_joint_evaluation` is true).
+    !! `muscle_yield_laws` (`yield_joint_evaluation` is true).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_status, only : STATUS_OK
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
-#:endfor
+    #:endfor
     use muscle_tensors, only : operator(.tdotsym.), operator(*), operator(+), assignment(=)
     use muscle_math_operations, only : eigenvals
     use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian, fp_exponent
-    use muscle_anisotropic_yield, only : yield_lin_pull_back, yield_lin_pull_back_hessian
+    use muscle_yield_anisotropic, only : yield_lin_pull_back, yield_lin_pull_back_hessian
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: yield_yld2004_${k}$
     public :: yield_stress_eq_yld2004_3D_${k}$, yield_dstress_eq_yld2004_3D_${k}$, yield_ddstress_eq_yld2004_3D_${k}$
     public :: yield_stress_eq_and_derivatives_yld2004_3D_${k}$, yield_joint_evaluation_yld2004_${k}$
     public :: yield_yld2004_init_${k}$
-#:endfor
+    #:endfor
     public :: yield_yld2004_init
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: yield_yld2004_${k}$
         !! Parameters of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)` (build it with `yield_yld2004_init`, which
         !! computes the private derived components; do not change the inputs after `yield_yld2004_init`).
@@ -75,18 +75,18 @@ module muscle_yield_yld2004
         real(${k}$) :: a
             !! Exponent \( a \ge 2 \) (the analytical derivatives need it).
     end type yield_yld2004_${k}$
-#:endfor
+    #:endfor
 
     interface yield_yld2004_init
         !! Parameters of the Yld2004-18p model from the coefficients of Cp and Cpp and a (computes Lp
         !! and Lpp).
-#:for k in REAL_KINDS
+        #:for k in REAL_KINDS
         module procedure yield_yld2004_init_${k}$
-#:endfor
+        #:endfor
     end interface yield_yld2004_init
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure subroutine yield_yld2004_init_${k}$(prm, cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66, cpp12, cpp13, &
             & cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66, a, status)
@@ -561,6 +561,6 @@ contains
               + yield_lin_pull_back_hessian(prm%Lpp, prm%cpp_shear, spectral_hessian(lpp, Vpp, dfpp, d2fpp)) &
               + 2.0_${k}$*((a1 .tdotsym. b1) + (a2 .tdotsym. b2) + (a3 .tdotsym. b3))
     end function yield_yld2004_hessian_3D_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_yield_yld2004

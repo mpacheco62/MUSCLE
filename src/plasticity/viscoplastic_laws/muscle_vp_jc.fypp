@@ -30,13 +30,13 @@ module muscle_vp_jc
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: vp_jc_${k}$
     public :: vp_flow_stress_jc_${k}$, vp_dflow_dep_jc_${k}$, vp_dflow_depd_jc_${k}$, &
         & vp_dstress_dep_jc_${k}$, vp_newton_dstress_dep_jc_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: vp_jc_${k}$
         !! Parameters of the Johnson-Cook model in `real(${k}$)`.
         real(${k}$) :: C
@@ -46,10 +46,10 @@ module muscle_vp_jc
         real(${k}$) :: epmin = 1.0e-7_${k}$
             !! Minimum strain rate \( \dot\epsilon_{min} \) (floor of the rate, avoids \( \ln 0 \)).
     end type vp_jc_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure subroutine vp_jc_rate_${k}$(prm, epd, x, dx)
         !! Normalized rate \( x \) of the Johnson-Cook model in `real(${k}$)` and \( dx/d\dot\epsilon_p \)
         !! times \( \dot\epsilon_{p0} \) (1, or 0 on the floor \( \dot\epsilon_p \le \dot\epsilon_{min} \)).
@@ -190,5 +190,5 @@ contains
         res = dsy_dep*(1.0_${k}$ + prm%C*log(x)) + sy*(prm%C/x/prm%epdmax)/dt
     end function vp_newton_dstress_dep_jc_${k}$
 
-#:endfor
+    #:endfor
 end module muscle_vp_jc

@@ -26,17 +26,17 @@ module muscle_math_inverses
     private
 
     public :: M33INV, M44INV, M55INV, M66INV, M99INV, COND_INF, QUIET_NAN, ADJ_KAPPA_MAX
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: M33INV_${k}$, M44INV_${k}$, M55INV_${k}$, M66INV_${k}$, M99INV_${k}$
     public :: COND_INF_${k}$, QUIET_NAN_${k}$, ADJ_KAPPA_MAX_${k}$
-#:endfor
+    #:endfor
 
-#:for name in ['M33INV', 'M44INV', 'M55INV', 'M66INV', 'M99INV', 'COND_INF']
+    #:for name in ['M33INV', 'M44INV', 'M55INV', 'M66INV', 'M99INV', 'COND_INF']
     interface ${name}$
         module procedure ${', '.join(name + '_' + k for k in REAL_KINDS)}$
     end interface ${name}$
 
-#:endfor
+    #:endfor
     interface QUIET_NAN
         module procedure QUIET_NAN_dp
     end interface QUIET_NAN
@@ -44,19 +44,19 @@ module muscle_math_inverses
 #! Adjugate/LU switch per kind. dp: 1e3, the result is as accurate as LU for every condition
 #! number. sp: 1e2 (D-013): measured with random 3x3/4x4 matrices, above kappa ~ 1e2 the sp adjugate
 #! is 2-8 times less accurate than LU (p99 errors), below it they match.
-#:set ADJ_KAPPA_MAX = {'sp': '1.0e2', 'dp': '1.0e3'}
-#:for k in REAL_KINDS
+    #:set ADJ_KAPPA_MAX = {'sp': '1.0e2', 'dp': '1.0e3'}
+    #:for k in REAL_KINDS
     real(${k}$), parameter :: ADJ_KAPPA_MAX_${k}$ = ${ADJ_KAPPA_MAX[k]}$_${k}$
         !! Largest \( \kappa_\infty \) accepted for the `real(${k}$)` adjugate inverses (`M33INV`,
         !! `M44INV`); above it they are recomputed by LU, which is more accurate for ill-conditioned
         !! matrices, while well-conditioned ones keep the fast adjugate path.
-#:endfor
+    #:endfor
     real(dp), parameter :: ADJ_KAPPA_MAX = ADJ_KAPPA_MAX_dp
         !! Historical name of `ADJ_KAPPA_MAX_dp`.
 
     contains
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     PURE SUBROUTINE M66INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 6x6 matrix by LU with partial pivoting in plain Fortran,
         !! see `muscle_math_lu_inverse.fypp`. Used by `ten_3D4O3sym` and
@@ -96,7 +96,7 @@ module muscle_math_inverses
     END SUBROUTINE M99INV_${k}$
 
 #! Bit pattern of the IEEE quiet NaN, identical to ieee_value(1.0_k, ieee_quiet_nan)
-#:set NAN_BITS = {'sp': ('int32', "z'7FC00000'"), 'dp': ('int64', "z'7FF8000000000000'")}
+    #:set NAN_BITS = {'sp': ('int32', "z'7FC00000'"), 'dp': ('int64', "z'7FF8000000000000'")}
     PURE FUNCTION QUIET_NAN_${k}$() RESULT(X)
         !! IEEE quiet NaN, used to fill the inverse of a singular tensor.
         !!
@@ -297,5 +297,5 @@ module muscle_math_inverses
         $:lu_inverse_body(k, kappa=True)
     END SUBROUTINE M55INV_${k}$
 
-#:endfor
+    #:endfor
 end module

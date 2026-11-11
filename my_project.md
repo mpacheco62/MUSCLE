@@ -64,17 +64,17 @@ The foundation of the library: symmetric and general 2nd and 4th order tensors a
 
 ### 2. Model families
 Each model is a concrete parameter type (`<family>_<model>_<k>`, e.g. `hard_swift_dp`) with free `pure` functions; the family module gives generics over every model and kind (`hard_stress`, `yield_stress_eq`, `elas_stress`, ...), resolved at compile time.
-- **Elasticity** (`muscle_elasticity_laws`): linear isotropic, and the frozen viscoelastic elasticity of a step.
+- **Elasticity** (`muscle_elas_laws`): linear isotropic, and the frozen viscoelastic elasticity of a step.
 - **Viscoelasticity** (`muscle_visco_laws`): generalized Maxwell, Kelvin-Voigt.
 - **Kinematics** (`muscle_kin_laws`): small strain, total/updated Lagrangian, material/spatial logarithmic, corotational.
 
-### 3. Yield Criteria (`muscle_yield_criteria`)
+### 3. Yield Criteria (`muscle_yield_laws`)
 Implements the surface that delimits the elastic-plastic transition.
 - [[muscle_yield_vonmises]]: Classic J2 plasticity.
 - [[muscle_yield_hill48]], [[muscle_yield_druckerprager]], [[muscle_yield_yld2004]].
 - [[muscle_yield_cpb06]], [[muscle_yield_cpb06ex2]]: criteria for materials with strength differential effects (asymmetry between tension and compression).
 
-### 4. Hardening and Viscoplastic Laws (`muscle_hard_laws`, `muscle_vp_laws`, `muscle_vp_overstress_laws`)
+### 4. Hardening and Viscoplastic Laws (`muscle_hard_laws`, `muscle_vp_laws`, `muscle_os_laws`)
 Defines the evolution of the flow stress:
 - **Bilinear, Swift / Ludwik, modified Voce:** isotropic hardening.
 - **Johnson-Cook, Rusinek-Klepaczko, Nemat-Nasser-Li, Voyiadjis-Almasri:** rate-dependent flow stress.

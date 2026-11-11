@@ -7,13 +7,13 @@ module fypp_smoke
     use, intrinsic :: iso_fortran_env, only: sp => real32, dp => real64
     implicit none
     private
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: twice_${k}$
-#:endfor
+    #:endfor
 
 contains
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function twice_${k}$(x) result(y)
         !! Doubles a `real(${k}$)` value (device-callable when MUSCLE_GPU is defined).
         @:DEVICE()
@@ -22,7 +22,7 @@ contains
         y = 2.0_${k}$ * x
     end function twice_${k}$
 
-#:endfor
+    #:endfor
 end module fypp_smoke
 
 
@@ -34,10 +34,10 @@ program test_fypp_smoke
     logical :: passed
 
     passed = .true.
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     call check_true(passed, 'twice_${k}$ returns real(${k}$)', kind(twice_${k}$(1.0_${k}$)) == ${k}$)
     call check_true(passed, 'twice_${k}$(1.5) == 3', twice_${k}$(1.5_${k}$) == 3.0_${k}$)
-#:endfor
+    #:endfor
 
     if (.not. passed) stop 1
     print '(a)', 'All FYPP smoke tests passed successfully!'

@@ -2,8 +2,8 @@
 #set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/modules)
 add_library(muscle )
 
-# Detectar si el compilador soporta UDTIO (write(formatted)) de forma thread-safe en OpenMP.
-# MUSCLE_UDTIO=ON/OFF fuerza la decisión (tools/check.sh compila ese camino con ON).
+# Detect whether the compiler supports UDTIO (write(formatted)) safely inside OpenMP regions.
+# MUSCLE_UDTIO=ON/OFF forces the choice (tools/check.sh builds that path with ON).
 set(MUSCLE_UDTIO "AUTO" CACHE STRING "Formatted output of tensors (UDTIO): AUTO, ON or OFF")
 set_property(CACHE MUSCLE_UDTIO PROPERTY STRINGS AUTO ON OFF)
 if(MUSCLE_UDTIO STREQUAL "AUTO")

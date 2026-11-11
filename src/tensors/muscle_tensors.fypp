@@ -162,10 +162,10 @@ module muscle_tensors
 
     use, intrinsic :: iso_fortran_env
     ! Types of every kind and the historical names, which are the double precision ones
-#:for F in FAMILIES
+    #:for F in FAMILIES
     use muscle_tensor_${F.lower()}$, only: ${', '.join(tname(d + F, k) for d in DIMS for k in REAL_KINDS)}$, &
         & ${', '.join('{0} => {1}'.format(tname(d + F, 'dp')[:-3], tname(d + F, 'dp')) for d in DIMS)}$
-#:endfor
+    #:endfor
     use muscle_tensor_iden, only: ${', '.join(iname(X) for X in IDENTITIES)}$, &
         & ${', '.join(iname(X + 'S', k) for X in IDENTITIES for k in REAL_KINDS)}$, &
         & ${', '.join('{0} => {1}'.format(iname(X + 'S', 'dp')[:-3], iname(X + 'S', 'dp')) for X in IDENTITIES)}$
@@ -175,14 +175,14 @@ module muscle_tensors
     use muscle_tensor_2o, only: operator(.approx.), operator(+), operator(*), &
         & operator(/), operator(.dev.), operator(.ddot.), operator(.inv.), assignment(=), inverse, &
         & transpose
-#:for F in ['4O3sym', '4O2sym', '4O']
+    #:for F in ['4O3sym', '4O2sym', '4O']
     use muscle_tensor_${F.lower()}$, only: operator(.approx.), operator(+), &
         & operator(*), operator(/), operator(.inv.), assignment(=), inverse
-#:endfor
+    #:endfor
     use muscle_tensor_iden, only: operator(+), operator(*), operator(/), operator(.approx.)
-#:if defined('ENABLE_UDTIO')
+    #:if defined('ENABLE_UDTIO')
     use muscle_tensor_io, only: write(formatted)
-#:endif
+    #:endif
     ! operator(-) only through muscle_tensor_minus (ifx: see the note there)
     use muscle_tensor_minus, only: operator(-)
     use muscle_tensor_ops_addition_subtraction, only: operator(+)
@@ -241,7 +241,7 @@ module muscle_tensors
 
     public :: assignment (=)
 
-#:if defined('ENABLE_UDTIO')
+    #:if defined('ENABLE_UDTIO')
     public :: write(formatted)
-#:endif
+    #:endif
 end module muscle_tensors

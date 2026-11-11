@@ -14,16 +14,16 @@ module muscle_math_derivatives
     private
 
     public :: dsquare
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: dsquare_${k}$
-#:endfor
+    #:endfor
 
     interface dsquare
         module procedure ${kspecifics('{0}_{1}', 'dsquare')}$
     end interface dsquare
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     pure function dsquare_${k}$(a) result(res)
         !! Analytical derivative of the square of a symmetric tensor with respect to the tensor
@@ -62,6 +62,6 @@ contains
         res%vals(20) = 0.0_${k}$
         res%vals(21) = a%vals(6)
     end function dsquare_${k}$
-#:endfor
+    #:endfor
 
 end module muscle_math_derivatives

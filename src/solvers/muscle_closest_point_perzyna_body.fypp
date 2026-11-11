@@ -18,8 +18,8 @@
 #! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
 #:if defined('MAT')
 #! Values of the composed hardening law the overstress function `f` receives at `ep`
-#:set HARD = lambda f, ep: muscle_meta.material_comp_args(MAT, 'os', f, ep)
-#:set COMPOSED = muscle_meta.material_composed(MAT, 'os') is not None
+    #:set HARD = lambda f, ep: muscle_meta.material_comp_args(MAT, 'os', f, ep)
+    #:set COMPOSED = muscle_meta.material_composed(MAT, 'os') is not None
 
     pure subroutine ${SOLVE}$(mat, elas, strain, dt, state_n, state_np1, stress, tangent, status, iters)
         !! Closest point return mapping for overstress viscoplasticity of material `${MAT.name}$` at one
@@ -39,12 +39,12 @@
         !! used.
         use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
         use muscle_tensors, only : operator(-)
-        use muscle_elasticity_laws, only : elas_stress
-        use muscle_yield_criteria, only : yield_stress_eq
-        use muscle_vp_overstress_laws, only : os_flow_rate
-#:if COMPOSED
+        use muscle_elas_laws, only : elas_stress
+        use muscle_yield_laws, only : yield_stress_eq
+        use muscle_os_laws, only : os_flow_rate
+        #:if COMPOSED
         use muscle_hard_laws, only : hard_stress
-#:endif
+        #:endif
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat
@@ -104,12 +104,12 @@
         !! Merit function of the line search of material `${MAT.name}$`, `real(${k}$)`: squared norm of
         !! the residuals \( (R_{\epsilon_p}, R_\lambda) \) at a trial state.
         use muscle_tensors, only : operator(+), operator(-), operator(*)
-        use muscle_elasticity_laws, only : elas_stress
-        use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq
-        use muscle_vp_overstress_laws, only : os_flow_rate
-#:if COMPOSED
+        use muscle_elas_laws, only : elas_stress
+        use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq
+        use muscle_os_laws, only : os_flow_rate
+        #:if COMPOSED
         use muscle_hard_laws, only : hard_stress
-#:endif
+        #:endif
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat
@@ -148,13 +148,13 @@
         !! The plastic multiplier increment is `state%strain_pf - state_n%strain_pf`.
         use muscle_kinds, only : SY_MIN_${k}$
         use muscle_tensors, only : operator(+), operator(-), operator(*), operator(.ddot.), operator(.inv.)
-        use muscle_elasticity_laws, only : elas_stress, elas_dstress_dstrain
-        use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
+        use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
             yield_stress_eq_and_derivatives, yield_joint_evaluation
-        use muscle_vp_overstress_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep
-#:if COMPOSED
+        use muscle_os_laws, only : os_flow_rate, os_dflow_dsigma, os_dflow_dep
+        #:if COMPOSED
         use muscle_hard_laws, only : hard_stress, hard_dstress_dep
-#:endif
+        #:endif
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat
@@ -213,10 +213,10 @@
 
         ! Convergence: both residuals in stress units through the elastic tangent, relative to the
         ! current yield stress of the composed hardening law
-#:if not COMPOSED
-#:stop ('closest_point_perzyna body: the overstress law of {} composes no hardening law: no yield stress ' &
-    & + 'for the Newton criterion').format(MAT.name)
-#:endif
+        #:if not COMPOSED
+        #:stop ('closest_point_perzyna body: the overstress law of {} composes no hardening law: no yield stress ' &
+            & + 'for the Newton criterion').format(MAT.name)
+        #:endif
         scale = mat%tol*max(hard_stress(mat%hard, strain_pf), SY_MIN_${k}$)
         res_stress = elas_tan .ddot. residual1
         ! Rounding floor of the plastic strain residual in stress units (D-018.12a): its rounding is about
@@ -267,12 +267,13 @@
         !! \( c \le 0 \) and the elastic tangent when \( \Delta\lambda \le 10^{-12} \).
         use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
             operator(.inv.), operator(.tdotsym.), assignment(=)
-        use muscle_elasticity_laws, only : elas_dstress_dstrain
-        use muscle_yield_criteria, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq
-        use muscle_vp_overstress_laws, only : os_dflow_dsigma, os_dflow_dep
-#:if COMPOSED
+        use muscle_elas_laws, only : elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq
+        use muscle_os_laws, only : os_dflow_dsigma, os_dflow_dep
+        #:if COMPOSED
         use muscle_hard_laws, only : hard_stress, hard_dstress_dep
-#:endif
+        #:endif
+        use muscle_kinds, only : DGAMMA_MIN_${k}$
         implicit none
         @:DEVICE()
         type(${MAT_T}$), intent(in) :: mat
@@ -290,8 +291,6 @@
         type(${T4}$), intent(out) :: tangent
             !! Consistent tangent.
 
-        real(${k}$), parameter :: DGAMMA_MIN = 1.0e-12_${k}$
-            ! Elastic step threshold of the plastic multiplier increment (historical value, both kinds)
         type(${S2}$) :: df
         type(${C4}$) :: elas_tan, hess, ddf
         real(${k}$) :: dgamma, strain_pf, stress_eq, c, gp, denom
@@ -299,7 +298,7 @@
         strain_pf = state_np1%strain_pf
         dgamma = strain_pf - state_n%strain_pf
         elas_tan = elas_dstress_dstrain(elas, strain - state_np1%strain_p)
-        if (dgamma <= DGAMMA_MIN) then
+        if (dgamma <= DGAMMA_MIN_${k}$) then
             tangent = elas_tan
             return
         end if

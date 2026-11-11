@@ -29,9 +29,9 @@ program test_mat_visco_errors
     logical :: passed
 
     passed = .true.
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     call run_${k}$()
-#:endfor
+    #:endfor
     if (.not. passed) then
         print '(a)', ' FAIL: test_mat_visco_errors'
         stop 1
@@ -39,7 +39,7 @@ program test_mat_visco_errors
     print '(a)', ' PASS: test_mat_visco_errors'
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     subroutine run_${k}$()
         !! Every check in `real(${k}$)`.
@@ -103,6 +103,6 @@ contains
         end do
         call check_true(passed, 'the sequence yields (${k}$)', sn_a%plastic%strain_pf > 0.0_${k}$)
     end subroutine run_${k}$
-#:endfor
+    #:endfor
 
 end program test_mat_visco_errors

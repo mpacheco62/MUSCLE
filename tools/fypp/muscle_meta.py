@@ -8,7 +8,7 @@ re-exports the helpers under short names. Conventions: ``pages/conventions.md``.
 Contents (in file order; search for the section title)
 ------------------------------------------------------
 1. Kinds, dimensions and model lists (``KINDS``, ``DIMS``, ``FAMILIES``, ``IDENTITIES``,
-   ``*_MODELS``, ``MAX_VISCO_BRANCHES``, ``KINEMATICS_*``, ``MODEL_MODULES``, ``MODEL_LABELS``):
+   ``*_MODELS``, ``MAX_VISCO_BRANCHES``, ``KINEMATICS_*``, ``MODEL_LABELS``):
    data read by every template (through ``muscle_common.fypp``), the materials and the tests.
 2. Tensor layouts and term helpers (``Layout``, ``layout``, ``tname``, ``iname``, ``iden_*``,
    ``join_terms``, ``norm_terms``): ``src/tensors/``, ``include/muscle_tensor_common.fypp``; see
@@ -109,14 +109,15 @@ VISCOPLASTIC_COMPOSED = ('jc', 'jcfull')
 #: (``vp_newton_dstress_dep``, D-018.19b); the others use ``vp_dstress_dep``.
 VISCOPLASTIC_FLOOR = ('jc',)
 
-#: Registered overstress laws \( \dot\lambda = g(\sigma_{eq}, \epsilon_p) \) (D-017): same
-#: directory and module names as the flow stress laws, exported by ``muscle_vp_overstress_laws``.
+#: Registered overstress laws \( \dot\lambda = g(\sigma_{eq}, \epsilon_p) \) (D-017): one template
+#: ``src/plasticity/viscoplastic_laws/muscle_os_<name>.fypp`` each (the directory of the flow stress laws),
+#: exported by ``muscle_os_laws``.
 OVERSTRESS_MODELS = ('chaboche', 'perzyna')
 OVERSTRESS_COMPOSED = ('chaboche', 'perzyna')
 
 #: Registered yield criteria \( \sigma_{eq}(\boldsymbol\sigma) \) (D-017): one template
 #: ``src/plasticity/yield_criteria/muscle_yield_<name>.fypp`` each, exported by
-#: ``muscle_yield_criteria``. ``YIELD_JOINT``: those that write their own joint evaluation of the
+#: ``muscle_yield_laws``. ``YIELD_JOINT``: those that write their own joint evaluation of the
 #: equivalent stress and its derivatives (the others get the default, three calls in turn).
 YIELD_MODELS = ('vonmises', 'hill48', 'druckerprager', 'cpb06', 'cpb06ex2', 'yld2004')
 YIELD_JOINT = ('yld2004',)
@@ -125,7 +126,8 @@ YIELD_JOINT = ('yld2004',)
 YIELD_ISOTROPIC = ('vonmises', 'druckerprager')
 
 #: Registered elastic models (D-017.12): one template
-#: ``src/elasticity/muscle_elasticity_<name>.fypp`` each, exported by ``muscle_elasticity_laws``.
+#: ``src/elasticity/muscle_elas_<name>.fypp`` each (the frozen elasticity:
+#: ``src/viscoelasticity/muscle_elas_frozen.fypp``), exported by ``muscle_elas_laws``.
 ELASTICITY_MODELS = ('linear', 'frozen')
 #: Isotropic elastic models: a return mapping in a rotated frame (spatial strain measure with an
 #: anisotropic yield criterion, D-018.15f) needs one (the elasticity is then frame independent).
@@ -162,9 +164,6 @@ KINEMATICS_SPATIAL = ('updated_lagrangian', 'spatial_logarithmic')
 #: the tangents of the material logarithmic kinematics): their ``kin_update_norot`` is ``kin_update`` (D-019.7c).
 KINEMATICS_ROTATION = ('material_logarithmic',)
 
-#: Module of a model whose name does not follow ``ModelFamily.module`` (a model that keeps its
-#: historical module, ``model_module``): the frozen elasticity of the viscoelastic models.
-MODEL_MODULES = {('elas', 'frozen'): 'muscle_visco_frozen'}
 
 #: Readable names of the models in the generated FORD docs (``model_label``); a model not listed
 #: (e.g. a test-only law) is named by its identifier.
@@ -1031,19 +1030,19 @@ MODEL_FAMILIES = {
         composition=_HARD_COMPOSITION, composed=VISCOPLASTIC_COMPOSED),
     # Overstress laws g(sigma_eq, ep) (plastic multiplier rate).
     'os': ModelFamily(
-        prefix='os', module='muscle_vp_{}', family_module='muscle_vp_overstress_laws', models=OVERSTRESS_MODELS,
+        prefix='os', module='muscle_os_{}', family_module='muscle_os_laws', models=OVERSTRESS_MODELS,
         funcs=(_F('flow_rate', ('sy',)), _F('dflow_dsigma', ('sy',)), _F('dflow_dep', ('sy', 'dsy_dep'))),
         composition=_HARD_COMPOSITION, composed=OVERSTRESS_COMPOSED),
     # Yield criteria sigma_eq(sigma) and their derivatives with respect to the stress tensor. Only 3D
     # for now (dims-2d-3d.md: 2D needs a 2D vs 3D test first).
     'yield': ModelFamily(
-        prefix='yield', module='muscle_yield_{}', family_module='muscle_yield_criteria', models=YIELD_MODELS,
+        prefix='yield', module='muscle_yield_{}', family_module='muscle_yield_laws', models=YIELD_MODELS,
         funcs=(_F('stress_eq'), _F('dstress_eq'), _F('ddstress_eq')), dims=('3D',),
         joint=ModelJoint('stress_eq_and_derivatives', 'joint_evaluation', ('stress_eq', 'dstress_eq', 'ddstress_eq'))),
     # Elastic models sigma(eps) (D-017.12), in 3D and 2D (plane strain/stress and axisymmetry: the 33
     # component is kept). A model with internal variables belongs to the viscoelastic family.
     'elas': ModelFamily(
-        prefix='elas', module='muscle_elasticity_{}', family_module='muscle_elasticity_laws',
+        prefix='elas', module='muscle_elas_{}', family_module='muscle_elas_laws',
         models=ELASTICITY_MODELS, dims=('3D', '2D'),
         funcs=(_F('stress'), _F('stress_dev'), _F('dstress_dstrain'), _F('dstress_dstrain_dev'))),
     # Linear viscoelastic models (D-017.13), integrated over a time step, with an explicit state
@@ -1418,10 +1417,9 @@ def model_label(prefix, model):
 
 
 def model_module(prefix, model):
-    """Module of a model: ``MODEL_MODULES`` if listed there, else ``ModelFamily.module``:
-    ``model_module('elas', 'linear')`` -> ``muscle_elasticity_linear``,
-    ``model_module('elas', 'frozen')`` -> ``muscle_visco_frozen``."""
-    return MODEL_MODULES.get((prefix, model), MODEL_FAMILIES[prefix].module.format(model))
+    """Module of a model (``ModelFamily.module``): ``model_module('elas', 'linear')`` -> ``muscle_elas_linear``,
+    ``model_module('os', 'perzyna')`` -> ``muscle_os_perzyna``."""
+    return MODEL_FAMILIES[prefix].module.format(model)
 
 
 def model_type(prefix, model, kind):

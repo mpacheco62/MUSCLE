@@ -198,8 +198,8 @@ module kin_unit_cases
     use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2O', '2Osym', '4O2sym') for k in REAL_KINDS)}$, &
         operator(.ddot.)
     use muscle_kin_laws, only : kin_update, kin_corot_update, kin_geometric_tangent, &
-#:set kin_mods = ('small_strain', 'total_lagrangian', 'updated_lagrangian', 'material_logarithmic', 'spatial_logarithmic', &
-    & 'corotational')
+        #:set kin_mods = ('small_strain', 'total_lagrangian', 'updated_lagrangian', 'material_logarithmic', 'spatial_logarithmic', &
+            & 'corotational')
         ${', '.join('kin_{0}_{1}'.format(m, k) for m in kin_mods for k in REAL_KINDS)}$
     use muscle_kin_finite, only : kin_finite_update, kin_green_lagrange, kin_euler_almansi, kin_material_log, &
         kin_spatial_log, kin_pk2_to_cauchy, kin_cauchy_to_pk2, kin_pk2_to_kirchhoff, kin_kirchhoff_to_pk2, &
@@ -212,10 +212,10 @@ module kin_unit_cases
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: test_strains_${k}$, test_corotational_${k}$, test_conversions_${k}$, test_tangents_${k}$, &
         test_geometric_${k}$, test_tangent_transport_${k}$, test_identity_${k}$
-#:endfor
+    #:endfor
     public :: test_truth_fd
 
 contains
@@ -268,7 +268,7 @@ contains
         end do
         om = matmul(cs%R0, matmul(cs%Q, matmul(x, matmul(transpose(cs%Q), transpose(cs%R0)))))
     end function spin_q
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
 
     subroutine test_strains_${k}$(passed)
         !! State (J, R) and strain measures of F = R0 Q diag(s) Q^T, `real(${k}$)`: E = (C - I)/2,
@@ -625,7 +625,7 @@ contains
         res = kin_almansi_tangent(st, A)
         call check_approx(passed, '${k}$ F = I: Euler-Almansi tangent = A', res%vals, A%vals, TOL)
     end subroutine test_identity_${k}$
-#:endfor
+    #:endfor
 
     subroutine test_truth_fd(passed)
         !! The truth of test_tangents (Daleckii-Krein derivative of the Hencky strains, derivative of the
@@ -692,7 +692,7 @@ program test_kin_finite
     integer :: code
 
     code = 0
-#:for i, k in enumerate(REAL_KINDS)
+    #:for i, k in enumerate(REAL_KINDS)
     passed = .true.
     call test_strains_${k}$(passed)
     call record(passed, ${2 + 4*i}$, 'strain measures ${k}$', code)
@@ -714,7 +714,7 @@ program test_kin_finite
     passed = .true.
     call test_identity_${k}$(passed)
     call record(passed, ${14 + i}$, 'F = I tangents ${k}$', code)
-#:endfor
+    #:endfor
     passed = .true.
     call test_truth_fd(passed)
     call record(passed, 20, 'truth vs finite differences', code)

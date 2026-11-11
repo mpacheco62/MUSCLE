@@ -69,7 +69,7 @@ el `solver_case` del test de secuencia; el test de la ley; la lista del README.
 
 ## 5. Propuestas (no aplicadas)
 
-- P1. **Medir los tests heredados con `mutation_check`** (en el aspecto 6): por área, quitar del grupo
+- P1. **Hecho (2026-11-10, re-análisis 6 y D-025).** **Medir los tests heredados con `mutation_check`** (en el aspecto 6): por área, quitar del grupo
   unitario los `legacy` y ver qué mutaciones dejan de detectarse. Si ninguna, borrar o reducir los heredados
   con el criterio de D-023 (el usuario decide); `test_muscle_math_spectral_derivs.f90` sólo es 1 600 líneas
   redundantes.

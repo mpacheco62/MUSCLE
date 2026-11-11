@@ -35,21 +35,21 @@ program test_muscle_tensor_layouts
     implicit none
     logical :: passed
 
-#:for n, df in enumerate(ALL, start=1)
-#:set d, f = df
+    #:for n, df in enumerate(ALL, start=1)
+    #:set d, f = df
     call test_layout_${d}$${f}$(passed)
     if (.not. passed) STOP ${n}$
 
-#:endfor
+    #:endfor
     print *, "Passed!"
     STOP 0
 
 contains
 
-#:for d, f in NAMED
-#:set L = layout(f, d)
-#:set N = len(L.comps)
-#:set R = len(L.shape)
+    #:for d, f in NAMED
+    #:set L = layout(f, d)
+    #:set N = len(L.comps)
+    #:set R = len(L.shape)
     subroutine test_layout_${d}$${f}$(passed)
         !! `init` with keywords on ten_${d}$${f}$: each component lands at its layout position.
         use muscle_kinds, only: dp
@@ -75,20 +75,20 @@ contains
             e(ic) = 1.0_dp
             call t%init(${', '.join('{}=e({})'.format(c.name, i) for i, c in enumerate(L.comps, start=1))}$)
             expected = 0.0_dp
-#:if R == 1
+            #:if R == 1
             expected(pos(1, ic)) = 1.0_dp
-#:else
+            #:else
             expected(pos(1, ic), pos(2, ic)) = 1.0_dp
-#:endif
+            #:endif
             call check_approx(passed, 'ten_${d}$${f}$: init(' // trim(names(ic)) // '=1) -> vals unit at layout pos', &
                               t%vals, expected, tol=0.0_dp)
         end do
     end subroutine test_layout_${d}$${f}$
 
-#:endfor
-#:for d, f in FULL
-#:set L = layout(f, d)
-#:set N = len(L.comps)
+    #:endfor
+    #:for d, f in FULL
+    #:set L = layout(f, d)
+    #:set N = len(L.comps)
     subroutine test_layout_${d}$${f}$(passed)
         !! `init(C4)` / `get` on ten_${d}$${f}$: each C_ijkl lands at its layout position.
         use muscle_kinds, only: dp
@@ -145,5 +145,5 @@ contains
         end do
     end subroutine test_layout_${d}$${f}$
 
-#:endfor
+    #:endfor
 end program test_muscle_tensor_layouts

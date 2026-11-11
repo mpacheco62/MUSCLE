@@ -4,7 +4,7 @@
 #! Note: the parameter `k` (historical keyword, `prm%k`) is unrelated to the fypp kind variable `${k}$`
 #! of the `#:for k in REAL_KINDS` loops: write the kind always as `${k}$` and the parameter as `prm%k`.
 
-module muscle_vp_chaboche
+module muscle_os_chaboche
     !! Additive power overstress law, Chaboche (2008), Eq. (15), p. 1646:
     !! \[ g(\sigma_{eq}, \epsilon_p) = \langle z \rangle^n, \quad
     !!    z = \frac{\sigma_{eq} - \sigma_y(\epsilon_p)}{K} \]
@@ -23,17 +23,17 @@ module muscle_vp_chaboche
     !! Kernel API: parameter types `os_chaboche_<k>` and `pure` functions
     !! `os_flow_rate_chaboche_<k>(prm, sigma_eq, ep, sy)`, `os_dflow_dsigma_chaboche_<k>(prm,
     !! sigma_eq, ep, sy)` and `os_dflow_dep_chaboche_<k>(prm, sigma_eq, ep, sy, dsy_dep)` for each real
-    !! kind, also through the generics `os_*` of `muscle_vp_overstress_laws`.
+    !! kind, also through the generics `os_*` of `muscle_os_laws`.
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     implicit none
     private
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     public :: os_chaboche_${k}$
     public :: os_flow_rate_chaboche_${k}$, os_dflow_dsigma_chaboche_${k}$, os_dflow_dep_chaboche_${k}$
-#:endfor
+    #:endfor
 
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     type :: os_chaboche_${k}$
         !! Parameters of the Chaboche model in `real(${k}$)`.
         real(${k}$) :: k = 1.0_${k}$
@@ -41,10 +41,10 @@ module muscle_vp_chaboche
         real(${k}$) :: n = 1.0_${k}$
             !! Positive rate exponent \( n \).
     end type os_chaboche_${k}$
-#:endfor
+    #:endfor
 
 contains
-#:for k in REAL_KINDS
+    #:for k in REAL_KINDS
     pure function os_chaboche_dz_${k}$(prm, z) result(res)
         !! Slope \( g_z \) of the Chaboche law in `real(${k}$)` (0 for \( z \le 0 \)).
         implicit none
@@ -126,5 +126,5 @@ contains
         res = -os_chaboche_dz_${k}$(prm, (sigma_eq - sy)/prm%k)*dsy_dep/prm%k
     end function os_dflow_dep_chaboche_${k}$
 
-#:endfor
-end module muscle_vp_chaboche
+    #:endfor
+end module muscle_os_chaboche

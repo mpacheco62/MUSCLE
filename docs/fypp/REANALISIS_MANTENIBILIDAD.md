@@ -69,6 +69,6 @@ fallaban) y la cobertura es medible. Los riesgos que siguen abiertos son los que
 |---|---|---|---|
 | M-a | **Hecho (2026-11-10).** **Corregir 1.6 y el criterio de avisos** en `ESTADO_OPTIMO.md` con la cifra real | Registro fiel | Nulo |
 | M-b | **Hecho (2026-11-10)**: `-Wno-unused-dummy-argument` (librería y tests), `-Wno-compare-reals` sólo en la librería y pendiente (PROBLEMAS), tests limpios, `check.sh` falla con cualquier aviso (el completo recompila desde cero). **Avisos:** `-Wno-unused-dummy-argument -Wno-compare-reals` en la librería (intencionales por diseño) o marcar los argumentos; limpiar los `unused-variable/function` de tests; y que `check.sh` cuente los avisos de un build limpio y falle si aumentan | Un aviso nuevo se ve | Bajo; decidir qué avisos se silencian |
-| M-c | Cerrar la fila obsoleta de offload en `PROBLEMAS.md`; poner fecha o decisión a los 3 pendientes de solvers | Deuda al día | Nulo |
-| M-d | Revisar si la tangente por diferencias finitas de los materiales Hill48 está cubierta en otro test (aspecto 6) | Posible hueco | Nulo |
+| M-c | **No se hará por ahora** (usuario, 2026-11-11: las filas quedan como están). Cerrar la fila obsoleta de offload en `PROBLEMAS.md`; poner fecha o decisión a los 3 pendientes de solvers | Deuda al día | Nulo |
+| M-d | **Hecho (2026-11-10)**: no es hueco, la tangente de los Hill48 la comprueban los tests de secuencia. Revisar si la tangente por diferencias finitas de los materiales Hill48 está cubierta en otro test (aspecto 6) | Posible hueco | Nulo |
 | M-e | Reconsiderar la integración en `dev` (M2) y la CI (M3) cuando el usuario lo decida: la distancia crece ~40 commits por semana | Menos costo de integrar | Decisión del usuario |
