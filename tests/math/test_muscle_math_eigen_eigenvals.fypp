@@ -21,11 +21,11 @@
 #:set C_TOL = 64
 #:set EIG_EPS = {'sp': '1.0e-9', 'dp': '1.0e-10'}
 
-program test_math_eigenvals_repeated
+program test_math_eigen_eigenvals
     !! Closed-form eigenvalues with exactly and nearly repeated roots, `real(sp)` and `real(dp)`.
     use muscle_kinds, only : sp, dp
     use muscle_tensors
-    use muscle_math_operations, only : eigenvals
+    use muscle_math_eigen, only : eigenvals
     use muscle_test_utils, only : check_true
     use muscle_test_helpers, only : record
     implicit none
@@ -126,4 +126,4 @@ contains
     end function test_repeated_${k}$
     #:endfor
 
-end program test_math_eigenvals_repeated
+end program test_math_eigen_eigenvals

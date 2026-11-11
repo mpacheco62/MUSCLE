@@ -33,7 +33,7 @@ module muscle_tensor_2o
     !!
     !! - Operators: `.approx.`, `+`, `-` (binary and unary), `*` and `/` by a scalar of the same
     !!   kind, `.dev.`, `.ddot.` (scalar \(A_{ij} B_{ij}\)), `.inv.`, assignment of a scalar.
-    !! - Generic functions (usable in GPU kernels): `transpose(a)`, `norm(a)`, `det(a)`, `is_identity(a)`,
+    !! - Generic functions (usable in GPU kernels): `transpose(a)`, `norm(a)`, `det(a)`, `is_identity(a)`, `to_matrix(a)`,
     !!   `is_approx(a, b [, tol])` and `call inverse(a, a_inv, ok [, cond])`.
     !! - Type-bound (historical API, not for kernels): `init` (array in storage order, or the
     !!   named components in row-major order: 3D `xx, xy, xz, yx, yy, yz, zx, zy, zz`, 2D
@@ -124,6 +124,12 @@ $:TENSOR_COMMON_INTERFACES(F)
         module procedure ${specifics('is_identity_{0}_{1}', F)}$
     end interface
 
+    public :: to_matrix
+    interface to_matrix
+        !! The tensor as a 3x3 matrix.
+        module procedure ${specifics('to_matrix_{0}_{1}', F)}$
+    end interface
+
 contains
 
     #:for d in DIMS
@@ -168,6 +174,22 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
         res = maxval(abs(a%vals - [${', '.join(('1.0_' if c.idx[0] == c.idx[1] else '0.0_') + k for c in lay.comps)}$])) &
             <= 0.0_${k}$
     end function is_identity_${P}$
+
+    pure function to_matrix_${P}$(a) result(m)
+        !! `a` as a 3x3 matrix, `${T}$`${' (the out-of-plane couplings 13, 23, 31, 32 are zero)' if d == '2D' else ''}$.
+        implicit none
+        @:DEVICE()
+        type(${T}$), intent(in) :: a
+            !! Tensor.
+        real(${k}$) :: m(3, 3)
+            !! Its components \( a_{ij} \).
+        #:if d == '2D'
+        m = 0.0_${k}$
+        #:endif
+        #:for c in lay.comps
+        m(${c.idx[0]}$, ${c.idx[1]}$) = a%vals(${c.pos[0]}$)
+        #:endfor
+    end function to_matrix_${P}$
 
     pure function ddot_${S}$_${P}$(a, b) result(res)
         !! Double contraction (Frobenius inner product) of two `${T}$`, \(A_{ij} B_{ij}\).
@@ -248,7 +270,8 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
         !! The full 3x3 matrix is inverted with `M33INV` (adjugate + \( \kappa_\infty \), LU
         !! fallback). If it is singular (or contains NaN): `ok = .false.`, `a_inv` is filled with
         !! quiet NaN and `cond = huge(1.0_${k}$)`.
-        use muscle_math_inverses, only : M33INV_${k}$, QUIET_NAN_${k}$
+        use muscle_math_inverses, only : M33INV_${k}$
+        use muscle_math_fp, only : QUIET_NAN_${k}$
         implicit none
         @:DEVICE()
         type(${T}$), intent(in) :: a

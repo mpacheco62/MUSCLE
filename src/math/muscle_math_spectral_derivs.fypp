@@ -10,10 +10,6 @@
 #:set EPS_TOL = {'sp': '1.0e-5', 'dp': '1.0e-11'}
 #:set EPS_TOL_SECOND = {'sp': '2.0e-3', 'dp': '1.0e-6'}
 #:set REPEATED_TOL = {'sp': '1.0e-4', 'dp': '1.0e-9'}
-#! IEEE binary layout per kind for fp_exponent: integer kind of the bits, exponent field width,
-#! fraction width, bias - 1 (exponent of a normal x = biased exponent - (bias - 1)) and
-#! 1 - (bias - 1) - fraction width (exponent of a subnormal x = bit length of its fraction + that)
-#:set FP_BITS = {'sp': ('int32', 8, 23, 126, -149), 'dp': ('int64', 11, 52, 1022, -1074)}
 
 module muscle_math_spectral_derivs
     !! Exact, analytical, eigenvector-free first and second derivatives of eigenvalues with
@@ -35,30 +31,31 @@ module muscle_math_spectral_derivs
     !! digits, \( tol_{sp} \approx tol_{dp}^{\ln\epsilon_{sp}/\ln\epsilon_{dp}} = tol_{dp}^{0.442} \).
     !! All thresholds are relative to the scale of the eigenvalues, so the results do not
     !! depend on the units of the tensor.
+    !!
+    !! Also `dsquare(a)`, the analytical derivative of the square of a symmetric tensor (Itskov, 2007), used
+    !! by `d2Eigenvalues_dTensor2` and by the Drucker-Prager Hessian; and the gradient and Hessian of a
+    !! symmetric function of the eigenvalues from the eigenvectors (`spectral_gradient`, `spectral_hessian`,
+    !! de Souza Neto et al., 2008). The eigenvalues and eigenvectors themselves are in `muscle_math_eigen`.
     use muscle_kinds, only : sp, dp
     #:for k in REAL_KINDS
     use muscle_kinds, only : EPS_ABS_${k}$
     #:endfor
     use muscle_tensors
     use muscle_tensor_2osym, only : square
-    use muscle_math_operations, only : eigenvals
-    use muscle_math_derivatives, only : dsquare
     implicit none
     private
 
     public :: dEigenvalues_dTensor
     public :: d2Eigenvalues_dTensor2
-    public :: spectral_decomposition
     public :: spectral_gradient
     public :: spectral_hessian
-    public :: fp_exponent
+    public :: dsquare
     #:for k in REAL_KINDS
-    public :: dEigenvalues_dTensor_${k}$, d2Eigenvalues_dTensor2_${k}$, spectral_decomposition_${k}$
-    public :: spectral_gradient_${k}$, spectral_hessian_${k}$, fp_exponent_${k}$
+    public :: dEigenvalues_dTensor_${k}$, d2Eigenvalues_dTensor2_${k}$
+    public :: spectral_gradient_${k}$, spectral_hessian_${k}$, dsquare_${k}$
     #:endfor
 
-    #:for name in ['dEigenvalues_dTensor', 'd2Eigenvalues_dTensor2', 'spectral_decomposition', &
-        & 'spectral_gradient', 'spectral_hessian', 'fp_exponent']
+    #:for name in ['dEigenvalues_dTensor', 'd2Eigenvalues_dTensor2', 'spectral_gradient', 'spectral_hessian', 'dsquare']
     interface ${name}$
         module procedure ${kspecifics('{0}_{1}', name)}$
     end interface ${name}$
@@ -248,110 +245,6 @@ contains
 
     end function d2Eigenvalues_dTensor2_${k}$
 
-    pure subroutine spectral_decomposition_${k}$(T, lam, V)
-        !! Eigenvalues and orthonormal eigenvectors of T (`real(${k}$)`). The eigenvector of the eigenvalue
-        !! farthest from the middle one is the normalized cross product of two rows of
-        !! T - lam I (Kopp, 2008, Eq. 39); the other two come from one closed-form plane
-        !! rotation (no iteration) that diagonalizes the 2x2 block of T in the plane normal to
-        !! it, which stays accurate when they (nearly) coincide. That eigenvalue is at least
-        !! half the eigenvalue range away from the other two, so the cross product needs no fallback.
-        !! Called by the CPB06 and Yld2004-18p derivatives.
-        implicit none
-        @:DEVICE()
-        type(${T2}$), intent(in) :: T
-            !! Symmetric tensor
-        real(${k}$), intent(out) :: lam(3)
-            !! Eigenvalues, in descending order
-        real(${k}$), intent(out) :: V(3,3)
-            !! Eigenvectors, column a belongs to lam(a)
-
-        real(${k}$) :: r1(3), r2(3), r3(3), c1(3), c2(3), c3(3), ca(3), u(3), w(3), tu(3), tw(3)
-        real(${k}$) :: n1, n2, n3, na, p, q, r, theta, tg, cs, sn
-        integer :: a, b, e
-
-        lam = eigenvals(T)
-
-        ! a: most separated eigenvalue; b, b+1: the remaining pair
-        if (lam(1) - lam(2) >= lam(2) - lam(3)) then
-            a = 1
-            b = 2
-        else
-            a = 3
-            b = 1
-        end if
-
-        ! Rows of T - lam(a) I and their pairwise cross products; the largest one is v_a
-        r1 = [T%vals(1) - lam(a), T%vals(4), T%vals(6)]
-        r2 = [T%vals(4), T%vals(2) - lam(a), T%vals(5)]
-        r3 = [T%vals(6), T%vals(5), T%vals(3) - lam(a)]
-        ! Scale the rows by a power of 2 so that their largest entry is O(1): otherwise |c|**2 of a
-        ! nearly isotropic T (rows ~1e-11) underflows into subnormals in sp and ca/sqrt(na) is not
-        ! a unit vector. The scaling is exact, so without under/overflow the result is bit-identical.
-        e = fp_exponent(max(maxval(abs(r1)), maxval(abs(r2)), maxval(abs(r3))))
-        r1 = scale(r1, -e)
-        r2 = scale(r2, -e)
-        r3 = scale(r3, -e)
-        c1 = cross_${k}$(r1, r2)
-        c2 = cross_${k}$(r2, r3)
-        c3 = cross_${k}$(r3, r1)
-        n1 = c1(1)**2 + c1(2)**2 + c1(3)**2
-        n2 = c2(1)**2 + c2(2)**2 + c2(3)**2
-        n3 = c3(1)**2 + c3(2)**2 + c3(3)**2
-        if (n1 >= n2 .and. n1 >= n3) then
-            ca = c1
-            na = n1
-        else if (n2 >= n3) then
-            ca = c2
-            na = n2
-        else
-            ca = c3
-            na = n3
-        end if
-        if (na <= 0.0_${k}$) then
-            ! T is a multiple of the identity: any orthonormal basis is an eigenbasis
-            V = 0.0_${k}$
-            V(1,1) = 1.0_${k}$
-            V(2,2) = 1.0_${k}$
-            V(3,3) = 1.0_${k}$
-            return
-        end if
-        V(:,a) = ca/sqrt(na)
-
-        ! Orthonormal basis (u, w) of the plane normal to V(:,a)
-        if (abs(V(1,a)) > abs(V(2,a))) then
-            u = [-V(3,a), 0.0_${k}$, V(1,a)]/sqrt(V(1,a)**2 + V(3,a)**2)
-        else
-            u = [0.0_${k}$, V(3,a), -V(2,a)]/sqrt(V(2,a)**2 + V(3,a)**2)
-        end if
-        w = cross_${k}$(V(:,a), u)
-
-        ! Plane rotation (cs, sn) that diagonalizes [[p, q], [q, r]], the restriction of T to (u, w)
-        tu = [T%vals(1)*u(1) + T%vals(4)*u(2) + T%vals(6)*u(3), &
-              T%vals(4)*u(1) + T%vals(2)*u(2) + T%vals(5)*u(3), &
-              T%vals(6)*u(1) + T%vals(5)*u(2) + T%vals(3)*u(3)]
-        tw = [T%vals(1)*w(1) + T%vals(4)*w(2) + T%vals(6)*w(3), &
-              T%vals(4)*w(1) + T%vals(2)*w(2) + T%vals(5)*w(3), &
-              T%vals(6)*w(1) + T%vals(5)*w(2) + T%vals(3)*w(3)]
-        p = dot_product(u, tu)
-        q = dot_product(u, tw)
-        r = dot_product(w, tw)
-        tg = 0.0_${k}$
-        if (abs(q) > 0.0_${k}$) then
-            theta = (r - p)/(2.0_${k}$*q)
-            tg = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
-        end if
-        cs = 1.0_${k}$/sqrt(tg*tg + 1.0_${k}$)
-        sn = tg*cs
-        ! Rotated eigenvalues: p - tg*q for cs*u - sn*w, and r + tg*q for sn*u + cs*w
-        if (p - tg*q >= r + tg*q) then
-            V(:,b) = cs*u - sn*w
-            V(:,b+1) = sn*u + cs*w
-        else
-            V(:,b) = sn*u + cs*w
-            V(:,b+1) = cs*u - sn*w
-        end if
-    end subroutine spectral_decomposition_${k}$
-
     pure function spectral_gradient_${k}$(V, dphi) result(res)
         !! Gradient of a symmetric function of the eigenvalues, phi(T) = phi(lam_1, lam_2, lam_3):
         !! dphi/dT = sum_a phi_a v_a (x) v_a, with phi_a = dphi/dlam_a supplied by the caller
@@ -447,49 +340,43 @@ contains
         res%vals(6) = 0.5_${k}$*(x(1)*y(3) + y(1)*x(3))
     end function sym_outer_${k}$
 
-    pure function cross_${k}$(x, y) result(res)
-        ! Cross product x * y; used by spectral_decomposition
+    pure function dsquare_${k}$(a) result(res)
+        !! Analytical derivative of the square of a symmetric tensor with respect to the tensor
+        !! (Itskov, 2007, Eq. 6.119 with k = 2), in `real(${k}$)`:
+        !! \[ \frac{\partial (A^2)_{ij}}{\partial A_{kl}} = \frac{1}{2} \left( \delta_{ik} A_{lj}
+        !!    + \delta_{jl} A_{ik} + \delta_{il} A_{kj} + \delta_{jk} A_{il} \right) \]
+        !! It is linear in A, so `dsquare(c*A)` equals `c * dsquare(A)`.
+        !! Called by `d2Eigenvalues_dTensor2` and by the Drucker-Prager Hessian.
         implicit none
         @:DEVICE()
-        real(${k}$), intent(in) :: x(3), y(3)
-        real(${k}$) :: res(3)
+        type(${tname('3D2Osym', k)}$), intent(in) :: a
+            !! Symmetric tensor \( A \).
+        type(${tname('3D4O3sym', k)}$) :: res
+            !! \( \partial (A^2)/\partial A \).
 
-        res = [x(2)*y(3) - x(3)*y(2), x(3)*y(1) - x(1)*y(3), x(1)*y(2) - x(2)*y(1)]
-    end function cross_${k}$
-
-    #:set IK, NE, NF, B1, SUB = FP_BITS[k]
-    pure function fp_exponent_${k}$(x) result(e)
-        !! The intrinsic `exponent(x)` of a `real(${k}$)` value from its IEEE bits: 0 for a zero,
-        !! `huge(0)` for an Inf or a NaN (the value of gfortran and ifx), the exact exponent of a
-        !! subnormal. Device code cannot use the intrinsic: ifx implements it with a runtime routine
-        !! that calls `__isinfd`/`__isnand`, which the emulated FP64 of Intel GPUs does not provide
-        !! (the device image fails to load).
-        use, intrinsic :: iso_fortran_env, only : ${IK}$
-        implicit none
-        @:DEVICE()
-        real(${k}$), intent(in) :: x
-        integer :: e
-        integer(${IK}$) :: bits, frac
-        integer :: biased
-
-        bits = transfer(x, 0_${IK}$)
-        biased = int(ibits(bits, ${NF}$, ${NE}$))
-        frac = ibits(bits, 0, ${NF}$)
-        if (biased == ${2**NE - 1}$) then
-            e = huge(0)
-        else if (biased > 0) then
-            e = biased - ${B1}$
-        else if (frac == 0_${IK}$) then
-            e = 0
-        else
-            ! Bit length of the fraction (the intrinsic leadz is a runtime routine of ifx in device code)
-            e = ${SUB}$
-            do while (frac /= 0_${IK}$)
-                frac = shiftr(frac, 1)
-                e = e + 1
-            end do
-        end if
-    end function fp_exponent_${k}$
+        ! Storage order of ten_3D4O3sym; a%vals = (xx, yy, zz, xy, yz, xz)
+        res%vals(1) = 2.0_${k}$*a%vals(1)
+        res%vals(2) = 2.0_${k}$*a%vals(2)
+        res%vals(3) = 2.0_${k}$*a%vals(3)
+        res%vals(4) = 0.5_${k}$*(a%vals(1)+a%vals(2))
+        res%vals(5) = 0.5_${k}$*(a%vals(2)+a%vals(3))
+        res%vals(6) = 0.5_${k}$*(a%vals(1)+a%vals(3))
+        res%vals(7) = 0.0_${k}$
+        res%vals(8) = 0.0_${k}$
+        res%vals(9) = 0.0_${k}$
+        res%vals(10) = 0.5_${k}$*a%vals(6)
+        res%vals(11) = 0.5_${k}$*a%vals(4)
+        res%vals(12) = 0.0_${k}$
+        res%vals(13) = a%vals(4)
+        res%vals(14) = a%vals(5)
+        res%vals(15) = 0.5_${k}$*a%vals(5)
+        res%vals(16) = a%vals(4)
+        res%vals(17) = a%vals(5)
+        res%vals(18) = a%vals(6)
+        res%vals(19) = 0.0_${k}$
+        res%vals(20) = 0.0_${k}$
+        res%vals(21) = a%vals(6)
+    end function dsquare_${k}$
     #:endfor
 
 end module muscle_math_spectral_derivs

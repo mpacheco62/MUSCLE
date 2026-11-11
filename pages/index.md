@@ -13,6 +13,9 @@ Mathematical foundation of the library, including plastic return mapping, yield 
 ### [Tensor Algebra Guide](tensors.html)
 A guide on using the optimized tensor engine, custom operators (`.ddot.`, `.tdotsym.`), and Voigt notation storage.
 
+### [Math Modules](math.html)
+What each module of `src/math/` contains (inverses, small linear systems, eigenvalues, spectral derivatives) and which layer it belongs to.
+
 ### [FEA Integration](integration.html)
 How to call a declared material from the user subroutines of Abaqus (UMAT), ANSYS (USERMAT) and LS-DYNA (umat41).
 

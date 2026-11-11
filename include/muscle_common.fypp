@@ -67,14 +67,9 @@ ${', '.join(fmt.format(name, k) for k in REAL_KINDS)}$
 #:endif
 #:enddef
 
-#! Column-major copies between a 3x3 array and its 9 components, `reshape(src, [3, 3])` and
-#! `reshape(src, [9])` without reshape: in device code gfortran calls its runtime routine
-#! (_gfortran_reshape_r<4|8>, tools/audit_kernels.sh). Same values, bit for bit.
-#:def VEC9_TO_MAT33(dst, src)
-${dst}$(:, 1) = ${src}$(1:3)
-${dst}$(:, 2) = ${src}$(4:6)
-${dst}$(:, 3) = ${src}$(7:9)
-#:enddef
+#! Column-major copy of a 3x3 array into its 9 components, `reshape(src, [9])` without reshape: in device
+#! code gfortran calls its runtime routine (_gfortran_reshape_r<4|8>, tools/audit_kernels.sh). Same values,
+#! bit for bit. The other way, from a `ten_3D2O` or `ten_3D2Osym`, is `to_matrix` (muscle_tensor_functions).
 #:def MAT33_TO_VEC9(dst, src)
 ${dst}$(1:3) = ${src}$(:, 1)
 ${dst}$(4:6) = ${src}$(:, 2)

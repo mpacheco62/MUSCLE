@@ -423,7 +423,7 @@ contains
         use muscle_test_helpers, only : park_miller, rnd
         use muscle_test_utils, only : check_true
         use muscle_math_lu_solve, only : lu_solve, LU_SOLVE_MAX_N
-        use muscle_math_inverses, only : QUIET_NAN_${k}$
+        use muscle_math_fp, only : QUIET_NAN_${k}$
         type(park_miller) :: rng
         real(${k}$), allocatable :: a(:,:), b(:), x(:)
         real(${k}$) :: kappa

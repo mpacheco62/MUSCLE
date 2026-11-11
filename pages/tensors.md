@@ -149,8 +149,9 @@ A component that is not finite matches only an identical one: Inf with an Inf of
 Two equivalent APIs exist for the named operations:
 
 - **Free functions** (`pure`, `type` arguments, usable in GPU kernels): `norm`, `det`, `square`,
-  `transpose`, `is_identity` (exact comparison with the identity, for fast paths), `is_approx`, `inverse`,
-  `convert_3sym`, `convert_2sym`. They are not exported by
+  `transpose`, `is_identity` (exact comparison with the identity, for fast paths), `to_matrix` (the tensor as a
+  3x3 matrix; 2D with zero out-of-plane couplings), `from_upper` (the `ten_3D2Osym` of the upper triangle of a
+  3x3 matrix), `is_approx`, `inverse`, `convert_3sym`, `convert_2sym`. They are not exported by
   `muscle_tensors` (to avoid clashing with user variables named `norm`, `det`, ...): import them
   from `muscle_tensor_functions`, renaming if needed.
 - **Type-bound procedures** (historical API, host code only): `%init()`, the accessors `%xx()`,

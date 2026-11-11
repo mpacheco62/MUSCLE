@@ -134,7 +134,7 @@ module test_kin_cases
         kin_push_forward_tangent, kin_pull_back_tangent, kin_rotate_to_corotational, &
         kin_rotate_from_corotational, ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, &
         ${', '.join('kin_{0}_{1}'.format(m, k) for m in ALL for k in REAL_KINDS)}$
-    use muscle_math_operations, only : eigenvals
+    use muscle_math_eigen, only : eigenvals
     use test_kin_point, only : NSTATE, NOUT, ${', '.join('pack_state_' + k for k in REAL_KINDS)}$, &
         ${', '.join('point_{0}_{1}'.format(m, k) for m in ALL for k in REAL_KINDS)}$
     use muscle_test_utils, only : check_approx, check_true, check_target, check_target_ran

@@ -39,8 +39,9 @@ module muscle_yield_cpb06
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
     #:endfor
     use muscle_tensors, only : operator(.dev.)
-    use muscle_math_operations, only : eigenvals
-    use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian, fp_exponent
+    use muscle_math_eigen, only : eigenvals, spectral_decomposition
+    use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian
+    use muscle_math_fp, only : fp_exponent
     use muscle_yield_anisotropic, only : yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, &
         & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian
     implicit none

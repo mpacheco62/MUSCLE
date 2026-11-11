@@ -1,7 +1,7 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
-#:include "muscle_math_lu_inverse.fypp"
+#:include "muscle_math_lu_bodies.fypp"
 #! Sizes with a fixed-size solver: every n up to the 9x9 of the 3D fourth-order tensors (covers
 #! the 3x3..9x9 tensor matrices and the Newton systems of the return mappings, e.g. 5x5 / 7x7).
 #! From 2: a 1x1 system is a division (in lu_solve), and N = 1 makes the LU loops zero-trip.
@@ -11,7 +11,7 @@ module muscle_math_lu_solve
     !! Small dense linear systems \( A x = b \) for point (kernel) code, without LAPACK.
     !!
     !! LU with partial pivoting (LAPACK `DGETRF` + `DGETRS`, unblocked, in plain Fortran), sharing
-    !! the factorization of the LU inverses (`muscle_math_lu_inverse.fypp`); the inverse is not
+    !! the factorization of the LU inverses (`muscle_math_lu_bodies.fypp`); the inverse is not
     !! formed. One routine per size with a compile-time size, so the loops can be unrolled:
     !!
     !! - `LU<n>SOLVE(A, b, x, OK_FLAG [, KAPPA])`, n = 2..9, explicit-shape `A(n,n)`, `b(n)`,

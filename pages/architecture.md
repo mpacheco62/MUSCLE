@@ -24,7 +24,7 @@ How the pieces of MUSCLE fit together, from the tensor types to the API that an 
  models  muscle_<family>_<model>                ← one file per model: type + pure functions
         │
         ▼
- tensors and math  muscle_tensors, muscle_math_*   ← types ten_<dim><order><sym>_<k>, operators, LU, spectral
+ tensors and math  muscle_tensors, muscle_math_*   ← types ten_<dim><order><sym>_<k>, operators, LU, spectral (math.html)
 ```
 
 Every layer below the material is written once for both kinds (`sp`, `dp`) and, for the tensors, for 2D and

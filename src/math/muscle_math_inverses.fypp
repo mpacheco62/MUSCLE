@@ -1,7 +1,7 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
-#:include "muscle_math_lu_inverse.fypp"
+#:include "muscle_math_lu_bodies.fypp"
 
 module muscle_math_inverses
     !! Small dense matrix inverses used by the tensor engine.
@@ -19,16 +19,15 @@ module muscle_math_inverses
     !! inverse.
     !!
     !! Every routine exists for each real kind (`M33INV_sp`, `M33INV_dp`, ...) under a generic
-    !! name (`M33INV`, ...). `QUIET_NAN` has no argument to resolve a generic, so the generic
-    !! name is the `dp` one and templates call `QUIET_NAN_<k>` directly.
+    !! name (`M33INV`, ...).
     use muscle_kinds, only: sp, dp
     implicit none
     private
 
-    public :: M33INV, M44INV, M55INV, M66INV, M99INV, COND_INF, QUIET_NAN, ADJ_KAPPA_MAX
+    public :: M33INV, M44INV, M55INV, M66INV, M99INV, COND_INF, ADJ_KAPPA_MAX
     #:for k in REAL_KINDS
     public :: M33INV_${k}$, M44INV_${k}$, M55INV_${k}$, M66INV_${k}$, M99INV_${k}$
-    public :: COND_INF_${k}$, QUIET_NAN_${k}$, ADJ_KAPPA_MAX_${k}$
+    public :: COND_INF_${k}$, ADJ_KAPPA_MAX_${k}$
     #:endfor
 
     #:for name in ['M33INV', 'M44INV', 'M55INV', 'M66INV', 'M99INV', 'COND_INF']
@@ -37,9 +36,6 @@ module muscle_math_inverses
     end interface ${name}$
 
     #:endfor
-    interface QUIET_NAN
-        module procedure QUIET_NAN_dp
-    end interface QUIET_NAN
 
 #! Adjugate/LU switch per kind. dp: 1e3, the result is as accurate as LU for every condition
 #! number. sp: 1e2 (D-013): measured with random 3x3/4x4 matrices, above kappa ~ 1e2 the sp adjugate
@@ -57,77 +53,60 @@ module muscle_math_inverses
     contains
 
     #:for k in REAL_KINDS
-    PURE SUBROUTINE M66INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+    pure subroutine M66INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 6x6 matrix by LU with partial pivoting in plain Fortran,
-        !! see `muscle_math_lu_inverse.fypp`. Used by `ten_3D4O3sym` and
+        !! see `muscle_math_lu_bodies.fypp`. Used by `ten_3D4O3sym` and
         !! `ten_3D4O2sym`.
         !!
         implicit none
         @:DEVICE()
         integer, parameter :: N = 6
-        REAL(${k}$), INTENT(IN)  :: A(N,N)
+        real(${k}$), intent(in)  :: A(N,N)
             !! Matrix to be inverted.
-        REAL(${k}$), INTENT(OUT) :: AINV(N,N)
+        real(${k}$), intent(out) :: AINV(N,N)
             !! Inverse of `A`; zero when `A` is singular.
-        LOGICAL, INTENT(OUT)      :: OK_FLAG
+        logical, intent(out)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
-        REAL(${k}$), INTENT(OUT), OPTIONAL :: KAPPA
+        real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
             !! inverse); `huge(1.0_${k}$)` when `A` is singular.
         $:lu_inverse_body(k, kappa=True)
-    END SUBROUTINE M66INV_${k}$
-    
-    PURE SUBROUTINE M99INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+    end subroutine M66INV_${k}$
+
+    pure subroutine M99INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 9x9 matrix by LU with partial pivoting in plain Fortran (algorithm of
-        !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_inverse.fypp`). Used by `ten_3D4O`.
+        !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_bodies.fypp`). Used by `ten_3D4O`.
         implicit none
         @:DEVICE()
         integer, parameter :: N = 9
-        REAL(${k}$), INTENT(IN)  :: A(N,N)
+        real(${k}$), intent(in)  :: A(N,N)
             !! Matrix to be inverted.
-        REAL(${k}$), INTENT(OUT) :: AINV(N,N)
+        real(${k}$), intent(out) :: AINV(N,N)
             !! Inverse of `A`; zero when `A` is singular.
-        LOGICAL, INTENT(OUT)      :: OK_FLAG
+        logical, intent(out)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
-        REAL(${k}$), INTENT(OUT), OPTIONAL :: KAPPA
+        real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
             !! inverse); `huge(1.0_${k}$)` when `A` is singular.
         $:lu_inverse_body(k, kappa=True)
-    END SUBROUTINE M99INV_${k}$
+    end subroutine M99INV_${k}$
 
-#! Bit pattern of the IEEE quiet NaN, identical to ieee_value(1.0_k, ieee_quiet_nan)
-    #:set NAN_BITS = {'sp': ('int32', "z'7FC00000'"), 'dp': ('int64', "z'7FF8000000000000'")}
-    PURE FUNCTION QUIET_NAN_${k}$() RESULT(X)
-        !! IEEE quiet NaN, used to fill the inverse of a singular tensor.
-        !!
-        !! Built from its bit pattern (the same bits as `ieee_value`) instead of using the IEEE
-        !! intrinsic modules: with them gfortran saves/restores the floating-point state around the
-        !! procedure (~150 ns per call) through library routines that do not exist on the GPU
-        !! (nvptx/amdgcn offload fails to link).
-        use, intrinsic :: iso_fortran_env, only : ${NAN_BITS[k][0]}$
-        implicit none
-        @:DEVICE()
-        REAL(${k}$) :: X
-            !! Quiet NaN.
-        X = transfer(int(${NAN_BITS[k][1]}$, ${NAN_BITS[k][0]}$), 1.0_${k}$)
-    END FUNCTION QUIET_NAN_${k}$
-
-    PURE FUNCTION COND_INF_${k}$(A, AINV) RESULT(KAPPA)
+    pure function COND_INF_${k}$(A, AINV) result(KAPPA)
         !! Condition number in the infinity norm,
         !! \( \kappa_\infty = \|A\|_\infty \|A^{-1}\|_\infty \) (maximum absolute row sums), from a
         !! matrix and its computed inverse. Costs \( 2n^2 \) operations.
         implicit none
         @:DEVICE()
-        REAL(${k}$), INTENT(IN) :: A(:,:)
+        real(${k}$), intent(in) :: A(:,:)
             !! Matrix.
-        REAL(${k}$), INTENT(IN) :: AINV(:,:)
+        real(${k}$), intent(in) :: AINV(:,:)
             !! Its (computed) inverse, same shape as `A`.
-        REAL(${k}$) :: KAPPA
+        real(${k}$) :: KAPPA
             !! \( \kappa_\infty(A) \).
         KAPPA = maxval(sum(abs(A), dim=2)) * maxval(sum(abs(AINV), dim=2))
-    END FUNCTION COND_INF_${k}$
+    end function COND_INF_${k}$
 
-    PURE SUBROUTINE M33INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+    pure subroutine M33INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 3x3 matrix: closed-form adjugate with an LU fallback.
         !!
         !! \( A^{-1} = \mathrm{adj}(A)/\det(A) \). The condition number
@@ -138,15 +117,15 @@ module muscle_math_inverses
         !!
         implicit none
         @:DEVICE()
-        REAL(${k}$), INTENT(IN)  :: A(3,3)
+        real(${k}$), intent(in)  :: A(3,3)
             !! Matrix to be inverted.
-        REAL(${k}$), INTENT(OUT) :: AINV(3,3)
+        real(${k}$), intent(out) :: AINV(3,3)
             !! Inverse of `A`; zero when `A` is singular.
-        LOGICAL, INTENT(OUT)      :: OK_FLAG
+        logical, intent(out)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
-        REAL(${k}$), INTENT(OUT), OPTIONAL :: KAPPA
+        real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A`; `huge(1.0_${k}$)` when `A` is singular.
-        REAL(${k}$) :: c11, c12, c13, c21, c22, c23, c31, c32, c33, det, r, kap
+        real(${k}$) :: c11, c12, c13, c21, c22, c23, c31, c32, c33, det, r, kap
 
         ! Cofactors (AINV = transpose of the cofactor matrix / det)
         c11 = A(2,2)*A(3,3) - A(2,3)*A(3,2)
@@ -181,24 +160,24 @@ module muscle_math_inverses
                 KAPPA = huge(1.0_${k}$)
             end if
         end if
-    END SUBROUTINE M33INV_${k}$
+    end subroutine M33INV_${k}$
 
-    PURE SUBROUTINE M44INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+    pure subroutine M44INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 4x4 matrix: closed-form adjugate (via 2x2 sub-determinants) with an
         !! LU fallback, same rule as `M33INV`. Used by the 2D tensor engine (4x4 Voigt matrices of
         !! `ten_2D4O3sym` / `ten_2D4O2sym`).
         !!
         implicit none
         @:DEVICE()
-        REAL(${k}$), INTENT(IN)  :: A(4,4)
+        real(${k}$), intent(in)  :: A(4,4)
             !! Matrix to be inverted.
-        REAL(${k}$), INTENT(OUT) :: AINV(4,4)
+        real(${k}$), intent(out) :: AINV(4,4)
             !! Inverse of `A`; zero when `A` is singular.
-        LOGICAL, INTENT(OUT)      :: OK_FLAG
+        logical, intent(out)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
-        REAL(${k}$), INTENT(OUT), OPTIONAL :: KAPPA
+        real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A`; `huge(1.0_${k}$)` when `A` is singular.
-        REAL(${k}$) :: s0, s1, s2, s3, s4, s5, c0, c1, c2, c3, c4, c5, det, r, kap
+        real(${k}$) :: s0, s1, s2, s3, s4, s5, c0, c1, c2, c3, c4, c5, det, r, kap
 
         ! 2x2 sub-determinants of rows (1,2) and of rows (3,4)
         s0 = A(1,1)*A(2,2) - A(2,1)*A(1,2)
@@ -249,53 +228,53 @@ module muscle_math_inverses
                 KAPPA = huge(1.0_${k}$)
             end if
         end if
-    END SUBROUTINE M44INV_${k}$
+    end subroutine M44INV_${k}$
 
-    PURE SUBROUTINE lu_inv3_${k}$(A, AINV, OK_FLAG)
-        !! 3x3 LU inverse (fallback of `M33INV`), see `muscle_math_lu_inverse.fypp`.
+    pure subroutine lu_inv3_${k}$(A, AINV, OK_FLAG)
+        !! 3x3 LU inverse (fallback of `M33INV`), see `muscle_math_lu_bodies.fypp`.
         implicit none
         @:DEVICE()
         integer, parameter :: N = 3
-        REAL(${k}$), INTENT(IN)  :: A(N,N)
+        real(${k}$), intent(in)  :: A(N,N)
             !! Matrix to be inverted.
-        REAL(${k}$), INTENT(OUT) :: AINV(N,N)
+        real(${k}$), intent(out) :: AINV(N,N)
             !! Inverse of `A`; zero when `A` is singular.
-        LOGICAL, INTENT(OUT)      :: OK_FLAG
+        logical, intent(out)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded.
         $:lu_inverse_body(k)
-    END SUBROUTINE lu_inv3_${k}$
+    end subroutine lu_inv3_${k}$
 
-    PURE SUBROUTINE lu_inv4_${k}$(A, AINV, OK_FLAG)
-        !! 4x4 LU inverse (fallback of `M44INV`), see `muscle_math_lu_inverse.fypp`.
+    pure subroutine lu_inv4_${k}$(A, AINV, OK_FLAG)
+        !! 4x4 LU inverse (fallback of `M44INV`), see `muscle_math_lu_bodies.fypp`.
         implicit none
         @:DEVICE()
         integer, parameter :: N = 4
-        REAL(${k}$), INTENT(IN)  :: A(N,N)
+        real(${k}$), intent(in)  :: A(N,N)
             !! Matrix to be inverted.
-        REAL(${k}$), INTENT(OUT) :: AINV(N,N)
+        real(${k}$), intent(out) :: AINV(N,N)
             !! Inverse of `A`; zero when `A` is singular.
-        LOGICAL, INTENT(OUT)      :: OK_FLAG
+        logical, intent(out)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded.
         $:lu_inverse_body(k)
-    END SUBROUTINE lu_inv4_${k}$
+    end subroutine lu_inv4_${k}$
 
-    PURE SUBROUTINE M55INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+    pure subroutine M55INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 5x5 matrix by LU with partial pivoting in plain Fortran (algorithm of
-        !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_inverse.fypp`). Used by `ten_2D4O`.
+        !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_bodies.fypp`). Used by `ten_2D4O`.
         implicit none
         @:DEVICE()
         integer, parameter :: N = 5
-        REAL(${k}$), INTENT(IN)  :: A(N,N)
+        real(${k}$), intent(in)  :: A(N,N)
             !! Matrix to be inverted.
-        REAL(${k}$), INTENT(OUT) :: AINV(N,N)
+        real(${k}$), intent(out) :: AINV(N,N)
             !! Inverse of `A`; zero when `A` is singular.
-        LOGICAL, INTENT(OUT)      :: OK_FLAG
+        logical, intent(out)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
-        REAL(${k}$), INTENT(OUT), OPTIONAL :: KAPPA
+        real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
             !! inverse); `huge(1.0_${k}$)` when `A` is singular.
         $:lu_inverse_body(k, kappa=True)
-    END SUBROUTINE M55INV_${k}$
+    end subroutine M55INV_${k}$
 
     #:endfor
 end module

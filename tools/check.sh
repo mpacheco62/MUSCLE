@@ -188,7 +188,7 @@ if (( ${#kernel_files[@]} > 0 )); then
 fi
 rule alloc "allocatable/pointer" '(?i)\b(allocatable|pointer)\b' "${kernel_files[@]}"
 # ifx implements exponent() with a runtime routine that does not load with the emulated FP64 of Intel
-# GPUs (__isinfd/__isnand): fp_exponent of muscle_math_spectral_derivs
+# GPUs (__isinfd/__isnand): fp_exponent of muscle_math_fp
 rule exponent "intrinsic exponent() in kernel code, use fp_exponent" '(?i)(?<![\w%])exponent\s*\(' "${kernel_files[@]}"
 # ifx 2026.2 keeps only the last element of a leading array item of an array constructor in the host
 # code of a declare target procedure ([x, y] with x(3) gives [0, 0, x(3), y]): assign the sections

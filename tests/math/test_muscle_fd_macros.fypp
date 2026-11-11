@@ -10,7 +10,7 @@
 #! procedures, against the analytical derivatives of smooth test functions. (Their dp bits against
 #! the former `procedure(...)` API `derivative`/`derivative2O`, removed in D-018.18b, were fixed by
 #! the reference test test_math_golden_derivatives, deleted in plan R: these unit tests detect every
-#! mutation of muscle_math_derivatives it detected.)
+#! mutation of the former muscle_math_derivatives module it detected.)
 #!
 #! Tolerances (relative to the largest component): central differences have a truncation error
 #! ~h^2 |f'''| and a rounding error ~eps |f|/h (eps |f|/h^2 for second derivatives), with the default

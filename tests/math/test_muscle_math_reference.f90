@@ -10,8 +10,7 @@ program test_math_reference
     !! against independent truths (math_spectral_cases, math_spectral_kinds, math_lu_solve, ...).
     use muscle_kinds, only : dp
     use muscle_tensors, only : ten_3D2Osym
-    use muscle_math_operations, only : eigenvals
-    use muscle_math_spectral_derivs, only : spectral_decomposition
+    use muscle_math_eigen, only : eigenvals, spectral_decomposition
     use muscle_test_reference, only : reference_init, reference_check, reference_finish
     implicit none
 

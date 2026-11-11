@@ -1366,3 +1366,67 @@ siempre `ModelFamily.module`). Los tests siguen D-025 (`test_muscle_elas_laws_ki
 `test_muscle_os_chaboche`); los nombres de ctest no cambian. Verificado: el Fortran generado y la tabla de símbolos son
 idénticos a los de antes con los nombres cambiados. Los documentos anteriores de `docs/fypp/` conservan los nombres de
 su fecha.
+
+## D-028 — Autoproyecciones robustas en math; rotación de Jacobi sin desborde (2026-11-11)
+
+**Contexto:** revisión de las auxiliares privadas de `muscle_kin_finite` (la de `is_identity`, D-011): las rutinas
+de autovalores y autoproyecciones de un tensor simétrico (`sym_eigen`, `sym_eigenvalues`, `jacobi_band`,
+`jacobi_eigen`, D-018.19a) son álgebra general, no cinemática.
+**Decisión del usuario:** (1) se mueven a `muscle_math_spectral_derivs` como genéricos públicos `eigenprojections(s,
+eig, proj)` y `eigenvals_refined(s, eig)` (las de Jacobi quedan privadas); las constantes `KIN_JACOBI_GAP_LO/HI_<k>` de
+`muscle_kinds` pasan a `JACOBI_GAP_LO/HI_<k>`, sin alias; la copia de Jacobi arma la matriz con la asignación
+`ten_3D2O = ten_3D2Osym` y `VEC9_TO_MAT33` (mismos valores que el antiguo `mat33`). Test nuevo
+`math-math_spectral_projections` con verdad en precisión cuádruple (Q diag(λ) Qᵀ conocidos): autovalores, cada
+proyección dentro de eps/gap (la forma cerrada, eps/gap², no lo cumpliría), sumas, ortogonalidad, pares cercanos y
+repetidos arriba, abajo y al medio, dos rotaciones y escalas 1e3 y 1e-3. (2) **Corrección** encontrada por ese test:
+la rotación de Jacobi calculaba `theta = (m(q,q) - m(p,p))/(2 m(p,q))` y sólo saltaba `|m(p,q)| <= tiny`; en sp, con
+autovalores ~1e3, `m(p,q)` cerca de `tiny` hace desbordar theta (excepción de punto flotante; Inf sin trampa). Ahora,
+para theta > 1e15, `t = m(p,q)/(m(q,q) - m(p,p))` sin formar theta (el mismo valor que el `0.5/theta` anterior, sin
+desborde). Cambia sólo el último bit de t en esas rotaciones (ángulos ~1e-15); los tests de cinemática (verdad en
+precisión cuádruple) siguen en verde. En la cinemática en sp el desborde podía darse con estiramientos grandes.
+**Ampliación (2026-11-11, misma revisión):** también salen de `muscle_kin_finite` a `muscle_math_operations`
+`polar_rotation(F)` (rotación de la descomposición polar F = R U por Newton escalado; antes sólo existía en sp, ahora
+en todos los kinds) y `log_divided_difference(a, b)` = (ln a − ln b)/(a − b) con su serie cerca de a = b (antes
+`log_ratio`; el umbral `LOG_SERIES` por kind se mueve con ella). Test `math-math_polar_log` con verdad en precisión
+cuádruple. Resultados de la cinemática sin cambios (mismo código).
+**Ampliación 2 (2026-11-11, opción B del usuario):** las conversiones entre tensor y matriz 3x3 de `muscle_kin_finite`
+(`mat33`, `voigt6`, los índices escritos a mano del triángulo superior en `kin_pk1_to_pk2`/`kin_pk1_to_cauchy`) y la
+macro `VEC9_TO_MAT33` pasan a funciones libres públicas de los tipos de tensores (`muscle_tensor_functions`):
+`to_matrix(a)` (`2Osym` y `2O`, 2D y 3D; en 2D los acoplamientos fuera del plano valen 0) y `from_upper(m)` (sólo
+`ten_3D2Osym`, genérico en kind: en 2D no se distinguiría por el argumento y no hace falta hoy). `from_upper` devuelve un
+tensor, no un arreglo de 6 valores, para no exponer el orden Voigt a quien lo usa; lee sólo el triángulo superior (la
+parte simétrica (m + mᵀ)/2 es otra operación). Son copias: código generado distinto sólo en `kin_finite`, las dos de
+math y los tipos 2O/2Osym, y resultados iguales bit a bit (tests y referencias estrictas). `VEC9_TO_MAT33` se borró
+(sin usos); `MAT33_TO_VEC9` queda (un 2O no tiene `from_matrix`). Tests en `tensors-tensor_functions` (accesores con
+nombre en su entrada de la matriz, ceros en 2D, `square`/`transpose` contra `matmul`/`transpose` de la matriz,
+`from_upper(to_matrix(a)) = a`, triángulo inferior ignorado) y en los tests `target` de tensores; mutaciones: 2/2 de la
+herramienta y 5/5 de índices hechas a mano (los índices los genera FYPP y la herramienta no los muta).
+
+## D-029 — `src/math/` ordenada por tema y por capa (2026-11-11)
+
+**Contexto:** `REANALISIS_MATH.md`: los nombres de los módulos de math no decían lo que contenían (`operations` era
+un cajón; `spectral_derivs` tenía también la descomposición, Jacobi y una utilidad de bits; `derivatives` sólo
+`dsquare`), lo espectral estaba partido en dos módulos y las utilidades de dispositivo vivían en módulos ajenos.
+El usuario pidió hacer la opción C (unificar los algoritmos espectrales, `PLAN_ESPECTRAL.md`) con el criterio de que
+el kernel no crezca mucho y de que, **ante todo, la carpeta quede ordenada y se entienda a primera vista**; lo que
+no se pueda unificar barato queda separado pero ordenado. Por eso la fase B (orden) va antes que la unificación.
+**Decisión del usuario (fase B, sin alias, como D-027; resultados idénticos bit a bit):**
+- `muscle_math_fp` (nuevo): `QUIET_NAN` (de `inverses`) y `fp_exponent` (de `spectral_derivs`), reemplazos de
+  IEEE/intrínsecos para el dispositivo; bajo los tensores.
+- `muscle_math_eigen` (nuevo): `eigenvals` (de `operations`), `spectral_decomposition`, `eigenprojections`,
+  `eigenvals_refined` y el Jacobi privado (de `spectral_derivs`).
+- `muscle_math_spectral_derivs`: derivadas (`dEigenvalues_dTensor`, `d2Eigenvalues_dTensor2`, `spectral_gradient`,
+  `spectral_hessian`) y `dsquare` (se retira `muscle_math_derivatives`).
+- `muscle_math_operations` → `muscle_math_matrix_functions` (`polar_rotation`, `log_divided_difference`); el nombre
+  `muscle_math_tensor_functions` se descartó por parecerse a `muscle_tensor_functions` (pregunta al usuario).
+- Include `muscle_math_lu_inverse.fypp` → `muscle_math_lu_bodies.fypp` (tiene también el cuerpo del solver).
+- Estilo: palabras clave en minúscula en `inverses` (los nombres `M33INV`, `AINV`, `OK_FLAG`, `KAPPA` se conservan),
+  sangría y `<=` en `eigenvals`.
+- Tests espejo: `math-math_inverses`, `math-math_fd_known_functions` (las diferencias finitas sobre funciones
+  conocidas; el test de `dsquare` pasa a `math-math_spectral_cases`, ahora en sp y dp), `math-math_eigen_eigenvals`,
+  `math-math_eigen_projections`, `math-math_matrix_functions`.
+- `pages/math.md`: las dos capas (bajo y sobre los tensores) y la tabla «necesito X → módulo Y».
+`muscle_math_eigen` usa `dEigenvalues_dTensor` (las autoproyecciones de Cayley-Hamilton de `eigenprojections`):
+la dependencia eigen → spectral_derivs desaparece si la fase F2 de `PLAN_ESPECTRAL.md` unifica la cinemática.
+Verificación por paso: código generado normalizado igual línea por línea salvo el andamiaje de los módulos
+(`gen_snapshot`), ctest 133/133, referencias estrictas, mutaciones de `dsquare` 45/45 desde su nuevo test.

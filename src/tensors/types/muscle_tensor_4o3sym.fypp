@@ -141,7 +141,8 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
         !!
         !! If the matrix is singular (or contains NaN): `ok = .false.`, `a_inv` is filled with quiet
         !! NaN and `cond = huge(1.0_${k}$)`.
-        use muscle_math_inverses, only : ${minv}$, QUIET_NAN_${k}$
+        use muscle_math_inverses, only : ${minv}$
+        use muscle_math_fp, only : QUIET_NAN_${k}$
         implicit none
         @:DEVICE()
         type(${T}$), intent(in) :: a

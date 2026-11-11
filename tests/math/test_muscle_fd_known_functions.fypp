@@ -4,8 +4,8 @@
 #:include "muscle_fd.fypp"
 #! Finite differences of tests/common/muscle_fd.fypp (FD_DERIV, FD_GRAD, FD_JAC, FD_HESS; formerly the
 #! `procedure(...)` API derivative/derivative2O, removed in D-018.18b) on functions with known
-#! derivatives, double precision, 3D, and the analytical dsquare of muscle_math_derivatives.
-module test_muscle_math_derivatives_mod
+#! derivatives, double precision, 3D (the analytical dsquare is tested in test_muscle_math_spectral_derivs_cases).
+module test_fd_known_functions_mod
     use muscle_kinds, only : dp
     implicit none
     private
@@ -176,11 +176,11 @@ contains
         res = (x%vals(1) + 2.0_dp*x%vals(2) + 3.0_dp*x%vals(3)) &
               *(5.0_dp*x%vals(4) + 7.0_dp*x%vals(5) + 11.0_dp*x%vals(6))
     end function
-end module test_muscle_math_derivatives_mod
+end module test_fd_known_functions_mod
 
 
 ! ********************** PROGRAM TEST ************************************
-program test_muscle_math_derivatives
+program test_fd_known_functions
     implicit none
     
     logical :: passed
@@ -203,16 +203,13 @@ program test_muscle_math_derivatives
     call test_derivate2O_normal_shear(passed)
     if (.not. passed) STOP 6
 
-    call test_dsquare_general(passed)
-    if (.not. passed) STOP 7
-
     STOP 0
-end program test_muscle_math_derivatives
+end program test_fd_known_functions
 
 
 subroutine test_derivative_scalar_scalar(passed)
     use muscle_kinds, only : dp
-    use test_muscle_math_derivatives_mod
+    use test_fd_known_functions_mod
     implicit none
     
     logical, intent(out) :: passed
@@ -316,7 +313,7 @@ end subroutine
 subroutine test_derivate_scalar_ten(passed)
     use muscle_kinds, only : dp
     use muscle_tensors
-    use test_muscle_math_derivatives_mod
+    use test_fd_known_functions_mod
     implicit none
     
     logical, intent(out) :: passed
@@ -363,7 +360,7 @@ end subroutine
 subroutine test_derivate_ten_ten(passed)
     use muscle_kinds, only : dp
     use muscle_tensors
-    use test_muscle_math_derivatives_mod
+    use test_fd_known_functions_mod
     implicit none
     
     logical, intent(out) :: passed
@@ -462,7 +459,7 @@ end subroutine
 subroutine test_object_derivate_scalar_ten(passed)
     use muscle_kinds, only : dp
     use muscle_tensors
-    use test_muscle_math_derivatives_mod
+    use test_fd_known_functions_mod
     implicit none
     
     logical, intent(out) :: passed
@@ -493,7 +490,7 @@ end subroutine
 subroutine test_derivate2O_scalar_ten(passed)
     use muscle_kinds, only : dp
     use muscle_tensors
-    use test_muscle_math_derivatives_mod
+    use test_fd_known_functions_mod
     implicit none
     
     logical, intent(out) :: passed
@@ -547,7 +544,7 @@ subroutine test_derivate2O_normal_shear(passed)
     ! their weights are all different, so two entries stored in each other's place do not pass.
     use muscle_kinds, only : dp
     use muscle_tensors
-    use test_muscle_math_derivatives_mod
+    use test_fd_known_functions_mod
     implicit none
 
     logical, intent(out) :: passed
@@ -573,35 +570,4 @@ subroutine test_derivate2O_normal_shear(passed)
                               result%vals(:), new_line('A'), &
                               "The expected are:", new_line('A'), &
                               expected%vals(:), new_line('A')
-end subroutine
-
-
-subroutine test_dsquare_general(passed)
-    ! Analytical derivative of the square, dsquare(A). The square is quadratic, so
-    ! (A + B)^2 - A^2 - B^2 = AB + BA = dsquare(A) : B exactly. General A and B: all normal and
-    ! shear components nonzero and different, so each of the 21 components of dsquare(A) reaches
-    ! the result
-    ! Called by program test_muscle_math_derivatives (STOP 7)
-    use muscle_kinds, only : dp
-    use muscle_math_derivatives
-    use muscle_tensors
-    use muscle_test_utils
-    implicit none
-
-    logical, intent(out) :: passed
-
-    type(ten_3D2Osym) :: a, b, a_plus_b, expected, result
-    ! Both sides are exact up to round-off in the products and the differences of squares.
-    ! Measured: 3.0e-16
-    real(dp), parameter :: TOL = 1.0e-12_dp
-
-    passed = .true.
-    call a%init(xx=3.0_dp, yy=-1.5_dp, zz=0.7_dp, xy=2.2_dp, yz=-0.9_dp, xz=1.3_dp)
-    call b%init(xx=-0.4_dp, yy=1.1_dp, zz=2.5_dp, xy=-1.7_dp, yz=0.6_dp, xz=0.8_dp)
-    a_plus_b = a + b
-    expected = a_plus_b%square() - a%square() - b%square()
-    result = dsquare(a) .ddot. b
-
-    call check_approx(passed, "dsquare(A) : B = (A + B)^2 - A^2 - B^2, general A and B", &
-                      result, expected, tol=TOL)
 end subroutine

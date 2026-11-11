@@ -33,14 +33,14 @@
 #! Lower bound of the flow stress sigma_y in the relative criteria of the return mappings (historical
 #! value of the elastic predictor, both kinds; D-018.11b)
 #:set SY_MIN = {'sp': '1.0e-10', 'dp': '1.0e-10'}
-#! Band of the relative eigenvalue gaps of C (or b) where the spectral decompositions of the finite
-#! strain kinematics use Jacobi rotations instead of the closed form (D-018.19a). dp: the
+#! Band of the relative eigenvalue gaps where `eigenprojections` (muscle_math_eigen; the spectral
+#! decompositions of the finite strain kinematics, C or b) uses Jacobi rotations instead of the closed form (D-018.19a). dp: the
 #! Cayley-Hamilton eigenprojections lose ~eps/gap^2 (relative) and take two eigenvalues as repeated
 #! below a gap of ~3e-6 (ln C without its deviatoric part); Jacobi is accurate to ~eps/gap. Below
 #! 1e-12 (~4500 eps) a gap is rounding (repeated eigenvalues, where the closed form is exact); at
 #! 1e-2 the closed form errs ~1e-12 (measured). sp: Jacobi always (D-018.15f), band [0, huge).
-#:set KIN_JACOBI_GAP_LO = {'sp': '0.0_sp', 'dp': '1.0e-12_dp'}
-#:set KIN_JACOBI_GAP_HI = {'sp': 'huge(1.0_sp)', 'dp': '1.0e-2_dp'}
+#:set JACOBI_GAP_LO = {'sp': '0.0_sp', 'dp': '1.0e-12_dp'}
+#:set JACOBI_GAP_HI = {'sp': 'huge(1.0_sp)', 'dp': '1.0e-2_dp'}
 
 module muscle_kinds
     !! Real kinds of MUSCLE and the constants that depend on them.
@@ -117,13 +117,13 @@ module muscle_kinds
         !! Threshold of the plastic multiplier increment \( \Delta\gamma \) below which the consistent
         !! tangent of a closest point return mapping is the elastic one, `real(${k}$)` (the historical
         !! value, in both kinds).
-    real(${k}$), parameter, public :: KIN_JACOBI_GAP_LO_${k}$ = ${KIN_JACOBI_GAP_LO[k]}$
-        !! Lower end of the band of relative eigenvalue gaps where the finite strain kinematics
-        !! decompose C (or b) with Jacobi rotations, `real(${k}$)`: a gap
+    real(${k}$), parameter, public :: JACOBI_GAP_LO_${k}$ = ${JACOBI_GAP_LO[k]}$
+        !! Lower end of the band of relative eigenvalue gaps where `eigenprojections` uses Jacobi rotations
+        !! (the spectral decompositions of the finite strain kinematics), `real(${k}$)`: a gap
         !! \( (\lambda_a - \lambda_{a+1})/\max|\lambda| \) below it is rounding (repeated
         !! eigenvalues, exact in the closed form). 1e-12 in dp; 0 in sp (always Jacobi).
-    real(${k}$), parameter, public :: KIN_JACOBI_GAP_HI_${k}$ = ${KIN_JACOBI_GAP_HI[k]}$
-        !! Upper end (excluded) of the Jacobi band of `KIN_JACOBI_GAP_LO_${k}$`, `real(${k}$)`:
+    real(${k}$), parameter, public :: JACOBI_GAP_HI_${k}$ = ${JACOBI_GAP_HI[k]}$
+        !! Upper end (excluded) of the Jacobi band of `JACOBI_GAP_LO_${k}$`, `real(${k}$)`:
         !! above it the closed form (eigenvalues and Cayley-Hamilton eigenprojections)
         !! is accurate (~1e-12 relative at 1e-2 in dp). 1e-2 in dp; `huge` in sp (always Jacobi).
     #:endfor

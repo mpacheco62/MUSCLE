@@ -1,0 +1,362 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Threshold of eigenvals per kind (on s = sqrt(J2/3) and on |1 - d|), D-016.5. dp: 1e-10
+#! (historically a default real literal, ~1.0000000134e-10; now the exact dp value). sp: 1e-9, a
+#! guard against 0/0, not a precision commitment (measured error <= 2e-7, ~3e-5 with 4e-5).
+#:set EIG_EPS = {'sp': '1.0e-9', 'dp': '1.0e-10'}
+
+module muscle_math_eigen
+    !! Eigenvalues, eigenvectors and eigenprojections of symmetric second-order tensors (3D), kernel routines
+    !! in every real kind:
+    !!
+    !! - `eigenvals(s)`: the eigenvalues, descending, by the closed form (trigonometric, Cayley-Hamilton);
+    !!   the cheap path when only the values are needed (yield functions).
+    !! - `spectral_decomposition(s, lam, V)`: eigenvalues and orthonormal eigenvectors (columns of V); the
+    !!   most separated eigenvector by a cross product of rows (Kopp), the remaining pair by one plane
+    !!   rotation. Used with `spectral_gradient`/`spectral_hessian` (`muscle_math_spectral_derivs`) by the
+    !!   anisotropic yield criteria.
+    !! - `eigenprojections(s, eig, proj)` and `eigenvals_refined(s, eig)`: eigenvalues and eigenprojections
+    !!   accurate also for close eigenvalues (the finite strain kinematics): the closed form (`eigenvals` and
+    !!   the Cayley-Hamilton eigenprojections of `dEigenvalues_dTensor`) outside a band of relative gaps,
+    !!   cyclic Jacobi rotations inside it (`JACOBI_GAP_LO_<k>`, `JACOBI_GAP_HI_<k>` of muscle_kinds; every
+    !!   gap in sp).
+    !!
+    !! Two strategies for close eigenvalues coexist (plane rotation for the yield criteria, Jacobi band for
+    !! the kinematics): docs/fypp/PLAN_ESPECTRAL.md.
+    use muscle_kinds, only : sp, dp
+    #:for k in REAL_KINDS
+    use muscle_kinds, only : EPS_ABS_${k}$, JACOBI_GAP_LO_${k}$, JACOBI_GAP_HI_${k}$
+    #:endfor
+    use muscle_tensors
+    use muscle_tensor_2osym, only : square, to_matrix
+    use muscle_math_fp, only : fp_exponent
+    use muscle_math_spectral_derivs, only : dEigenvalues_dTensor
+    implicit none
+    private
+
+    public :: eigenvals, spectral_decomposition, eigenprojections, eigenvals_refined
+    #:for k in REAL_KINDS
+    public :: eigenvals_3D2Osym_${k}$, spectral_decomposition_${k}$, eigenprojections_${k}$, eigenvals_refined_${k}$
+    #:endfor
+
+    interface eigenvals
+        module procedure ${kspecifics('{0}_3D2Osym_{1}', 'eigenvals')}$
+    end interface eigenvals
+
+    #:for name in ['spectral_decomposition', 'eigenprojections', 'eigenvals_refined']
+    interface ${name}$
+        module procedure ${kspecifics('{0}_{1}', name)}$
+    end interface ${name}$
+
+    #:endfor
+contains
+    #:for k in REAL_KINDS
+    #:set T2 = tname('3D2Osym', k)
+
+    pure function eigenvals_3D2Osym_${k}$(mat) result(res)
+        !! Eigenvalues of a symmetric `${T2}$`, in descending order (closed form, based on
+        !! https://doi.org/10.1002/nme.7153).
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: mat
+                !! Symmetric tensor.
+        real(${k}$) :: res(3)
+                !! Eigenvalues, \( \lambda_1 \ge \lambda_2 \ge \lambda_3 \).
+
+        real(${k}$), parameter :: EPS = ${EIG_EPS[k]}$_${k}$
+        real(${k}$) :: I1, J2, s, d, alpha, n1, n2
+        real(${k}$) :: J2_sqrt
+        real(${k}$) :: cd, lam_a, lam_b, lam_c, sd
+        integer :: sj
+        type(${T2}$) :: Sm, T, d1, d2
+        type(iden_2O) :: Iden
+
+        I1 = sum(mat%vals(1:3))
+        J2 = ((mat%vals(1)-mat%vals(2))**2.0_${k}$ + (mat%vals(2)-mat%vals(3))**2.0_${k}$ &
+             + (mat%vals(3)-mat%vals(1))**2.0_${k}$)/6.0_${k}$ &
+             + (mat%vals(4)**2 + mat%vals(5)**2 + mat%vals(6)**2)
+        s = (J2/3.0_${k}$)**0.5_${k}$
+
+        if (abs(s) <= EPS) then
+            res = I1/3.0_${k}$
+            return
+        end if
+
+        Sm = mat - (I1/3.0_${k}$)*Iden
+        T = square(Sm) - (2.0_${k}$/3.0_${k}$)*J2*Iden
+        d1 = T - s*Sm
+        d2 = T + s*Sm
+        n1 = d1 .ddot. d1
+        n2 = d2 .ddot. d2
+        J2_sqrt = J2**0.5_${k}$
+
+        if (n2 <= n1/huge(n1)) then
+            ! d = sqrt(n1/n2) would be infinite (d2 = 0: the largest root is repeated) or overflow: its
+            ! limit, atan(1/d) = 0, without the division by zero (same result as the Inf it gave before)
+            sj = -1
+            alpha = 0.0_${k}$
+        else
+            d = (n1 / n2)**0.5_${k}$
+            if (abs(1.0_${k}$ - d) <= EPS) then
+                res(1) = J2_sqrt
+                res(2) = 0.0_${k}$
+                res(3) = -res(1)
+                res = res + I1/3.0_${k}$
+                return
+            end if
+
+            sj = int(sign(1.0_${k}$,(1.0_${k}$-d)))
+            alpha = 2.0_${k}$/3.0_${k}$ * atan(d**sj)
+        end if
+        cd = sj*s*cos(alpha)
+        lam_a = 2.0_${k}$*cd
+
+        sd = J2_sqrt*sin(alpha)
+        lam_b = -cd + sd
+        lam_c = -cd - sd
+
+        res(1) = max(lam_a, max(lam_b, lam_c))
+        res(3) = min(lam_a, min(lam_b, lam_c))
+        res(2) = lam_a + lam_b + lam_c - res(1) - res(3)
+        res = res + I1/3.0_${k}$
+    end function eigenvals_3D2Osym_${k}$
+
+    pure subroutine spectral_decomposition_${k}$(T, lam, V)
+        !! Eigenvalues and orthonormal eigenvectors of T (`real(${k}$)`). The eigenvector of the eigenvalue
+        !! farthest from the middle one is the normalized cross product of two rows of
+        !! T - lam I (Kopp, 2008, Eq. 39); the other two come from one closed-form plane
+        !! rotation (no iteration) that diagonalizes the 2x2 block of T in the plane normal to
+        !! it, which stays accurate when they (nearly) coincide. That eigenvalue is at least
+        !! half the eigenvalue range away from the other two, so the cross product needs no fallback.
+        !! Called by the CPB06 and Yld2004-18p derivatives.
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: T
+            !! Symmetric tensor
+        real(${k}$), intent(out) :: lam(3)
+            !! Eigenvalues, in descending order
+        real(${k}$), intent(out) :: V(3,3)
+            !! Eigenvectors, column a belongs to lam(a)
+
+        real(${k}$) :: r1(3), r2(3), r3(3), c1(3), c2(3), c3(3), ca(3), u(3), w(3), tu(3), tw(3)
+        real(${k}$) :: n1, n2, n3, na, p, q, r, theta, tg, cs, sn
+        integer :: a, b, e
+
+        lam = eigenvals(T)
+
+        ! a: most separated eigenvalue; b, b+1: the remaining pair
+        if (lam(1) - lam(2) >= lam(2) - lam(3)) then
+            a = 1
+            b = 2
+        else
+            a = 3
+            b = 1
+        end if
+
+        ! Rows of T - lam(a) I and their pairwise cross products; the largest one is v_a
+        r1 = [T%vals(1) - lam(a), T%vals(4), T%vals(6)]
+        r2 = [T%vals(4), T%vals(2) - lam(a), T%vals(5)]
+        r3 = [T%vals(6), T%vals(5), T%vals(3) - lam(a)]
+        ! Scale the rows by a power of 2 so that their largest entry is O(1): otherwise |c|**2 of a
+        ! nearly isotropic T (rows ~1e-11) underflows into subnormals in sp and ca/sqrt(na) is not
+        ! a unit vector. The scaling is exact, so without under/overflow the result is bit-identical.
+        e = fp_exponent(max(maxval(abs(r1)), maxval(abs(r2)), maxval(abs(r3))))
+        r1 = scale(r1, -e)
+        r2 = scale(r2, -e)
+        r3 = scale(r3, -e)
+        c1 = cross_${k}$(r1, r2)
+        c2 = cross_${k}$(r2, r3)
+        c3 = cross_${k}$(r3, r1)
+        n1 = c1(1)**2 + c1(2)**2 + c1(3)**2
+        n2 = c2(1)**2 + c2(2)**2 + c2(3)**2
+        n3 = c3(1)**2 + c3(2)**2 + c3(3)**2
+        if (n1 >= n2 .and. n1 >= n3) then
+            ca = c1
+            na = n1
+        else if (n2 >= n3) then
+            ca = c2
+            na = n2
+        else
+            ca = c3
+            na = n3
+        end if
+        if (na <= 0.0_${k}$) then
+            ! T is a multiple of the identity: any orthonormal basis is an eigenbasis
+            V = 0.0_${k}$
+            V(1,1) = 1.0_${k}$
+            V(2,2) = 1.0_${k}$
+            V(3,3) = 1.0_${k}$
+            return
+        end if
+        V(:,a) = ca/sqrt(na)
+
+        ! Orthonormal basis (u, w) of the plane normal to V(:,a)
+        if (abs(V(1,a)) > abs(V(2,a))) then
+            u = [-V(3,a), 0.0_${k}$, V(1,a)]/sqrt(V(1,a)**2 + V(3,a)**2)
+        else
+            u = [0.0_${k}$, V(3,a), -V(2,a)]/sqrt(V(2,a)**2 + V(3,a)**2)
+        end if
+        w = cross_${k}$(V(:,a), u)
+
+        ! Plane rotation (cs, sn) that diagonalizes [[p, q], [q, r]], the restriction of T to (u, w)
+        tu = [T%vals(1)*u(1) + T%vals(4)*u(2) + T%vals(6)*u(3), &
+              T%vals(4)*u(1) + T%vals(2)*u(2) + T%vals(5)*u(3), &
+              T%vals(6)*u(1) + T%vals(5)*u(2) + T%vals(3)*u(3)]
+        tw = [T%vals(1)*w(1) + T%vals(4)*w(2) + T%vals(6)*w(3), &
+              T%vals(4)*w(1) + T%vals(2)*w(2) + T%vals(5)*w(3), &
+              T%vals(6)*w(1) + T%vals(5)*w(2) + T%vals(3)*w(3)]
+        p = dot_product(u, tu)
+        q = dot_product(u, tw)
+        r = dot_product(w, tw)
+        tg = 0.0_${k}$
+        if (abs(q) > 0.0_${k}$) then
+            theta = (r - p)/(2.0_${k}$*q)
+            tg = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
+        end if
+        cs = 1.0_${k}$/sqrt(tg*tg + 1.0_${k}$)
+        sn = tg*cs
+        ! Rotated eigenvalues: p - tg*q for cs*u - sn*w, and r + tg*q for sn*u + cs*w
+        if (p - tg*q >= r + tg*q) then
+            V(:,b) = cs*u - sn*w
+            V(:,b+1) = sn*u + cs*w
+        else
+            V(:,b) = sn*u + cs*w
+            V(:,b+1) = cs*u - sn*w
+        end if
+    end subroutine spectral_decomposition_${k}$
+
+    pure subroutine eigenprojections_${k}$(s, eig, proj)
+        !! Eigenvalues and eigenprojections of a symmetric tensor, `real(${k}$)`, accurate also for close
+        !! eigenvalues (the spectral decompositions of the finite strain kinematics). Cyclic Jacobi
+        !! rotations (`jacobi_eigen`) when a relative gap between consecutive eigenvalues
+        !! \( (\lambda_a - \lambda_{a+1})/\max|\lambda| \) of the closed form `eigenvals` lies in
+        !! [`JACOBI_GAP_LO_${k}$`, `JACOBI_GAP_HI_${k}$`); otherwise the closed form with the
+        !! Cayley-Hamilton eigenprojections of `dEigenvalues_dTensor` (the historical bits). The
+        !! eigenprojections of the closed form lose ~eps/gap^2 and take the eigenvalues as repeated
+        !! below a gap of ~3e-6 (the logarithmic strains lose their deviatoric part near C = I);
+        !! with a rounding gap (repeated eigenvalues) they are exact. In sp the band covers every
+        !! gap (always Jacobi). `eigenvals` itself returns a triple root for a deviator below 1e-10
+        !! (absolute), so the strains of that size keep the isotropic decomposition.
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: s
+            !! Symmetric tensor.
+        real(${k}$), intent(out) :: eig(3)
+            !! Eigenvalues (descending).
+        type(ten_3D2Osym_${k}$), intent(out) :: proj(3)
+            !! Eigenprojections.
+
+        eig = eigenvals(s)
+        if (jacobi_band_${k}$(eig)) then
+            call jacobi_eigen_${k}$(s, eig, proj)
+        else
+            proj = dEigenvalues_dTensor(s, eig)
+        end if
+    end subroutine eigenprojections_${k}$
+
+    pure subroutine eigenvals_refined_${k}$(s, eig)
+        !! The eigenvalues of `eigenprojections`, `real(${k}$)` (the same bits: refined by Jacobi rotations in the
+        !! band of close eigenvalues), without the eigenprojections of the closed form.
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: s
+            !! Symmetric tensor.
+        real(${k}$), intent(out) :: eig(3)
+            !! Eigenvalues (descending).
+        type(ten_3D2Osym_${k}$) :: proj(3)
+
+        eig = eigenvals(s)
+        if (jacobi_band_${k}$(eig)) call jacobi_eigen_${k}$(s, eig, proj)
+    end subroutine eigenvals_refined_${k}$
+
+    pure logical function jacobi_band_${k}$(eig)
+        !! A relative gap between consecutive eigenvalues of the closed form lies in
+        !! [`JACOBI_GAP_LO_${k}$`, `JACOBI_GAP_HI_${k}$`): `eigenprojections` uses Jacobi rotations, `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: eig(3)
+            !! Eigenvalues of the closed form (descending).
+        real(${k}$) :: gap(2)
+
+        gap = abs([eig(1) - eig(2), eig(2) - eig(3)])/max(abs(eig(1)), abs(eig(3)), EPS_ABS_${k}$)
+        jacobi_band_${k}$ = any(gap >= JACOBI_GAP_LO_${k}$ .and. gap < JACOBI_GAP_HI_${k}$)
+    end function jacobi_band_${k}$
+
+    pure subroutine jacobi_eigen_${k}$(s, eig, proj)
+        !! Eigenvalues and eigenprojections of a symmetric tensor by cyclic Jacobi rotations
+        !! (`JACOBI_SWEEPS` sweeps), `real(${k}$)`: eigenvalues with an absolute error of a few ulp of
+        !! |s| and orthogonal projections also for close eigenvalues.
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: s
+            !! Symmetric tensor.
+        real(${k}$), intent(out) :: eig(3)
+            !! Eigenvalues (descending).
+        type(ten_3D2Osym_${k}$), intent(out) :: proj(3)
+            !! Eigenprojections.
+        integer, parameter :: JACOBI_SWEEPS = 6
+            ! Quadratic convergence: 3x3 converges to rounding in 3-4 sweeps
+        integer, parameter :: P_OF(3) = [1, 1, 2], Q_OF(3) = [2, 3, 3]
+        real(${k}$) :: m(3, 3), v(3, 3), rot(3, 3), theta, diff, t, c
+        integer :: sweep, i, p, q, a, order(3)
+
+        m = to_matrix(s)
+        v = 0.0_${k}$
+        do i = 1, 3
+            v(i, i) = 1.0_${k}$
+        end do
+        do sweep = 1, JACOBI_SWEEPS
+            do i = 1, 3
+                p = P_OF(i)
+                q = Q_OF(i)
+                if (abs(m(p, q)) <= tiny(1.0_${k}$)) cycle
+                ! Rotation angle (Numerical Recipes, stable for a small m(p, q)), theta = diff/(2 m(p, q)); for
+                ! theta > 1e15, t = 1/(2 theta) = m(p, q)/diff without forming theta, which overflows in sp when
+                ! m(p, q) is near tiny (eigenvalues ~1e3, D-028)
+                diff = m(q, q) - m(p, p)
+                if (abs(2.0_${k}$*m(p, q)) <= 1.0e-15_${k}$*abs(diff)) then
+                    t = m(p, q)/diff
+                else
+                    theta = diff/(2.0_${k}$*m(p, q))
+                    t = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
+                end if
+                c = 1.0_${k}$/sqrt(t*t + 1.0_${k}$)
+                rot = 0.0_${k}$
+                rot(1, 1) = 1.0_${k}$
+                rot(2, 2) = 1.0_${k}$
+                rot(3, 3) = 1.0_${k}$
+                rot(p, p) = c
+                rot(q, q) = c
+                rot(p, q) = t*c
+                rot(q, p) = -t*c
+                m = matmul(transpose(rot), matmul(m, rot))
+                m(p, q) = 0.0_${k}$
+                m(q, p) = 0.0_${k}$
+                v = matmul(v, rot)
+            end do
+        end do
+        ! Descending order, as eigenvals
+        order = [1, 2, 3]
+        if (m(order(1), order(1)) < m(order(2), order(2))) order([1, 2]) = order([2, 1])
+        if (m(order(2), order(2)) < m(order(3), order(3))) order([2, 3]) = order([3, 2])
+        if (m(order(1), order(1)) < m(order(2), order(2))) order([1, 2]) = order([2, 1])
+        do a = 1, 3
+            i = order(a)
+            eig(a) = m(i, i)
+            proj(a)%vals = [v(1, i)**2, v(2, i)**2, v(3, i)**2, v(1, i)*v(2, i), v(2, i)*v(3, i), v(1, i)*v(3, i)]
+        end do
+    end subroutine jacobi_eigen_${k}$
+
+    pure function cross_${k}$(x, y) result(res)
+        ! Cross product x * y; used by spectral_decomposition
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: x(3), y(3)
+        real(${k}$) :: res(3)
+
+        res = [x(2)*y(3) - x(3)*y(2), x(3)*y(1) - x(1)*y(3), x(1)*y(2) - x(2)*y(1)]
+    end function cross_${k}$
+    #:endfor
+
+end module muscle_math_eigen

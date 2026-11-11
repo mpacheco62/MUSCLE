@@ -18,7 +18,7 @@ files (so the sample does not depend on who writes the tests), plus the hand-wri
 
 The area is described by ``tests/mutations/<area>.toml``::
 
-    sources = ["src/math/muscle_math_operations.fypp"]               # globs, relative to the repository
+    sources = ["src/math/muscle_math_eigen.fypp"]                    # globs, relative to the repository
     reference = "^math-math_reference$"                             # ctest regex of the reference tests
     unit = "^math-"                                                 # ctest regex of the unit tests
     samples = 40                                                    # sampled mutations (default 40; "all")

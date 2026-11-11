@@ -24,7 +24,8 @@ import muscle_meta
 
 #: Free functions of muscle_tensor_functions by family besides `is_approx` and `inverse` (every family):
 #: (family, functions); also used by tests/tensors/test_muscle_tensor_functions.fypp.
-TENSOR_FUNCTIONS = (('2Osym', ('norm', 'det', 'square', 'is_identity')), ('2O', ('norm', 'det', 'transpose', 'is_identity')),
+TENSOR_FUNCTIONS = (('2Osym', ('norm', 'det', 'square', 'is_identity', 'to_matrix')),
+                    ('2O', ('norm', 'det', 'transpose', 'is_identity', 'to_matrix')),
                     ('4O3sym', ('norm',)), ('4O2sym', ('norm', 'convert_3sym')), ('4O', ('norm', 'convert_2sym')))
 
 #: Model families with a generated target test.

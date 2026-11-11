@@ -57,7 +57,7 @@ module muscle_yield_druckerprager
     use muscle_tensors, only : iden_2O, iden_4O4T, iden_4O3T, operator(.dev.), operator(.ddot.), operator(.tdotsym.), &
         & operator(*), operator(+), operator(-), operator(/), assignment(=)
     use muscle_tensor_functions, only : square
-    use muscle_math_derivatives, only : dsquare
+    use muscle_math_spectral_derivs, only : dsquare
     implicit none
     private
 

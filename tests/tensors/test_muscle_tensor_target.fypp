@@ -1,12 +1,12 @@
 ! SPDX-License-Identifier: GPL-3.0-or-later
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
-#! The free functions of muscle_tensor_functions (norm, det, square, transpose, is_identity, convert_3sym,
-#! convert_2sym, inverse with its condition number, is_approx) of one family, dimension and kind (fypp
-#! define TARGET_CASE = '<family>_<dim>_<kind>', tests/gpu/target_cases.py) called from a `pure`,
-#! `@:DEVICE()` point procedure inside an `!$omp target teams distribute parallel do` region and on the
-#! CPU (testing.md, GPU): bit for bit on the host, `check_target` on a device (TOL_DEVICE_<k> relative to
-#! each point, amplified by the condition number of the inverse).
+#! The free functions of muscle_tensor_functions (norm, det, square, transpose, is_identity, to_matrix,
+#! from_upper (3D 2Osym), convert_3sym, convert_2sym, inverse with its condition number, is_approx) of one
+#! family, dimension and kind (fypp define TARGET_CASE = '<family>_<dim>_<kind>', tests/gpu/target_cases.py)
+#! called from a `pure`, `@:DEVICE()` point procedure inside an `!$omp target teams distribute parallel do`
+#! region and on the CPU (testing.md, GPU): bit for bit on the host, `check_target` on a device
+#! (TOL_DEVICE_<k> relative to each point, amplified by the condition number of the inverse).
 #:set TF = muscle_meta.load_python_file('../gpu/target_cases.py', base=_THIS_FILE_)
 #:set FAM, D, K = TARGET_CASE.split('_')
 #:set T = tname(D + FAM, K)
@@ -18,7 +18,10 @@
 #:set RES_N = {'square': N, 'transpose': N, 'convert_3sym': len(layout('4O3sym', D).comps), &
     & 'convert_2sym': len(layout('4O2sym', D).comps)}
 #! Packed output of a point: (name, size) and the first position of each
-#:set OUTS = [(f, RES_N.get(f, 1)) for f in FNS] + [('inverse', N), ('cond', 1), ('ok', 1), ('is_approx', 2)]
+#! to_matrix: the 9 entries of the matrix; from_upper (3D 2Osym only) of that matrix: the components
+#:set UPPER = FAM == '2Osym' and D == '3D'
+#:set OUTS = [(f, 9 if f == 'to_matrix' else RES_N.get(f, 1)) for f in FNS] + ([('from_upper', N)] if UPPER else []) &
+    & + [('inverse', N), ('cond', 1), ('ok', 1), ('is_approx', 2)]
 #:set START = dict((OUTS[i][0], 1 + sum(s for _, s in OUTS[:i])) for i in range(len(OUTS)))
 #:set NOUT = sum(s for _, s in OUTS)
 
@@ -26,7 +29,7 @@ module test_tensor_target_point
     !! Point procedure (kernel) that calls every free function of `${T}$`.
     use muscle_kinds, only : ${K}$
     use muscle_tensors, only : ${', '.join(sorted({T} | {RES_T[f] for f in FNS if f in RES_T}))}$
-    use muscle_tensor_functions, only : ${', '.join(list(FNS) + ['inverse', 'is_approx'])}$
+    use muscle_tensor_functions, only : ${', '.join(list(FNS) + (['from_upper'] if UPPER else []) + ['inverse', 'is_approx'])}$
     implicit none
     private
 
@@ -50,6 +53,12 @@ contains
         #:endif
         #:endfor
         real(${K}$) :: cond
+        #:if 'to_matrix' in FNS
+        real(${K}$) :: m(3, 3)
+        #:endif
+        #:if UPPER
+        type(${T}$) :: r_upper
+        #:endif
         logical :: ok
 
         a%vals = reshape(x, shape(a%vals))
@@ -59,6 +68,13 @@ contains
         out(${START[f]}$:${START[f] + RES_N[f] - 1}$) = reshape(r_${f}$%vals, [${RES_N[f]}$])
         #:elif f == 'is_identity'
         out(${START[f]}$) = merge(1.0_${K}$, 0.0_${K}$, ${f}$(a))
+        #:elif f == 'to_matrix'
+        m = to_matrix(a)
+        out(${START[f]}$:${START[f] + 8}$) = reshape(m, [9])
+        #:if UPPER
+        r_upper = from_upper(m)
+        out(${START['from_upper']}$:${START['from_upper'] + N - 1}$) = r_upper%vals
+        #:endif
         #:else
         out(${START[f]}$) = ${f}$(a)
         #:endif

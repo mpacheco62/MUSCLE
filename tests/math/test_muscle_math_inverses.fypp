@@ -409,7 +409,8 @@ subroutine test_optional_kappa_${k}$(passed)
     !! matrix. Also checks that QUIET_NAN_${k}$ (filler of singular tensor inverses) is a NaN.
     use, intrinsic :: ieee_arithmetic, only : ieee_is_nan
     use muscle_kinds, only : ${k}$
-    use muscle_math_inverses, only : M33INV, M44INV, QUIET_NAN_${k}$, ADJ_KAPPA_MAX_${k}$
+    use muscle_math_inverses, only : M33INV, M44INV, ADJ_KAPPA_MAX_${k}$
+    use muscle_math_fp, only : QUIET_NAN_${k}$
     use muscle_test_utils
     use test_inverses_helpers
     implicit none

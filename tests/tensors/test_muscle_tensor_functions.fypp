@@ -2,7 +2,9 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 #! muscle_tensor_functions (D-011): the free generics of every family through one `use`, equal
-#! (tol = 0) to the type-bound API, and not leaked by muscle_tensors.
+#! (tol = 0) to the type-bound API, and not leaked by muscle_tensors; to_matrix and from_upper (no type-bound
+#! counterpart) against the named accessors or the documented storage order, matmul/transpose of the matrix and
+#! their round trip.
 #! (family, functions compared with their type-bound counterpart)
 #:set CASES = muscle_meta.load_python_file('../gpu/target_cases.py', base=_THIS_FILE_).TENSOR_FUNCTIONS
 
@@ -54,6 +56,61 @@ contains
         x2%vals(${', '.join(map(str, c.pos))}$) = nearest(x1%vals(${', '.join(map(str, c.pos))}$), 1.0_${k}$)
         call check_true(passed, 'not is_identity(I + 1 ulp in ${c.name}$)' // TN, .not. is_identity(x2))
         #:endfor
+        #:elif fn == 'to_matrix'
+        block
+            real(${k}$) :: m(3, 3), mu(3, 3)
+            type(${T}$) :: r
+            m = to_matrix(a)
+            #:if F == '2Osym'
+            ! Each named accessor (row and column read from its name) at its entries of the matrix
+            #:for c in lay.comps
+            #:set i, j = ('xyz'.index(c.name[0]) + 1, 'xyz'.index(c.name[1]) + 1)
+            call check_true(passed, 'to_matrix(a)(${i}$, ${j}$) == a%${c.name}$()' // TN, m(${i}$, ${j}$) == a%${c.name}$())
+            #:if i != j
+            call check_true(passed, 'to_matrix(a)(${j}$, ${i}$) == a%${c.name}$()' // TN, m(${j}$, ${i}$) == a%${c.name}$())
+            #:endif
+            #:endfor
+            #:elif d == '3D'
+            ! Documented storage order, written by hand (no accessors in 2O): column-major
+            call check_true(passed, 'to_matrix(a) == reshape(a%vals, [3, 3])' // TN, all(m == reshape(a%vals, [3, 3])))
+            #:else
+            ! Documented storage order, written by hand (no accessors in 2O): (11, 21, 12, 22, 33)
+            call check_true(passed, 'to_matrix(a): storage order (11, 21, 12, 22, 33)' // TN, &
+                            m(1, 1) == a%vals(1) .and. m(2, 1) == a%vals(2) .and. m(1, 2) == a%vals(3) &
+                            .and. m(2, 2) == a%vals(4) .and. m(3, 3) == a%vals(5))
+            #:endif
+            #:if d == '2D'
+            call check_true(passed, 'to_matrix(a): out-of-plane couplings zero' // TN, &
+                            all(m(1:2, 3) == 0.0_${k}$) .and. all(m(3, 1:2) == 0.0_${k}$))
+            #:endif
+            ! Matrix algebra on the matrix = tensor algebra on the tensor
+            #:if F == '2Osym'
+            r = square(a)
+            mu = matmul(m, m)
+            #:else
+            r = transpose(a)
+            mu = transpose(m)
+            #:endif
+            call check_true(passed, 'to_matrix(${'square' if F == '2Osym' else 'transpose'}$(a))' // TN, &
+                            maxval(abs(to_matrix(r) - mu)) <= 8.0_${k}$*epsilon(1.0_${k}$)*maxval(abs(mu)))
+            #:if F == '2Osym' and d == '3D'
+            ! from_upper: inverse of to_matrix, reads only the upper triangle
+            r = from_upper(m)
+            call check_true(passed, 'from_upper(to_matrix(a)) == a' // TN, all(r%vals == a%vals))
+            mu = m
+            mu(2, 1) = 99.0_${k}$
+            mu(3, 1) = -99.0_${k}$
+            mu(3, 2) = 77.0_${k}$
+            r = from_upper(mu)
+            call check_true(passed, 'from_upper ignores the lower triangle' // TN, all(r%vals == a%vals))
+            mu = reshape([(real(i, ${k}$), i = 1, 9)], [3, 3])
+            r = from_upper(mu)
+            #:for c in lay.comps
+            #:set i, j = ('xyz'.index(c.name[0]) + 1, 'xyz'.index(c.name[1]) + 1)
+            call check_true(passed, 'from_upper(m)%${c.name}$() == m(${i}$, ${j}$)' // TN, r%${c.name}$() == mu(${i}$, ${j}$))
+            #:endfor
+            #:endif
+        end block
         #:else
         #:set RT = {'convert_3sym': tname(d + '4O3sym', k), 'convert_2sym': tname(d + '4O2sym', k)}.get(fn, T)
         block

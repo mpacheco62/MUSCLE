@@ -26,6 +26,9 @@
 #! - spectral_hessian with arbitrary phi_a, phi_ab (the routine takes any) against its documented
 #!   formula (theta_ab: divided difference, or its limit 1/2 (phi_aa + phi_bb) - phi_ab for equal
 #!   eigenvalues), evaluated independently on 3x3 matrices.
+#! - dsquare (derivative of the square): the square is quadratic, so (A + B)^2 - A^2 - B^2 = AB + BA =
+#!   dsquare(A) : B exactly, with general A and B (every component nonzero and different, so each of the
+#!   21 components of dsquare(A) reaches the result).
 #!
 #! Tolerances, in units of eps = epsilon(1.0_k): decomposition |T V - V L| <= C_RES eps s and
 #! |V^T V - I| <= C_ORTH eps (as test_math_spectral_kinds: measured 6.2 and 5 there); gradient and
@@ -111,6 +114,7 @@ program test_math_spectral_cases
     call record(test_decomposition_${k}$(), ${10*i + 2}$, 'spectral_decomposition branches ${k}$', code)
     call record(test_hessian_${k}$(), ${10*i + 3}$, 'spectral_hessian of tr(S^4)/4 + det(S) ${k}$', code)
     call record(test_hessian_contract_${k}$(), ${10*i + 4}$, 'spectral_hessian formula, arbitrary inputs ${k}$', code)
+    call record(test_dsquare_${k}$(), ${10*i + 5}$, 'dsquare(A) : B = (A + B)^2 - A^2 - B^2 ${k}$', code)
     #:endfor
     if (code /= 0) stop code
     print *, "Passed!"
@@ -125,7 +129,7 @@ contains
         !! eigenvals of `${T2}$` with integer eigenvalues whose middle one is the mean of the others:
         !! exact.
         use muscle_tensors
-        use muscle_math_operations, only : eigenvals
+        use muscle_math_eigen, only : eigenvals
         use muscle_test_utils, only : check_true
         integer, parameter :: PERM(3, 6) = reshape([1, 2, 3, 1, 3, 2, 2, 1, 3, 2, 3, 1, 3, 1, 2, 3, 2, 1], [3, 6])
         real(${k}$), parameter :: DIAG(3) = [5.0_${k}$, 3.0_${k}$, 1.0_${k}$]
@@ -160,7 +164,7 @@ contains
         !! spectral_decomposition of the `${T2}$` with Voigt `vals`: descending eigenvalues,
         !! T V = V L and V^T V = I (dp residuals of the kind-k results).
         use muscle_tensors
-        use muscle_math_spectral_derivs, only : spectral_decomposition
+        use muscle_math_eigen, only : spectral_decomposition
         use muscle_test_utils, only : check_true
         use test_math_spectral_cases_ref, only : mat_of, eye3
         logical, intent(inout) :: passed
@@ -243,7 +247,8 @@ contains
         !! spectral_gradient and spectral_hessian in `real(${k}$)` of phi = tr(S^4)/4 + det(S) against
         !! the closed forms, eigenvalue shapes x scales x random rotations.
         use muscle_tensors
-        use muscle_math_spectral_derivs, only : spectral_decomposition, spectral_gradient, spectral_hessian
+        use muscle_math_eigen, only : spectral_decomposition
+        use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian
         use muscle_test_utils, only : check_true
         use muscle_test_helpers, only : park_miller, rnd, rotation_ref
         use test_math_spectral_cases_ref, only : mat_of, voigt_of, phi_grad_ref, phi_hess_ref
@@ -412,5 +417,23 @@ contains
         print '(a, f7.2)', '  ${k}$ spectral_hessian, arbitrary inputs: worst error/eps:', worst
     end function test_hessian_contract_${k}$
 
+
+    logical function test_dsquare_${k}$() result(passed)
+        !! dsquare of a general `${T2}$` against (A + B)^2 - A^2 - B^2 = dsquare(A) : B (exact up to the
+        !! rounding of the products and of the differences of squares; measured 3.0e-16 absolute in dp).
+        use muscle_tensors
+        use muscle_tensor_2osym, only : square
+        use muscle_math_spectral_derivs, only : dsquare
+        use muscle_test_utils, only : check_approx
+        type(${T2}$) :: a, b, expected, got
+
+        passed = .true.
+        a%vals = [3.0_${k}$, -1.5_${k}$, 0.7_${k}$, 2.2_${k}$, -0.9_${k}$, 1.3_${k}$]
+        b%vals = [-0.4_${k}$, 1.1_${k}$, 2.5_${k}$, -1.7_${k}$, 0.6_${k}$, 0.8_${k}$]
+        expected = square(a + b) - square(a) - square(b)
+        got = dsquare(a) .ddot. b
+        call check_approx(passed, '${k}$ dsquare(A) : B = (A + B)^2 - A^2 - B^2', got%vals, expected%vals, &
+                          tol=1.0e3_${k}$*epsilon(1.0_${k}$))
+    end function test_dsquare_${k}$
     #:endfor
 end program test_math_spectral_cases

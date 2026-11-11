@@ -109,5 +109,5 @@ ctest --test-dir build
 The tensor engine and the elasticity support 3D and 2D (plane strain/stress, axisymmetric) states with the same code; yield criteria, solvers and declared materials are 3D only.
 
 @Bug
-Numerical derivatives in the `muscle_math_derivatives` module require careful step size (`eps`) selection for highly non-linear yield surfaces like CPB06 to avoid round-off errors.
+Numerical derivatives (`tests/common/muscle_fd.fypp`) require careful step size (`eps`) selection for highly non-linear yield surfaces like CPB06 to avoid round-off errors.
 ```

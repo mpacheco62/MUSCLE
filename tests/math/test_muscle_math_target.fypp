@@ -22,8 +22,8 @@ module test_math_kernels_funcs
     !! Point procedures (kernels) that call the math kernel routines, for every kind.
     use muscle_kinds, only : sp, dp
     use muscle_tensors
-    use muscle_math_operations, only : eigenvals
-    use muscle_math_spectral_derivs, only : spectral_decomposition, dEigenvalues_dTensor
+    use muscle_math_eigen, only : eigenvals, spectral_decomposition
+    use muscle_math_spectral_derivs, only : dEigenvalues_dTensor
     use muscle_math_lu_solve, only : LU6SOLVE
     implicit none
     private
@@ -103,7 +103,7 @@ program test_math_kernels_target
     use muscle_kinds, only : ${', '.join('FD_STEP_CEN_' + k + ', FD_STEP_ZERO_' + k for k in REAL_KINDS)}$
     use muscle_test_helpers, only : park_miller, rnd, record
     use test_math_kernels_funcs
-    use muscle_math_spectral_derivs, only : fp_exponent
+    use muscle_math_fp, only : fp_exponent
     implicit none
 
     integer, parameter :: NPTS = 64

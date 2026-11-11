@@ -1,0 +1,219 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#!
+#! eigenprojections / eigenvals_refined (muscle_math_eigen) in every kind, against an independent
+#! truth: the tensor A = Q diag(lam) Q^T built in quad precision from known eigenvalues lam and a known rotation
+#! Q, then rounded to the kind. Rounding A moves its eigenvalues by ~eps |A| and its eigenvectors by
+#! ~eps |A|/gap, so:
+#! - eigenvalues (descending) within C_EIG eps max|lam| of lam;
+#! - each eigenprojection within C_PROJ eps max|lam|/gap of q_a q_a^T (gap: distance to the nearest other
+#!   eigenvalue). This is what the Jacobi band is for: the Cayley-Hamilton eigenprojections of the closed form
+#!   lose ~eps/gap^2, which fails this bound for the close gaps of the cases (1e-6, 1e-9 in dp);
+#! - an exactly repeated pair (gap 0): only the sum of its projections is defined, checked against the truth;
+#! - properties of every case: sum P_a = I, sum lam_a P_a = A, P_a P_b = delta_ab P_a (within C_PROJ eps/gap);
+#! - eigenvals_refined gives the same bits as the eigenvalues of eigenprojections.
+#! Cases, each with two rotations (the order of the diagonal Jacobi leaves depends on Q): well separated (3, 2, 1);
+#! a close pair with gap g in GAPS[k] (inside the Jacobi band of the kind: every gap in sp, [1e-12, 1e-2) in dp) at
+#! the top (1 + g, 1, -2), at the bottom (2, -1 + g, -1) and below a large one (3, 0.5 + g, 0.5); an exactly repeated
+#! pair at the top (1, 1, -2) and at the bottom (2, -1, -1); triple (2, 2, 2); the close top pair scaled by
+#! 1e3 and 1e-3 (the band is on the relative gap).
+#:set C_EIG = 20
+#:set C_PROJ = 100
+#:set GAPS = {'sp': ['1.0e-2', '1.0e-3'], 'dp': ['1.0e-3', '1.0e-6', '1.0e-9']}
+
+module test_math_projections_ref
+    !! Quad precision truth: rotation and the eigenprojections q_a q_a^T.
+    use, intrinsic :: iso_fortran_env, only : real128
+    implicit none
+    private
+    integer, parameter, public :: qp = real128
+    public :: rot_q, build, proj_true, mat_of
+
+contains
+
+    pure function rot_q(axis, deg) result(m)
+        !! Rotation of `deg` degrees about `axis` (Rodrigues), quad precision.
+        real(qp), intent(in) :: axis(3), deg
+        real(qp) :: m(3, 3)
+        real(qp), parameter :: PI_Q = 3.14159265358979323846264338327950288_qp
+        real(qp) :: n(3), c, s, t
+        n = axis/sqrt(sum(axis**2))
+        c = cos(deg*PI_Q/180.0_qp)
+        s = sin(deg*PI_Q/180.0_qp)
+        t = 1.0_qp - c
+        m(1, :) = [t*n(1)*n(1) + c, t*n(1)*n(2) - s*n(3), t*n(1)*n(3) + s*n(2)]
+        m(2, :) = [t*n(1)*n(2) + s*n(3), t*n(2)*n(2) + c, t*n(2)*n(3) - s*n(1)]
+        m(3, :) = [t*n(1)*n(3) - s*n(2), t*n(2)*n(3) + s*n(1), t*n(3)*n(3) + c]
+    end function rot_q
+
+    pure function build(q, lam) result(v)
+        !! Voigt components (11, 22, 33, 12, 23, 13) of Q diag(lam) Q^T, quad precision.
+        real(qp), intent(in) :: q(3, 3), lam(3)
+        real(qp) :: v(6)
+        real(qp) :: m(3, 3)
+        integer :: a
+        m = 0.0_qp
+        do a = 1, 3
+            m = m + lam(a)*spread(q(:, a), 2, 3)*spread(q(:, a), 1, 3)
+        end do
+        v = [m(1, 1), m(2, 2), m(3, 3), m(1, 2), m(2, 3), m(1, 3)]
+    end function build
+
+    pure function proj_true(q, a) result(m)
+        !! Eigenprojection q_a q_a^T, quad precision.
+        real(qp), intent(in) :: q(3, 3)
+        integer, intent(in) :: a
+        real(qp) :: m(3, 3)
+        m = spread(q(:, a), 2, 3)*spread(q(:, a), 1, 3)
+    end function proj_true
+
+    pure function mat_of(v) result(m)
+        !! Symmetric matrix of tensorial Voigt components, quad precision.
+        real(qp), intent(in) :: v(6)
+        real(qp) :: m(3, 3)
+        m = reshape([v(1), v(4), v(6), v(4), v(2), v(5), v(6), v(5), v(3)], [3, 3])
+    end function mat_of
+end module test_math_projections_ref
+
+program test_math_eigen_projections
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$
+    use muscle_math_eigen, only : eigenprojections, eigenvals_refined
+    use muscle_test_utils, only : check_true
+    use muscle_test_helpers, only : record
+    use test_math_projections_ref
+    implicit none
+
+    integer :: code
+
+    code = 0
+    #:for i, k in enumerate(REAL_KINDS)
+    call record(test_projections_${k}$(), ${10*i + 1}$, 'eigenprojections against the quad truth ${k}$', code)
+    #:endfor
+    if (code /= 0) stop code
+    print '(a)', ' test_math_eigen_projections: PASSED'
+
+contains
+    #:for k in REAL_KINDS
+
+    function test_projections_${k}$() result(passed)
+        !! Every case of the header, `real(${k}$)`.
+        logical :: passed
+        #:set gaps = GAPS[k]
+        integer, parameter :: NG = ${len(gaps)}$
+        real(qp), parameter :: GAP_LIST(NG) = [${', '.join(g + '_qp' for g in gaps)}$]
+        real(qp) :: q(3, 3), worst_eig, worst_proj
+        integer :: icase, irot
+
+        passed = .true.
+        worst_eig = 0.0_qp
+        worst_proj = 0.0_qp
+        ! Two rotations: the order in which Jacobi leaves the eigenvalues on the diagonal depends on Q
+        do irot = 1, 2
+            if (irot == 1) then
+                q = rot_q([1.0_qp, 2.0_qp, 3.0_qp], 37.0_qp)
+            else
+                q = rot_q([3.0_qp, -1.0_qp, 2.0_qp], 113.0_qp)
+            end if
+            call check_case_${k}$(passed, q, [3.0_qp, 2.0_qp, 1.0_qp], 'separated', worst_eig, worst_proj)
+            do icase = 1, NG
+                call check_case_${k}$(passed, q, [1.0_qp + GAP_LIST(icase), 1.0_qp, -2.0_qp], 'close top pair', &
+                                     worst_eig, worst_proj)
+                call check_case_${k}$(passed, q, [2.0_qp, -1.0_qp + GAP_LIST(icase), -1.0_qp], 'close bottom pair', &
+                                     worst_eig, worst_proj)
+                call check_case_${k}$(passed, q, [3.0_qp, 0.5_qp + GAP_LIST(icase), 0.5_qp], 'close lower pair', &
+                                     worst_eig, worst_proj)
+                ! The band is on the gap relative to the eigenvalues: the same in any units
+                call check_case_${k}$(passed, q, 1.0e3_qp*[1.0_qp + GAP_LIST(icase), 1.0_qp, -2.0_qp], &
+                                     'close top pair x 1e3', worst_eig, worst_proj)
+                call check_case_${k}$(passed, q, 1.0e-3_qp*[1.0_qp + GAP_LIST(icase), 1.0_qp, -2.0_qp], &
+                                     'close top pair x 1e-3', worst_eig, worst_proj)
+            end do
+            call check_case_${k}$(passed, q, [1.0_qp, 1.0_qp, -2.0_qp], 'repeated top pair', worst_eig, worst_proj)
+            call check_case_${k}$(passed, q, [2.0_qp, -1.0_qp, -1.0_qp], 'repeated bottom pair', worst_eig, worst_proj)
+            call check_case_${k}$(passed, q, [2.0_qp, 2.0_qp, 2.0_qp], 'triple', worst_eig, worst_proj)
+        end do
+        print '(a, 2es10.2)', ' ${k}$ worst error / bound (eigenvalues, projections):', worst_eig, worst_proj
+    end function test_projections_${k}$
+
+    subroutine check_case_${k}$(passed, q, lam, label, worst_eig, worst_proj)
+        !! One case of `real(${k}$)`: eigenvalues `lam` (descending) rotated by `q`.
+        logical, intent(inout) :: passed
+            !! Cumulative result.
+        real(qp), intent(in) :: q(3, 3)
+            !! Rotation (eigenvectors in its columns).
+        real(qp), intent(in) :: lam(3)
+            !! Eigenvalues, descending.
+        character(len=*), intent(in) :: label
+            !! Case name.
+        real(qp), intent(inout) :: worst_eig, worst_proj
+            !! Largest error/bound ratios seen.
+        type(${tname('3D2Osym', k)}$) :: s, proj(3)
+        real(${k}$) :: eig(3), eig2(3)
+        real(qp) :: a_k(3, 3), pa(3, 3), pb(3, 3), scale, eps, gap, ssum(3, 3), lsum(3, 3), err
+        integer :: a, b
+
+        s%vals = real(build(q, lam), ${k}$)
+        a_k = mat_of(real(s%vals, qp))
+        call eigenprojections(s, eig, proj)
+        call eigenvals_refined(s, eig2)
+        call check_true(passed, '${k}$ ' // label // ': eigenvals_refined == eigenvalues of eigenprojections', &
+                        all(eig2 == eig))
+        eps = real(epsilon(1.0_${k}$), qp)
+        scale = maxval(abs(lam))
+        ! Eigenvalues
+        err = maxval(abs(real(eig, qp) - lam))/(${C_EIG}$*eps*scale)
+        worst_eig = max(worst_eig, err)
+        call check_true(passed, '${k}$ ' // label // ': eigenvalues', err <= 1.0_qp)
+        ! Sums: identity and reconstruction
+        ssum = 0.0_qp
+        lsum = 0.0_qp
+        do a = 1, 3
+            pa = mat_of(real(proj(a)%vals, qp))
+            ssum = ssum + pa
+            lsum = lsum + real(eig(a), qp)*pa
+        end do
+        call check_true(passed, '${k}$ ' // label // ': sum of the projections = I', &
+                        maxval(abs(ssum - reshape([1, 0, 0, 0, 1, 0, 0, 0, 1], [3, 3]))) <= ${C_EIG}$*eps)
+        call check_true(passed, '${k}$ ' // label // ': sum lam_a P_a = A', &
+                        maxval(abs(lsum - a_k)) <= ${C_EIG}$*eps*scale)
+        ! Each projection against the truth, and orthogonality, where its eigenvalue is distinct
+        do a = 1, 3
+            gap = huge(1.0_qp)
+            do b = 1, 3
+                if (b /= a) gap = min(gap, abs(lam(a) - lam(b)))
+            end do
+            if (gap == 0.0_qp) cycle
+            pa = mat_of(real(proj(a)%vals, qp))
+            err = maxval(abs(pa - proj_true(q, a)))/(${C_PROJ}$*eps*scale/gap)
+            worst_proj = max(worst_proj, err)
+            call check_true(passed, '${k}$ ' // label // ': projection against q q^T', err <= 1.0_qp)
+            do b = 1, 3
+                pb = mat_of(real(proj(b)%vals, qp))
+                if (b == a) then
+                    call check_true(passed, '${k}$ ' // label // ': P_a P_a = P_a', &
+                                    maxval(abs(matmul(pa, pa) - pa)) <= ${C_PROJ}$*eps*scale/gap)
+                else
+                    call check_true(passed, '${k}$ ' // label // ': P_a P_b = 0', &
+                                    maxval(abs(matmul(pa, pb))) <= ${C_PROJ}$*eps*scale/gap)
+                end if
+            end do
+        end do
+        ! An exactly repeated pair (top or bottom): only the sum of its projections is defined
+        if (lam(1) == lam(2) .and. lam(2) /= lam(3)) then
+            pa = mat_of(real(proj(1)%vals, qp)) + mat_of(real(proj(2)%vals, qp))
+            call check_true(passed, '${k}$ ' // label // ': projection of the repeated pair', &
+                            maxval(abs(pa - proj_true(q, 1) - proj_true(q, 2))) <= &
+                            ${C_PROJ}$*eps*scale/abs(lam(1) - lam(3)))
+        end if
+        if (lam(2) == lam(3) .and. lam(1) /= lam(2)) then
+            pa = mat_of(real(proj(2)%vals, qp)) + mat_of(real(proj(3)%vals, qp))
+            call check_true(passed, '${k}$ ' // label // ': projection of the repeated pair', &
+                            maxval(abs(pa - proj_true(q, 2) - proj_true(q, 3))) <= &
+                            ${C_PROJ}$*eps*scale/abs(lam(1) - lam(3)))
+        end if
+    end subroutine check_case_${k}$
+    #:endfor
+
+end program test_math_eigen_projections
