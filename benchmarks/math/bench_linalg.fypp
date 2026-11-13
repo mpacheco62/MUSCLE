@@ -27,6 +27,14 @@
 #! Yq in quad precision from the rounded C and H; maximum over 20 nn.
 #! Cost: ns per call over 1000 distinct matrices (kappa 1e2, s = 1) cycled, about 0.2 s per routine; the wrapper
 #! copies the arguments to fixed-size arrays (as lu_solve does); without KAPPA and with KAPPA.
+#! Candidates (linalg_candidates.fypp, module bench_linalg_candidates), variants of the inverse tables: A = current
+#! M<n><n>INV, B Gauss-Jordan, C Cholesky (SPD only), D LU without pivoting, E Householder QR, F block Schur
+#! (n = 4, 6), G branch-free LU,
+#! H fully unrolled LU (literal subscripts). Extra tables: SPD families (a) Q diag(sigma) Q^T, (b) elasticity in the Mandel
+#! basis, (c) Newton matrix inv(C) + g H; "cost interleaved": all variants in the same process, 7 rounds of about
+#! 0.05 s per variant, on the same 1000 matrices (kappa 1e2, s = 1; SPD set for C).
+#:set VARS = [(2, 'gj', [3, 4, 6, 9]), (3, 'chol', [3, 4, 6, 9]), (4, 'lunp', [3, 4, 6, 9]), &
+  (5, 'qr', [3, 4, 6, 9]), (6, 'blk', [4, 6]), (7, 'lubf', [3, 4, 6, 9]), (8, 'luu', [3, 4, 6, 9])]
 #:set KAPPAS = {'sp': ['1.0e1', '1.0e2', '1.0e3', '1.0e4', '1.0e6'], &
   'dp': ['1.0e1', '1.0e2', '1.0e3', '1.0e4', '1.0e6', '1.0e8', '1.0e12', '1.0e15']}
 #:set SCALES = {'sp': ['1.0', '1.0e-18', '1.0e18'], 'dp': ['1.0', '1.0e-30', '1.0e30']}
@@ -93,19 +101,29 @@ contains
         end do
     end subroutine rand_orth_q
 
-    subroutine gen_matrix_q(n, kappa, s, A)
-        !! A = s U diag(sigma) V^T, sigma from 1 to 1/kappa (geometric).
+    subroutine gen_matrix_q(n, kappa, s, A, spd)
+        !! A = s U diag(sigma) V^T, sigma from 1 to 1/kappa (geometric); with spd, V = U and A is symmetrized
+        !! (exactly symmetric, positive definite).
         integer, intent(in) :: n
         real(qp), intent(in) :: kappa, s
         real(qp), intent(out) :: A(n, n)
+        logical, intent(in), optional :: spd
         real(qp) :: U(n, n), V(n, n), sig(n)
         integer :: i
         call rand_orth_q(n, U)
-        call rand_orth_q(n, V)
+        V = U
+        if (.not. present(spd)) then
+            call rand_orth_q(n, V)
+        else if (.not. spd) then
+            call rand_orth_q(n, V)
+        end if
         do i = 1, n
             sig(i) = exp(-real(i - 1, qp)/real(n - 1, qp)*log(kappa))
         end do
         A = s*matmul(U*spread(sig, 1, n), transpose(V))
+        if (present(spd)) then
+            if (spd) A = 0.5_qp*(A + transpose(A))
+        end if
     end subroutine gen_matrix_q
 
     subroutine inv_q(A, X, ok)
@@ -153,13 +171,35 @@ module bench_linalg_run
     use muscle_math_inverses
     use muscle_math_lu_solve
     use bench_linalg_truth
+    use bench_linalg_candidates
     implicit none
     private
+    character(len=8), parameter :: VNAME(8) = [character(len=8) :: 'A_cur', 'B_gj', 'C_chol', 'D_lunp', 'E_qr', 'F_blk', &
+        'G_lubf', 'H_luu']
     #:for k in REAL_KINDS
     public :: run_all_${k}$
     #:endfor
 
 contains
+
+    pure function supported(v, n, spd) result(r)
+        !! Variants available for size n (the Cholesky one only for SPD matrices, the block one for 4 and 6).
+        integer, intent(in) :: v, n
+        logical, intent(in) :: spd
+        logical :: r
+        select case (v)
+        case (1)
+            r = any(n == [3, 4, 5, 6, 9])
+        case (3)
+            r = spd .and. any(n == [3, 4, 6, 9])
+        case (6)
+            r = any(n == [4, 6])
+        case (2, 4, 5, 7, 8)
+            r = any(n == [3, 4, 6, 9])
+        case default
+            r = .false.
+        end select
+    end function supported
 
     function inv_name(n) result(s)
         integer, intent(in) :: n
@@ -206,20 +246,18 @@ contains
         end select
     end subroutine inv_call_${k}$
 
-    subroutine run_family_${k}$(is_solve, n, kt, s, nmat)
-        !! One family: nmat random matrices of size n, condition kt and scale s; prints one line.
-        logical, intent(in) :: is_solve
+    subroutine run_family_${k}$(n, kt, s, nmat)
+        !! lu_solve family: nmat random matrices of size n, condition kt and scale s; prints one line.
         integer, intent(in) :: n, nmat
         real(qp), intent(in) :: kt, s
-        real(qp) :: Aq(n, n), Akq(n, n), Xq(n, n), Xr(n, n), Rq(n, n), bq(n), xqs(n), xr1(n)
-        real(qp) :: eps, nA, kappa_true, efwd, efwd_k, eres, ebwd, ratio
-        real(qp) :: m_fwd, m_fwd_k, m_res, m_bwd, kap_lo, kap_hi
-        real(${k}$) :: Ak(n, n), X(n, n), b(n), xs(n), kap
+        real(qp) :: Aq(n, n), Akq(n, n), Xq(n, n), bq(n), xqs(n), xr1(n)
+        real(qp) :: eps, nA, kappa_true, ebwd, efwd_k, ratio
+        real(qp) :: m_fwd_k, m_bwd, kap_lo, kap_hi
+        real(${k}$) :: Ak(n, n), b(n), xs(n), kap
         logical :: ok, okq, have
         integer :: im, i, nfail, nnonfin
-        character(len=8) :: name
         eps = real(epsilon(1.0_${k}$), qp)
-        m_fwd = 0.0_qp; m_fwd_k = 0.0_qp; m_res = 0.0_qp; m_bwd = 0.0_qp
+        m_fwd_k = 0.0_qp; m_bwd = 0.0_qp
         kap_lo = 0.0_qp; kap_hi = 0.0_qp
         have = .false.
         nfail = 0
@@ -231,47 +269,25 @@ contains
             call inv_q(Akq, Xq, okq)
             nA = norm_inf_q(Akq)
             kappa_true = nA*norm_inf_q(Xq)
-            if (is_solve) then
-                do i = 1, n
-                    b(i) = real(rng_uni(), ${k}$)
-                end do
-                call lu_solve_${k}$(Ak, b, xs, ok, kap)
-                if (.not. ok) then
-                    nfail = nfail + 1
-                    cycle
-                end if
-                if (.not. all(ieee_is_finite(xs))) then
-                    nnonfin = nnonfin + 1
-                    cycle
-                end if
-                bq = real(b, qp)
-                xqs = matmul(Xq, bq)
-                xr1 = real(xs, qp)
-                ebwd = norm_inf_vec_q(bq - matmul(Akq, xr1))/((nA*norm_inf_vec_q(xr1) + norm_inf_vec_q(bq))*eps)
-                efwd_k = norm_inf_vec_q(xr1 - xqs)/(norm_inf_vec_q(xqs)*eps*kappa_true)
-                m_bwd = max(m_bwd, ebwd)
-                m_fwd_k = max(m_fwd_k, efwd_k)
-            else
-                call inv_call_${k}$(n, Ak, X, ok, kap)
-                if (.not. ok) then
-                    nfail = nfail + 1
-                    cycle
-                end if
-                if (.not. all(ieee_is_finite(X))) then
-                    nnonfin = nnonfin + 1
-                    cycle
-                end if
-                Xr = real(X, qp)
-                efwd = norm_inf_q(Xr - Xq)/(norm_inf_q(Xq)*eps)
-                Rq = -matmul(Akq, Xr)
-                do i = 1, n
-                    Rq(i, i) = Rq(i, i) + 1.0_qp
-                end do
-                eres = norm_inf_q(Rq)/(nA*norm_inf_q(Xr)*eps)
-                m_fwd = max(m_fwd, efwd)
-                m_fwd_k = max(m_fwd_k, efwd/kappa_true)
-                m_res = max(m_res, eres)
+            do i = 1, n
+                b(i) = real(rng_uni(), ${k}$)
+            end do
+            call lu_solve_${k}$(Ak, b, xs, ok, kap)
+            if (.not. ok) then
+                nfail = nfail + 1
+                cycle
             end if
+            if (.not. all(ieee_is_finite(xs))) then
+                nnonfin = nnonfin + 1
+                cycle
+            end if
+            bq = real(b, qp)
+            xqs = matmul(Xq, bq)
+            xr1 = real(xs, qp)
+            ebwd = norm_inf_vec_q(bq - matmul(Akq, xr1))/((nA*norm_inf_vec_q(xr1) + norm_inf_vec_q(bq))*eps)
+            efwd_k = norm_inf_vec_q(xr1 - xqs)/(norm_inf_vec_q(xqs)*eps*kappa_true)
+            m_bwd = max(m_bwd, ebwd)
+            m_fwd_k = max(m_fwd_k, efwd_k)
             ratio = real(kap, qp)/kappa_true
             if (have) then
                 kap_lo = min(kap_lo, ratio)
@@ -282,20 +298,127 @@ contains
                 have = .true.
             end if
         end do
-        if (is_solve) then
-            name = 'lu_solve'
-            write (*, '(a8,1x,i2,6(1x,es10.2),2(1x,i8))') name, n, real(kt, dp), real(s, dp), real(m_bwd, dp), &
-                real(m_fwd_k, dp), real(kap_lo, dp), real(kap_hi, dp), nfail, nnonfin
-        else
-            name = inv_name(n)
-            write (*, '(a8,1x,i2,7(1x,es10.2),2(1x,i8))') name, n, real(kt, dp), real(s, dp), real(m_fwd, dp), &
-                real(m_fwd_k, dp), real(m_res, dp), real(kap_lo, dp), real(kap_hi, dp), nfail, nnonfin
-        end if
+        write (*, '(a8,1x,i2,6(1x,es10.2),2(1x,i8))') 'lu_solve', n, real(kt, dp), real(s, dp), real(m_bwd, dp), &
+            real(m_fwd_k, dp), real(kap_lo, dp), real(kap_hi, dp), nfail, nnonfin
     end subroutine run_family_${k}$
 
-    subroutine run_special_${k}$(is_solve, n)
+    subroutine variant_call_${k}$(v, n, A, X, ok)
+        !! Inverse of the variant v (1 = current M<n><n>INV) of size n; no copies (explicit-shape dummies).
+        integer, intent(in) :: v, n
+        real(${k}$), intent(in) :: A(n, n)
+        real(${k}$), intent(out) :: X(n, n)
+        logical, intent(out) :: ok
+        select case (v)
+        case (1)
+            select case (n)
+            #:for N in [3, 4, 5, 6, 9]
+            case (${N}$)
+                call M${N}$${N}$INV_${k}$(A, X, ok)
+            #:endfor
+            case default
+                X = 0.0_${k}$
+                ok = .false.
+            end select
+        #:for v, nm, ns in VARS
+        case (${v}$)
+            select case (n)
+            #:for N in ns
+            case (${N}$)
+                call ${nm}$_inv_${N}$_${k}$(A, X, ok)
+            #:endfor
+            case default
+                X = 0.0_${k}$
+                ok = .false.
+            end select
+        #:endfor
+        case default
+            X = 0.0_${k}$
+            ok = .false.
+        end select
+    end subroutine variant_call_${k}$
+
+    subroutine run_family_inv_${k}$(n, kt, s, nmat, spd)
+        !! Inverse family, all the variants on the same nmat random matrices of size n (SPD: Q diag(sigma) Q^T);
+        !! prints one line per variant. kap_lo and kap_hi are those of M<n><n>INV (0 for the candidates).
+        integer, intent(in) :: n, nmat
+        real(qp), intent(in) :: kt, s
+        logical, intent(in) :: spd
+        real(qp) :: Aq(n, n), Akq(n, n), Xq(n, n), Xr(n, n), Rq(n, n)
+        real(qp) :: eps, nA, kappa_true, efwd, eres, ratio
+        real(qp) :: m_fwd(8), m_fwd_k(8), m_res(8), kap_lo, kap_hi
+        real(${k}$) :: Ak(n, n), X(n, n), kap
+        logical :: ok, okq, have
+        integer :: im, i, v, nfail(8), nnonfin(8)
+        character(len=8) :: name
+        eps = real(epsilon(1.0_${k}$), qp)
+        m_fwd = 0.0_qp; m_fwd_k = 0.0_qp; m_res = 0.0_qp
+        kap_lo = 0.0_qp; kap_hi = 0.0_qp
+        have = .false.
+        nfail = 0
+        nnonfin = 0
+        do im = 1, nmat
+            call gen_matrix_q(n, kt, s, Aq, spd)
+            Ak = real(Aq, ${k}$)
+            Akq = real(Ak, qp)
+            call inv_q(Akq, Xq, okq)
+            nA = norm_inf_q(Akq)
+            kappa_true = nA*norm_inf_q(Xq)
+            do v = 1, 8
+                if (.not. supported(v, n, spd)) cycle
+                kap = 0.0_${k}$
+                if (v == 1) then
+                    call inv_call_${k}$(n, Ak, X, ok, kap)
+                else
+                    call variant_call_${k}$(v, n, Ak, X, ok)
+                end if
+                if (.not. ok) then
+                    nfail(v) = nfail(v) + 1
+                    cycle
+                end if
+                if (.not. all(ieee_is_finite(X))) then
+                    nnonfin(v) = nnonfin(v) + 1
+                    cycle
+                end if
+                Xr = real(X, qp)
+                efwd = norm_inf_q(Xr - Xq)/(norm_inf_q(Xq)*eps)
+                Rq = -matmul(Akq, Xr)
+                do i = 1, n
+                    Rq(i, i) = Rq(i, i) + 1.0_qp
+                end do
+                eres = norm_inf_q(Rq)/(nA*norm_inf_q(Xr)*eps)
+                m_fwd(v) = max(m_fwd(v), efwd)
+                m_fwd_k(v) = max(m_fwd_k(v), efwd/kappa_true)
+                m_res(v) = max(m_res(v), eres)
+                if (v == 1) then
+                    ratio = real(kap, qp)/kappa_true
+                    if (have) then
+                        kap_lo = min(kap_lo, ratio)
+                        kap_hi = max(kap_hi, ratio)
+                    else
+                        kap_lo = ratio
+                        kap_hi = ratio
+                        have = .true.
+                    end if
+                end if
+            end do
+        end do
+        do v = 1, 8
+            if (.not. supported(v, n, spd)) cycle
+            name = VNAME(v)
+            if (v == 1) then
+                name = inv_name(n)
+                write (*, '(a8,1x,i2,7(1x,es10.2),2(1x,i8))') name, n, real(kt, dp), real(s, dp), real(m_fwd(v), dp), &
+                    real(m_fwd_k(v), dp), real(m_res(v), dp), real(kap_lo, dp), real(kap_hi, dp), nfail(v), nnonfin(v)
+            else
+                write (*, '(a8,1x,i2,7(1x,es10.2),2(1x,i8))') name, n, real(kt, dp), real(s, dp), real(m_fwd(v), dp), &
+                    real(m_fwd_k(v), dp), real(m_res(v), dp), 0.0_dp, 0.0_dp, nfail(v), nnonfin(v)
+            end if
+        end do
+    end subroutine run_family_inv_${k}$
+
+    subroutine run_special_${k}$(is_solve, n, v)
         logical, intent(in) :: is_solve
-        integer, intent(in) :: n
+        integer, intent(in) :: n, v
         character(len=10), parameter :: CASES(5) = [character(len=10) :: 'zero', 'rank n-1', 'NaN(1,1)', &
             '+Inf(1,1)', '+Inf(n,n)']
         real(qp) :: Aq(n, n)
@@ -304,13 +427,14 @@ contains
         integer :: ic, i
         character(len=8) :: name
         do ic = 1, 5
-            call gen_matrix_q(n, 1.0e1_qp, 1.0_qp, Aq)
+            call gen_matrix_q(n, 1.0e1_qp, 1.0_qp, Aq, v == 3)
             A = real(Aq, ${k}$)
             select case (ic)
             case (1)
                 A = 0.0_${k}$
             case (2)
                 A(2, :) = A(1, :)
+                if (v == 3) A(:, 2) = A(:, 1)
             case (3)
                 A(1, 1) = ieee_value(1.0_${k}$, ieee_quiet_nan)
             case (4)
@@ -327,12 +451,19 @@ contains
                 nonfin = .not. all(ieee_is_finite(xs))
                 name = 'lu_solve'
             else
-                call inv_call_${k}$(n, A, X, ok, kap)
+                kap = huge(1.0_${k}$)
+                if (v == 1) then
+                    call inv_call_${k}$(n, A, X, ok, kap)
+                    name = inv_name(n)
+                else
+                    call variant_call_${k}$(v, n, A, X, ok)
+                    name = VNAME(v)
+                end if
                 allzero = all(X == 0.0_${k}$)
                 nonfin = .not. all(ieee_is_finite(X))
-                name = inv_name(n)
             end if
             kaphuge = (kap == huge(1.0_${k}$))
+            if (v > 1) kaphuge = .false.
             write (*, '(a8,1x,i2,1x,a10,4(1x,l5))') name, n, CASES(ic), ok, allzero, kaphuge, nonfin
         end do
     end subroutine run_special_${k}$
@@ -478,12 +609,197 @@ contains
         chk = real(acc, dp)
     end subroutine time_routine_${k}$
 
+    subroutine run_mandel_${k}$()
+        !! SPD 6x6 matrices of the solver in the Mandel basis, all the variants: (b) elasticity C = 2G Pdev + 3K Pvol
+        !! (E = 1); (c) Newton matrix inv(C) + g H, H = (Pdev - nn nn^T) 1.5, g 1.5 2G = gt, maximum over 50 nn.
+        !! e_fwd = |X - Xq| / (|Xq| eps) with Xq the quad inverse of the rounded matrix.
+        integer, parameter :: NNN = 50
+        real(qp), parameter :: NUS(4) = [0.3_qp, 0.49_qp, 0.499_qp, 0.4999_qp]
+        real(qp), parameter :: GT(4) = [1.0e-6_qp, 1.0e-3_qp, 1.0_qp, 1.0e2_qp]
+        real(qp) :: nn(6, NNN), Pvol(6, 6), Pdev(6, 6), Idq(6, 6), Cq(6, 6), Ciq(6, 6), Mq(6, 6), Hq(6, 6), Xq(6, 6)
+        real(qp) :: G, K, g1, eps, kt, efwd, v6(6), m_fwd(8), m_kap
+        real(${k}$) :: Mk(6, 6), X(6, 6)
+        logical :: ok, okq
+        integer :: inu, ig, in, i, v, nfail(8)
+        eps = real(epsilon(1.0_${k}$), qp)
+        Idq = 0.0_qp
+        Pvol = 0.0_qp
+        do i = 1, 6
+            Idq(i, i) = 1.0_qp
+        end do
+        Pvol(1:3, 1:3) = 1.0_qp/3.0_qp
+        Pdev = Idq - Pvol
+        do in = 1, NNN
+            do i = 1, 6
+                v6(i) = rng_uni()
+            end do
+            v6(1:3) = v6(1:3) - sum(v6(1:3))/3.0_qp
+            nn(:, in) = v6/sqrt(sum(v6*v6))
+        end do
+        write (*, '(a)') '# SPD (b) elasticity 6x6 Mandel, E=1: variant nu kappa_true e_fwd n_fail'
+        do inu = 1, size(NUS)
+            G = 1.0_qp/(2.0_qp*(1.0_qp + NUS(inu)))
+            K = 1.0_qp/(3.0_qp*(1.0_qp - 2.0_qp*NUS(inu)))
+            Cq = 2.0_qp*G*Pdev + 3.0_qp*K*Pvol
+            Mk = real(Cq, ${k}$)
+            call inv_q(real(Mk, qp), Xq, okq)
+            kt = norm_inf_q(real(Mk, qp))*norm_inf_q(Xq)
+            do v = 1, 8
+                if (.not. supported(v, 6, .true.)) cycle
+                call variant_call_${k}$(v, 6, Mk, X, ok)
+                if (ok) then
+                    efwd = norm_inf_q(real(X, qp) - Xq)/(norm_inf_q(Xq)*eps)
+                else
+                    efwd = 0.0_qp
+                end if
+                write (*, '(a8,2(1x,es10.2),1x,es10.2,1x,i3)') VNAME(v), real(NUS(inu), dp), real(kt, dp), &
+                    real(efwd, dp), merge(0, 1, ok)
+            end do
+        end do
+        write (*, '(a)') '# SPD (c) Newton matrix inv(C) + g H, max over 50 nn: variant nu g*1.5*2G kappa_max e_fwd_max n_fail'
+        do inu = 1, size(NUS)
+            G = 1.0_qp/(2.0_qp*(1.0_qp + NUS(inu)))
+            K = 1.0_qp/(3.0_qp*(1.0_qp - 2.0_qp*NUS(inu)))
+            Cq = 2.0_qp*G*Pdev + 3.0_qp*K*Pvol
+            call inv_q(Cq, Ciq, okq)
+            do ig = 1, size(GT)
+                g1 = GT(ig)/(1.5_qp*2.0_qp*G)
+                m_fwd = 0.0_qp
+                m_kap = 0.0_qp
+                nfail = 0
+                do in = 1, NNN
+                    Hq = (Pdev - spread(nn(:, in), 2, 6)*spread(nn(:, in), 1, 6))*1.5_qp
+                    Mq = Ciq + g1*Hq
+                    Mq = 0.5_qp*(Mq + transpose(Mq))
+                    Mk = real(Mq, ${k}$)
+                    call inv_q(real(Mk, qp), Xq, okq)
+                    kt = norm_inf_q(real(Mk, qp))*norm_inf_q(Xq)
+                    m_kap = max(m_kap, kt)
+                    do v = 1, 8
+                        if (.not. supported(v, 6, .true.)) cycle
+                        call variant_call_${k}$(v, 6, Mk, X, ok)
+                        if (ok) then
+                            efwd = norm_inf_q(real(X, qp) - Xq)/(norm_inf_q(Xq)*eps)
+                            m_fwd(v) = max(m_fwd(v), efwd)
+                        else
+                            nfail(v) = nfail(v) + 1
+                        end if
+                    end do
+                end do
+                do v = 1, 8
+                    if (.not. supported(v, 6, .true.)) cycle
+                    write (*, '(a8,2(1x,es10.2),1x,es10.2,1x,es10.2,1x,i3)') VNAME(v), real(NUS(inu), dp), &
+                        real(GT(ig), dp), real(m_kap, dp), real(m_fwd(v), dp), nfail(v)
+                end do
+            end do
+        end do
+    end subroutine run_mandel_${k}$
+
+    subroutine one_pass_var_${k}$(v, n, A, nmat, acc)
+        integer, intent(in) :: v, n, nmat
+        real(${k}$), intent(in) :: A(n, n, nmat)
+        real(${k}$), intent(inout) :: acc
+        real(${k}$) :: X(n, n)
+        logical :: ok
+        integer :: i
+        do i = 1, nmat
+            call variant_call_${k}$(v, n, A(:, :, i), X, ok)
+            acc = acc + sum(X)
+            if (ok) acc = acc + 1.0_${k}$
+        end do
+    end subroutine one_pass_var_${k}$
+
+    subroutine run_cost_interleaved_${k}$()
+        !! All the variants in the same process: per size, 7 rounds, each variant about 0.05 s per round. Slots 1-7: the
+        !! general set (A, B, D, E, F, G, H), 8-9: the SPD set (A, C). Ratio: per round, against A on the same set.
+        integer, parameter :: NMAT = 1000, NROUND = 7, NSLOT = 9
+        integer, parameter :: SLV(NSLOT) = [1, 2, 4, 5, 6, 7, 8, 1, 3]
+        integer, parameter :: SIZES(4) = [3, 4, 6, 9]
+        real(${k}$), allocatable :: Ag(:, :, :), As(:, :, :)
+        real(${k}$) :: acc(NSLOT)
+        real(qp) :: Aq(9, 9)
+        real(dp) :: ns(NROUND, NSLOT), dt, t(NROUND), minratio, tmpr
+        integer(int64) :: c0, c1, rate
+        integer :: reps(NSLOT), isz, n, i, r, sl, v, ref, jj, kk
+        logical :: spd
+        character(len=8) :: name
+        write (*, '(a)') '# cost interleaved (kappa 1e2, s 1, 1000 matrices, 7 rounds): variant set n min_ns median_ns ' // &
+            'min_ratio_vs_A checksum'
+        do isz = 1, size(SIZES)
+            n = SIZES(isz)
+            allocate (Ag(n, n, NMAT), As(n, n, NMAT))
+            do i = 1, NMAT
+                call gen_matrix_q(n, 1.0e2_qp, 1.0_qp, Aq(1:n, 1:n))
+                Ag(:, :, i) = real(Aq(1:n, 1:n), ${k}$)
+                call gen_matrix_q(n, 1.0e2_qp, 1.0_qp, Aq(1:n, 1:n), .true.)
+                As(:, :, i) = real(Aq(1:n, 1:n), ${k}$)
+            end do
+            acc = 0.0_${k}$
+            reps = 0
+            do sl = 1, NSLOT
+                spd = sl >= 8
+                if (.not. supported(SLV(sl), n, spd)) cycle
+                call system_clock(c0, rate)
+                do r = 1, 10
+                    if (spd) then
+                        call one_pass_var_${k}$(SLV(sl), n, As, NMAT, acc(sl))
+                    else
+                        call one_pass_var_${k}$(SLV(sl), n, Ag, NMAT, acc(sl))
+                    end if
+                end do
+                call system_clock(c1)
+                dt = max(real(c1 - c0, dp)/real(rate, dp), 1.0e-6_dp)/10.0_dp
+                reps(sl) = max(1, int(0.05_dp/dt))
+            end do
+            acc = 0.0_${k}$
+            ns = 0.0_dp
+            do r = 1, NROUND
+                do sl = 1, NSLOT
+                    spd = sl >= 8
+                    if (reps(sl) == 0) cycle
+                    call system_clock(c0, rate)
+                    do i = 1, reps(sl)
+                        if (spd) then
+                            call one_pass_var_${k}$(SLV(sl), n, As, NMAT, acc(sl))
+                        else
+                            call one_pass_var_${k}$(SLV(sl), n, Ag, NMAT, acc(sl))
+                        end if
+                    end do
+                    call system_clock(c1)
+                    ns(r, sl) = real(c1 - c0, dp)*1.0e9_dp/(real(rate, dp)*real(reps(sl), dp)*real(NMAT, dp))
+                end do
+            end do
+            do sl = 1, NSLOT
+                if (reps(sl) == 0) cycle
+                v = SLV(sl)
+                spd = sl >= 8
+                ref = merge(8, 1, spd)
+                t = ns(:, sl)
+                do jj = 2, NROUND
+                    tmpr = t(jj)
+                    kk = jj - 1
+                    do while (kk >= 1)
+                        if (t(kk) <= tmpr) exit
+                        t(kk + 1) = t(kk)
+                        kk = kk - 1
+                    end do
+                    t(kk + 1) = tmpr
+                end do
+                minratio = minval(ns(:, sl)/ns(:, ref))
+                name = VNAME(v)
+                write (*, '(a8,1x,a3,1x,i2,3(1x,es10.3),1x,es12.4)') name, merge('spd', 'gen', spd), n, t(1), t(4), &
+                    minratio, real(acc(sl), dp)
+            end do
+            deallocate (Ag, As)
+        end do
+    end subroutine run_cost_interleaved_${k}$
+
     subroutine run_all_${k}$()
         real(qp), parameter :: KTS(${len(KAPPAS[k])}$) = [${', '.join(t + '_qp' for t in KAPPAS[k])}$]
         real(qp), parameter :: SCS(3) = [${', '.join(t + '_qp' for t in SCALES[k])}$]
         integer, parameter :: NMAT = 200
         integer, parameter :: INV_N(5) = [3, 4, 5, 6, 9], SPEC_INV(4) = [3, 4, 6, 9], SPEC_LU(3) = [3, 6, 7]
-        integer :: i, ik, is, n
+        integer :: i, ik, is, n, v
         real(dp) :: ns, nsk, chk, chk2
         character(len=8) :: name
 
@@ -495,7 +811,16 @@ contains
         do i = 1, size(INV_N)
             do ik = 1, size(KTS)
                 do is = 1, size(SCS)
-                    call run_family_${k}$(.false., INV_N(i), KTS(ik), SCS(is), NMAT)
+                    call run_family_inv_${k}$(INV_N(i), KTS(ik), SCS(is), NMAT, .false.)
+                end do
+            end do
+        end do
+        write (*, '(a)') '# SPD inverses (a), A = Q diag(sigma) Q^T: routine n kappa_t scale e_fwd e_fwd_k e_res ' // &
+            'kap_lo kap_hi n_fail n_nonfinite'
+        do i = 1, size(SPEC_INV)
+            do ik = 1, size(KTS)
+                do is = 1, size(SCS)
+                    call run_family_inv_${k}$(SPEC_INV(i), KTS(ik), SCS(is), NMAT, .true.)
                 end do
             end do
         end do
@@ -503,20 +828,23 @@ contains
         do n = 2, 9
             do ik = 1, size(KTS)
                 do is = 1, size(SCS)
-                    call run_family_${k}$(.true., n, KTS(ik), SCS(is), NMAT)
+                    call run_family_${k}$(n, KTS(ik), SCS(is), NMAT)
                 end do
             end do
         end do
         write (*, '(a)') '# special inverses: routine n case OK_FLAG all_zero kappa_is_huge nonfinite_out'
         do i = 1, size(SPEC_INV)
-            call run_special_${k}$(.false., SPEC_INV(i))
+            do v = 1, 8
+                if (supported(v, SPEC_INV(i), .true.)) call run_special_${k}$(.false., SPEC_INV(i), v)
+            end do
         end do
         write (*, '(a)') '# special lu_solve: routine n case OK_FLAG all_zero kappa_is_huge nonfinite_out'
         do i = 1, size(SPEC_LU)
-            call run_special_${k}$(.true., SPEC_LU(i))
+            call run_special_${k}$(.true., SPEC_LU(i), 1)
         end do
         write (*, '(a)') '# double inverse (6x6, max over 20 nn): nu g err_routeA err_routeB n_fail_A n_fail_B'
         call run_double_${k}$()
+        call run_mandel_${k}$()
         write (*, '(a)') '# cost: routine n ns_per_call ns_per_call_with_KAPPA checksum checksum_with_KAPPA'
         do i = 1, size(INV_N)
             call time_routine_${k}$(INV_N(i), .false., .false., ns, chk)
@@ -529,6 +857,7 @@ contains
             call time_routine_${k}$(n, .true., .true., nsk, chk2)
             write (*, '(a8,1x,i2,4(1x,es10.2))') 'lu_solve', n, ns, nsk, chk, chk2
         end do
+        call run_cost_interleaved_${k}$()
     end subroutine run_all_${k}$
 
     #:endfor
