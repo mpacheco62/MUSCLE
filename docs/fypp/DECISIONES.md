@@ -435,7 +435,8 @@ paso relativo dp es 1e-7 (escalar, 2O), 1e-6 (escalar de 2Osym) y 1e-4 (segunda 
     antes de los productos vectoriales (corrige en sp la pérdida de normalización con cortes
     ~1e-11). El escalado es exacto: dp da los mismos bits salvo cuando esas filas rozan el
     underflow/overflow (≲ 1e-154 o ≳ 1e154), donde el resultado pasa a ser correcto (cambio de
-    comportamiento dp sólo en ese borde).
+    comportamiento dp sólo en ese borde). (Nota 2026-11-12: desde D-032, K escala el desviador, no las
+    filas.)
 
 ## D-017 — Fase 6: modelos con macro de contrato y adaptadores OO hasta la Fase 7
 **Estado:** Aceptada (2026-10-31, decisiones del usuario al planificar la Fase 6)
@@ -969,7 +970,9 @@ solvers de return mapping se reescriben en la Fase 7 (materiales declarados, D-0
       equivalente y ningún kernel las usa. También se borra `FD_STEP_FWD_<k>`, que queda sin usos.
       Los goldens de derivadas se reproducen bit a bit con las macros (`-fno-inline`, D-016.9).
 19. **Bugs del smoke test (2026-11-03):**
-    - (a) **dp, logarítmicas cerca de F = I.** La forma cerrada (autovalores + proyectores de
+    - (a) **dp, logarítmicas cerca de F = I.** (**Reemplazada por D-032**, 2026-11-12: `eigenprojections` usa
+      `spectral_decomposition`, precisa (pocos ε) en todas las brechas, y la franja `JACOBI_GAP_LO/HI` se retiró.) La forma
+      cerrada (autovalores + proyectores de
       Cayley-Hamilton) toma las raíces como repetidas cuando |D_a| ≤ 1e-11·λmax². Con brechas
       < ~3e-6 queda P = I/3 y ln C pierde la parte desviadora (σ = 0 en corte puro).
       - Corrección **híbrida** (decisión del usuario): en dp se usa Jacobi sólo cuando la brecha
@@ -1062,6 +1065,8 @@ que falla con kernels grandes. No hay GPU NVIDIA ni AMD. Los backends de offload
      - En la GPU Intel corren 38 tests, dentro de 64 ε. Se excluyen por IGC:
        - los materiales closest_point, cp2 y time en sp (device lost u otros iterados);
        - todos los materiales en dp (fallos no reproducibles con dp emulado).
+       (Nota 2026-11-12: el device lost de la mayoría de los sp era el temporal de `COND_INF` (D-030); con D-030 y
+       D-031 vuelven a pasar 8 de ellos, `tools/gpu_skip_tests.sh`.)
        NVIDIA/AMD sólo compilan y enlazan.
 6. **Pasos 3–4 (2026-11-03):**
    - (a) `eigenvals` con raíz repetida: si `n2 <= n1/huge` va al límite sin dividir. Mismos bits; hay
@@ -1077,6 +1082,8 @@ que falla con kernels grandes. No hay GPU NVIDIA ni AMD. Los backends de offload
      - en Debug, `_gfortran_runtime_error_at` (`-fcheck`) y `_gfortran_matmul_*` (sin inlining en
        -O0);
      - en SPIR64, `for_scale4_v/8_v` (`scale()`): su reemplazo provoca device lost en IGC.
+       **Reemplazado por D-030/D-031** (2026-11-12): el device lost venía del temporal de `COND_INF`; `scale()` se
+       reemplazó por `fp_scale` y la auditoría ya no lo permite.
 7. **Paso 5 (2026-11-03, decisiones del usuario):**
    - (a) Hay una variante `muscle_update_<name>_dev` para memoria de dispositivo pura
      (`omp_target_alloc`, cuFFT). Usa el mismo cuerpo de lote con `has_device_addr`/`is_device_ptr` en
@@ -1369,6 +1376,10 @@ su fecha.
 
 ## D-028 — Autoproyecciones robustas en math; rotación de Jacobi sin desborde (2026-11-11)
 
+> **Reemplazada en parte por D-032 (2026-11-12):** `eigenprojections`/`eigenvals_refined` siguen siendo los genéricos
+> públicos, pero sobre `spectral_decomposition`; `jacobi_band`, `jacobi_eigen` y `JACOBI_GAP_LO/HI_<k>` se retiraron. La
+> tangente sin desborde de (2) sigue viva en la rotación plana de `spectral_decomposition`.
+
 **Contexto:** revisión de las auxiliares privadas de `muscle_kin_finite` (la de `is_identity`, D-011): las rutinas
 de autovalores y autoproyecciones de un tensor simétrico (`sym_eigen`, `sym_eigenvalues`, `jacobi_band`,
 `jacobi_eigen`, D-018.19a) son álgebra general, no cinemática.
@@ -1430,3 +1441,99 @@ no se pueda unificar barato queda separado pero ordenado. Por eso la fase B (ord
 la dependencia eigen → spectral_derivs desaparece si la fase F2 de `PLAN_ESPECTRAL.md` unifica la cinemática.
 Verificación por paso: código generado normalizado igual línea por línea salvo el andamiaje de los módulos
 (`gen_snapshot`), ctest 133/133, referencias estrictas, mutaciones de `dsquare` 45/45 desde su nuevo test.
+
+## D-030 — Sin temporales de tamaño variable en código de dispositivo; `NORM_INF` (2026-11-12)
+
+**Contexto:** al reemplazar `scale()` por `fp_scale` (`PLAN_ESPECTRAL.md`, problema de IGC con la emulación FP64,
+D-031) tres kernels sp de material (`tm_jc_cpb06_ludwik`, `pz_cha_yld2004_ludwik`,
+`pz_cpb06ex2_bilinear`) perdían el dispositivo, como en el intento de D-019.6. Diagnóstico (build sólo sp, sin dp
+ni emulación en la imagen): el fallo seguía con 1 work item, `-ze-opt-disable` y la fusión de EUs apagada;
+`IGC_StackOverflowDetection=1` informa «Stack overflow detected!» y con más memoria privada por work item pasa.
+Causa: `COND_INF` calculaba `maxval(sum(abs(A), dim=2))` sobre un `A(:,:)` de forma asumida; en el dispositivo el
+temporal de `sum(..., dim=2)` es un `alloca` de tamaño dinámico (el único de la imagen) que IGC no puede acotar. Con
+stack calls en el kernel (las de la emulación FP64 de `scale()`) IGC reserva 1,4 MB por hilo y alcanza; sin ellas
+reserva 4 KB por work item y el kernel la desborda. La misma expresión estaba escrita 6 veces (`COND_INF`,
+`M33INV`, `M44INV`, el cuerpo del solver LU con `KAPPA`).
+**Decisión del usuario:**
+- `NORM_INF_<k>(A)` en `muscle_math_inverses` (genérico `NORM_INF`): \( \|A\|_\infty \) con bucles explícitos,
+  cada fila sumada de izquierda a derecha (el orden de `sum(abs(A), dim=2)`: mismos bits en CPU sin NaN), sin
+  temporales; NaN en cuanto una suma de fila es NaN. Esto corrige un error latente: `maxval` de gfortran salta las
+  filas NaN, así que `M33INV`/`M44INV` aceptaban la inversa adjunta con un NaN en una fila (κ finito) en lugar de
+  recurrir a LU (`PROBLEMAS.md`, test `test_adjugate_nan`); `COND_INF` da NaN si una fila de `A` o de su inversa lo
+  es. Reemplaza las 6 apariciones; `muscle_math_lu_solve` la importa (dependencia nueva dentro de la capa baja de
+  math, sin ciclo).
+- Regla (`gpu-static-dispatch.md`): en código de dispositivo no hay arrays temporales de tamaño conocido sólo en
+  ejecución (reducciones con `dim=` o expresiones de arrays sobre argumentos de forma asumida): bucles explícitos.
+  Una comprobación automática (buscar `alloca` dinámicos en las imágenes SPIR64 de la auditoría) queda propuesta.
+**Verificación:** ctest 133/133 (referencias incluidas: mismos bits); tests nuevos `test_norm_inf` y
+`test_adjugate_nan` (falla con la norma anterior) en
+`math-math_inverses` (valores exactos a mano, fila mayor primera/última/al medio, empates, rectangular, sin filas, NaN
+e Inf en cada fila, y bit a bit contra `maxval(sum(abs(A), dim=2))` en matrices aleatorias); mutaciones de
+`NORM_INF` 5/6 (la sobreviviente, `<=` → `<`, es equivalente: en un empate asigna el mismo valor). En la GPU Intel,
+con `fp_scale` (D-031) los tres kernels pasan, y con las dos correcciones juntas vuelven a pasar 8 kernels sp
+excluidos (closest point, closest point 2, closest point time y Perzyna; no se midió cuántos por cada una).
+
+## D-031 — `fp_scale` en lugar de `scale()` en el código de dispositivo (2026-11-12)
+
+**Contexto:** los candidatos de Jacobi de `PLAN_ESPECTRAL.md` (fase F0) daban resultados erróneos en la GPU Intel.
+Investigación (reproductores e informe en `docs/fypp/igc_mre/`): ifx compila `scale()` sobre `real32` con
+operaciones dp (`for_scale4_v`), así que un kernel sp llama a la emulación FP64 de IGC; con esas llamadas dentro de
+una rama divergente y arreglos locales indexados con tablas `PARAMETER`, cuando sólo uno de los dos hilos SIMD8 de
+una pareja de EU fusionadas ejecuta la rama, el otro devuelve valores erróneos. El mismo código máquina es correcto
+con la fusión de EUs desactivada; se reproduce con lo último publicado (IGC 2.42.6, NEO 26.40). D-019.6 había
+mantenido `scale()` porque su reemplazo hacía perder el dispositivo; la causa de eso era el temporal de `COND_INF`
+(D-030), no el reemplazo.
+**Decisión del usuario:**
+- `fp_scale_<k>(x, n)` en `muscle_math_fp` (genérico `fp_scale`, `elemental`): \( x\,2^n \) con operaciones enteras
+  sobre los bits IEEE, redondeo al par más cercano; bit a bit el resultado IEEE (subnormales, desborde a Inf,
+  subdesbordamiento total, ceros, Inf y NaN sin cambio). No usa dp ni depende de `fp-model` (una versión con
+  productos por potencias de 2, al estilo de `scalbnf` de musl, cambia bits con la reasociación de `-fp-model fast`
+  de ifx en los casos extremos).
+- Reemplaza las 20 llamadas a `scale()` de `muscle_math_eigen` y de los criterios cpb06, cpb06ex2 y yld2004.
+- Lint `scale` en `tools/check.sh` (como `exponent`): `scale()` prohibido en el código de kernels.
+- La auditoría SPIR64 (`tools/audit_kernels.sh`) ya no permite `for_scale*_v`.
+- Los reproductores y el informe del error de IGC quedan en `docs/fypp/igc_mre/` (para reportarlo a Intel y volver a
+  probar con drivers nuevos).
+**Verificación:** `fp_scale` = `scale` bit a bit en 176 millones de casos en el host (sp y dp; gfortran, e ifx con
+`-no-ftz`: ifx a -O2 lleva los subnormales a cero); test `fp_scale = scale` en `math-math_kernels_target` (valores
+especiales, subnormales con todos los casos de redondeo, potencias que llevan al rango subnormal bit a bit, desborde
+y subdesbordamiento total) y mutaciones de `fp_scale` 14/14. ctest 133/133 (mismos bits). En la GPU Intel, los 40
+tests target pasan y los 8 kernels sp excluidos de D-030 vuelven a pasar (medido con las dos juntas); los
+reproductores dan 0 errores con
+`fp_scale` y la imagen ya no necesita FP64.
+
+## D-032 — Una sola descomposición espectral: K (Kopp mejorado) en `spectral_decomposition` (2026-11-12)
+
+**Contexto:** `PLAN_ESPECTRAL.md` (opción C de `REANALISIS_MATH.md`): hay dos estrategias para autovalores
+cercanos, la rotación plana de `spectral_decomposition` (criterios anisótropos) y la banda de Jacobi de
+`eigenprojections` (cinemática finita). Las dos pierden precisión en casos medidos (C = I + 1e-11 en dp, escalas
+extremas, excepciones en sp; `ESPECTRAL_F0.md` §1). Mediciones de F0 y su repetición tras D-030/D-031
+(`ESPECTRAL_F0.md` §8): todos los candidatos son correctos en la GPU Intel; K es el único dentro de 1,2x en todo
+(GPU 1,14x, CPU 0,87–0,92x en los criterios y 0,31–0,50x en la cinemática) y pasa `math_reference`.
+**Decisión del usuario:**
+- **Algoritmo K:** desviador escalado por potencia de 2 (exacto, `fp_scale`), autovalores en forma cerrada (Kopp
+  2008), el vector del autovalor más separado por producto vectorial, el par restante por una rotación plana sin
+  desborde (D-028) y los autovalores finales como cocientes de Rayleigh. Errores de 2 a 4 ε en todas las brechas.
+- **Nombre:** K es la implementación de `spectral_decomposition` (misma firma; sin genérico nuevo ni envoltorio).
+- **Alcance:** los dos consumidores. `eigenprojections` y `eigenvals_refined` se escriben sobre
+  `spectral_decomposition` (\( P_a = v_a \otimes v_a \)); se retiran `jacobi_band`, `jacobi_eigen` y
+  `JACOBI_GAP_LO/HI_<k>` de `muscle_kinds` (D-018.19a queda reemplazada).
+- **F4 (b):** la f de los criterios anisótropos usa los λ de `spectral_decomposition`, la misma fuente que su
+  gradiente y hessiana. Desaparece la doble fuente de autovalores, y con ella el problema «marcado, sin corregir» de
+  `eigenvals` para los criterios (autorizado por el usuario). `eigenvals` sigue disponible para quien sólo quiera
+  valores.
+- **F5:** `dEigenvalues_dTensor` y `d2Eigenvalues_dTensor2` se mantienen como API pública (derivadas por
+  Cayley-Hamilton, sin vectores), aunque la librería deje de usarlas.
+**Fases (en `PLAN_ESPECTRAL.md`):** F1+F3+F4 en un paso (criterios), F2 (cinemática), F6/F7 (limpieza y cierre).
+**F2 hecho (2026-11-12):** `eigenprojections` y `eigenvals_refined` sobre `spectral_decomposition`
+(\( P_a = v_a \otimes v_a \)); se retiraron `jacobi_band`, `jacobi_eigen`, `JACOBI_GAP_LO/HI_<k>` y la dependencia
+de `muscle_math_eigen` sobre `muscle_math_spectral_derivs`. Cambio numérico de la deformación de Hencky
+\( \tfrac12\ln\mathbf{C} \) frente a una verdad de 50 dígitos (400 F aleatorias, |F − I| de 1e-1 a 1e-13; script en el
+scratchpad): en dp el error relativo baja de 3 a 100 veces (1e-1: 5.3e-13 → 4.5e-15; 1e-6: 1.3e-9 → 3.9e-10) y cerca
+de la identidad deja de perderse el desviador (|F − I| ≤ 1e-10: 120 % → 2e-6 … 3e-3, el límite ~ε/|F − I| de formar
+C); en sp baja de 2 a 8 veces hasta 1e-6, y por debajo de ~1e-7 (C = I en sp) da H = 0 en lugar de valores
+arbitrarios. R cambia ≤ 5e-11 (dp). La tensión y la tangente de las cinemáticas finitas dependen de R y H y no se
+midieron aparte; los tests de cinemática y de materiales pasan con sus tolerancias. El salto en los bordes de la
+antigua franja desaparece: el test de autoproyecciones (verdad en cuádruple) cubre brechas a ambos lados (2e-2 y
+1e-11, 1e-13 en dp) y casi identidad, y falla con la franja; test nuevo `test_near_identity` de la deformación de
+Hencky en `kinematics-kin_finite` (falla con la franja en dp).

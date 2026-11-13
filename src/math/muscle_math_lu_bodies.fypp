@@ -166,6 +166,6 @@
                     rowsum(i) = rowsum(i) + abs(w(i))
                 end do
             end do
-            KAPPA = maxval(sum(abs(A), dim=2)) * maxval(rowsum)
+            KAPPA = NORM_INF_${rk}$(A) * maxval(rowsum)
         end if
 #:enddef

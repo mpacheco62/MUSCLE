@@ -3,7 +3,7 @@
 #:include "muscle_common.fypp"
 #! Bit pattern of the IEEE quiet NaN per kind, identical to ieee_value(1.0_k, ieee_quiet_nan)
 #:set NAN_BITS = {'sp': ('int32', "z'7FC00000'"), 'dp': ('int64', "z'7FF8000000000000'")}
-#! IEEE binary layout per kind for fp_exponent: integer kind of the bits, exponent field width,
+#! IEEE binary layout per kind for fp_exponent and fp_scale: integer kind of the bits, exponent field width,
 #! fraction width, bias - 1 (exponent of a normal x = biased exponent - (bias - 1)) and
 #! 1 - (bias - 1) - fraction width (exponent of a subnormal x = bit length of its fraction + that)
 #:set FP_BITS = {'sp': ('int32', 8, 23, 126, -149), 'dp': ('int64', 11, 52, 1022, -1074)}
@@ -18,15 +18,20 @@ module muscle_math_fp
     !!   the `dp` one and templates call `QUIET_NAN_<k>` directly.
     !! - `fp_exponent(x)`: the intrinsic `exponent(x)`, which ifx implements on Intel GPUs with a runtime
     !!   routine that the emulated FP64 does not provide (lint rule `exponent` of `tools/check.sh`).
+    !! - `fp_scale(x, n)`: the intrinsic `scale(x, n)` (x 2^n, rounded to nearest even), from integer
+    !!   operations on the bits. ifx compiles the intrinsic on `real32` with double precision operations
+    !!   (`for_scale4_v`), so a single precision kernel needs FP64, emulated on Intel GPUs without it,
+    !!   and the calls into the emulation trigger an IGC miscompile on fused EUs (PROBLEMAS.md; lint rule
+    !!   `scale` of `tools/check.sh`).
     !!
     !! Below the tensor types (they use `QUIET_NAN`): this module uses no tensor.
     use muscle_kinds, only : sp, dp
     implicit none
     private
 
-    public :: QUIET_NAN, fp_exponent
+    public :: QUIET_NAN, fp_exponent, fp_scale
     #:for k in REAL_KINDS
-    public :: QUIET_NAN_${k}$, fp_exponent_${k}$
+    public :: QUIET_NAN_${k}$, fp_exponent_${k}$, fp_scale_${k}$
     #:endfor
 
     interface QUIET_NAN
@@ -36,6 +41,10 @@ module muscle_math_fp
     interface fp_exponent
         module procedure ${kspecifics('{0}_{1}', 'fp_exponent')}$
     end interface fp_exponent
+
+    interface fp_scale
+        module procedure ${kspecifics('{0}_{1}', 'fp_scale')}$
+    end interface fp_scale
 
 contains
     #:for k in REAL_KINDS
@@ -83,6 +92,62 @@ contains
             end do
         end if
     end function fp_exponent_${k}$
+
+    #:set NMAX = 2**NE + NF + 2
+    elemental function fp_scale_${k}$(x, n) result(y)
+        !! The intrinsic `scale(x, n)` = x 2^n of a `real(${k}$)` value from its IEEE bits, rounded to
+        !! nearest even (bit for bit the IEEE result: subnormal results, overflow to Inf, zeros, Inf and
+        !! NaN unchanged). Device code cannot use the intrinsic: ifx compiles it with double precision
+        !! operations, emulated on Intel GPUs without FP64 (see the module documentation).
+        use, intrinsic :: iso_fortran_env, only : ${IK}$
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: x
+            !! Value to scale.
+        integer, intent(in) :: n
+            !! Power of 2.
+        real(${k}$) :: y
+        integer(${IK}$) :: bits, m, rest, half
+        integer :: q, s
+
+        bits = transfer(x, 0_${IK}$)
+        q = int(ibits(bits, ${NF}$, ${NE}$))
+        m = ibits(bits, 0, ${NF}$)
+        if (q == ${2**NE - 1}$ .or. n == 0 .or. (q == 0 .and. m == 0_${IK}$)) then
+            y = x
+            return
+        end if
+        ! |x| = m 2^(q - bias - ${NF}$) with the leading bit of m at position ${NF}$ (a subnormal is
+        ! normalized: q <= 0)
+        if (q > 0) then
+            m = ibset(m, ${NF}$)
+        else
+            q = 1
+            do while (.not. btest(m, ${NF}$))
+                m = shiftl(m, 1)
+                q = q - 1
+            end do
+        end if
+        ! n clamped to a range beyond overflow and total underflow of any x (no integer overflow)
+        q = q + max(min(n, ${NMAX}$), -${NMAX}$)
+        if (q >= ${2**NE - 1}$) then
+            m = shiftl(int(${2**NE - 1}$, ${IK}$), ${NF}$)
+        else if (q >= 1) then
+            m = ior(shiftl(int(q, ${IK}$), ${NF}$), ibclr(m, ${NF}$))
+        else if (1 - q > ${NF + 1}$) then
+            m = 0_${IK}$
+        else
+            ! Subnormal result: m shifted right by 1 - q, rounded to nearest even (a carry into the
+            ! exponent field gives the smallest normal)
+            s = 1 - q
+            rest = iand(m, shiftl(1_${IK}$, s) - 1_${IK}$)
+            half = shiftl(1_${IK}$, s - 1)
+            m = shiftr(m, s)
+            if (rest > half .or. (rest == half .and. btest(m, 0))) m = m + 1_${IK}$
+        end if
+        if (btest(bits, ${NF + NE}$)) m = ibset(m, ${NF + NE}$)
+        y = transfer(m, y)
+    end function fp_scale_${k}$
     #:endfor
 
 end module muscle_math_fp

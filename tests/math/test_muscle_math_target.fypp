@@ -8,8 +8,9 @@
 #! same procedure called on the CPU outside the region (testing.md, GPU): eigenvals (also alone, on
 #! exactly and nearly repeated and triple roots, PROBLEMAS.md: it divided by zero with a repeated largest root),
 #! spectral_decomposition, dEigenvalues_dTensor, the FD_GRAD macro of muscle_fd.fypp and LU6SOLVE; and
-#! fp_exponent (the device replacement of the intrinsic exponent) against the intrinsic on the CPU, for
-#! zeros, subnormals, normals, Inf and NaN.
+#! fp_exponent and fp_scale (the device replacements of the intrinsics exponent and scale) against the
+#! intrinsics on the CPU, bit for bit, for zeros, subnormals, normals, Inf and NaN (fp_scale also for
+#! powers that give subnormal results with every rounding case, overflow and total underflow).
 #!
 #! Without MUSCLE_GPU the library carries no `declare target` (@:DEVICE() is empty), so this test is
 #! compiled with host fallback only (-foffload=disable with gfortran, tests/math/CMakeLists.txt): the
@@ -51,7 +52,7 @@ contains
         @:DEVICE()
         real(${k}$), intent(in) :: x(6)
         real(${k}$), intent(out) :: lam(3)
-        type(${T2}$) :: t
+        type(${tname('3D2Osym', k)}$) :: t
 
         t%vals = x
         lam = eigenvals(t)
@@ -103,7 +104,7 @@ program test_math_kernels_target
     use muscle_kinds, only : ${', '.join('FD_STEP_CEN_' + k + ', FD_STEP_ZERO_' + k for k in REAL_KINDS)}$
     use muscle_test_helpers, only : park_miller, rnd, record
     use test_math_kernels_funcs
-    use muscle_math_fp, only : fp_exponent
+    use muscle_math_fp, only : fp_exponent, fp_scale
     implicit none
 
     integer, parameter :: NPTS = 64
@@ -114,6 +115,8 @@ program test_math_kernels_target
     call record(test_target_${k}$(), ${i + 1}$, 'math kernels in a target region ${k}$', code)
     call record(test_fp_exponent_${k}$(), ${i + 3}$, 'fp_exponent = exponent ${k}$', code)
     call record(test_eig_repeated_${k}$(), ${i + 5}$, 'eigenvals with repeated roots in a target region ${k}$', code)
+    call record(test_fp_scale_${k}$(), ${i + 7}$, 'fp_scale = scale ${k}$', code)
+    call record(test_decomposition_nan_${k}$(), ${i + 9}$, 'spectral_decomposition propagates NaN ${k}$', code)
     #:endfor
     if (code /= 0) stop code
 
@@ -147,6 +150,117 @@ contains
             call check_true(passed, '${k}$ fp_exponent = exponent', fp_exponent(x(i)) == exponent(x(i)))
         end do
     end function test_fp_exponent_${k}$
+
+    #:set IK = 'int32' if k == 'sp' else 'int64'
+    function test_fp_scale_${k}$() result(passed)
+        !! fp_scale = the intrinsic scale (CPU), bit for bit, in `real(${k}$)`: the values of the fp_exponent
+        !! test plus subnormal significands with every last-bits pattern (ties to even up and down, above
+        !! and below the half), times powers n from -(huge) to huge, among them those that take every
+        !! value to the subnormal range by 1..digits+2 bits, to overflow and to total underflow. The same
+        !! grid in a target region gives bit for bit the CPU fp_scale (integer operations only; compared with
+        !! fp_scale, not with the intrinsic, which a CPU with FTZ flushes).
+        use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_positive_inf, ieee_negative_inf, ieee_quiet_nan
+        use, intrinsic :: iso_fortran_env, only : ${IK}$
+        logical :: passed
+        integer, parameter :: NX = 16 + 2*digits(1.0_${k}$) + 16, EMIN = minexponent(1.0_${k}$), &
+                              EMAX = maxexponent(1.0_${k}$), P = digits(1.0_${k}$)
+        real(${k}$) :: x(NX), r, ref
+        integer :: ns(28 + P + 3)
+        integer(${IK}$) :: bits_t(NX, 28 + P + 3), bits_c(NX, 28 + P + 3)
+        integer :: i, j, n, nn
+        logical :: host
+
+        passed = .true.
+        x(1:10) = [0.0_${k}$, -0.0_${k}$, tiny(1.0_${k}$), -tiny(1.0_${k}$), 1.0_${k}$, 0.75_${k}$, -3.0_${k}$, &
+                   huge(1.0_${k}$), -huge(1.0_${k}$), epsilon(1.0_${k}$)]
+        x(11:13) = [ieee_value(1.0_${k}$, ieee_positive_inf), ieee_value(1.0_${k}$, ieee_negative_inf), &
+                    ieee_value(1.0_${k}$, ieee_quiet_nan)]
+        x(14:16) = [nearest(0.0_${k}$, 1.0_${k}$), nearest(tiny(1.0_${k}$), -1.0_${k}$), 123.456_${k}$]
+        n = 16
+        do i = 1, 2*P
+            n = n + 1
+            x(n) = scale(tiny(1.0_${k}$), -i/2)*merge(1.0_${k}$, 1.375_${k}$, mod(i, 2) == 0)
+        end do
+        ! Significands ending in ...0100, ...1100, ...0101, ...1011 etc.: shifted right by 2..4 bits they
+        ! round down, up, to even down and to even up
+        do i = 0, 15
+            n = n + 1
+            x(n) = merge(-1.0_${k}$, 1.0_${k}$, mod(i, 2) == 1) &
+                   *transfer(ior(transfer(1.5_${k}$, 0_${IK}$), int(i, ${IK}$)), 1.0_${k}$)
+        end do
+        ns(1:28) = [0, 1, -1, 2, -2, 7, -7, P - 1, -(P - 1), P, -P, P + 1, -(P + 1), &
+                    EMAX - 1, -(EMAX - 1), EMAX, -EMAX, -EMIN, EMIN, EMAX - EMIN, EMIN - EMAX, &
+                    EMAX - EMIN + P, EMIN - EMAX - P, 3*EMAX, -3*EMAX, huge(0), -huge(0), -huge(0) + 1]
+        nn = 28
+        do i = 0, P + 2
+            ! a value in [1, 2) goes i bits below the smallest normal (i = 0: still normal; i > P + 1: zero)
+            nn = nn + 1
+            ns(nn) = EMIN - 1 - i
+        end do
+        do i = 1, n
+            do j = 1, nn
+                ref = scale(x(i), ns(j))
+                r = fp_scale(x(i), ns(j))
+                ! The CPU may treat subnormals as zero (DAZ/FTZ, the default of ifx): its intrinsic then
+                ! flushes a subnormal input or result, while fp_scale works on the bits (still IEEE).
+                ! Skipped: a nonzero subnormal x or result that compares equal to zero
+                if ((ibclr(transfer(x(i), 0_${IK}$), bit_size(0_${IK}$) - 1) /= 0 .and. abs(x(i)) == 0.0_${k}$) &
+                    .or. (ibclr(transfer(r, 0_${IK}$), bit_size(0_${IK}$) - 1) /= 0 .and. abs(r) == 0.0_${k}$)) cycle
+                if (ref /= ref) then
+                    call check_true(passed, '${k}$ fp_scale(NaN) is NaN', r /= r)
+                else
+                    call check_true(passed, '${k}$ fp_scale = scale (bits)', &
+                                    transfer(r, 0_${IK}$) == transfer(ref, 0_${IK}$))
+                end if
+            end do
+        end do
+
+        host = .true.
+        !$omp target teams distribute parallel do map(to: x, ns) map(from: bits_t) map(tofrom: host)
+        do i = 1, n
+            if (i == 1) host = omp_is_initial_device()
+            do j = 1, nn
+                bits_t(i, j) = transfer(fp_scale(x(i), ns(j)), 0_${IK}$)
+            end do
+        end do
+        !$omp end target teams distribute parallel do
+        do i = 1, n
+            do j = 1, nn
+                bits_c(i, j) = transfer(fp_scale(x(i), ns(j)), 0_${IK}$)
+            end do
+        end do
+        call check_target_ran(passed, '${k}$ fp_scale', host)
+        call check_true(passed, '${k}$ fp_scale in a target region = CPU (bits)', all(bits_t(1:n, 1:nn) == bits_c(1:n, 1:nn)))
+    end function test_fp_scale_${k}$
+
+    function test_decomposition_nan_${k}$() result(passed)
+        !! spectral_decomposition (`real(${k}$)`) with a NaN entry gives NaN eigenvalues: a NaN shear on an equal
+        !! diagonal (maxval of the deviator skips the NaN, so a test on it alone would take the isotropic branch
+        !! and return finite eigenvalues: a NaN stress in a Newton loop would give f = 0) and on a general
+        !! diagonal, and a NaN on the diagonal. Here without floating-point traps (the comparisons with NaN raise
+        !! invalid).
+        use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan, ieee_is_nan
+        use muscle_tensors, only : ${tname('3D2Osym', k)}$
+        use muscle_math_eigen, only : spectral_decomposition
+        logical :: passed
+        type(${tname('3D2Osym', k)}$) :: t
+        real(${k}$) :: lam(3), v(3, 3), qnan
+        integer :: c
+
+        passed = .true.
+        qnan = ieee_value(1.0_${k}$, ieee_quiet_nan)
+        do c = 1, 3
+            t%vals = [1.0_${k}$, 1.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$]
+            if (c >= 2) t%vals(1:3) = [3.0_${k}$, 2.0_${k}$, 1.0_${k}$]
+            if (c <= 2) then
+                t%vals(4) = qnan
+            else
+                t%vals(2) = qnan
+            end if
+            call spectral_decomposition(t, lam, v)
+            call check_true(passed, '${k}$ spectral_decomposition with a NaN entry: NaN eigenvalues', any(ieee_is_nan(lam)))
+        end do
+    end function test_decomposition_nan_${k}$
 
     function test_eig_repeated_${k}$() result(passed)
         !! eigenvals in a target region = CPU, `real(${k}$)`: largest or smallest root exactly repeated

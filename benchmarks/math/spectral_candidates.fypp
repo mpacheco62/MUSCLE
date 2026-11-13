@@ -1,0 +1,452 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Candidate spectral decompositions of plan C (docs/fypp/PLAN_ESPECTRAL.md, phase F0): procedures only, to be
+#! #:include-d in the `contains` part of a module that uses `sp`, `dp`, the `ten_3D2Osym_<k>` types,
+#! `to_matrix` (muscle_tensor_2osym) and `fp_exponent` (muscle_math_fp). Kernel style (pure, @:DEVICE()). For each
+#! kind, every candidate returns the eigenvalues (descending) and the orthonormal eigenvectors (columns of V):
+#! - cand_jacobi(s, lam, V [, nsweep]): cyclic Jacobi on S, explicit rotations (no 3x3 matmul), early exit
+#!   when a sweep makes no rotation (a rotation is skipped when |a_pq| <= eps/2 (|a_pp| + |a_qq|)), at most
+#!   CAND_MAX_SWEEPS sweeps;
+#! - cand_jacobi_fixed(s, lam, V): the same with always CAND_FIXED_SWEEPS sweeps (no early exit);
+#! - cand_jacobi_nobranch(s, lam, V): the same without data-dependent branches (no skip, no early exit);
+#! - cand_jacobi_scalar(s, lam, V): the same on scalars, rotations unrolled (no run-time array indexing);
+#! - cand_kopp(s, lam, V): Kopp-like: the deviator scaled by a power of 2 (exact), its closed-form eigenvalues
+#!   (Kopp 2008, dsyevc3, accurate for the most separated root), the eigenvector of the most separated root by
+#!   the largest cross product of two rows of D - lam_a I, the remaining pair by one plane rotation (without
+#!   overflow, as D-028); eigenvalues as Rayleigh quotients of the final vectors;
+#! - cand_kopp_jacobi(s, lam, V [, nsweep]): cand_kopp, then Jacobi sweeps (at most CAND_KJ_SWEEPS, early exit)
+#!   on V^T D V.
+    #:for k in REAL_KINDS
+    #:set T2 = tname('3D2Osym', k)
+
+    pure subroutine cand_tangent_${k}$(app, aqq, apq, t)
+        !! Tangent of the Jacobi angle that zeroes a_pq, `real(${k}$)`: t = sign(theta)/(|theta| + sqrt(theta^2 + 1)),
+        !! theta = (a_qq - a_pp)/(2 a_pq); for |theta| > 1e15, t = a_pq/(a_qq - a_pp) without forming theta (D-028).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: app, aqq, apq
+        real(${k}$), intent(out) :: t
+        real(${k}$) :: diff, theta
+
+        diff = aqq - app
+        if (abs(2.0_${k}$*apq) <= 1.0e-15_${k}$*abs(diff)) then
+            t = apq/diff
+        else
+            theta = diff/(2.0_${k}$*apq)
+            t = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
+        end if
+    end subroutine cand_tangent_${k}$
+
+    pure subroutine cand_jacobi_core_${k}$(a, v, max_sweeps, early_exit, nsweep)
+        !! Cyclic Jacobi sweeps on the symmetric `a` (3x3, `real(${k}$)`), accumulating the rotations in `v`;
+        !! explicit updates of the two rows/columns of each rotation (Numerical Recipes, jacobi).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(inout) :: a(3, 3), v(3, 3)
+        integer, intent(in) :: max_sweeps
+        logical, intent(in) :: early_exit
+            !! Stop after a sweep without rotations (data-dependent cost); otherwise always `max_sweeps` sweeps.
+        integer, intent(out) :: nsweep
+        integer, parameter :: P_OF(3) = [1, 1, 2], Q_OF(3) = [2, 3, 3], R_OF(3) = [3, 2, 1]
+        real(${k}$), parameter :: HALF_EPS = 0.5_${k}$*epsilon(1.0_${k}$)
+        real(${k}$) :: apq, t, c, sn, tau, g, h
+        integer :: sweep, i, j, p, q, r, nrot
+
+        nsweep = 0
+        do sweep = 1, max_sweeps
+            nrot = 0
+            do i = 1, 3
+                p = P_OF(i)
+                q = Q_OF(i)
+                r = R_OF(i)
+                apq = a(p, q)
+                if (abs(apq) <= HALF_EPS*(abs(a(p, p)) + abs(a(q, q)))) cycle
+                nrot = nrot + 1
+                call cand_tangent_${k}$(a(p, p), a(q, q), apq, t)
+                c = 1.0_${k}$/sqrt(t*t + 1.0_${k}$)
+                sn = t*c
+                tau = sn/(1.0_${k}$ + c)
+                a(p, p) = a(p, p) - t*apq
+                a(q, q) = a(q, q) + t*apq
+                a(p, q) = 0.0_${k}$
+                a(q, p) = 0.0_${k}$
+                g = a(r, p)
+                h = a(r, q)
+                a(r, p) = g - sn*(h + g*tau)
+                a(p, r) = a(r, p)
+                a(r, q) = h + sn*(g - h*tau)
+                a(q, r) = a(r, q)
+                do j = 1, 3
+                    g = v(j, p)
+                    h = v(j, q)
+                    v(j, p) = g - sn*(h + g*tau)
+                    v(j, q) = h + sn*(g - h*tau)
+                end do
+            end do
+            if (nrot == 0 .and. early_exit) exit
+            if (nrot > 0) nsweep = sweep
+        end do
+    end subroutine cand_jacobi_core_${k}$
+
+    pure subroutine cand_sort_${k}$(lam, v)
+        !! Eigenvalues in descending order with their columns of `v`, `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(inout) :: lam(3), v(3, 3)
+        real(${k}$) :: tl, tv(3)
+        integer :: i, j
+
+        do i = 1, 2
+            do j = 1, 3 - i
+                if (lam(j) < lam(j + 1)) then
+                    tl = lam(j)
+                    lam(j) = lam(j + 1)
+                    lam(j + 1) = tl
+                    tv = v(:, j)
+                    v(:, j) = v(:, j + 1)
+                    v(:, j + 1) = tv
+                end if
+            end do
+        end do
+    end subroutine cand_sort_${k}$
+
+    pure subroutine cand_jacobi_${k}$(s, lam, v, nsweep)
+        !! Candidate J, `real(${k}$)`: cyclic Jacobi on S.
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: s
+        real(${k}$), intent(out) :: lam(3), v(3, 3)
+        integer, intent(out), optional :: nsweep
+        real(${k}$) :: a(3, 3)
+        integer :: i, ns
+
+        a = to_matrix(s)
+        v = 0.0_${k}$
+        v(1, 1) = 1.0_${k}$
+        v(2, 2) = 1.0_${k}$
+        v(3, 3) = 1.0_${k}$
+        call cand_jacobi_core_${k}$(a, v, CAND_MAX_SWEEPS, .true., ns)
+        do i = 1, 3
+            lam(i) = a(i, i)
+        end do
+        call cand_sort_${k}$(lam, v)
+        if (present(nsweep)) nsweep = ns
+    end subroutine cand_jacobi_${k}$
+
+    pure subroutine cand_jacobi_fixed_${k}$(s, lam, v)
+        !! Candidate Jf, `real(${k}$)`: cyclic Jacobi on S with always CAND_FIXED_SWEEPS sweeps (no data-dependent exit:
+        !! the same work in every GPU thread).
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: s
+        real(${k}$), intent(out) :: lam(3), v(3, 3)
+        real(${k}$) :: a(3, 3)
+        integer :: i, ns
+
+        a = to_matrix(s)
+        v = 0.0_${k}$
+        v(1, 1) = 1.0_${k}$
+        v(2, 2) = 1.0_${k}$
+        v(3, 3) = 1.0_${k}$
+        call cand_jacobi_core_${k}$(a, v, CAND_FIXED_SWEEPS, .false., ns)
+        do i = 1, 3
+            lam(i) = a(i, i)
+        end do
+        call cand_sort_${k}$(lam, v)
+    end subroutine cand_jacobi_fixed_${k}$
+
+    pure subroutine cand_jacobi_nobranch_${k}$(s, lam, v)
+        !! Candidate Jnb, `real(${k}$)`: cyclic Jacobi on S without data-dependent branches (CAND_FIXED_SWEEPS sweeps of
+        !! three rotations each, no skip, no early exit): t = 2 a_pq sign(d)/(|d| + sqrt(d^2 + 4 a_pq^2)), d = a_qq - a_pp
+        !! (the same root as cand_tangent, multiplied through by 2|a_pq|: no overflow for a small a_pq, t = 0 for
+        !! a_pq = 0). Every GPU thread runs the same instructions.
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: s
+        real(${k}$), intent(out) :: lam(3), v(3, 3)
+        integer, parameter :: P_OF(3) = [1, 1, 2], Q_OF(3) = [2, 3, 3], R_OF(3) = [3, 2, 1]
+        real(${k}$) :: a(3, 3), apq, d, t, c, sn, tau, g, h
+        integer :: sweep, i, j, p, q, r
+
+        a = to_matrix(s)
+        v = 0.0_${k}$
+        v(1, 1) = 1.0_${k}$
+        v(2, 2) = 1.0_${k}$
+        v(3, 3) = 1.0_${k}$
+        do sweep = 1, CAND_FIXED_SWEEPS
+            do i = 1, 3
+                p = P_OF(i)
+                q = Q_OF(i)
+                r = R_OF(i)
+                apq = a(p, q)
+                d = a(q, q) - a(p, p)
+                t = 2.0_${k}$*apq*sign(1.0_${k}$, d)/max(abs(d) + sqrt(d*d + 4.0_${k}$*apq*apq), tiny(1.0_${k}$))
+                c = 1.0_${k}$/sqrt(t*t + 1.0_${k}$)
+                sn = t*c
+                tau = sn/(1.0_${k}$ + c)
+                a(p, p) = a(p, p) - t*apq
+                a(q, q) = a(q, q) + t*apq
+                a(p, q) = 0.0_${k}$
+                a(q, p) = 0.0_${k}$
+                g = a(r, p)
+                h = a(r, q)
+                a(r, p) = g - sn*(h + g*tau)
+                a(p, r) = a(r, p)
+                a(r, q) = h + sn*(g - h*tau)
+                a(q, r) = a(r, q)
+                do j = 1, 3
+                    g = v(j, p)
+                    h = v(j, q)
+                    v(j, p) = g - sn*(h + g*tau)
+                    v(j, q) = h + sn*(g - h*tau)
+                end do
+            end do
+        end do
+        do i = 1, 3
+            lam(i) = a(i, i)
+        end do
+        call cand_sort_${k}$(lam, v)
+    end subroutine cand_jacobi_nobranch_${k}$
+
+    pure subroutine cand_rotate_${k}$(app, aqq, apq, arp, arq, vp, vq)
+        !! One Jacobi rotation on scalars, `real(${k}$)`: zeroes apq, updates app, aqq, the couplings arp, arq with the
+        !! third index and the eigenvector columns vp, vq (no array indexed at run time; branch-free tangent).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(inout) :: app, aqq, apq, arp, arq, vp(3), vq(3)
+        real(${k}$), parameter :: HALF_EPS = 0.5_${k}$*epsilon(1.0_${k}$)
+        real(${k}$) :: d, t, c, sn, tau, g, h, gv(3)
+
+        ! S is scaled to O(1) (cand_jacobi_scalar): entries below eps/2 are rounding of |S| and are set to exactly zero
+        ! (selects, not branches). Otherwise their products become subnormal after convergence, which the CPU computes
+        ! in microcode (~100x slower); the GPU flushes them
+        apq = merge(0.0_${k}$, apq, abs(apq) <= HALF_EPS)
+        arp = merge(0.0_${k}$, arp, abs(arp) <= HALF_EPS)
+        arq = merge(0.0_${k}$, arq, abs(arq) <= HALF_EPS)
+        d = aqq - app
+        d = merge(0.0_${k}$, d, abs(d) <= HALF_EPS)
+        t = 2.0_${k}$*apq*sign(1.0_${k}$, d)/max(abs(d) + sqrt(d*d + 4.0_${k}$*apq*apq), tiny(1.0_${k}$))
+        c = 1.0_${k}$/sqrt(t*t + 1.0_${k}$)
+        sn = t*c
+        tau = sn/(1.0_${k}$ + c)
+        app = app - t*apq
+        aqq = aqq + t*apq
+        apq = 0.0_${k}$
+        g = arp
+        h = arq
+        arp = g - sn*(h + g*tau)
+        arq = h + sn*(g - h*tau)
+        gv = vp
+        vp = gv - sn*(vq + gv*tau)
+        vq = vq + sn*(gv - vq*tau)
+    end subroutine cand_rotate_${k}$
+
+    pure subroutine cand_jacobi_scalar_${k}$(s, lam, v)
+        !! Candidate Js, `real(${k}$)`: cand_jacobi_nobranch on the six scalar components and three eigenvector columns,
+        !! the three rotations of a sweep unrolled (pairs (1,2), (1,3), (2,3)): no array indexed at run time.
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: s
+        real(${k}$), intent(out) :: lam(3), v(3, 3)
+        real(${k}$) :: a11, a22, a33, a12, a23, a13, v1(3), v2(3), v3(3), x(6), amax
+        integer :: sweep, e
+
+        ! Scaled by a power of 2 (exact) to O(1): no underflow or overflow at any scale of S
+        amax = maxval(abs(s%vals))
+        e = 0
+        if (amax > 0.0_${k}$) e = fp_exponent(amax)
+        x = fp_scale(s%vals, -e)
+        a11 = x(1)
+        a22 = x(2)
+        a33 = x(3)
+        a12 = x(4)
+        a23 = x(5)
+        a13 = x(6)
+        v1 = [1.0_${k}$, 0.0_${k}$, 0.0_${k}$]
+        v2 = [0.0_${k}$, 1.0_${k}$, 0.0_${k}$]
+        v3 = [0.0_${k}$, 0.0_${k}$, 1.0_${k}$]
+        do sweep = 1, CAND_FIXED_SWEEPS
+            ! (p, q, r) = (1, 2, 3): a_rp = a13, a_rq = a23
+            call cand_rotate_${k}$(a11, a22, a12, a13, a23, v1, v2)
+            ! (1, 3, 2): a_rp = a12, a_rq = a23
+            call cand_rotate_${k}$(a11, a33, a13, a12, a23, v1, v3)
+            ! (2, 3, 1): a_rp = a12, a_rq = a13
+            call cand_rotate_${k}$(a22, a33, a23, a12, a13, v2, v3)
+        end do
+        lam = fp_scale([a11, a22, a33], e)
+        v(:, 1) = v1
+        v(:, 2) = v2
+        v(:, 3) = v3
+        call cand_sort_${k}$(lam, v)
+    end subroutine cand_jacobi_scalar_${k}$
+
+    pure subroutine cand_kopp_scaled_${k}$(s, m, e, d, l, v)
+        !! Candidate K in the units of the scaled deviator, `real(${k}$)`: mean `m`, exponent `e`, scaled deviator
+        !! matrix `d` (S = m I + 2^e d), its eigenvalues `l` (descending, Rayleigh quotients) and eigenvectors `v`.
+        !! A zero deviator gives l = 0 and v = I.
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: s
+        real(${k}$), intent(out) :: m
+        integer, intent(out) :: e
+        real(${k}$), intent(out) :: d(3, 3), l(3), v(3, 3)
+        real(${k}$), parameter :: THIRD = 1.0_${k}$/3.0_${k}$
+        real(${k}$) :: x(6), amax, mm, de, dd, ee, ff, c1, c0, p, q, sqrt_p, phi, c, sn, w(3)
+        real(${k}$) :: r1(3), r2(3), r3(3), x1(3), x2(3), x3(3), ca(3), n1, n2, n3, na
+        real(${k}$) :: u(3), wv(3), du(3), dw(3), pp, pq, pr, tg, cs, si, la
+        integer :: a, b
+
+        m = (s%vals(1) + s%vals(2) + s%vals(3))*THIRD
+        x = s%vals
+        x(1:3) = x(1:3) - m
+        amax = maxval(abs(x))
+        v = 0.0_${k}$
+        v(1, 1) = 1.0_${k}$
+        v(2, 2) = 1.0_${k}$
+        v(3, 3) = 1.0_${k}$
+        e = 0
+        l = 0.0_${k}$
+        d = 0.0_${k}$
+        if (amax <= 0.0_${k}$) return
+        e = fp_exponent(amax)
+        x = fp_scale(x, -e)
+        d(1, :) = [x(1), x(4), x(6)]
+        d(2, :) = [x(4), x(2), x(5)]
+        d(3, :) = [x(6), x(5), x(3)]
+
+        ! Closed-form eigenvalues of d (Kopp 2008, dsyevc3)
+        mm = x(1) + x(2) + x(3)
+        de = x(4)*x(5)
+        dd = x(4)*x(4)
+        ee = x(5)*x(5)
+        ff = x(6)*x(6)
+        c1 = x(1)*x(2) + x(1)*x(3) + x(2)*x(3) - (dd + ee + ff)
+        c0 = x(3)*dd + x(1)*ee + x(2)*ff - x(1)*x(2)*x(3) - 2.0_${k}$*x(6)*de
+        p = mm*mm - 3.0_${k}$*c1
+        q = mm*(p - 1.5_${k}$*c1) - 13.5_${k}$*c0
+        sqrt_p = sqrt(abs(p))
+        phi = 27.0_${k}$*(0.25_${k}$*c1*c1*(p - c1) + c0*(q + 6.75_${k}$*c0))
+        phi = THIRD*atan2(sqrt(abs(phi)), q)
+        c = sqrt_p*cos(phi)
+        sn = sqrt_p*sin(phi)/sqrt(3.0_${k}$)
+        w(2) = THIRD*(mm - c)
+        w(3) = w(2) + sn
+        w(1) = w(2) + c
+        w(2) = w(2) - sn
+        ! Descending
+        l(1) = max(w(1), w(2), w(3))
+        l(3) = min(w(1), w(2), w(3))
+        l(2) = w(1) + w(2) + w(3) - l(1) - l(3)
+
+        ! a: most separated eigenvalue; b, b+1: the remaining pair
+        if (l(1) - l(2) >= l(2) - l(3)) then
+            a = 1
+            b = 2
+        else
+            a = 3
+            b = 1
+        end if
+        la = l(a)
+        r1 = [d(1, 1) - la, d(1, 2), d(1, 3)]
+        r2 = [d(2, 1), d(2, 2) - la, d(2, 3)]
+        r3 = [d(3, 1), d(3, 2), d(3, 3) - la]
+        x1 = cand_cross_${k}$(r1, r2)
+        x2 = cand_cross_${k}$(r2, r3)
+        x3 = cand_cross_${k}$(r3, r1)
+        n1 = dot_product(x1, x1)
+        n2 = dot_product(x2, x2)
+        n3 = dot_product(x3, x3)
+        if (n1 >= n2 .and. n1 >= n3) then
+            ca = x1
+            na = n1
+        else if (n2 >= n3) then
+            ca = x2
+            na = n2
+        else
+            ca = x3
+            na = n3
+        end if
+        if (na <= 0.0_${k}$) return
+        v(:, a) = ca/sqrt(na)
+
+        ! Orthonormal basis (u, w) of the plane normal to v_a and the plane rotation of the pair
+        if (abs(v(1, a)) > abs(v(2, a))) then
+            u = [-v(3, a), 0.0_${k}$, v(1, a)]/sqrt(v(1, a)**2 + v(3, a)**2)
+        else
+            u = [0.0_${k}$, v(3, a), -v(2, a)]/sqrt(v(2, a)**2 + v(3, a)**2)
+        end if
+        wv = cand_cross_${k}$(v(:, a), u)
+        du = d(:, 1)*u(1) + d(:, 2)*u(2) + d(:, 3)*u(3)
+        dw = d(:, 1)*wv(1) + d(:, 2)*wv(2) + d(:, 3)*wv(3)
+        pp = dot_product(u, du)
+        pq = dot_product(u, dw)
+        pr = dot_product(wv, dw)
+        tg = 0.0_${k}$
+        if (abs(pq) > 0.0_${k}$) call cand_tangent_${k}$(pp, pr, pq, tg)
+        cs = 1.0_${k}$/sqrt(tg*tg + 1.0_${k}$)
+        si = tg*cs
+        ! Rotated pair: pp - tg pq for cs u - si w, pr + tg pq for si u + cs w
+        v(:, b) = cs*u - si*wv
+        v(:, b + 1) = si*u + cs*wv
+        l(b) = pp - tg*pq
+        l(b + 1) = pr + tg*pq
+        du = d(:, 1)*v(1, a) + d(:, 2)*v(2, a) + d(:, 3)*v(3, a)
+        l(a) = dot_product(v(:, a), du)
+        call cand_sort_${k}$(l, v)
+    end subroutine cand_kopp_scaled_${k}$
+
+    pure subroutine cand_kopp_${k}$(s, lam, v)
+        !! Candidate K, `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: s
+        real(${k}$), intent(out) :: lam(3), v(3, 3)
+        real(${k}$) :: m, d(3, 3), l(3)
+        integer :: e
+
+        call cand_kopp_scaled_${k}$(s, m, e, d, l, v)
+        lam = m + fp_scale(l, e)
+    end subroutine cand_kopp_${k}$
+
+    pure subroutine cand_kopp_jacobi_${k}$(s, lam, v, nsweep)
+        !! Candidate KJ, `real(${k}$)`: K, then Jacobi sweeps on V^T D V.
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: s
+        real(${k}$), intent(out) :: lam(3), v(3, 3)
+        integer, intent(out), optional :: nsweep
+        real(${k}$) :: m, d(3, 3), l(3), a(3, 3), t(3, 3)
+        integer :: e, i, j, ns
+
+        call cand_kopp_scaled_${k}$(s, m, e, d, l, v)
+        ! a = V^T D V (explicit products: matmul makes heap temporaries in device code)
+        do j = 1, 3
+            t(:, j) = d(:, 1)*v(1, j) + d(:, 2)*v(2, j) + d(:, 3)*v(3, j)
+        end do
+        do j = 1, 3
+            do i = 1, 3
+                a(i, j) = v(1, i)*t(1, j) + v(2, i)*t(2, j) + v(3, i)*t(3, j)
+            end do
+        end do
+        call cand_jacobi_core_${k}$(a, v, CAND_KJ_SWEEPS, .true., ns)
+        do i = 1, 3
+            l(i) = a(i, i)
+        end do
+        call cand_sort_${k}$(l, v)
+        lam = m + fp_scale(l, e)
+        if (present(nsweep)) nsweep = ns
+    end subroutine cand_kopp_jacobi_${k}$
+
+    pure function cand_cross_${k}$(x, y) result(res)
+        !! Cross product, `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: x(3), y(3)
+        real(${k}$) :: res(3)
+
+        res(1) = x(2)*y(3) - x(3)*y(2)
+        res(2) = x(3)*y(1) - x(1)*y(3)
+        res(3) = x(1)*y(2) - x(2)*y(1)
+    end function cand_cross_${k}$
+    #:endfor

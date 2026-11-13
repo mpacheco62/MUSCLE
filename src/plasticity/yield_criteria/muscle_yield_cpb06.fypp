@@ -7,10 +7,11 @@ module muscle_yield_cpb06
     !! Barlat, 2006, Eqs. 8, 9 and 12):
     !! \[ \sigma_{eq} = B \left( \sum_i (|\Sigma_i| - k \Sigma_i)^a \right)^{1/a}, \quad
     !!    \boldsymbol\Sigma = \mathbf{C} : \operatorname{dev}\boldsymbol\sigma = \mathbf{L} : \boldsymbol\sigma \]
-    !! with \( \Sigma_i \) the principal values of \( \boldsymbol\Sigma \) (`eigenvals`). The analytical
-    !! derivatives go through the spectral decomposition of \( \boldsymbol\Sigma \)
-    !! (`spectral_decomposition`, `spectral_gradient`, `spectral_hessian`) and the chain rule
-    !! through \( \mathbf{L} \).
+    !! with \( \Sigma_i \) the principal values of \( \boldsymbol\Sigma \), from its spectral decomposition
+    !! (`spectral_decomposition`, D-032), which the analytical derivatives also use (`spectral_gradient`,
+    !! `spectral_hessian`, and the chain rule through \( \mathbf{L} \)): one source of eigenvalues.
+    !! \( \mathbf{L} \) acts on the differences of the normal stresses, so a hydrostatic stress gives
+    !! \( \boldsymbol\Sigma = 0 \) exactly.
     !!
     !! Scaling (D-017.10c): \( \Phi \) is evaluated on the principal values divided by the power of
     !! two \( 2^e \) of their largest magnitude (exact in floating point), using the homogeneity of
@@ -20,9 +21,7 @@ module muscle_yield_cpb06
     !!
     !! At a null equivalent stress (\( \Phi = \sum_i (|\Sigma_i| - k \Sigma_i)^a = 0 \): zero or
     !! hydrostatic stress) both derivatives are 0 (D-017.9; the original code gave NaN). Known limits,
-    !! kept with the same results as the original code: `eigenvals` uses an absolute
-    !! threshold (1e-10 in dp) that discards small shears on a hydrostatic stress (e.g. a shear of
-    !! 1e-10 on a unit pressure gives \( \sigma_{eq} = 0 \)); with \( k = \pm 1 \) and a null
+    !! kept with the same results as the original code: with \( k = \pm 1 \) and a null
     !! principal value the Hessian takes the value chosen in `yield_cpb_curvature_<k>` of
     !! `muscle_yield_anisotropic` (for \( 1 \le a < 2 \) the second derivative is not bounded there,
     !! and for \( a = 1 \) the first).
@@ -38,10 +37,9 @@ module muscle_yield_cpb06
     #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
     #:endfor
-    use muscle_tensors, only : operator(.dev.)
-    use muscle_math_eigen, only : eigenvals, spectral_decomposition
+    use muscle_math_eigen, only : spectral_decomposition
     use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian
-    use muscle_math_fp, only : fp_exponent
+    use muscle_math_fp, only : fp_exponent, fp_scale
     use muscle_yield_anisotropic, only : yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, &
         & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian
     implicit none
@@ -156,7 +154,7 @@ contains
 
         e = 0
         if (maxval(abs(lam)) > 0.0_${k}$) e = fp_exponent(maxval(abs(lam)))
-        x = scale(lam, -e)
+        x = fp_scale(lam, -e)
     end subroutine yield_cpb06_scaled_${k}$
 
     pure subroutine yield_cpb06_principal_${k}$(prm, lam, phi, df_dlam, d2f_dlam2)
@@ -199,7 +197,7 @@ contains
 
         q = (prm%a - 1.0_${k}$)/phi  ! (a-1)/Phi
         d2f_dlam2 = yield_cpb_hessian(x, prm%k, prm%a, psi, p, s, df_dlam, f_phi, q)
-        d2f_dlam2 = scale(d2f_dlam2, -e)  ! back to lam: degree -1
+        d2f_dlam2 = fp_scale(d2f_dlam2, -e)  ! back to lam: degree -1
     end subroutine yield_cpb06_principal_${k}$
 
     pure function yield_stress_eq_cpb06_3D_${k}$(prm, sigma) result(res)
@@ -213,24 +211,17 @@ contains
             !! Stress tensor \( \boldsymbol\sigma \).
         real(${k}$) :: res
             !! \( \sigma_{eq} \).
-        type(ten_3D2Osym_${k}$) :: dev, sig
-        real(${k}$) :: sigma_eig(3), x(3)
+        real(${k}$) :: sigma_eig(3), x(3), V(3,3)
         integer :: e
 
-        ! Sigma = C : dev(sigma): C1 on the normal components, C2 on the shears (xy, yz, xz)
-        dev = .dev. sigma
-        sig%vals(1) = dev%vals(1)*prm%C1(1,1) + dev%vals(2)*prm%C1(1,2) + dev%vals(3)*prm%C1(1,3)
-        sig%vals(2) = dev%vals(1)*prm%C1(2,1) + dev%vals(2)*prm%C1(2,2) + dev%vals(3)*prm%C1(2,3)
-        sig%vals(3) = dev%vals(1)*prm%C1(3,1) + dev%vals(2)*prm%C1(3,2) + dev%vals(3)*prm%C1(3,3)
-        sig%vals(4) = dev%vals(4)*prm%C2(1)
-        sig%vals(5) = dev%vals(5)*prm%C2(2)
-        sig%vals(6) = dev%vals(6)*prm%C2(3)
-        sigma_eig = eigenvals(sig)
+        ! Sigma = C : dev(sigma) = L : sigma (C1 on the normal components, C2 on the shears); its
+        ! eigenvalues from the same spectral decomposition as the gradient and the Hessian (D-032)
+        call spectral_decomposition(yield_lin_apply(prm%L, prm%C2, sigma), sigma_eig, V)
 
         ! Homogeneity of degree 1 on the principal values scaled by 2**(-e)
         call yield_cpb06_scaled_${k}$(sigma_eig, x, e)
         res = sum((abs(x) - prm%k*x)**prm%a)**(1.0_${k}$/prm%a)
-        res = scale(res, e)*prm%B
+        res = fp_scale(res, e)*prm%B
     end function yield_stress_eq_cpb06_3D_${k}$
 
     pure function yield_dstress_eq_cpb06_3D_${k}$(prm, sigma) result(res)

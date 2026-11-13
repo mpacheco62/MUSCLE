@@ -29,6 +29,7 @@ module muscle_math_lu_solve
     !! way as a singular matrix; a caller that needs to tell them apart checks
     !! `size(A,1) <= LU_SOLVE_MAX_N` (and the shapes) first.
     use muscle_kinds, only: sp, dp
+    use muscle_math_inverses, only: ${', '.join('NORM_INF_' + k for k in REAL_KINDS)}$
     implicit none
     private
 

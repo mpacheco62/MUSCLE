@@ -3,7 +3,7 @@
 #:include "muscle_common.fypp"
 #! Threshold of the eigenvalues of C (D-017.14a): dp keeps the historical 1e-12 (same bits); sp
 #! takes the same multiple of the machine epsilon (1e-12/eps_dp = 4.5e3 -> 5.4e-4 in sp), rounded
-#! down to a power of ten (1e-4). The closed form eigenvalues of C have an absolute error ~ eps |C|,
+#! down to a power of ten (1e-4). The eigenvalues of C (`eigenprojections`) have an absolute error ~ eps |C|,
 #! so at the threshold (|C| ~ 1) their relative error is ~ eps/threshold: ~2e-4 in dp, ~1e-3 in sp
 #! (1.2e-7/1e-4); below it the smallest eigenvalue, and lambda^(-1/2) in R and ln(lambda) in the
 #! Hencky strains, are not reliable.
@@ -34,8 +34,8 @@ module muscle_kin_finite
     !! - `call kin_finite_update(F, state, status [, eig_c, proj_c])`: every component but the
     !!   strain (the common part of `kin_update`). \( \mathbf{R} = \mathbf{F}\mathbf{U}^{-1} \) with
     !!   \( \mathbf{U}^{-1} = \sum_a \lambda_a^{-1/2}\mathbf{P}_a \) from the eigenvalues
-    !!   \( \lambda_a \) of \( \mathbf{C} \) and their eigenprojections (`eigenvals`,
-    !!   `dEigenvalues_dTensor`); the eigenvalues at or below `KIN_EIG_MIN_<k>` are dropped.
+    !!   \( \lambda_a \) of \( \mathbf{C} \) and their eigenprojections (`eigenprojections`); the eigenvalues
+    !!   at or below `KIN_EIG_MIN_<k>` are dropped.
     !! - `kin_log_measure(eig, proj)`: the Hencky strain \( \sum_a \tfrac{1}{2}\ln\lambda_a\mathbf{P}_a \)
     !!   from the spectral decomposition returned by `kin_finite_update` (a logarithmic kinematics
     !!   reuses the one of the rotation).
@@ -57,18 +57,14 @@ module muscle_kin_finite
     !! epsilon). The state is still computed with the same formulas (the historical OO kinematics
     !! call these procedures and ignore the status: same bits), but it is not valid.
     !!
-    !! Spectral decompositions (`eigenprojections` of muscle_math_eigen, D-018.19a): Jacobi rotations
-    !! when a relative gap between consecutive eigenvalues lies in [`JACOBI_GAP_LO_<k>`, `JACOBI_GAP_HI_<k>`)
-    !! (muscle_kinds: [1e-12, 1e-2) in dp, every gap in sp), the closed form otherwise, which near
-    !! \( \mathbf{C} = \mathbf{I} \) loses the deviatoric part of the logarithmic strains and the
-    !! orthogonality of R. The tangents use the eigenvalues and eigenprojections of the same
-    !! decomposition. In sp R is the scaled Newton iteration of the polar decomposition
+    !! Spectral decompositions (`eigenprojections` of muscle_math_eigen, on `spectral_decomposition`, D-032):
+    !! accurate to a few eps for every eigenvalue gap, also near \( \mathbf{C} = \mathbf{I} \) (before, the
+    !! closed form with a band of Jacobi rotations lost the deviatoric part of the logarithmic strains there).
+    !! The tangents use the eigenvalues and eigenprojections of the same decomposition. In sp R is the
+    !! scaled Newton iteration of the polar decomposition
     !! (`polar_rotation` of muscle_math_matrix_functions); in dp \( \mathbf{R} = \mathbf{F}\mathbf{U}^{-1} \).
     !!
-    !! Known limits, only documented (D-017.14b, D-018.19a): in dp the closed form above the Jacobi
-    !! band keeps errors ~eps/gap^2 (\( |\mathbf{R}^T\mathbf{R} - \mathbf{I}| \lesssim 10^{-11} \),
-    !! ln C ~1e-12 relative, at a gap of 1e-2); a deviator of C below 1e-10 (strains ~1e-10) is
-    !! taken as zero (`eigenvals`); the tangent
+    !! Known limits, only documented (D-017.14b): the tangent
     !! transformations have no geometric (stress) term (now `kin_geometric_tangent` of each
     !! kinematics);
     !! `kin_pk1_to_pk2` and `kin_pk1_to_cauchy` read the symmetric result
@@ -385,7 +381,7 @@ contains
         real(${k}$), intent(out), optional :: eig_c(3)
             !! Eigenvalues of \( \mathbf{C} \) (descending).
         type(ten_3D2Osym_${k}$), intent(out), optional :: proj_c(3)
-            !! Eigenprojections of \( \mathbf{C} \) (`dEigenvalues_dTensor`).
+            !! Eigenprojections of \( \mathbf{C} \) (`eigenprojections`).
         real(${k}$) :: eig(3)
         type(ten_3D2Osym_${k}$) :: proj(3), U_inv
         integer :: a
@@ -841,9 +837,9 @@ contains
         type(ten_3D2Osym_${k}$), intent(in) :: s
             !! Tensor.
         real(${k}$), intent(out) :: lam(3)
-            !! Eigenvalues (`eigenvals`).
+            !! Eigenvalues (`eigenprojections`).
         real(${k}$), intent(out) :: proj(3, 3, 3)
-            !! Eigenprojections `proj(:, :, a)` (`dEigenvalues_dTensor`).
+            !! Eigenprojections `proj(:, :, a)` (`eigenprojections`).
         logical, intent(out) :: active(3)
             !! Eigenvalue above `KIN_EIG_MIN_${k}$`.
         type(ten_3D2Osym_${k}$) :: p(3)

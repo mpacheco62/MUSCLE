@@ -28,8 +28,8 @@ module muscle_yield_yld2004
     !! stresses, so their zero row sums cancel a hydrostatic stress only up to rounding: e.g.
     !! \( \bar\sigma \approx 7 \cdot 10^{-17} p \) with AA2090-T3; then \( \phi \ne 0 \) and the zero
     !! derivatives above do not apply: the gradient is O(1) in an arbitrary direction, set by the rounding,
-    !! and the Hessian is finite); `eigenvals` uses an absolute
-    !! threshold (1e-10 in dp) that discards small shears on a hydrostatic stress.
+    !! and the Hessian is finite). The eigenvalues of f and of its derivatives come from the same spectral
+    !! decompositions (`spectral_decomposition`, D-032), without an absolute threshold.
     !!
     !! Kernel API: parameter types `yield_yld2004_<k>` (built only with `yield_yld2004_init`, which
     !! computes the private components Lp and Lpp), and `pure` functions
@@ -45,9 +45,9 @@ module muscle_yield_yld2004
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
     #:endfor
     use muscle_tensors, only : operator(.tdotsym.), operator(*), operator(+), assignment(=)
-    use muscle_math_eigen, only : eigenvals, spectral_decomposition
+    use muscle_math_eigen, only : spectral_decomposition
     use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian
-    use muscle_math_fp, only : fp_exponent
+    use muscle_math_fp, only : fp_exponent, fp_scale
     use muscle_yield_anisotropic, only : yield_lin_pull_back, yield_lin_pull_back_hessian
     implicit none
     private
@@ -192,8 +192,8 @@ contains
 
         e = 0
         if (max(maxval(abs(lp)), maxval(abs(lpp))) > 0.0_${k}$) e = fp_exponent(max(maxval(abs(lp)), maxval(abs(lpp))))
-        x = scale(lp, -e)
-        y = scale(lpp, -e)
+        x = fp_scale(lp, -e)
+        y = fp_scale(lpp, -e)
     end subroutine yield_yld2004_scaled_${k}$
 
     pure function yield_yld2004_equivalent_${k}$(prm, x, y, e) result(res)
@@ -219,7 +219,7 @@ contains
                          + abs(x(2) - y(3))**prm%a                         &
                          + abs(x(3) - y(1))**prm%a + abs(x(3) - y(2))**prm%a &
                          + abs(x(3) - y(3))**prm%a))**(1.0_${k}$/prm%a)
-        res = scale(res, e)
+        res = fp_scale(res, e)
     end function yield_yld2004_equivalent_${k}$
 
     pure subroutine yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp, d2fp, d2fpp, d2fx)
@@ -352,9 +352,9 @@ contains
         d2fx(3,2) = g*dfp(3)*dfpp(2) - p(3,2)
         d2fx(3,3) = g*dfp(3)*dfpp(3) - p(3,3)
         ! Back to the principal values: degree -1
-        d2fp = scale(d2fp, -e)
-        d2fpp = scale(d2fpp, -e)
-        d2fx = scale(d2fx, -e)
+        d2fp = fp_scale(d2fp, -e)
+        d2fpp = fp_scale(d2fpp, -e)
+        d2fx = fp_scale(d2fx, -e)
     end subroutine yield_yld2004_principal_${k}$
 
     pure function yield_stress_eq_yld2004_3D_${k}$(prm, sigma) result(res)
@@ -369,11 +369,12 @@ contains
         real(${k}$) :: res
             !! \( \sigma_{eq} \).
         ! (phi/4)**(1/a) (Barlat et al., 2005, Eq. 14), with the eigenvalues of Sp and Spp
-        real(${k}$) :: lp(3), lpp(3), x(3), y(3)
+        real(${k}$) :: lp(3), lpp(3), x(3), y(3), V(3,3)
         integer :: e
 
-        lp = eigenvals(yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, sigma))     ! lamp
-        lpp = eigenvals(yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, sigma))  ! lampp
+        ! Eigenvalues of Sp and Spp from the same spectral decomposition as the gradient and the Hessian (D-032)
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, sigma), lp, V)
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, sigma), lpp, V)
         call yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
         res = yield_yld2004_equivalent_${k}$(prm, x, y, e)
     end function yield_stress_eq_yld2004_3D_${k}$
@@ -453,7 +454,7 @@ contains
         !! Equivalent stress and its first and second derivatives at the same stress of the Yld2004-18p (Barlat et al. 2005) model
         !! in `real(${k}$)` (3D). One spectral decomposition of Sp and one of Spp (Barlat et al., 2005, Eqs. 11 and 14) instead of
         !! the eigenvalues of both in stress_eq and their decompositions in each derivative; the same operations as the three
-        !! functions, so the same bits (spectral_decomposition takes its eigenvalues from eigenvals, as stress_eq does).
+        !! functions, so the same bits (stress_eq takes its eigenvalues from spectral_decomposition too, D-032).
         implicit none
         @:DEVICE()
         type(yield_yld2004_${k}$), intent(in) :: prm

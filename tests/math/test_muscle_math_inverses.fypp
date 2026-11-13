@@ -140,7 +140,9 @@ program test_muscle_math_inverses
     !! M66INV, M99INV) for every real kind: exact cases, Hilbert matrices with their exact integer
     !! inverse (covers the adjugate and the LU-fallback paths of M33INV/M44INV), general matrices,
     !! singular input, NaN input and extreme scaling. Single precision also checks the optional
-    !! KAPPA and the LU fallback of M33INV/M44INV by its residual.
+    !! KAPPA and the LU fallback of M33INV/M44INV by its residual. NORM_INF (the norm of COND_INF and
+    !! of the adjugate switch) against hand-computed row sums, NaN/Inf propagation and the intrinsic
+    !! maxval(sum(abs(A), dim=2)); M33INV/M44INV fall back to LU when the adjugate has a NaN in one row.
     use, intrinsic :: ieee_exceptions, only : ieee_set_flag, ieee_all
     use muscle_test_utils
     implicit none
@@ -171,6 +173,12 @@ program test_muscle_math_inverses
 
     call test_lu_kappa_${k}$(passed)
     if (.not. passed) stop ${b + 8}$
+
+    call test_norm_inf_${k}$(passed)
+    if (.not. passed) stop ${b + 9}$
+
+    call test_adjugate_nan_${k}$(passed)
+    if (.not. passed) stop ${b + 10}$
 
     #:endfor
     ! The NaN and extreme-scaling cases raise IEEE invalid/overflow/underflow flags on purpose;
@@ -601,4 +609,109 @@ subroutine test_lu_fallback_${k}$(passed)
         deallocate(u, v, a, x, id, xexact, xdp)
     end do
 end subroutine test_lu_fallback_${k}$
+
+
+subroutine test_norm_inf_${k}$(passed)
+    !! NORM_INF (`real(${k}$)`) = max_i sum_j |a_ij|:
+    !! - hand-computed exact values (entries with few bits, so every sum is exact): the largest row
+    !!   first, last and in the middle, ties, a rectangular matrix, 1x1, a matrix without rows (0);
+    !! - a NaN in the first, a middle or the last row gives NaN (KAPPA must stay NaN so that the
+    !!   adjugate switch falls back to LU); an Inf entry gives Inf;
+    !! - general random matrices: bit for bit the value of maxval(sum(abs(A), dim=2)) (same summation
+    !!   order, so COND_INF and the inverses keep their CPU results).
+    use, intrinsic :: ieee_arithmetic, only : ieee_is_nan, ieee_value, ieee_quiet_nan, ieee_positive_inf
+    use muscle_kinds, only : ${k}$
+    use muscle_math_inverses, only : NORM_INF
+    use muscle_test_utils
+    use muscle_test_helpers, only : park_miller, rnd
+    implicit none
+    logical, intent(out) :: passed
+    real(${k}$) :: a(3,3), r(2,4), one(1,1), none(0,3), g(9,9), qnan, pinf
+    integer :: i, j, t
+    type(park_miller) :: rng
+
+    passed = .true.
+    a = reshape([1.0_${k}$, -4.0_${k}$, 0.5_${k}$, -2.0_${k}$, 0.25_${k}$, 0.0_${k}$, 3.0_${k}$, -0.5_${k}$, 1.0_${k}$], [3, 3])
+    ! rows: |1|+|-2|+|3| = 6, |-4|+|0.25|+|-0.5| = 4.75, |0.5|+|0|+|1| = 1.5
+    call check_approx(passed, '[${k}$] NORM_INF largest row first', NORM_INF(a), 6.0_${k}$, tol=0.0_${k}$)
+    call check_approx(passed, '[${k}$] NORM_INF largest row last', NORM_INF(a(3:1:-1, :)), 6.0_${k}$, tol=0.0_${k}$)
+    call check_approx(passed, '[${k}$] NORM_INF largest row in the middle', NORM_INF(a([2, 1, 3], :)), 6.0_${k}$, &
+                      tol=0.0_${k}$)
+    a(2, :) = [-3.0_${k}$, 2.5_${k}$, 0.5_${k}$]
+    call check_approx(passed, '[${k}$] NORM_INF tie', NORM_INF(a), 6.0_${k}$, tol=0.0_${k}$)
+    r = reshape([1.0_${k}$, -8.0_${k}$, 2.0_${k}$, 0.0_${k}$, -3.0_${k}$, 0.125_${k}$, 4.0_${k}$, 1.0_${k}$], [2, 4])
+    ! rows: 1 + 2 + 3 + 4 = 10, 8 + 0 + 0.125 + 1 = 9.125; of the transpose: 9, 2, 3.125, 5
+    call check_approx(passed, '[${k}$] NORM_INF rectangular 2x4', NORM_INF(r), 10.0_${k}$, tol=0.0_${k}$)
+    call check_approx(passed, '[${k}$] NORM_INF of the transpose (4x2)', NORM_INF(transpose(r)), 9.0_${k}$, &
+                      tol=0.0_${k}$)
+    one = -2.5_${k}$
+    call check_approx(passed, '[${k}$] NORM_INF 1x1', NORM_INF(one), 2.5_${k}$, tol=0.0_${k}$)
+    call check_approx(passed, '[${k}$] NORM_INF without rows', NORM_INF(none), 0.0_${k}$, tol=0.0_${k}$)
+
+    qnan = ieee_value(1.0_${k}$, ieee_quiet_nan)
+    pinf = ieee_value(1.0_${k}$, ieee_positive_inf)
+    do i = 1, 3
+        a = reshape([1.0_${k}$, -4.0_${k}$, 0.5_${k}$, -2.0_${k}$, 0.25_${k}$, 0.0_${k}$, 3.0_${k}$, -0.5_${k}$, 1.0_${k}$], [3, 3])
+        a(i, 2) = qnan
+        call check_true(passed, '[${k}$] NORM_INF NaN in a row is NaN', ieee_is_nan(NORM_INF(a)))
+        a(i, 2) = -pinf
+        call check_true(passed, '[${k}$] NORM_INF Inf in a row is Inf', NORM_INF(a) == pinf)
+    end do
+
+    rng = park_miller(12345)
+    do t = 1, 50
+        do j = 1, 9
+            do i = 1, 9
+                ! entries of magnitude up to 10^6, so the row sums round
+                g(i, j) = real(rnd(rng), ${k}$)*10.0_${k}$**mod(i + 2*j + t, 7)
+            end do
+        end do
+        call check_true(passed, '[${k}$] NORM_INF = maxval(sum(abs(A), dim=2)) bit for bit', &
+                        NORM_INF(g) == maxval(sum(abs(g), dim=2)))
+        call check_true(passed, '[${k}$] NORM_INF = maxval(sum(abs(A), dim=2)) bit for bit (5x7 block)', &
+                        NORM_INF(g(2:6, 3:9)) == maxval(sum(abs(g(2:6, 3:9)), dim=2)))
+    end do
+end subroutine test_norm_inf_${k}$
+
+
+#:set BIG = {'dp': '1.0e200', 'sp': '1.0e30'}
+subroutine test_adjugate_nan_${k}$(passed)
+    !! M33INV/M44INV (`real(${k}$)`) on A = [2b b 0; b b 0; 0 0 1/b] (b = ${BIG[k]}$, b^2 overflows): the
+    !! cofactor c33 = 2b b - b b is Inf - Inf = NaN while det(A) = b^2 ... = b is finite, so the adjugate
+    !! inverse has a NaN entry. KAPPA must then be NaN (NORM_INF), the adjugate rejected and LU used: the
+    !! inverse is finite and A inv(A) = I. With maxval(sum(abs(.), dim=2)), which skips NaN rows (gfortran),
+    !! the adjugate inverse with the NaN was accepted. The 4x4 case is the same block plus a 1.
+    use, intrinsic :: ieee_arithmetic, only : ieee_is_nan
+    use muscle_kinds, only : ${k}$
+    use muscle_math_inverses, only : M33INV, M44INV
+    use muscle_test_utils
+    implicit none
+    logical, intent(out) :: passed
+    real(${k}$), parameter :: B = ${BIG[k]}$_${k}$
+    real(${k}$) :: a3(3,3), x3(3,3), a4(4,4), x4(4,4), id3(3,3), id4(4,4)
+    logical :: ok
+    integer :: i
+
+    passed = .true.
+    a3 = reshape([2.0_${k}$*B, B, 0.0_${k}$, B, B, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$/B], [3, 3])
+    a4 = 0.0_${k}$
+    a4(1:3, 1:3) = a3
+    a4(4, 4) = 1.0_${k}$
+    id3 = 0.0_${k}$
+    id4 = 0.0_${k}$
+    do i = 1, 4
+        if (i <= 3) id3(i, i) = 1.0_${k}$
+        id4(i, i) = 1.0_${k}$
+    end do
+    call M33INV(a3, x3, ok)
+    call check_true(passed, '[${k}$] M33INV NaN cofactor: ok', ok)
+    call check_true(passed, '[${k}$] M33INV NaN cofactor: no NaN in the inverse', .not. any(ieee_is_nan(x3)))
+    call check_approx(passed, '[${k}$] M33INV NaN cofactor: A inv(A) = I', matmul(a3, x3), id3, &
+                      tol=10.0_${k}$*epsilon(1.0_${k}$))
+    call M44INV(a4, x4, ok)
+    call check_true(passed, '[${k}$] M44INV NaN cofactor: ok', ok)
+    call check_true(passed, '[${k}$] M44INV NaN cofactor: no NaN in the inverse', .not. any(ieee_is_nan(x4)))
+    call check_approx(passed, '[${k}$] M44INV NaN cofactor: A inv(A) = I', matmul(a4, x4), id4, &
+                      tol=10.0_${k}$*epsilon(1.0_${k}$))
+end subroutine test_adjugate_nan_${k}$
 #:endfor

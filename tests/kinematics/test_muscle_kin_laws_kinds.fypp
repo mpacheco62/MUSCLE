@@ -8,7 +8,8 @@
 #! kin_is_finite_strain and the common functions of the state), for the six kinematics:
 #! - sp against dp (sp inputs converted to dp) on deformation gradients whose eigenvalues of C are
 #!   distinct by at least ~0.04 or exactly repeated (the eigenprojections of nearly repeated
-#!   eigenvalues lose precision, D-017.14b);
+#!   eigenvalues are ill conditioned, ~eps/gap: an sp-vs-dp comparison there measures the rounding of
+#!   C, not the decomposition);
 #! - status (D-017.14a): det F < 0, singular F, nearly singular F, a NaN component (dp and sp), an eigenvalue of C
 #!   between the sp and dp thresholds (STATUS_OK in dp, invalid in sp), and small strain (never
 #!   invalid) and corotational (no validation);

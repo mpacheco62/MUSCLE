@@ -11,27 +11,20 @@ module muscle_math_eigen
     !! in every real kind:
     !!
     !! - `eigenvals(s)`: the eigenvalues, descending, by the closed form (trigonometric, Cayley-Hamilton);
-    !!   the cheap path when only the values are needed (yield functions).
-    !! - `spectral_decomposition(s, lam, V)`: eigenvalues and orthonormal eigenvectors (columns of V); the
-    !!   most separated eigenvector by a cross product of rows (Kopp), the remaining pair by one plane
-    !!   rotation. Used with `spectral_gradient`/`spectral_hessian` (`muscle_math_spectral_derivs`) by the
-    !!   anisotropic yield criteria.
-    !! - `eigenprojections(s, eig, proj)` and `eigenvals_refined(s, eig)`: eigenvalues and eigenprojections
-    !!   accurate also for close eigenvalues (the finite strain kinematics): the closed form (`eigenvals` and
-    !!   the Cayley-Hamilton eigenprojections of `dEigenvalues_dTensor`) outside a band of relative gaps,
-    !!   cyclic Jacobi rotations inside it (`JACOBI_GAP_LO_<k>`, `JACOBI_GAP_HI_<k>` of muscle_kinds; every
-    !!   gap in sp).
-    !!
-    !! Two strategies for close eigenvalues coexist (plane rotation for the yield criteria, Jacobi band for
-    !! the kinematics): docs/fypp/PLAN_ESPECTRAL.md.
+    !!   the cheap path when only the values are needed (with an absolute threshold, D-017.9).
+    !! - `spectral_decomposition(s, lam, V)`: eigenvalues and orthonormal eigenvectors (columns of V), "K"
+    !!   (D-032): the deviator scaled by a power of 2, its closed-form eigenvalues (Kopp), the most
+    !!   separated eigenvector by a cross product of rows, the remaining pair by one plane rotation and the
+    !!   eigenvalues as Rayleigh quotients; accurate for every eigenvalue gap. Used with
+    !!   `spectral_gradient`/`spectral_hessian` (`muscle_math_spectral_derivs`) by the anisotropic yield
+    !!   criteria, also for their equivalent stress.
+    !! - `eigenprojections(s, eig, proj)` and `eigenvals_refined(s, eig)`: the eigenvalues and eigenprojections
+    !!   \( P_a = v_a \otimes v_a \) of `spectral_decomposition` (the finite strain kinematics), accurate also
+    !!   for close eigenvalues (D-032; they replaced the closed form with a band of Jacobi rotations).
     use muscle_kinds, only : sp, dp
-    #:for k in REAL_KINDS
-    use muscle_kinds, only : EPS_ABS_${k}$, JACOBI_GAP_LO_${k}$, JACOBI_GAP_HI_${k}$
-    #:endfor
     use muscle_tensors
-    use muscle_tensor_2osym, only : square, to_matrix
-    use muscle_math_fp, only : fp_exponent
-    use muscle_math_spectral_derivs, only : dEigenvalues_dTensor
+    use muscle_tensor_2osym, only : square
+    use muscle_math_fp, only : fp_exponent, fp_scale
     implicit none
     private
 
@@ -123,13 +116,18 @@ contains
     end function eigenvals_3D2Osym_${k}$
 
     pure subroutine spectral_decomposition_${k}$(T, lam, V)
-        !! Eigenvalues and orthonormal eigenvectors of T (`real(${k}$)`). The eigenvector of the eigenvalue
-        !! farthest from the middle one is the normalized cross product of two rows of
-        !! T - lam I (Kopp, 2008, Eq. 39); the other two come from one closed-form plane
-        !! rotation (no iteration) that diagonalizes the 2x2 block of T in the plane normal to
-        !! it, which stays accurate when they (nearly) coincide. That eigenvalue is at least
-        !! half the eigenvalue range away from the other two, so the cross product needs no fallback.
-        !! Called by the CPB06 and Yld2004-18p derivatives.
+        !! Eigenvalues and orthonormal eigenvectors of a symmetric `${T2}$` (D-032, "K", Kopp 2008 improved).
+        !! T = m I + 2^e D with m the mean and D the deviator scaled by a power of 2 (exact) to a largest
+        !! entry in [1/2, 1): the closed-form eigenvalues of D (Kopp, dsyevc3) choose the eigenvalue farthest
+        !! from the middle one, whose eigenvector is the largest cross product of two rows of D - l I (Kopp,
+        !! 2008, Eq. 39); the other two come from one plane rotation that diagonalizes D in the plane normal
+        !! to it (stable for close and repeated eigenvalues, without overflow, D-028), and every eigenvalue is
+        !! the Rayleigh quotient of its eigenvector. Errors of a few eps of max|lam - m| for every eigenvalue
+        !! gap (plus the rounding of m in each eigenvalue), from tiny to huge/3 (the sum of the diagonal),
+        !! without floating-point exceptions (`ESPECTRAL_F0.md`). A multiple of the identity gives V = I; a NaN
+        !! entry gives NaN eigenvalues. Used by the anisotropic yield criteria (their eigenvalues, gradients and
+        !! Hessians, with `spectral_gradient` and `spectral_hessian`) and by `eigenprojections` (finite strain
+        !! kinematics).
         implicit none
         @:DEVICE()
         type(${T2}$), intent(in) :: T
@@ -139,14 +137,58 @@ contains
         real(${k}$), intent(out) :: V(3,3)
             !! Eigenvectors, column a belongs to lam(a)
 
-        real(${k}$) :: r1(3), r2(3), r3(3), c1(3), c2(3), c3(3), ca(3), u(3), w(3), tu(3), tw(3)
-        real(${k}$) :: n1, n2, n3, na, p, q, r, theta, tg, cs, sn
-        integer :: a, b, e
+        real(${k}$), parameter :: THIRD = 1.0_${k}$/3.0_${k}$
+        real(${k}$) :: x(6), m, amax, d(3,3), l(3), w(3), tr, de, dd, ee, ff, c1, c0, p, q, sqrt_p, phi, c, sn
+        real(${k}$) :: r1(3), r2(3), r3(3), x1(3), x2(3), x3(3), ca(3), n1, n2, n3, na
+        real(${k}$) :: u(3), wv(3), du(3), dw(3), pp, pq, pr, diff, theta, tg, cs, si, la, tl, tv(3)
+        integer :: a, b, e, i, j
 
-        lam = eigenvals(T)
+        ! T = m I + 2^e D, D the deviator with its largest entry in [1/2, 1)
+        m = (T%vals(1) + T%vals(2) + T%vals(3))*THIRD
+        x = T%vals
+        x(1:3) = x(1:3) - m
+        amax = maxval(abs(x))
+        V = 0.0_${k}$
+        V(1,1) = 1.0_${k}$
+        V(2,2) = 1.0_${k}$
+        V(3,3) = 1.0_${k}$
+        ! (sum, not amax: maxval skips a NaN when another entry is finite, and the NaN must reach lam)
+        if (sum(abs(x)) == 0.0_${k}$) then
+            ! A multiple of the identity: any orthonormal basis is an eigenbasis
+            lam = m
+            return
+        end if
+        e = fp_exponent(amax)
+        x = fp_scale(x, -e)
+        d(1,:) = [x(1), x(4), x(6)]
+        d(2,:) = [x(4), x(2), x(5)]
+        d(3,:) = [x(6), x(5), x(3)]
+
+        ! Closed-form eigenvalues of D (Kopp 2008, dsyevc3), descending
+        tr = x(1) + x(2) + x(3)
+        de = x(4)*x(5)
+        dd = x(4)*x(4)
+        ee = x(5)*x(5)
+        ff = x(6)*x(6)
+        c1 = x(1)*x(2) + x(1)*x(3) + x(2)*x(3) - (dd + ee + ff)
+        c0 = x(3)*dd + x(1)*ee + x(2)*ff - x(1)*x(2)*x(3) - 2.0_${k}$*x(6)*de
+        p = tr*tr - 3.0_${k}$*c1
+        q = tr*(p - 1.5_${k}$*c1) - 13.5_${k}$*c0
+        sqrt_p = sqrt(abs(p))
+        phi = 27.0_${k}$*(0.25_${k}$*c1*c1*(p - c1) + c0*(q + 6.75_${k}$*c0))
+        phi = THIRD*atan2(sqrt(abs(phi)), q)
+        c = sqrt_p*cos(phi)
+        sn = sqrt_p*sin(phi)/sqrt(3.0_${k}$)
+        w(2) = THIRD*(tr - c)
+        w(3) = w(2) + sn
+        w(1) = w(2) + c
+        w(2) = w(2) - sn
+        l(1) = max(w(1), w(2), w(3))
+        l(3) = min(w(1), w(2), w(3))
+        l(2) = w(1) + w(2) + w(3) - l(1) - l(3)
 
         ! a: most separated eigenvalue; b, b+1: the remaining pair
-        if (lam(1) - lam(2) >= lam(2) - lam(3)) then
+        if (l(1) - l(2) >= l(2) - l(3)) then
             a = 1
             b = 2
         else
@@ -154,90 +196,89 @@ contains
             b = 1
         end if
 
-        ! Rows of T - lam(a) I and their pairwise cross products; the largest one is v_a
-        r1 = [T%vals(1) - lam(a), T%vals(4), T%vals(6)]
-        r2 = [T%vals(4), T%vals(2) - lam(a), T%vals(5)]
-        r3 = [T%vals(6), T%vals(5), T%vals(3) - lam(a)]
-        ! Scale the rows by a power of 2 so that their largest entry is O(1): otherwise |c|**2 of a
-        ! nearly isotropic T (rows ~1e-11) underflows into subnormals in sp and ca/sqrt(na) is not
-        ! a unit vector. The scaling is exact, so without under/overflow the result is bit-identical.
-        e = fp_exponent(max(maxval(abs(r1)), maxval(abs(r2)), maxval(abs(r3))))
-        r1 = scale(r1, -e)
-        r2 = scale(r2, -e)
-        r3 = scale(r3, -e)
-        c1 = cross_${k}$(r1, r2)
-        c2 = cross_${k}$(r2, r3)
-        c3 = cross_${k}$(r3, r1)
-        n1 = c1(1)**2 + c1(2)**2 + c1(3)**2
-        n2 = c2(1)**2 + c2(2)**2 + c2(3)**2
-        n3 = c3(1)**2 + c3(2)**2 + c3(3)**2
+        ! Rows of D - l(a) I and their pairwise cross products; the largest one is v_a
+        la = l(a)
+        r1 = [d(1,1) - la, d(1,2), d(1,3)]
+        r2 = [d(2,1), d(2,2) - la, d(2,3)]
+        r3 = [d(3,1), d(3,2), d(3,3) - la]
+        x1 = cross_${k}$(r1, r2)
+        x2 = cross_${k}$(r2, r3)
+        x3 = cross_${k}$(r3, r1)
+        n1 = dot_product(x1, x1)
+        n2 = dot_product(x2, x2)
+        n3 = dot_product(x3, x3)
         if (n1 >= n2 .and. n1 >= n3) then
-            ca = c1
+            ca = x1
             na = n1
         else if (n2 >= n3) then
-            ca = c2
+            ca = x2
             na = n2
         else
-            ca = c3
+            ca = x3
             na = n3
         end if
-        if (na <= 0.0_${k}$) then
-            ! T is a multiple of the identity: any orthonormal basis is an eigenbasis
-            V = 0.0_${k}$
-            V(1,1) = 1.0_${k}$
-            V(2,2) = 1.0_${k}$
-            V(3,3) = 1.0_${k}$
+        if (.not. (na > 0.0_${k}$)) then
+            ! Only reached with a NaN entry (for a nonzero finite deviator the most separated eigenvalue is
+            ! simple): NaN eigenvalues through l
+            lam = m + fp_scale(l, e)
             return
         end if
         V(:,a) = ca/sqrt(na)
 
-        ! Orthonormal basis (u, w) of the plane normal to V(:,a)
+        ! Orthonormal basis (u, w) of the plane normal to v_a and the plane rotation that diagonalizes
+        ! [[pp, pq], [pq, pr]], the restriction of D to it (tangent without overflow, D-028)
         if (abs(V(1,a)) > abs(V(2,a))) then
             u = [-V(3,a), 0.0_${k}$, V(1,a)]/sqrt(V(1,a)**2 + V(3,a)**2)
         else
             u = [0.0_${k}$, V(3,a), -V(2,a)]/sqrt(V(2,a)**2 + V(3,a)**2)
         end if
-        w = cross_${k}$(V(:,a), u)
-
-        ! Plane rotation (cs, sn) that diagonalizes [[p, q], [q, r]], the restriction of T to (u, w)
-        tu = [T%vals(1)*u(1) + T%vals(4)*u(2) + T%vals(6)*u(3), &
-              T%vals(4)*u(1) + T%vals(2)*u(2) + T%vals(5)*u(3), &
-              T%vals(6)*u(1) + T%vals(5)*u(2) + T%vals(3)*u(3)]
-        tw = [T%vals(1)*w(1) + T%vals(4)*w(2) + T%vals(6)*w(3), &
-              T%vals(4)*w(1) + T%vals(2)*w(2) + T%vals(5)*w(3), &
-              T%vals(6)*w(1) + T%vals(5)*w(2) + T%vals(3)*w(3)]
-        p = dot_product(u, tu)
-        q = dot_product(u, tw)
-        r = dot_product(w, tw)
+        wv = cross_${k}$(V(:,a), u)
+        du = d(:,1)*u(1) + d(:,2)*u(2) + d(:,3)*u(3)
+        dw = d(:,1)*wv(1) + d(:,2)*wv(2) + d(:,3)*wv(3)
+        pp = dot_product(u, du)
+        pq = dot_product(u, dw)
+        pr = dot_product(wv, dw)
         tg = 0.0_${k}$
-        if (abs(q) > 0.0_${k}$) then
-            theta = (r - p)/(2.0_${k}$*q)
-            tg = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
+        if (abs(pq) > 0.0_${k}$) then
+            diff = pr - pp
+            if (abs(2.0_${k}$*pq) <= 1.0e-15_${k}$*abs(diff)) then
+                tg = pq/diff
+            else
+                theta = diff/(2.0_${k}$*pq)
+                tg = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
+            end if
         end if
         cs = 1.0_${k}$/sqrt(tg*tg + 1.0_${k}$)
-        sn = tg*cs
-        ! Rotated eigenvalues: p - tg*q for cs*u - sn*w, and r + tg*q for sn*u + cs*w
-        if (p - tg*q >= r + tg*q) then
-            V(:,b) = cs*u - sn*w
-            V(:,b+1) = sn*u + cs*w
-        else
-            V(:,b) = sn*u + cs*w
-            V(:,b+1) = cs*u - sn*w
-        end if
+        si = tg*cs
+        ! Rotated pair: pp - tg pq for cs u - si w, pr + tg pq for si u + cs w; v_a by its Rayleigh quotient
+        V(:,b) = cs*u - si*wv
+        V(:,b+1) = si*u + cs*wv
+        l(b) = pp - tg*pq
+        l(b+1) = pr + tg*pq
+        du = d(:,1)*V(1,a) + d(:,2)*V(2,a) + d(:,3)*V(3,a)
+        l(a) = dot_product(V(:,a), du)
+
+        ! Descending order with the columns of V
+        do i = 1, 2
+            do j = 1, 3 - i
+                if (l(j) < l(j+1)) then
+                    tl = l(j)
+                    l(j) = l(j+1)
+                    l(j+1) = tl
+                    tv = V(:,j)
+                    V(:,j) = V(:,j+1)
+                    V(:,j+1) = tv
+                end if
+            end do
+        end do
+        lam = m + fp_scale(l, e)
     end subroutine spectral_decomposition_${k}$
 
     pure subroutine eigenprojections_${k}$(s, eig, proj)
-        !! Eigenvalues and eigenprojections of a symmetric tensor, `real(${k}$)`, accurate also for close
-        !! eigenvalues (the spectral decompositions of the finite strain kinematics). Cyclic Jacobi
-        !! rotations (`jacobi_eigen`) when a relative gap between consecutive eigenvalues
-        !! \( (\lambda_a - \lambda_{a+1})/\max|\lambda| \) of the closed form `eigenvals` lies in
-        !! [`JACOBI_GAP_LO_${k}$`, `JACOBI_GAP_HI_${k}$`); otherwise the closed form with the
-        !! Cayley-Hamilton eigenprojections of `dEigenvalues_dTensor` (the historical bits). The
-        !! eigenprojections of the closed form lose ~eps/gap^2 and take the eigenvalues as repeated
-        !! below a gap of ~3e-6 (the logarithmic strains lose their deviatoric part near C = I);
-        !! with a rounding gap (repeated eigenvalues) they are exact. In sp the band covers every
-        !! gap (always Jacobi). `eigenvals` itself returns a triple root for a deviator below 1e-10
-        !! (absolute), so the strains of that size keep the isotropic decomposition.
+        !! Eigenvalues and eigenprojections \( P_a = v_a \otimes v_a \) of a symmetric tensor, `real(${k}$)`, from
+        !! `spectral_decomposition` (D-032): accurate also for close eigenvalues (the spectral decompositions of
+        !! the finite strain kinematics). A repeated eigenvalue gives one valid basis of its eigenspace (the sum of
+        !! its eigenprojections is unique).
         implicit none
         @:DEVICE()
         type(ten_3D2Osym_${k}$), intent(in) :: s
@@ -246,107 +287,27 @@ contains
             !! Eigenvalues (descending).
         type(ten_3D2Osym_${k}$), intent(out) :: proj(3)
             !! Eigenprojections.
+        real(${k}$) :: v(3, 3)
+        integer :: a
 
-        eig = eigenvals(s)
-        if (jacobi_band_${k}$(eig)) then
-            call jacobi_eigen_${k}$(s, eig, proj)
-        else
-            proj = dEigenvalues_dTensor(s, eig)
-        end if
+        call spectral_decomposition_${k}$(s, eig, v)
+        do a = 1, 3
+            proj(a)%vals = [v(1, a)**2, v(2, a)**2, v(3, a)**2, v(1, a)*v(2, a), v(2, a)*v(3, a), v(1, a)*v(3, a)]
+        end do
     end subroutine eigenprojections_${k}$
 
     pure subroutine eigenvals_refined_${k}$(s, eig)
-        !! The eigenvalues of `eigenprojections`, `real(${k}$)` (the same bits: refined by Jacobi rotations in the
-        !! band of close eigenvalues), without the eigenprojections of the closed form.
+        !! The eigenvalues of `eigenprojections`, `real(${k}$)` (the same bits), without the eigenprojections.
         implicit none
         @:DEVICE()
         type(ten_3D2Osym_${k}$), intent(in) :: s
             !! Symmetric tensor.
         real(${k}$), intent(out) :: eig(3)
             !! Eigenvalues (descending).
-        type(ten_3D2Osym_${k}$) :: proj(3)
+        real(${k}$) :: v(3, 3)
 
-        eig = eigenvals(s)
-        if (jacobi_band_${k}$(eig)) call jacobi_eigen_${k}$(s, eig, proj)
+        call spectral_decomposition_${k}$(s, eig, v)
     end subroutine eigenvals_refined_${k}$
-
-    pure logical function jacobi_band_${k}$(eig)
-        !! A relative gap between consecutive eigenvalues of the closed form lies in
-        !! [`JACOBI_GAP_LO_${k}$`, `JACOBI_GAP_HI_${k}$`): `eigenprojections` uses Jacobi rotations, `real(${k}$)`.
-        implicit none
-        @:DEVICE()
-        real(${k}$), intent(in) :: eig(3)
-            !! Eigenvalues of the closed form (descending).
-        real(${k}$) :: gap(2)
-
-        gap = abs([eig(1) - eig(2), eig(2) - eig(3)])/max(abs(eig(1)), abs(eig(3)), EPS_ABS_${k}$)
-        jacobi_band_${k}$ = any(gap >= JACOBI_GAP_LO_${k}$ .and. gap < JACOBI_GAP_HI_${k}$)
-    end function jacobi_band_${k}$
-
-    pure subroutine jacobi_eigen_${k}$(s, eig, proj)
-        !! Eigenvalues and eigenprojections of a symmetric tensor by cyclic Jacobi rotations
-        !! (`JACOBI_SWEEPS` sweeps), `real(${k}$)`: eigenvalues with an absolute error of a few ulp of
-        !! |s| and orthogonal projections also for close eigenvalues.
-        implicit none
-        @:DEVICE()
-        type(ten_3D2Osym_${k}$), intent(in) :: s
-            !! Symmetric tensor.
-        real(${k}$), intent(out) :: eig(3)
-            !! Eigenvalues (descending).
-        type(ten_3D2Osym_${k}$), intent(out) :: proj(3)
-            !! Eigenprojections.
-        integer, parameter :: JACOBI_SWEEPS = 6
-            ! Quadratic convergence: 3x3 converges to rounding in 3-4 sweeps
-        integer, parameter :: P_OF(3) = [1, 1, 2], Q_OF(3) = [2, 3, 3]
-        real(${k}$) :: m(3, 3), v(3, 3), rot(3, 3), theta, diff, t, c
-        integer :: sweep, i, p, q, a, order(3)
-
-        m = to_matrix(s)
-        v = 0.0_${k}$
-        do i = 1, 3
-            v(i, i) = 1.0_${k}$
-        end do
-        do sweep = 1, JACOBI_SWEEPS
-            do i = 1, 3
-                p = P_OF(i)
-                q = Q_OF(i)
-                if (abs(m(p, q)) <= tiny(1.0_${k}$)) cycle
-                ! Rotation angle (Numerical Recipes, stable for a small m(p, q)), theta = diff/(2 m(p, q)); for
-                ! theta > 1e15, t = 1/(2 theta) = m(p, q)/diff without forming theta, which overflows in sp when
-                ! m(p, q) is near tiny (eigenvalues ~1e3, D-028)
-                diff = m(q, q) - m(p, p)
-                if (abs(2.0_${k}$*m(p, q)) <= 1.0e-15_${k}$*abs(diff)) then
-                    t = m(p, q)/diff
-                else
-                    theta = diff/(2.0_${k}$*m(p, q))
-                    t = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
-                end if
-                c = 1.0_${k}$/sqrt(t*t + 1.0_${k}$)
-                rot = 0.0_${k}$
-                rot(1, 1) = 1.0_${k}$
-                rot(2, 2) = 1.0_${k}$
-                rot(3, 3) = 1.0_${k}$
-                rot(p, p) = c
-                rot(q, q) = c
-                rot(p, q) = t*c
-                rot(q, p) = -t*c
-                m = matmul(transpose(rot), matmul(m, rot))
-                m(p, q) = 0.0_${k}$
-                m(q, p) = 0.0_${k}$
-                v = matmul(v, rot)
-            end do
-        end do
-        ! Descending order, as eigenvals
-        order = [1, 2, 3]
-        if (m(order(1), order(1)) < m(order(2), order(2))) order([1, 2]) = order([2, 1])
-        if (m(order(2), order(2)) < m(order(3), order(3))) order([2, 3]) = order([3, 2])
-        if (m(order(1), order(1)) < m(order(2), order(2))) order([1, 2]) = order([2, 1])
-        do a = 1, 3
-            i = order(a)
-            eig(a) = m(i, i)
-            proj(a)%vals = [v(1, i)**2, v(2, i)**2, v(3, i)**2, v(1, i)*v(2, i), v(2, i)*v(3, i), v(1, i)*v(3, i)]
-        end do
-    end subroutine jacobi_eigen_${k}$
 
     pure function cross_${k}$(x, y) result(res)
         ! Cross product x * y; used by spectral_decomposition

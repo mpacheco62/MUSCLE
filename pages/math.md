@@ -29,8 +29,9 @@ tensor:
 | I need | Routine | Module |
 |---|---|---|
 | Inverse of a 3x3 … 9x9 matrix, with its condition number | `M33INV`, `M44INV`, `M55INV`, `M66INV`, `M99INV`, `COND_INF` | `muscle_math_inverses` |
+| The infinity norm (maximum absolute row sum) of a matrix, in device code | `NORM_INF` | `muscle_math_inverses` |
 | A small linear system `A x = b` in a kernel (n = 2 … 9) | `LU<n>SOLVE` (`lu_solve`: host front end) | `muscle_math_lu_solve` |
-| A quiet NaN, or `exponent(x)`, in device code | `QUIET_NAN_<k>`, `fp_exponent` | `muscle_math_fp` |
+| A quiet NaN, `exponent(x)` or `scale(x, n)` in device code | `QUIET_NAN_<k>`, `fp_exponent`, `fp_scale` | `muscle_math_fp` |
 | Eigenvalues of a symmetric tensor (values only, cheap) | `eigenvals` | `muscle_math_eigen` |
 | Eigenvalues and eigenvectors (for spectral gradients/Hessians) | `spectral_decomposition` | `muscle_math_eigen` |
 | Eigenvalues and eigenprojections accurate for close eigenvalues | `eigenprojections`, `eigenvals_refined` | `muscle_math_eigen` |
@@ -45,13 +46,15 @@ Tensor conversions (`to_matrix`, `from_upper`), norms, determinants and inverses
 are free functions of the tensor types (`muscle_tensor_functions`, [Tensor Algebra Guide](tensors.html)).
 Numerical derivatives are the macros of `tests/common/muscle_fd.fypp`, for tests only.
 
-## Two strategies for close eigenvalues
+## One spectral decomposition
 
-`spectral_decomposition` (anisotropic yield criteria) resolves a pair of close eigenvalues with one plane
-rotation; `eigenprojections` (finite strain kinematics) uses the closed form outside a band of relative gaps
-and cyclic Jacobi rotations inside it (`JACOBI_GAP_LO/HI_<k>` of `muscle_kinds`). Both live in
-`muscle_math_eigen`; whether they can become one routine without making the kernels heavier is being measured
-(`docs/fypp/PLAN_ESPECTRAL.md`).
+`spectral_decomposition` is the spectral decomposition of the library (D-032, "K"): the deviator scaled by a
+power of 2, its closed-form eigenvalues, the eigenvector of the most separated eigenvalue by a cross product of
+rows, the remaining pair by one plane rotation without overflow and the eigenvalues as Rayleigh quotients. It is
+accurate to a few eps for every eigenvalue gap, at any scale, and is what the anisotropic yield criteria use for
+their equivalent stress and its derivatives, and what the finite strain kinematics use through
+`eigenprojections` (\( P_a = v_a \otimes v_a \)). `eigenvals` (closed form, values only) and the
+Cayley-Hamilton derivatives of `muscle_math_spectral_derivs` remain public routines.
 
 ## Shared code
 

@@ -22,10 +22,30 @@ function(add_muscle_benchmark NAME)
     add_dependencies(build_all_benchmarks ${EXE_NAME})
 endfunction()
 
+# Plan C, phase F0 (docs/fypp/PLAN_ESPECTRAL.md): accuracy against a quad-precision truth and cost of the
+# spectral decompositions of muscle_math_eigen and of the candidates of math/spectral_candidates.fypp
+set(_bench_spectral)
+foreach(_src bench_spectral_candidates bench_spectral)
+    _muscle_fypp_source("${CMAKE_CURRENT_SOURCE_DIR}/math/${_src}.fypp" _src_abs _src_rel)
+    set(_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/math/${_src}.f90")
+    _muscle_fypp_command("${_src_abs}" "${_out}" "FYPP ${_src_rel}"
+                         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/math/spectral_candidates.fypp")
+    list(APPEND _bench_spectral "${_out}")
+endforeach()
+add_muscle_benchmark(spectral ${_bench_spectral})
+set_source_files_properties(${_bench_spectral} PROPERTIES Fortran_PREPROCESS ON)
+
 # Batch API of materials of the test registry (tools/fypp/muscle_materials.py): not built with a user
 # registry (-DMUSCLE_MATERIALS)
 if(NOT MUSCLE_MATERIALS)
     add_muscle_benchmark(closest_point_scalability solvers/bench_closest_point_scalability.f90)
+
+    # Time per point of the point kernel of finite strain materials (plan C, F0: the spectral decompositions of
+    # the kinematics), one thread
+    _muscle_fypp_source("${CMAKE_CURRENT_SOURCE_DIR}/math/bench_kin_kernel.fypp" _kin_abs _kin_rel)
+    set(_kin_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/math/bench_kin_kernel.f90")
+    _muscle_fypp_command("${_kin_abs}" "${_kin_out}" "FYPP ${_kin_rel}")
+    add_muscle_benchmark(kin_kernel "${_kin_out}")
 
     # Batch API GPU vs CPU (Phase 8, D-019): one executable bench_batch_gpu_<material>_<kind> per case of
     # gpu/bench_cases.py, so that each device image stays small. The template takes the sample inputs of

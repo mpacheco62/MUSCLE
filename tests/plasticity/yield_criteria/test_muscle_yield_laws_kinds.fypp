@@ -11,10 +11,10 @@
 #!   against central differences (of stress_eq and of the analytical gradient), computed here;
 #! - sp against dp from the same inputs (the sp parameters and stresses converted to dp);
 #! - sp over magnitude ranges (CPB06, CPB06ex2 and Yld2004 scaled by max |lambda|, D-017.10c,
-#!   |sigma| 1e-8..1e5, CPB06ex2 and Yld2004 from 1e-7 (eigenvals); Drucker-Prager with its stable
+#!   |sigma| 1e-8..1e5 (since D-032 without the threshold of eigenvals); Drucker-Prager with its stable
 #!   Hessian, D-017.11d, 1e-8..1e12; von Mises Hessian with n = dev/seq, D-017.10d);
 #! - null equivalent stress (zero and hydrostatic stresses): f = 0 and zero derivatives, no NaN
-#!   (D-017.9); CPB06 on hydrostatic stresses that are not exact in binary (noise); Yld2004 on
+#!   (D-017.9); CPB06 on hydrostatic stresses that are not exact in binary (f = 0 exactly, D-032); Yld2004 on
 #!   hydrostatic stresses (not exactly pressure insensitive: f tiny, finite gradient); Drucker-Prager
 #!   at zero and hydrostatic stresses of both signs (f = tan(beta) f_factor p, constant gradient,
 #!   zero Hessian; pressure added to general states);
@@ -38,7 +38,7 @@
 #!   CPB06ex2 9.3e-10 Hessian; the states where Sigma has a null principal value are skipped for
 #!   CPB06 with k /= 0, see below);
 #! - TOL_K: sp against dp, also over the magnitude sweeps (CPB06, CPB06ex2 and Yld2004 |sigma|
-#!   1e-8..1e5 (CPB06ex2 and Yld2004 from 1e-7, see test_vs_dp), Drucker-Prager 1e-8..1e12, von
+#!   1e-8..1e5 (see test_vs_dp), Drucker-Prager 1e-8..1e12, von
 #!   Mises 1e-15..1e15) (measured 5.6e-7 stress_eq, Drucker-Prager; 6.3e-7 gradient and 1.7e-6 Hessian,
 #!   CPB06ex2);
 #! - FD_TOL: FD_GRAD/FD_HESS against the analytical derivatives with the default steps of FD_GRAD and
@@ -467,6 +467,7 @@ contains
         call record(test_cpb_uniaxial_${k}$(), ${10*i + 7}$, 'CPB06 normalization: uniaxial tension along x, f = s ${k}$', &
                     code)
         call record(test_ex2_swap_${k}$(), ${10*i + 8}$, 'CPB06ex2 swap symmetry and C'' = 0 = CPB06 ${k}$', code)
+        call record(test_small_shear_${k}$(), ${10*i + 9}$, 'CPB06/CPB06ex2 tiny shear on a pressure ${k}$ (D-032)', code)
         #:endfor
     end subroutine run_all
 
@@ -547,6 +548,67 @@ contains
             r = t
         end select
     end function dp_i1_${k}$
+
+    function test_small_shear_${k}$() result(passed)
+        !! CPB06, CPB06ex2 and Yld2004 (f through `ev`, the family generics) at a shear tau e12 far below the old
+        !! absolute threshold of `eigenvals` (1e-10 dp, 1e-9 sp on sqrt(J2/3), D-017.9), alone and on a
+        !! pressure p = 1 or 0.1, `real(${k}$)`. f takes its
+        !! eigenvalues from `spectral_decomposition` (D-032), which has no absolute threshold, so:
+        !! - f(tau e12) = tau f(e12) bit for bit (degree 1 homogeneity with tau a power of 2: the scaling of
+        !!   the decomposition and of f by powers of 2 is exact), > 0 (before: f = 0);
+        !! - f(p I + tau e12) = f(tau e12) bit for bit (Sigma = L : sigma acts on the differences of the
+        !!   normal stresses, so the pressure cancels exactly).
+        logical :: passed
+        real(${k}$), parameter :: TAU = 2.0_${k}$**(${-40 if k == 'dp' else -34}$)
+        real(${k}$), parameter :: PRESSURE(2) = [1.0_${k}$, 0.1_${k}$]
+        type(${tname('3D2Osym', k)}$) :: s1, st, sps
+        real(${k}$) :: f1, ft, fp, r(28)
+        integer :: i, j
+
+        passed = .true.
+        s1%vals = 0.0_${k}$
+        s1%vals(4) = 1.0_${k}$
+        st%vals = TAU*s1%vals
+        do i = 1, size(CPBV, 2)
+            r = ev(cpb_${k}$(i), s1)
+            f1 = r(1)
+            r = ev(cpb_${k}$(i), st)
+            ft = r(1)
+            call check_true(passed, '${k}$ CPB06 tiny shear: f > 0', ft > 0.0_${k}$)
+            call check_true(passed, '${k}$ CPB06 tiny shear: f(tau e12) = tau f(e12)', ft == TAU*f1)
+            do j = 1, size(PRESSURE)
+                sps = st
+                sps%vals(1:3) = PRESSURE(j)
+                r = ev(cpb_${k}$(i), sps)
+                fp = r(1)
+                call check_true(passed, '${k}$ CPB06 tiny shear on a pressure: f(p I + tau e12) = f(tau e12)', fp == ft)
+            end do
+        end do
+        do i = 1, size(EX2V, 2)
+            r = ev(ex2_${k}$(i), s1)
+            f1 = r(1)
+            r = ev(ex2_${k}$(i), st)
+            ft = r(1)
+            call check_true(passed, '${k}$ CPB06ex2 tiny shear: f > 0', ft > 0.0_${k}$)
+            call check_true(passed, '${k}$ CPB06ex2 tiny shear: f(tau e12) = tau f(e12)', ft == TAU*f1)
+            do j = 1, size(PRESSURE)
+                sps = st
+                sps%vals(1:3) = PRESSURE(j)
+                r = ev(ex2_${k}$(i), sps)
+                fp = r(1)
+                call check_true(passed, '${k}$ CPB06ex2 tiny shear on a pressure: f(p I + tau e12) = f(tau e12)', fp == ft)
+            end do
+        end do
+        ! Yld2004: not exactly insensitive to a pressure (D-017.9), so only the shear alone
+        do i = 1, size(YLDV, 2)
+            r = ev(yld_${k}$(i), s1)
+            f1 = r(1)
+            r = ev(yld_${k}$(i), st)
+            ft = r(1)
+            call check_true(passed, '${k}$ Yld2004 tiny shear: f > 0', ft > 0.0_${k}$)
+            call check_true(passed, '${k}$ Yld2004 tiny shear: f(tau e12) = tau f(e12)', ft == TAU*f1)
+        end do
+    end function test_small_shear_${k}$
 
     function ex2_${k}$(i) result(p)
         !! i-th CPB06ex2 parameter set in `real(${k}$)` (initializer of the kernel API, positional).
@@ -631,23 +693,21 @@ contains
                 call check_dp_hydro(i, ev(dpr_${k}$(i), s), s%vals(1))
             end do
         end do
-        ! A hydrostatic stress that is not exact in binary (3p/3 /= p): CPB06 gives a rounding-noise
-        ! equivalent stress (>= 0, tiny) and finite, bounded derivatives (Sigma = L : sigma is exactly
-        ! 0 there: the derivatives take the null branch)
+        ! A hydrostatic stress that is not exact in binary (3p/3 /= p): CPB06 gives f = 0 exactly and
+        ! finite, bounded derivatives. Sigma = L : sigma acts on the differences of the normal stresses,
+        ! so it is exactly 0 there, and f takes its eigenvalues from the same Sigma (D-032; before, f used
+        ! C1 : dev(sigma), whose rounding left a tiny f > 0 in dp)
         noise = .false.
         do j = 1, size(NOISY)
             s%vals = 0.0_${k}$
             s%vals(1:3) = real(NOISY(j), ${k}$)
             do i = 1, size(CPBV, 2)
                 r = ev(cpb_${k}$(i), s)
-                noise = noise .or. r(1) > 0.0_${k}$
+                noise = noise .or. r(1) /= 0.0_${k}$
                 call check_noise(r, abs(s%vals(1)))
             end do
         end do
-        #:if k == 'dp'
-        ! In dp p = 0.1 does leave a nonzero noise (so the checks above see one)
-        call check_true(passed, 'dp CPB06 noisy hydrostatic: some f > 0', noise)
-        #:endif
+        call check_true(passed, '${k}$ CPB06 noisy hydrostatic: f = 0 exactly', .not. noise)
     contains
         subroutine check_yld_hydro(r, p)
             real(${k}$), intent(in) :: r(28), p
@@ -907,9 +967,9 @@ contains
             ! Drucker-Prager, CPB06ex2 and Yld2004 at the current s / sd (magnitude 10**e), dp
             ! parameters from the `real(${k}$)` values of each set (exact conversion). Drucker-Prager
             ! from 1e-8 to 1e12 (stable Hessian, D-017.11d; the equivalent stress and the gradient
-            ! keep q**3, which overflows in sp above ~7e12). CPB06ex2 and Yld2004 from 1e-7 to 1e5: below, |Sigma| reaches the
-            ! absolute threshold of `eigenvals` (1e-9 in sp, D-016.5, D-017.9), which discards the deviator (sp errors of 1-100% at
-            ! 1e-8 and 1e-9; CPB06 reaches 1e-8 because its C is larger)
+            ! keep q**3, which overflows in sp above ~7e12). CPB06ex2 and Yld2004 from 1e-8 to 1e5, as CPB06 (before
+            ! D-032 from 1e-7: their f took the eigenvalues of `eigenvals`, whose absolute threshold, 1e-9 in sp, discarded
+            ! the deviator below)
             character(len=*), intent(in) :: suffix
             integer, intent(in) :: e
             type(yield_druckerprager_dp) :: pd
@@ -924,7 +984,7 @@ contains
                 call check_true(passed, 'Drucker-Prager dp init status', status == STATUS_OK)
                 call compare('Drucker-Prager' // suffix, ev(dpr_${k}$(i), s), ev(pd, sd))
             end do
-            if (e < -7 .or. e > 5) return
+            if (e < -8 .or. e > 5) return
             do i = 1, size(EX2V, 2)
                 c = real(real(EX2V(:, i), ${k}$), dp)
                 call yield_cpb06ex2_init(xd, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), &

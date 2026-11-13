@@ -17,8 +17,7 @@
 #   lists its undefined symbols (llvm-nm) that no library object defines.
 # Allowed: device math library (libm names), OpenMP device runtime, memcpy/memset, compiler support
 # routines (__powidf2, __divsi3, ...), SPIR-V/OpenCL builtins; in a Debug build also the -fcheck
-# diagnostics (_gfortran_runtime_error_at/_warning_at) and the matmul routines (not inlined at -O0);
-# for SPIR64 the routine of scale() (for_scale<4|8>_v, see ALLOWED_SPIR64).
+# diagnostics (_gfortran_runtime_error_at/_warning_at) and the matmul routines (not inlined at -O0).
 # Everything else (Fortran runtime: _gfortran_*, for_*; malloc/free; I/O; stop; ieee_* entry/exit)
 # is reported. --lint also runs the source-level rules of tools/check.sh --lint-only (device,
 # alloc, io, exponent, ...), which tools/check.sh already runs itself.
@@ -117,14 +116,8 @@ ALLOWED = re.compile(r"""^(?:
 # Debug builds: -fcheck diagnostics and the matmul routine (gfortran inlines matmul only when optimizing)
 ALLOWED_DEBUG = re.compile(r"^_gfortran_(?:runtime_error_at|runtime_warning_at|matmul_r[48])$")
 
-# SPIR64: the device routine of scale() (yield criteria, spectral_decomposition). Replacing scale() by
-# products with powers of 2 (same bits on the CPU) makes IGC lose the device in three sp material kernels
-# that pass with it (2026-11-03, PROBLEMAS.md): kept until a driver/compiler without that bug.
-ALLOWED_SPIR64 = re.compile(r"^for_scale[48]_v$")
-
 def allowed(sym):
-    return (bool(ALLOWED.match(sym)) or (config == "Debug" and bool(ALLOWED_DEBUG.match(sym)))
-            or (gpu == "SPIR64" and bool(ALLOWED_SPIR64.match(sym))))
+    return bool(ALLOWED.match(sym)) or (config == "Debug" and bool(ALLOWED_DEBUG.match(sym)))
 
 def base(name):
     """Host name of a device function: without the suffixes of outlined regions and clones."""

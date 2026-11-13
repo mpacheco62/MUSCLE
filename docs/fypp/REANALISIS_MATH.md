@@ -54,6 +54,10 @@ los `use`.
 
 ### H2. Lo espectral está partido en dos módulos y hay tres caminos a las autoproyecciones (alto, «se pisan»)
 
+> **Resuelto (D-029 y D-032, 2026-11-12):** lo espectral está en `muscle_math_eigen` (D-029) y hay un solo camino a
+> autovalores, autovectores y autoproyecciones: `spectral_decomposition` (K), que usan los criterios anisótropos y la
+> cinemática (`eigenprojections`). `eigenvals` (sólo valores) y las derivadas de Cayley-Hamilton quedan como API pública.
+
 | Necesidad | Rutina | Módulo | Método | Quién la usa |
 |---|---|---|---|---|
 | autovalores | `eigenvals` | operations | forma cerrada (Cayley-Hamilton, trigonométrica) | yield, kin |
@@ -69,6 +73,10 @@ rotación plana única en `spectral_decomposition`, Jacobi cíclico en `eigenpro
 **cambia resultados** (decisión aparte, no recomendada ahora); juntar las rutinas en un módulo no.
 
 ### H3. La rotación plana de `spectral_decomposition` repite la fórmula que D-028 corrigió en Jacobi (medio, corrección posible)
+
+> **Resuelto (D-032, 2026-11-12):** reproducido (el banco de F0 da 6 excepciones en sp con un isótropo rotado, y el
+> test `diag(4, 2, 1)` con acoplamiento casi `tiny` aborta bajo `-ffpe-trap=overflow` con la fórmula anterior) y
+> corregido: K usa la tangente sin desborde de D-028.
 
 `spectral_decomposition` calcula `theta = (r - p)/(2 q)` con sólo `abs(q) > 0` y luego `theta*theta`
 (`muscle_math_spectral_derivs.fypp`, rotación del bloque 2x2). Es el mismo patrón que desbordaba en

@@ -6,9 +6,9 @@
 #! independent truth computed in quad precision (plan R: they replace the reference test of the kinematics):
 #! - deformation gradients built from their polar and spectral decomposition, F = R0 Q diag(s) Q^T (R0 and Q
 #!   rotations in quad precision): then J = s1 s2 s3, R = R0, C = Q diag(s^2) Q^T, b = R0 C R0^T, and the
-#!   Hencky strains are H = Q diag(ln s) Q^T and h = R0 H R0^T exactly. Cases: distinct stretches (closed
-#!   form spectral decomposition in dp), two eigenvalues of C within 1e-6 (pair 2-3 or pair 1-2: Jacobi
-#!   rotations in dp, and the closed form would lose the deviatoric part, D-018.19a), two eigenvalues within
+#!   Hencky strains are H = Q diag(ln s) Q^T and h = R0 H R0^T exactly. Cases: distinct stretches, two
+#!   eigenvalues of C within 1e-6 (pair 2-3 or pair 1-2: a closed form would lose the deviatoric part,
+#!   D-018.19a; `spectral_decomposition` does not, D-032), two eigenvalues within
 #!   9e-5 (the series of (ln a - ln b)/(a - b) in the tangents) and an eigenvalue of C (1e-14) below
 #!   KIN_EIG_MIN (dropped from the tangents);
 #! - strain measures (Green-Lagrange, Euler-Almansi, material and spatial Hencky), J and R of the state, the
@@ -28,8 +28,10 @@
 #!   pull_back(push_forward(A)) = A; at F = I exactly the spin and material logarithmic geometric terms are
 #!   zero and the logarithmic tangents are the constitutive tangent (the C = I fast paths).
 #! Tolerance: 10 TOL_APPROX_<k> relative to the largest component of each result (as the objectivity test of
-#! test_kin_kinds); the closed form spectral decomposition in dp is accurate to ~eps/gap^2 (gap >= 0.28
-#! here), Jacobi to a few eps, the series of the divided difference truncates r^3/4 = 2e-13 at r = 9e-5.
+#! test_kin_kinds); the spectral decomposition is accurate to ~eps/gap (D-032), the series of the divided
+#! difference truncates r^3/4 = 2e-13 at r = 9e-5.
+#! - Hencky strains near the identity, |F - I| ~ 1e-6 and 1e-11 in dp (1e-3, 1e-5 in sp), against a quad truth of
+#!   the rounded F, within 20 eps/delta (the limit of forming C; before D-032 the deviator was lost at 1e-11).
 
 module kin_unit_truth
     !! Independent truth of the kinematics tests in quad precision (host only).
@@ -208,17 +210,102 @@ module kin_unit_cases
         kin_push_forward_tangent, kin_pull_back_tangent, &
         ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, ${', '.join('KIN_EIG_MIN_' + k for k in REAL_KINDS)}$
     use muscle_test_utils, only : check_approx, check_true
-    use kin_unit_truth, only : qp, NCASES, kin_case, make_case, deform, dk, unit_e, sym6, mat6, eye3, diag3
+    use kin_unit_truth, only : qp, NCASES, kin_case, make_case, deform, dk, unit_e, sym6, mat6, eye3, diag3, rot_q
     implicit none
     private
 
     #:for k in REAL_KINDS
     public :: test_strains_${k}$, test_corotational_${k}$, test_conversions_${k}$, test_tangents_${k}$, &
-        test_geometric_${k}$, test_tangent_transport_${k}$, test_identity_${k}$
+        test_geometric_${k}$, test_tangent_transport_${k}$, test_identity_${k}$, test_near_identity_${k}$
     #:endfor
     public :: test_truth_fd
 
 contains
+
+    #:for k in REAL_KINDS
+    subroutine test_near_identity_${k}$(passed)
+        !! Material and spatial Hencky strains of F = R0 Q diag(s) Q^T near the identity, s = 1 + delta (3, 2, 0),
+        !! `real(${k}$)` (D-032; the bug of D-018.19a: the closed form took the eigenvalues of C as repeated and
+        !! H lost its deviatoric part, error 0.67 at 1e-6; before D-032 it was lost again below a deviator of
+        !! 1e-10, error ~120%). H is computed from C = F^T F, whose rounding limits it to ~eps/delta relative:
+        !! the check is relative to max|H| within C_NEAR eps/delta (measured ~1).
+        logical, intent(inout) :: passed
+        real(qp), parameter :: DELTAS(2) = [${'1.0e-6_qp, 1.0e-11_qp' if k == 'dp' else '1.0e-3_qp, 1.0e-5_qp'}$]
+        real(qp), parameter :: C_NEAR = 20.0_qp
+        real(qp) :: q(3, 3), r0(3, 3), s(3), Fq(3, 3), H(6), hs(6), err, eps
+        type(kin_state_${k}$) :: st
+        type(${tname('3D2O', k)}$) :: F
+        type(${tname('3D2Osym', k)}$) :: t
+        integer :: id, a, status
+
+        eps = real(epsilon(1.0_${k}$), qp)
+        q = rot_q([0.7_qp, -0.4_qp, 1.0_qp], 53.0_qp)
+        r0 = rot_q([-0.2_qp, 1.0_qp, 0.5_qp], 121.0_qp)
+        do id = 1, size(DELTAS)
+            s = 1.0_qp + DELTAS(id)*[3.0_qp, 2.0_qp, 0.0_qp]
+            Fq = q
+            do a = 1, 3
+                Fq(:, a) = q(:, a)*s(a)
+            end do
+            Fq = matmul(r0, matmul(Fq, transpose(q)))
+            F%vals = real(reshape(Fq, [9]), ${k}$)
+            ! The truth of the rounded F, not of Fq: its C is what the library decomposes
+            Fq = reshape(real(F%vals, qp), [3, 3])
+            H = hencky(matmul(transpose(Fq), Fq))
+            hs = hencky(matmul(Fq, transpose(Fq)))
+            call kin_finite_update(F, st, status)
+            call check_true(passed, '${k}$ near the identity: status OK', status == STATUS_OK)
+            t = kin_material_log(st)
+            err = maxval(abs(real(t%vals, qp) - H))/maxval(abs(H))
+            call check_true(passed, '${k}$ near the identity: material Hencky within C eps/delta', &
+                            err <= C_NEAR*eps/DELTAS(id))
+            t = kin_spatial_log(st)
+            err = maxval(abs(real(t%vals, qp) - hs))/maxval(abs(hs))
+            call check_true(passed, '${k}$ near the identity: spatial Hencky within C eps/delta', &
+                            err <= C_NEAR*eps/DELTAS(id))
+        end do
+    contains
+        function hencky(c) result(v)
+            !! Voigt values of ln(c)/2 for a symmetric positive c (quad, by Jacobi on the quad matrix).
+            real(qp), intent(in) :: c(3, 3)
+            real(qp) :: v(6)
+            real(qp) :: m(3, 3), vv(3, 3), th, tt, cs, sn, g, h
+            integer :: sweep, p, qq, j
+            m = c
+            vv = eye3()
+            do sweep = 1, 30
+                do p = 1, 2
+                    do qq = p + 1, 3
+                        if (abs(m(p, qq)) < tiny(1.0_qp)) cycle
+                        th = (m(qq, qq) - m(p, p))/(2.0_qp*m(p, qq))
+                        tt = sign(1.0_qp, th)/(abs(th) + sqrt(th*th + 1.0_qp))
+                        cs = 1.0_qp/sqrt(tt*tt + 1.0_qp)
+                        sn = tt*cs
+                        do j = 1, 3
+                            g = m(j, p)
+                            h = m(j, qq)
+                            m(j, p) = cs*g - sn*h
+                            m(j, qq) = sn*g + cs*h
+                        end do
+                        do j = 1, 3
+                            g = m(p, j)
+                            h = m(qq, j)
+                            m(p, j) = cs*g - sn*h
+                            m(qq, j) = sn*g + cs*h
+                        end do
+                        do j = 1, 3
+                            g = vv(j, p)
+                            h = vv(j, qq)
+                            vv(j, p) = cs*g - sn*h
+                            vv(j, qq) = sn*g + cs*h
+                        end do
+                    end do
+                end do
+            end do
+            v = sym6(matmul(vv, matmul(diag3([log(m(1, 1)), log(m(2, 2)), log(m(3, 3))]/2.0_qp), transpose(vv))))
+        end function hencky
+    end subroutine test_near_identity_${k}$
+    #:endfor
 
     pure function stress_S() result(m)
         !! Second Piola-Kirchhoff stress (input, general).
@@ -714,6 +801,9 @@ program test_kin_finite
     passed = .true.
     call test_identity_${k}$(passed)
     call record(passed, ${14 + i}$, 'F = I tangents ${k}$', code)
+    passed = .true.
+    call test_near_identity_${k}$(passed)
+    call record(passed, ${16 + i}$, 'Hencky strains near the identity ${k}$', code)
     #:endfor
     passed = .true.
     call test_truth_fd(passed)

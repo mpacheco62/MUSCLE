@@ -259,9 +259,32 @@ poca sobretensión.
 
 ## 6. Decisiones pendientes del usuario
 1. Qué partes de `.claude/` se versionan (0.1).
-2. Cuándo se integran las ramas en `dev` (0.2).
+2. Cuándo se integran las ramas en `dev` (0.2): en curso al cierre de la migración (2026-11-12), un commit por fase.
 3. Tolerancias de los goldens fuera de la configuración de referencia (1.3).
 4. Dónde corre la CI y con qué compilador (1.5).
 5. Script o escape para el golden de un material nuevo (3.4).
 6. Cambios de convención que afectan la API pública (3.6).
 7. Explicitud o lista única en los módulos de familia (3.7).
+
+## 7. Pendientes a futuro (cierre de la migración, 2026-11-12)
+
+Lo que queda abierto al cerrar la migración, por decisión del usuario «como problema a futuro»:
+
+1. **GPU Intel (UHD 770), kernels de material** (`tools/gpu_skip_tests.sh`):
+   - `tm_rk_vm` y `tm_jcfull_vm_vocemod` en sp dan otras iteraciones que la CPU (y otra tensión y tangente en
+     algunos puntos de `tm_jcfull_vm_vocemod`), también con la fusión de EUs apagada;
+   - todos los kernels de material dp pierden el dispositivo con la FP64 emulada (no reproducible entre corridas);
+   - `mat_batch` / `mat_batch_openmp` no se volvieron a probar tras D-030;
+   - en Release, IGC entrega sin sus kernels de lote las imágenes de `pz_cha_yld2004_ludwik`, `pz_cpb06ex2_bilinear` y
+     `tm_jc_cpb06_ludwik` (D-019.8).
+   Validar en NVIDIA/AMD (sólo compilan y enlazan aquí).
+2. **Error de IGC con la emulación FP64 en EU fusionadas:** reproductores e informe listos en `docs/fypp/igc_mre/`
+   para reportarlo a Intel (D-031).
+3. **Auditoría de `alloca` dinámicos** en las imágenes SPIR64 (propuesta de D-030): hoy la regla es sólo de revisión.
+4. **API de math:** `eigenvals` conserva la rama marcada «sin corregir» (ya no la usa ningún kernel de la librería);
+   el nombre `eigenvals_refined` no describe la rutina (D-032); `fp_exponent` no tiene prueba en el dispositivo.
+5. **CPB06:** `prm%C1` viaja al dispositivo aunque el kernel ya no lo lee (cambiar el tipo es una decisión aparte).
+6. **FORD** no está instalado en la máquina de desarrollo: `check.sh` no genera la documentación.
+7. **Hueco de tests en `kin`:** el chequeo de mutaciones del cierre (`tools/mutation_check.py kin`, muestra de 40) deja
+   10 sobrevivientes, todas en `muscle_kin_small_strain.fypp` (líneas 66–67: la parte simétrica de F y la deformación
+   de pequeñas deformaciones a partir de F); ese archivo no cambió en el plan espectral.

@@ -113,14 +113,30 @@ desviadora de 1e-11 se conoce a ~ε/1e-11. Eso es inherente, también a Jacobi.
 | **KJ** | K seguido de un barrido de Jacobi de limpieza | casi el costo de K y la precisión de J | dos algoritmos en uno (más código) |
 
 F0 entrega una tabla: precisión (R1–R5) por candidato, kind, separación y escala; costo en CPU por llamada; y un
-prototipo en la GPU Intel. La elección es la **decisión D-030**.
+prototipo en la GPU Intel. La elección es la **decisión D-032**.
 
 ## 5. Fases
+
+> **D-032 (2026-11-12):** K, implementado como `spectral_decomposition` (sin `sym_eigen`). Como el núcleo conserva
+> el nombre, F1 y F3 se hacen en un paso junto con F4 (b) (la f de los criterios usa los λ del núcleo); después F2
+> (cinemática), y F5 mantiene las derivadas de Cayley-Hamilton. Donde abajo dice `sym_eigen`, léase
+> `spectral_decomposition`.
+>
+> **F1 + F3 + F4 (b) hechos (2026-11-12):** el cuerpo de `spectral_decomposition` es K y la f de CPB06, CPB06ex2 e
+> Yld2004 usa sus λ (CPB06 construye Σ con `yield_lin_apply`, como el gradiente). Los registros de empates de
+> `math_reference` se conservan: K elige la misma base que la rutina anterior y siguen pasando (F3.3 no hace
+> falta). Tests nuevos: corte diminuto sobre una presión, par casi repetido arriba y abajo, acoplamiento casi
+> `tiny` (H3), media grande y propagación de NaN. Iteraciones de Newton idénticas en los 4 materiales
+> anisótropos; GPU Intel 48/48.
+>
+> **F2 hecho (2026-11-12):** `eigenprojections`/`eigenvals_refined` sobre `spectral_decomposition`; sin franja de
+> Jacobi (D-018.19a reemplazada). Ver D-032 para el cambio numérico de la deformación de Hencky. Para F6: el nombre
+> `eigenvals_refined` ya no describe la rutina (no refina nada): candidata a retiro o alias si se limpia la API.
 
 Cada fase es uno o más commits verificables, con todos los tests en verde. Ninguna empieza sin cerrar la
 anterior.
 
-### F0. Banco de pruebas y elección (sin tocar `src`)
+### F0. Banco de pruebas y elección (sin tocar `src`) — **hecha** (`ESPECTRAL_F0.md`, 2026-11-12)
 
 1. **Arnés de verdad en cuádruple** reutilizable, en `tests/common/muscle_test_spectral.fypp`. Generador de
    `S = Q diag(λ) Qᵀ`:
@@ -134,7 +150,7 @@ anterior.
    `eigenprojections` de hoy.
 4. **Humo en GPU Intel:** el prototipo elegido dentro de un `target`, con límites de memoria y tiempo, para
    detectar pronto si IGC lo rechaza.
-5. **Informe** `docs/fypp/ESPECTRAL_F0.md` con la tabla y la recomendación. Luego la **decisión D-030** del
+5. **Informe** `docs/fypp/ESPECTRAL_F0.md` con la tabla y la recomendación. Luego la **decisión D-032** del
    usuario: algoritmo, presupuesto de costo (R7) y constantes c de los criterios.
 
 **Commit:** `test(math): quad-precision spectral harness and candidate benchmark`.
@@ -143,14 +159,14 @@ anterior.
 
 1. Nuevo genérico público con el algoritmo elegido: `sym_eigen(s, lam, V)` (nombre a confirmar), en `sp` y `dp`.
    Va en un módulo nuevo `muscle_math_eigen`, que es el primer paso de la opción B; la decisión se toma con
-   D-030. Si se prefiere no crear el módulo todavía, va en `muscle_math_spectral_derivs`.
+   D-032. Si se prefiere no crear el módulo todavía, va en `muscle_math_spectral_derivs`.
 2. Tests unitarios con el arnés de F0, que cubren R1–R5 bajo `-ffpe-trap`. Se suma a
    `test_muscle_math_target.fypp`: CPU = GPU bit a bit en el host, `check_target` en el dispositivo.
 3. Chequeo de mutaciones del área `math` sobre el núcleo (`--only`): toda sobreviviente se explica o se cubre.
 4. `gen_snapshot`: sólo se agregan símbolos; nada existente cambia.
 5. `check.sh` completo, porque es la primera vez que el núcleo pasa por IGC.
 
-**Commit:** `feat(math): sym_eigen, one spectral decomposition for every eigenvalue gap (D-030)`.
+**Commit:** `feat(math): sym_eigen, one spectral decomposition for every eigenvalue gap (D-032)`.
 
 ### F2. La cinemática pasa al núcleo
 
@@ -167,13 +183,13 @@ anterior.
    R en los tests de cinemática (script en el scratchpad, no en el repo).
 5. `check.sh` completo.
 
-**Commit:** `refactor(kin)!: eigenprojections on sym_eigen; retire the Jacobi band (D-030)`.
+**Commit:** `refactor(kin)!: eigenprojections on sym_eigen; retire the Jacobi band (D-032)`.
 
 ### F3. Los criterios anisótropos pasan al núcleo
 
 1. `spectral_decomposition` queda como envoltorio de `sym_eigen` (misma firma) o se reemplaza en las llamadas de
-   CPB06, CPB06ex2 y Yld2004; se decide en D-030. Se conserva el escalado por potencia de 2 si el algoritmo
-   elegido lo necesita (D-016.11), con `scale()` (D-019.6).
+   CPB06, CPB06ex2 y Yld2004; se decide en D-032. Se conserva el escalado por potencia de 2 si el algoritmo
+   elegido lo necesita (D-016.11), con `fp_scale` (D-031; `scale()` está prohibido en kernels).
 2. Verificación:
    - `yield_laws_kinds`: gradiente y hessiana contra diferencias finitas, en sp y dp;
    - tests de materiales anisótropos de los 5 solvers;
@@ -191,7 +207,7 @@ anterior.
    (`benchmarks/gpu/bench_cases.py`), contra la línea base de F0. Deben cumplir R7.
 5. `check.sh` completo.
 
-**Commit:** `refactor(yield)!: anisotropic criteria on sym_eigen (D-030)`.
+**Commit:** `refactor(yield)!: anisotropic criteria on sym_eigen (D-032)`.
 
 ### F4. El camino «sólo valores» (decisión)
 
@@ -221,7 +237,7 @@ Sin consumidores en la librería después de F2: `d2` nunca los tuvo y `d1` los 
    - constantes `EPS_TOL*`, si F5 retira las rutinas.
 2. Áreas de mutaciones (`tests/mutations/math.toml`, `kin`, `yield`): fuentes al día y una corrida completa.
 3. Documentación:
-   - `DECISIONES.md`: D-030, más una nota de reemplazo en D-018.19a, D-016.11 y D-028;
+   - `DECISIONES.md`: D-032, más una nota de reemplazo en D-018.19a, D-016.11 y D-028;
    - `PROBLEMAS.md`: H3 de REANALISIS_MATH, la fila de la banda de Jacobi, la de los empates con FMA y la fila
      marcada si se resolvió en F4;
    - `pages/`, el README y la skill (`ubicacion.md`: «Autovalores, autovectores» apunta al núcleo);
@@ -262,7 +278,7 @@ total de C (agente `reviewer`) e informe final al usuario: precisión, costo, it
 - **Tomadas (2026-11-11):** orden de la carpeta primero (fase B); presupuesto R7 ~1.2x; unificar sólo lo que
   quepa en él.
 - **Antes de la fase B:** confirmar la distribución de módulos de la sección 0.
-- **Al cerrar F0 (D-030):** algoritmo (J, K o KJ), nombre del núcleo y constantes c de los criterios.
+- **Al cerrar F0 (D-032):** algoritmo (J, K o KJ), nombre del núcleo y constantes c de los criterios.
 - **F3:** si `spectral_decomposition` queda como envoltorio o desaparece.
 - **F4:** camino «sólo valores», (a), (b) o (c), con la autorización sobre el problema marcado.
 - **F5:** destino de `dEigenvalues_dTensor`, `d2Eigenvalues_dTensor2` y `dsquare`.

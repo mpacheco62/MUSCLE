@@ -14,6 +14,8 @@ module muscle_math_inverses
     !!   LU as the matrix becomes ill-conditioned).
     !! - 5x5, 6x6 and 9x9 (`M55INV`, `M66INV`, `M99INV`): LU with partial pivoting in plain
     !!   Fortran; the optional `KAPPA` is \( \kappa_\infty \) computed afterwards with `COND_INF`.
+    !! - `NORM_INF`: \( \|A\|_\infty \) (maximum absolute row sum) with explicit loops, the norm of
+    !!   `COND_INF` and of the adjugate switch.
     !!
     !! A singular matrix (exactly zero determinant or pivot) gives `OK_FLAG = .false.` and a zero
     !! inverse.
@@ -24,13 +26,13 @@ module muscle_math_inverses
     implicit none
     private
 
-    public :: M33INV, M44INV, M55INV, M66INV, M99INV, COND_INF, ADJ_KAPPA_MAX
+    public :: M33INV, M44INV, M55INV, M66INV, M99INV, COND_INF, NORM_INF, ADJ_KAPPA_MAX
     #:for k in REAL_KINDS
     public :: M33INV_${k}$, M44INV_${k}$, M55INV_${k}$, M66INV_${k}$, M99INV_${k}$
-    public :: COND_INF_${k}$, ADJ_KAPPA_MAX_${k}$
+    public :: COND_INF_${k}$, NORM_INF_${k}$, ADJ_KAPPA_MAX_${k}$
     #:endfor
 
-    #:for name in ['M33INV', 'M44INV', 'M55INV', 'M66INV', 'M99INV', 'COND_INF']
+    #:for name in ['M33INV', 'M44INV', 'M55INV', 'M66INV', 'M99INV', 'COND_INF', 'NORM_INF']
     interface ${name}$
         module procedure ${', '.join(name + '_' + k for k in REAL_KINDS)}$
     end interface ${name}$
@@ -103,8 +105,36 @@ module muscle_math_inverses
             !! Its (computed) inverse, same shape as `A`.
         real(${k}$) :: KAPPA
             !! \( \kappa_\infty(A) \).
-        KAPPA = maxval(sum(abs(A), dim=2)) * maxval(sum(abs(AINV), dim=2))
+        KAPPA = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
     end function COND_INF_${k}$
+
+    pure function NORM_INF_${k}$(A) result(nrm)
+        !! Infinity norm \( \|A\|_\infty = \max_i \sum_j |a_{ij}| \) (maximum absolute row sum) of a
+        !! `real(${k}$)` matrix,
+        !! with explicit loops: each row is summed left to right (the order of `sum(abs(A), dim=2)`),
+        !! without temporary arrays. In device code the temporary of `maxval(sum(abs(A), dim=2))`
+        !! on an assumed-shape `A` has a run-time size, which IGC cannot bound: it reserved too
+        !! little private memory and the kernel overflowed it (PROBLEMAS.md). NaN if a row sum is NaN
+        !! (then `kap <= ADJ_KAPPA_MAX` is false and the inverses fall back to LU).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: A(:,:)
+            !! Matrix.
+        real(${k}$) :: nrm
+            !! \( \|A\|_\infty \) (0 for a matrix without rows).
+        real(${k}$) :: s
+        integer :: i, j
+        nrm = 0.0_${k}$
+        do i = 1, size(A, 1)
+            s = 0.0_${k}$
+            do j = 1, size(A, 2)
+                s = s + abs(A(i, j))
+            end do
+            ! A NaN row sum enters (the comparison is false) and is the result
+            if (.not. (s <= nrm)) nrm = s
+            if (nrm /= nrm) return
+        end do
+    end function NORM_INF_${k}$
 
     pure subroutine M33INV_${k}$(A, AINV, OK_FLAG, KAPPA)
         !! Inverse of a general 3x3 matrix: closed-form adjugate with an LU fallback.
@@ -144,7 +174,7 @@ module muscle_math_inverses
             AINV(1,1) = c11*r; AINV(1,2) = c12*r; AINV(1,3) = c13*r
             AINV(2,1) = c21*r; AINV(2,2) = c22*r; AINV(2,3) = c23*r
             AINV(3,1) = c31*r; AINV(3,2) = c32*r; AINV(3,3) = c33*r
-            kap = maxval(sum(abs(A), dim=2)) * maxval(sum(abs(AINV), dim=2))
+            kap = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
             if (kap <= ADJ_KAPPA_MAX_${k}$) then      ! also .false. for NaN
                 OK_FLAG = .true.
                 if (present(KAPPA)) KAPPA = kap
@@ -155,7 +185,7 @@ module muscle_math_inverses
         call lu_inv3_${k}$(A, AINV, OK_FLAG)
         if (present(KAPPA)) then
             if (OK_FLAG) then
-                KAPPA = maxval(sum(abs(A), dim=2)) * maxval(sum(abs(AINV), dim=2))
+                KAPPA = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
             else
                 KAPPA = huge(1.0_${k}$)
             end if
@@ -212,7 +242,7 @@ module muscle_math_inverses
             AINV(4,2) = ( A(1,1)*c3 - A(1,2)*c1 + A(1,3)*c0) * r
             AINV(4,3) = (-A(4,1)*s3 + A(4,2)*s1 - A(4,3)*s0) * r
             AINV(4,4) = ( A(3,1)*s3 - A(3,2)*s1 + A(3,3)*s0) * r
-            kap = maxval(sum(abs(A), dim=2)) * maxval(sum(abs(AINV), dim=2))
+            kap = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
             if (kap <= ADJ_KAPPA_MAX_${k}$) then      ! also .false. for NaN
                 OK_FLAG = .true.
                 if (present(KAPPA)) KAPPA = kap
@@ -223,7 +253,7 @@ module muscle_math_inverses
         call lu_inv4_${k}$(A, AINV, OK_FLAG)
         if (present(KAPPA)) then
             if (OK_FLAG) then
-                KAPPA = maxval(sum(abs(A), dim=2)) * maxval(sum(abs(AINV), dim=2))
+                KAPPA = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
             else
                 KAPPA = huge(1.0_${k}$)
             end if

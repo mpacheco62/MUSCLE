@@ -26,7 +26,7 @@ add_muscle_fypp_test(math_eigen_eigenvals test_muscle_math_eigen_eigenvals.fypp)
 # tensors), spectral_hessian of tr(S^4)/4 + det(S) with distinct, double and triple roots, and
 # spectral_hessian against its documented formula for arbitrary phi_a, phi_ab
 add_muscle_fypp_test(math_spectral_cases test_muscle_math_spectral_derivs_cases.fypp)
-# eigenprojections / eigenvals_refined (accurate for close eigenvalues: Jacobi band) against a quad precision truth
+# eigenprojections / eigenvals_refined (on spectral_decomposition, D-032) against a quad precision truth
 # (known eigenvalues and rotation): eigenvalues, each projection within eps/gap, sums and orthogonality
 add_muscle_fypp_test(math_eigen_projections test_muscle_math_eigen_projections.fypp)
 # polar_rotation (F = R0 Q diag(s) Q^T, quad truth) and log_divided_difference (quad formula, both sides of the

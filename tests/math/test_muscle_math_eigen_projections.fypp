@@ -8,19 +8,22 @@
 #! ~eps |A|/gap, so:
 #! - eigenvalues (descending) within C_EIG eps max|lam| of lam;
 #! - each eigenprojection within C_PROJ eps max|lam|/gap of q_a q_a^T (gap: distance to the nearest other
-#!   eigenvalue). This is what the Jacobi band is for: the Cayley-Hamilton eigenprojections of the closed form
-#!   lose ~eps/gap^2, which fails this bound for the close gaps of the cases (1e-6, 1e-9 in dp);
+#!   eigenvalue). The Cayley-Hamilton eigenprojections of the closed form lose ~eps/gap^2, which fails this bound
+#!   for the close gaps of the cases (before D-032 a band of Jacobi rotations covered [1e-12, 1e-2) in dp);
 #! - an exactly repeated pair (gap 0): only the sum of its projections is defined, checked against the truth;
 #! - properties of every case: sum P_a = I, sum lam_a P_a = A, P_a P_b = delta_ab P_a (within C_PROJ eps/gap);
+#!   for the smallest gaps (sp 1e-5, dp 1e-13) the bound C_PROJ eps/gap of each projection is O(1), so those cases
+#!   check mostly the eigenvalues and the sums (which fail if the deviator is lost);
 #! - eigenvals_refined gives the same bits as the eigenvalues of eigenprojections.
-#! Cases, each with two rotations (the order of the diagonal Jacobi leaves depends on Q): well separated (3, 2, 1);
-#! a close pair with gap g in GAPS[k] (inside the Jacobi band of the kind: every gap in sp, [1e-12, 1e-2) in dp) at
-#! the top (1 + g, 1, -2), at the bottom (2, -1 + g, -1) and below a large one (3, 0.5 + g, 0.5); an exactly repeated
-#! pair at the top (1, 1, -2) and at the bottom (2, -1, -1); triple (2, 2, 2); the close top pair scaled by
-#! 1e3 and 1e-3 (the band is on the relative gap).
+#! Cases, each with two rotations: well separated (3, 2, 1); a close pair with gap g in GAPS[k] (inside and on
+#! both sides of the old Jacobi band in dp) at the top (1 + g, 1, -2), at the bottom (2, -1 + g, -1) and below a
+#! large one (3, 0.5 + g, 0.5); nearly the identity, (1 + 2g, 1 + g, 1) (C = I + small strain: before D-032 the
+#! closed form took it as a triple root below a deviator of 1e-10 and the logarithmic strains lost their
+#! deviatoric part); an exactly repeated pair at the top (1, 1, -2) and at the bottom (2, -1, -1); triple
+#! (2, 2, 2); the close top pair scaled by 1e3 and 1e-3.
 #:set C_EIG = 20
 #:set C_PROJ = 100
-#:set GAPS = {'sp': ['1.0e-2', '1.0e-3'], 'dp': ['1.0e-3', '1.0e-6', '1.0e-9']}
+#:set GAPS = {'sp': ['1.0e-1', '1.0e-2', '1.0e-3', '1.0e-5'], 'dp': ['2.0e-2', '1.0e-3', '1.0e-6', '1.0e-9', '1.0e-11', '1.0e-13']}
 
 module test_math_projections_ref
     !! Quad precision truth: rotation and the eigenprojections q_a q_a^T.
@@ -109,7 +112,7 @@ contains
         passed = .true.
         worst_eig = 0.0_qp
         worst_proj = 0.0_qp
-        ! Two rotations: the order in which Jacobi leaves the eigenvalues on the diagonal depends on Q
+        ! Two rotations
         do irot = 1, 2
             if (irot == 1) then
                 q = rot_q([1.0_qp, 2.0_qp, 3.0_qp], 37.0_qp)
@@ -124,7 +127,9 @@ contains
                                      worst_eig, worst_proj)
                 call check_case_${k}$(passed, q, [3.0_qp, 0.5_qp + GAP_LIST(icase), 0.5_qp], 'close lower pair', &
                                      worst_eig, worst_proj)
-                ! The band is on the gap relative to the eigenvalues: the same in any units
+                call check_case_${k}$(passed, q, [1.0_qp + 2.0_qp*GAP_LIST(icase), 1.0_qp + GAP_LIST(icase), 1.0_qp], &
+                                     'nearly the identity', worst_eig, worst_proj)
+                ! The same relative gap in other units
                 call check_case_${k}$(passed, q, 1.0e3_qp*[1.0_qp + GAP_LIST(icase), 1.0_qp, -2.0_qp], &
                                      'close top pair x 1e3', worst_eig, worst_proj)
                 call check_case_${k}$(passed, q, 1.0e-3_qp*[1.0_qp + GAP_LIST(icase), 1.0_qp, -2.0_qp], &

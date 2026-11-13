@@ -8,6 +8,6 @@ muscle_target_test_options(test_kin_kinds)
 # in quad precision (plan R): strain measures, J and R of F = R0 Q diag(s) Q^T, the ten stress conversions,
 # the geometric terms of the spatial tangent of every kinematics, the material parts of the logarithmic and
 # Euler-Almansi spatial tangents (Daleckii-Krein; the truth checked against finite differences), on distinct,
-# nearly repeated (Jacobi band, log series) and dropped eigenvalues of C. It replaces the former reference test
+# nearly repeated (log series) and dropped eigenvalues of C, and Hencky strains near the identity (D-032). It replaces the former reference test
 # kin_golden (plan R, tests/mutations/kin.toml).
 add_muscle_fypp_test(kin_finite test_muscle_kin_finite.fypp)
