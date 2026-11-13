@@ -302,3 +302,12 @@ it at the generated code instead, which is plain Fortran:
    and hover then work across modules; edit the template, not the generated file.
 
 Compiler errors and coverage already point to the lines of the templates (`#line` markers).
+
+## Claude Code skills
+
+`.claude/skills/` holds the project skills of [Claude Code](https://claude.com/claude-code), versioned with the
+code they describe (the rest of `.claude/` is local and not versioned). `muscle-nuevo-modulo` walks through
+adding a model, a solver, a family or a support module with the rules of this guide: tests with an independent
+truth first, the device rules, the mutation check and `scripts/check_new_module.py`, which flags code that
+rewrites what already exists or lives in the wrong module. When a change to the project alters a rule, a path or a
+decision a skill cites, update the skill in the same pull request.
