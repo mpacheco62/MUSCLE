@@ -309,5 +309,8 @@ Compiler errors and coverage already point to the lines of the templates (`#line
 code they describe (the rest of `.claude/` is local and not versioned). `muscle-nuevo-modulo` walks through
 adding a model, a solver, a family or a support module with the rules of this guide: tests with an independent
 truth first, the device rules, the mutation check and `scripts/check_new_module.py`, which flags code that
-rewrites what already exists or lives in the wrong module. When a change to the project alters a rule, a path or a
+rewrites what already exists or lives in the wrong module. `muscle-revisar-algoritmo` reviews a numerical
+algorithm: accuracy against an independent high-precision truth, its tests and mutations, its cost on the CPU and
+on the GPU, the size and the known risks of its device kernels (`scripts/igc_kernel_report.sh`), and alternatives,
+ending in a report with what is worth improving. When a change to the project alters a rule, a path or a
 decision a skill cites, update the skill in the same pull request.
