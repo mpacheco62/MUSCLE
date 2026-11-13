@@ -29,7 +29,7 @@ avisar al usuario de la diferencia).
 | Módulo de soporte (math, tensores, utilidades de kernel) | descomposición polar, nueva inversa | `references/soporte.md` |
 
 3. **Antes de escribir nada que no sea la física del módulo, busca si ya existe.** Corre
-   `scripts/api_index.py <repo> [palabra ...]` (genéricos, tipos y constantes de toda la librería con su
+   `.claude/skills/muscle-nuevo-modulo/scripts/api_index.py <repo> [palabra ...]` (genéricos, tipos y constantes de toda la librería con su
    documentación; busca por concepto: `eigen`, `deviatoric`, `inverse`, `rotation`, `tolerance`) y lee
    `references/ubicacion.md` (bloques que no se reescriben y dónde va cada cosa nueva). Reescribir el desviador, un
    determinante o una tolerancia que ya está en `muscle_kinds` crea dos versiones que divergen; poner álgebra general
@@ -44,7 +44,7 @@ avisar al usuario de la diferencia).
 
 ## 1. Tests primero, con verdad independiente
 
-Escribe los tests antes que el módulo (o con el agente `test-builder`). Un test útil compara contra algo que
+Escribe los tests antes que el módulo (o con el agente `test-builder`, si existe en tu copia de `.claude/agents/`). Un test útil compara contra algo que
 **no sale del código que prueba**: forma cerrada, propiedad (simetría, homogeneidad, normalización, objetividad,
 `A A⁻¹ = I`, límite isótropo), derivadas contra diferencias finitas (`tests/common/muscle_fd.fypp`), la misma
 cantidad por otra ruta, o un valor publicado. Copiar la salida actual como «esperado» no detecta errores: el
@@ -71,8 +71,9 @@ sólo reescala, invisible a diferencias finitas y a homogeneidad).
 - **Kernel GPU:** todo procedimiento por punto es `pure`, con `implicit none` y `@:DEVICE()` justo después, sin
   `class`, `allocatable`, punteros, I/O, `stop`, LAPACK, `save`, recursión ni módulos IEEE; errores por un entero
   `status` (`STATUS_*` de `muscle_status`). Además:
-  - ni `scale()` ni `exponent()`: `fp_scale` y `fp_exponent` de `muscle_math_fp` (mismos bits). ifx compila las
-    intrínsecas con FP64, emulado en la GPU Intel, donde IGC compila mal esas llamadas (D-031); el lint
+  - ni `scale()` ni `exponent()`: `fp_scale` y `fp_exponent` de `muscle_math_fp` (mismos bits). En la GPU Intel
+    ifx implementa `exponent()` con una rutina que no existe con la FP64 emulada (D-019.5b) y `scale()` con
+    operaciones FP64 emuladas, cuyas llamadas IGC compila mal en EU fusionadas (D-031); el lint
     `scale`/`exponent` de `check.sh` las rechaza;
   - ningún arreglo temporal de tamaño conocido sólo en ejecución: reducciones con `dim=` o expresiones de arrays
     sobre argumentos de forma asumida (`maxval(sum(abs(A), dim=2))`). En el dispositivo son un `alloca` dinámico
@@ -99,13 +100,13 @@ sólo reescala, invisible a diferencias finitas y a homogeneidad).
 En este orden (tiempos aproximados en `contributing.md`, *Development cycle*):
 
 1. `cmake --build build --target build_all_tests` y `ctest --test-dir build -R <área>` mientras editas.
-2. **Chequeo de mutaciones de lo nuevo**: `scripts/mutation_ids.sh <repo> <área> <archivo>` lista los ids de las
+2. **Chequeo de mutaciones de lo nuevo**: `.claude/skills/muscle-nuevo-modulo/scripts/mutation_ids.sh <repo> <área> <archivo>` lista los ids de las
    mutaciones del archivo nuevo; córrelos con
    `/usr/bin/python3 tools/mutation_check.py <área> --samples all --only <ids>` (necesita Python ≥ 3.11: el
    Python del entorno `ford` no sirve). Una mutación que cambia un resultado y sobrevive es un test que falta;
    si es equivalente (no puede cambiar ningún resultado), explica por qué en el informe. Si el archivo no está en
    ningún área de `tests/mutations/*.toml`, agrégalo al área que corresponda.
-3. **Ubicación y reutilización**: `scripts/check_new_module.py <repo> [archivos]` (por defecto, los cambiados en
+3. **Ubicación y reutilización**: `.claude/skills/muscle-nuevo-modulo/scripts/check_new_module.py <repo> [archivos]` (por defecto, los cambiados en
    `src/` e `include/`). Señala: módulo con nombre distinto de su archivo o fuera de la carpeta de su familia;
    funciones fuera del contrato de la familia (las que no llevan el nombre del modelo son sospechosas de estar en el
    módulo equivocado); patrones de código que ya existe (traza o desviador por componentes, determinante o
@@ -115,10 +116,10 @@ En este orden (tiempos aproximados en `contributing.md`, *Development cycle*):
    lista de un módulo de familia), `tools/gen_snapshot.sh save` antes y `compare` después.
 5. `tools/check.sh --quick`: lint (kinds, literales, GPU, 132 columnas, SPDX), build sin **ningún aviso del
    compilador**, ctest. Un aviso nuevo hace fallar el chequeo: arréglalo, no lo silencies.
-6. `tools/check.sh` completo al cerrar (≈ 15 min: builds GPU, tests en la GPU Intel, auditoría). Para correr en
+6. `tools/check.sh` completo al cerrar (≈ 25 min: builds GPU, tests en la GPU Intel, auditoría). Para correr en
    GPU a mano: `systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0` + `timeout`; nunca
    `ulimit -s unlimited`.
-7. Revisión independiente del diff (agente `reviewer`) antes de pedir aprobación; pídele también que mire si
+7. Revisión independiente del diff (agente `reviewer`, si existe en tu copia) antes de pedir aprobación; pídele también que mire si
    algo reimplementa lo que ya existe o está en el módulo equivocado.
 
 ## 4. Cerrar

@@ -14,6 +14,10 @@
 # (local variables, the `module procedure` entries of a generic, the `public` of re-exported names).
 # tools/check.sh looks FORD up in the same places.
 set -u
+if [[ $# -lt 1 || ! -f "$1/my_project.md" ]]; then
+    echo "usage: $0 <repo> [--install] [--warn] [OUTPUT_DIR]   (<repo>: the root of MUSCLE, with my_project.md)" >&2
+    exit 2
+fi
 repo=$(readlink -f "$1"); shift
 install=0; warn=0; out=""
 for a in "$@"; do
@@ -23,7 +27,8 @@ for a in "$@"; do
         *) out=$a ;;
     esac
 done
-out=${out:-$repo/build-check/doc}
+# absolute: FORD runs from the repository root, the log is written from here
+out=$(readlink -m "${out:-$repo/build-check/doc}")
 bin=""
 if command -v ford > /dev/null; then
     bin=$(dirname "$(command -v ford)")

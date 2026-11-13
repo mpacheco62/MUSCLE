@@ -5,6 +5,7 @@
 #
 # Usage: mutation_ids.sh REPO AREA FILE
 #   REPO: root of the MUSCLE repository; AREA: a tests/mutations/<area>.toml; FILE: path relative to REPO.
+# The hand-written [[manual]] mutations of an area (ids manualN) are not listed: add them by hand.
 # Prints one comma-separated line; run the check with
 #   /usr/bin/python3 tools/mutation_check.py AREA --samples all --only "<that line>"
 set -euo pipefail
@@ -17,7 +18,8 @@ cd "$repo"
 # tools/mutation_check.py needs tomllib (Python >= 3.11): prefer the system interpreter
 py=/usr/bin/python3
 [[ -x $py ]] || py=python3
-ids=$("$py" tools/mutation_check.py "$area" --samples all --list | grep -E "^[a-z]+:${file}:" | paste -sd, -)
+# (grep finds nothing for a file outside the area: `|| true`, or set -o pipefail ends the script here)
+ids=$("$py" tools/mutation_check.py "$area" --samples all --list | { grep -E "^[a-z]+:${file}:" || true; } | paste -sd, -)
 if [[ -z $ids ]]; then
     echo "no mutation of $file in area $area (is the file in the sources of tests/mutations/$area.toml?)" >&2
     exit 1

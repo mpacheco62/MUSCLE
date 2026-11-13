@@ -26,7 +26,7 @@ imaginas.
 | Códigos de error | `STATUS_OK`, `STATUS_INVALID_PARAMETER`, `STATUS_INVALID_TIME_STEP`, `STATUS_INVALID_DEFORMATION`, `STATUS_NOT_CONVERGED` | `muscle_status` |
 | Ley de endurecimiento dentro de otra ley (compuesta) | recibir `sy`, `dsy_dep` ya evaluados (`hard_stress`, `hard_dstress_dep`) | `muscle_hard_laws`; listas `*_COMPOSED` |
 | Derivadas por diferencias finitas | macros `FD_DERIV`, `FD_GRAD`, `FD_HESS`, `FD_JAC` | `tests/common/muscle_fd.fypp`: **sólo en tests**; la librería usa derivadas analíticas |
-| NaN, `exponent()` o `scale()` en un kernel | `QUIET_NAN_<k>`, `fp_exponent`, `fp_scale` | `muscle_math_fp` (sin módulos IEEE, `exponent` ni `scale` en kernels: D-031) |
+| NaN, `exponent()` o `scale()` en un kernel | `QUIET_NAN_<k>`, `fp_exponent`, `fp_scale` | `muscle_math_fp` (sin módulos IEEE, `exponent` ni `scale` en kernels: D-019.5b, D-031) |
 | Rotación polar; (ln a − ln b)/(a − b) | `polar_rotation`, `log_divided_difference` | `muscle_math_matrix_functions` |
 
 ## Dónde va lo nuevo

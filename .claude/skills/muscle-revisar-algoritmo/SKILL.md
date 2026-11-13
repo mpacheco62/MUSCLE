@@ -1,6 +1,6 @@
 ---
 name: muscle-revisar-algoritmo
-description: Revisa un algoritmo numérico de MUSCLE (librería Fortran 2008 + FYPP de modelos constitutivos, repo MUSCLE_FYPP) - una rutina de math (autovalores, inversas, sistemas, funciones de matrices, derivadas espectrales), un return mapping, una ley o un kernel de material - en precisión (contra una verdad independiente de alta precisión), robustez (casos borde, escalas extremas, excepciones de punto flotante), calidad de sus tests (chequeo de mutaciones), velocidad en CPU y en GPU, tamaño del kernel en la GPU (memoria privada, spill, stack calls, FP64 emulado) y riesgos de dispositivo, compara alternativas y entrega un informe con lo que conviene mejorar. Úsala siempre que en MUSCLE se pida revisar, auditar, medir, perfilar, optimizar, comparar o validar un algoritmo o una rutina numérica (aunque no diga "revisar", p. ej. "¿está bien implementado el Newton de closest point?", "¿por qué es lento este kernel en GPU?", "compara dos formas de calcular la polar", "¿conviene cambiar el algoritmo de autovalores?", "mide cuánto cuesta esta ley").
+description: Revisa un algoritmo numérico de MUSCLE (librería Fortran 2008 + FYPP de modelos constitutivos, repo MUSCLE_FYPP) - una rutina de math, un return mapping, una ley o un kernel de material - en precisión (contra una verdad independiente de alta precisión), robustez (casos borde, escalas extremas, excepciones), calidad de sus tests (mutaciones), velocidad en CPU y GPU, tamaño del kernel en la GPU (memoria privada, spill, stack calls, FP64 emulado) y riesgos de dispositivo; compara alternativas y entrega un informe con lo que conviene mejorar. Úsala siempre que en MUSCLE se pida revisar, auditar, medir, perfilar, optimizar, comparar o validar un algoritmo o una rutina numérica (p. ej. "¿está bien implementado el Newton de closest point?", "¿por qué es lento este kernel en GPU?", "¿conviene cambiar el algoritmo de autovalores?").
 ---
 
 # Revisar un algoritmo numérico de MUSCLE
@@ -39,7 +39,8 @@ una pérdida ~ε/brecha que también tendría cualquier algoritmo no es un defec
 1. Lista los tests que ejercitan la rutina y qué verdad compara cada uno (forma cerrada, propiedad, otra ruta,
    cuádruple). Un test que compara contra la salida guardada del propio código no cuenta como verdad.
 2. Chequeo de mutaciones sobre las líneas de la rutina:
-   `python3 tools/mutation_check.py <área> --samples all --only <ids>` (los ids con
+   `/usr/bin/python3 tools/mutation_check.py <área> --samples all --only <ids>` (Python ≥ 3.11: el del entorno `ford`
+   no sirve; los ids con
    `.claude/skills/muscle-nuevo-modulo/scripts/mutation_ids.sh <repo> <área> <archivo>`, o filtrando
    `--list --samples all` por rango de líneas). No lo corras a la vez que otra cosa que lea `src/`: modifica el
    árbol temporalmente.
@@ -73,7 +74,8 @@ Si la revisión sugiere otro algoritmo, mídelo antes de recomendarlo, con el mi
 1. escribe los candidatos como procedimientos `pure`, `@:DEVICE()`, en un archivo de `benchmarks/` (precedente:
    `benchmarks/math/spectral_candidates.fypp`), incluido por el banco de precisión;
 2. para el costo en los kernels reales, en un worktree reemplaza el cuerpo de la rutina por el candidato con un
-   define de FYPP (`-DMUSCLE_FYPP_DEFINES=...`, precedente: `SPECTRAL_PROTO` de F0) y corre los mismos bancos y la
+   define de FYPP propio (`-DMUSCLE_FYPP_DEFINES=<NOMBRE>=...` y un `#:if defined('<NOMBRE>')` en la rutina; así se
+   hizo en F0, `docs/fypp/ESPECTRAL_F0.md`) y corre los mismos bancos y la
    suite de tests con cada variante: qué tests fallan y por qué (diferencias legítimas, como otra base de un
    autoespacio repetido, o errores);
 3. resume cada candidato en precisión, costo CPU/GPU, tamaño del kernel y tests, frente al presupuesto del usuario.

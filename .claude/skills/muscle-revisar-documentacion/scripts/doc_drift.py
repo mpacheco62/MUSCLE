@@ -3,10 +3,11 @@
 # Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 """Drift between the documentation and the code of MUSCLE.
 
-    doc_drift.py <repo> [--only undocumented|names|paths|decisions|models]
+    doc_drift.py <repo> [--only undocumented|names|paths|links|decisions|models]
 
 Checks (each prints its findings; exit status 1 if any):
-- undocumented: public modules, types and procedures of src/ (templates) without their FORD `!!` line right after
+- undocumented: public modules, types and procedures of src/ (the .fypp templates; the few .f90 sources are not
+  read) without their FORD `!!` line right after
   the declaration (module, type, function or subroutine statement and its continuation lines);
 - names: identifiers in backticks in pages/*.md, README.md, my_project.md and .claude/skills/**/*.md that look like
   code (snake_case with a known prefix, or a MUSCLE module) and appear nowhere in src/, include/, tools/, tests/,
@@ -177,8 +178,11 @@ def check_models(repo):
             if model in NOT_MODELS:
                 continue
             words = model.split('_')
-            if not (any(k in docs for k in (p.stem, f'{fam}_{model}', model))
-                    or any(all(w in l for w in words) for l in lines)):
+            # whole words: a short model name (rk, va, jc) is a substring of almost any line
+            def has(word, text):
+                return re.search(rf'(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])', text) is not None
+            if not (any(has(k, docs) for k in (p.stem, f'{fam}_{model}', model))
+                    or any(all(has(w, l) for w in words) for l in lines)):
                 findings.append(f'{p.relative_to(repo)}: model `{model}` of family `{fam}` is not mentioned in '
                                 'README.md, my_project.md or pages/')
     return findings

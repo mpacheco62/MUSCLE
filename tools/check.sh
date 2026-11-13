@@ -53,6 +53,10 @@ while [[ "${1:-}" == --* ]]; do
     shift
 done
 build_dir="${1:-build-check}"
+if (( lint_only + doc_only + quick > 1 )); then
+    echo "usage: $0 [--lint-only | --doc | --quick] [--gpu-full] [BUILD_DIR]: one mode at most" >&2
+    exit 2
+fi
 
 failures=0
 
@@ -100,9 +104,11 @@ listed() { git ls-files --cached --others --exclude-standard -- "$@"; }
 mapfile -t fypp_files < <(listed '*.fypp')
 mapfile -t fortran_files < <(listed '*.f90' '*.F90' '*.inc' '*.fypp')
 mapfile -t py_files < <(listed 'tools/fypp/*.py')
-# Other sources with a license header: tests, benchmarks (Fortran and Python) and the shell tools
+# Other sources with a license header: tests, benchmarks (Fortran and Python), the shell tools and the
+# scripts of the project skills
 mapfile -t header_files < <(listed 'tests/*.f90' 'tests/*.F90' 'tests/*.py' 'benchmarks/*.f90' \
-                            'benchmarks/*.F90' 'benchmarks/*.py' 'tools/*.sh')
+                            'benchmarks/*.F90' 'benchmarks/*.py' 'tools/*.sh' '.claude/skills/*.sh' \
+                            '.claude/skills/*.py')
 # Library templates subject to the GPU kernel rules
 mapfile -t kernel_files < <(printf '%s\n' "${fypp_files[@]}" | grep -E '^(src|include)/' \
                             | xargs -r grep -L '! lint: host-only')
@@ -228,13 +234,17 @@ echo "== lint: OK"
 # either); its directory goes first in the PATH, so that FORD runs the fypp of the same environment. Without
 # FORD: skipped, or a failure if <required> is 1.
 build_doc() {
-    local required="$1" ford_bin="" conda_cmd ford_env
+    local required="$1" ford_bin="" conda_cmd conda_path ford_env seen=" "
     if command -v ford > /dev/null; then
         ford_bin=$(dirname "$(command -v ford)")
     else
         for conda_cmd in conda mamba "$HOME/miniforge3/condabin/conda" "$HOME/miniconda3/condabin/conda" \
                          "$HOME/anaconda3/condabin/conda"; do
             command -v "$conda_cmd" > /dev/null 2>&1 || continue
+            # the conda of the PATH and the same one by its absolute path: ask once
+            conda_path=$(readlink -f "$(command -v "$conda_cmd")")
+            [[ "$seen" == *" $conda_path "* ]] && continue
+            seen+="$conda_path "
             ford_env=$("$conda_cmd" env list 2>/dev/null | awk '$1 == "ford" {print $NF}')
             if [[ -n "$ford_env" && -x "$ford_env/bin/ford" ]]; then ford_bin="$ford_env/bin"; break; fi
         done

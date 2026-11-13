@@ -16,6 +16,7 @@ Reports, per file (advisory: every finding is to be justified or fixed, nothing 
      determinant or eigenvalues written out, magic literals that should be named constants);
   4. blocks repeated between the file and the rest of the library (tools/dup_report.py).
 """
+import os
 import re
 import subprocess
 import sys
@@ -53,11 +54,14 @@ PROC = re.compile(r'^\s*(?:pure\s+|elemental\s+|impure\s+|recursive\s+)*(functio
 
 
 def changed_files(repo):
-    out = subprocess.run(['git', '-C', repo, 'status', '--porcelain'], capture_output=True, text=True).stdout
+    # --untracked-files=all: the files of a new directory (a new family), not only the directory
+    out = subprocess.run(['git', '-C', repo, 'status', '--porcelain', '--untracked-files=all'],
+                         capture_output=True, text=True).stdout
     files = []
     for line in out.splitlines():
         path = line[3:].split(' -> ')[-1]
-        if re.match(r'^(src|include)/.*\.(fypp|f90)$', path):
+        # deleted files are not reviewed
+        if re.match(r'^(src|include)/.*\.(fypp|f90)$', path) and os.path.isfile(os.path.join(repo, path)):
             files.append(path)
     return files
 

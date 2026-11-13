@@ -14,7 +14,7 @@ que usan los kernels.
   construcciones prohibidas en GPU; sistemas pequeños con el LU propio (`muscle_math_lu_solve`), nunca LAPACK.
   Sobre argumentos de forma asumida (`A(:,:)`), bucles explícitos en lugar de reducciones con `dim=` o expresiones de
   arrays que creen temporales de tamaño variable (D-030, `NORM_INF`); `fp_scale`/`fp_exponent` en lugar de
-  `scale`/`exponent` (D-031).
+  `scale`/`exponent` (D-031, D-019.5b).
   Agrega un caso a un test target (p. ej. `tests/math/test_muscle_math_target.fypp`) para que corra dentro de una
   región `!$omp target` en sp y dp y se compare con la CPU.
 - **Host-only** (I/O, LAPACK opcional): marca el archivo con `! lint: host-only` y no lo uses desde kernels.

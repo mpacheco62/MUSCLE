@@ -22,11 +22,12 @@
 
 | Riesgo | Síntoma | Causa y arreglo |
 |---|---|---|
-| `scale()` / `exponent()` en un kernel sp | la imagen pide FP64; resultados erróneos en GPU Intel cuando sólo uno de dos hilos SIMD8 de una pareja de EU ejecuta una rama | ifx los compila con dp emulado; IGC compila mal esas llamadas en EU fusionadas (D-031, `docs/fypp/igc_mre/`). Usar `fp_scale`/`fp_exponent` |
+| `scale()` en un kernel sp | la imagen pide FP64; resultados erróneos en GPU Intel cuando sólo uno de dos hilos SIMD8 de una pareja de EU ejecuta una rama | ifx lo compila con operaciones FP64 emuladas; IGC compila mal esas llamadas en EU fusionadas (D-031, `docs/fypp/igc_mre/`). Usar `fp_scale` |
+| `exponent()` en un kernel | la imagen no carga con la FP64 emulada (`__isinfd`/`__isnand` sin resolver) | ifx lo implementa con `for_exponent8_v` (D-019.5b). Usar `fp_exponent` |
 | Temporal de tamaño variable (`sum(..., dim=)`, expresión de arrays sobre forma asumida) | `DEVICE_LOST` también con 1 work item; `private` = 32768; «Stack overflow detected» | IGC reserva 4 KB por work item sin stack calls (D-030). Bucles explícitos (`NORM_INF`) |
 | Literal o intrínseca dp en un kernel sp | `fp64emu` > 0 | revisar kinds de literales y conversiones |
 | Llamadas a la emulación FP64 dentro de ramas divergentes (dp en la GPU Intel) | resultados distintos a CPU que cambian con la entrada de los work items vecinos | bug de IGC (D-031); diagnóstico con las variables de abajo; los kernels dp de material están excluidos (`tools/gpu_skip_tests.sh`) |
-| Kernel grande en Release | «kernel ... not found in the program» al cargar | IGC descarta el kernel sin error de build (D-019.8); medir en Debug o reducir el kernel |
+| Kernel grande en Release | la imagen carga sin los kernels de lote: «kernel '...' not found in the program» y luego un segfault | IGC descarta el kernel sin error de build (D-019.8); medir en Debug o reducir el kernel |
 | Arreglos privados indexados con valores de tablas `PARAMETER` | más `alloca`, más spill | aceptable si mide bien; con literales el compilador los vuelve registros |
 | Desborde intermedio (`theta*theta`, `x**2` de algo cerca de `huge`) | Inf en GPU, aborto con trampas en CPU | reformular sin formar el valor grande (D-028) |
 

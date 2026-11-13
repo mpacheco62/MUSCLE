@@ -15,8 +15,11 @@ decisión en `docs/fypp/DECISIONES.md`.
    en las demás familias, un `use` por modelo, `public` y una `interface` por función genérica.
 3. **`tools/fypp/muscle_meta.py`:**
    - `<FAMILIA>_MODELS` y listas de rasgos que hagan falta;
-   - entrada en `MODEL_FAMILIES` (`ModelFamily(prefix=, module='muscle_<prefijo>_{}', family_module=, models=,
-     dims=, composition=, composed=)`); `MATERIAL_FIELDS` y el campo nuevo de `Material` si los materiales la usan;
+   - entrada en `MODEL_FAMILIES`: `ModelFamily(prefix=, module='muscle_<prefijo>_{}', family_module=,
+     funcs=(_F('<función>'), ...), models=, composition=, composed=, dims=, joint=)`. `funcs` es obligatorio: es el
+     contrato de la familia, una `ModelFunc` (`_F(nombre, comp=(), models=None)`) por función genérica; los cuatro
+     últimos campos son opcionales (`joint`: una `ModelJoint` si la familia tiene evaluación conjunta, como los
+     criterios de fluencia). `MATERIAL_FIELDS` y el campo nuevo de `Material` si los materiales la usan;
    - `MODEL_PARAMS`, `MODEL_LABELS`, y `MATERIAL_SOLVERS` de los solvers que la llamen.
    Corre `tests/tools` (`ctest -R tools-`): comprueban registro contra archivos, parámetros contra tipos, listas
    escritas a mano contra el registro.

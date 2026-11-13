@@ -22,6 +22,10 @@
 # Also prints whether the run passed (the PASS/FAIL lines of the executable) and IGC stack overflow messages are
 # checked in a second run when the first one loses the device. Environment: ifx (setvars.sh) in the PATH.
 set -u
+if [[ $# -lt 1 || ! -f "$1" || ! -x "$1" ]]; then
+    echo "usage: $0 <executable> [kernel-regex] [-- args of the executable]   (an existing executable)" >&2
+    exit 2
+fi
 exe=$(readlink -f "$1"); shift
 regex='.'
 if [[ $# -gt 0 && "$1" != "--" ]]; then regex=$1; shift; fi
@@ -32,7 +36,8 @@ run() { systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0 --quiet en
     OverrideDefaultFP64Settings=1 IGC_EnableDPEmulation=1 NEO_CACHE_PERSISTENT=0 "$@" timeout -k 30 1200 "$exe" "${ARGS[@]}"; }
 ARGS=("$@")
 out=$(run IGC_ShaderDumpEnable=1 IGC_DumpToCustomDir="$dump" 2>&1)
-echo "run: $(grep -m1 -oE 'PASS[^ ]*|FAIL[^ ]*|DEVICE_LOST|bad points: [0-9]+ of [0-9]+|not found in the program' <<< "$out" || echo 'no status line')"
+echo "run: $(grep -m1 -oE 'PASS[^ ]*|FAIL[^ ]*|DEVICE_LOST|not found in the program|CHECK [^ ]+ .*|failures [0-9]+' <<< "$out" \
+    || echo 'no status line')"
 if grep -q DEVICE_LOST <<< "$out"; then
     so=$(run IGC_StackOverflowDetection=1 2>&1 | grep -c 'Stack overflow detected')
     echo "device lost; with IGC_StackOverflowDetection=1: $so stack overflow message(s)"
