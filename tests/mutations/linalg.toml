@@ -1,0 +1,7 @@
+# Mutation check of the small dense linear algebra (tools/mutation_check.py linalg): explicit inverses, LU
+# inverse and LU solve. Added in the re-analysis of test quality (docs/fypp/REANALISIS_TESTS.md).
+sources = ["src/math/muscle_math_inverses.fypp", "src/math/muscle_math_lu_bodies.fypp",
+           "src/math/muscle_math_lu_solve.fypp"]
+reference = ""
+unit = "^math-|^tensors-"
+samples = 40

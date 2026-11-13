@@ -1,0 +1,77 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+! lint: host-only
+#:include "muscle_common.fypp"
+#! Plan C, F0 (docs/fypp/ESPECTRAL_F0.md): time per point of the point kernel, with tangent, of finite strain materials, one thread:
+#! F_n = I, zero history, F_n+1 = R_i (I + e_i), e_i = f a_y D1 + 0.3 f a_y sin(i) D2, f from 0 to 4 (elastic and
+#! plastic points), R_i rotations of 0.3 sin(0.7 i) rad about (1, 2, 3).
+#:set MATS = ['kin_ml_vm_bilinear', 'kin_sl_vm_bilinear', 'kin_ul_vm_bilinear']
+program bench_kin_kernel
+    use, intrinsic :: iso_fortran_env, only : int64
+    use muscle_kinds, only : sp, dp, NEWTON_TOL_sp, NEWTON_TOL_dp
+    #:for m in MATS
+    use muscle_mat_${m}$, only : mat_${m}$_sp, mat_${m}$_dp, mat_init_${m}$, muscle_point_${m}$, &
+        & MAT_${m.upper()}$_NSTATE
+    #:endfor
+    implicit none
+    integer, parameter :: NPTS = 20000, NREP = 5
+    #:for k in ['sp', 'dp']
+    call run_${k}$()
+    #:endfor
+contains
+    #:for k in ['sp', 'dp']
+    subroutine run_${k}$()
+        real(${k}$) :: fn(9), f(9, NPTS), r(3, 3), e(3, 3), x(3, 3), c, s, ang, ax(3), amp, props(6), sig(6), dd(6, 6)
+        real(${k}$) :: chk
+        integer :: i, rep, status, iters, nplast
+        integer(int64) :: t0, t1, rate
+        #:for m in MATS
+        type(mat_${m}$_${k}$) :: mat_${m}$
+        real(${k}$) :: hn_${m}$(MAT_${m.upper()}$_NSTATE), hp_${m}$(MAT_${m.upper()}$_NSTATE)
+        #:endfor
+
+        fn = [1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$]
+        ax = [1.0_${k}$, 2.0_${k}$, 3.0_${k}$]/sqrt(14.0_${k}$)
+        do i = 1, NPTS
+            amp = 4.0_${k}$*real(i - 1, ${k}$)/real(NPTS - 1, ${k}$)*200.0_${k}$/210000.0_${k}$
+            e = 0.0_${k}$
+            e(1, 1) = amp
+            e(2, 2) = -0.5_${k}$*amp
+            e(3, 3) = -0.5_${k}$*amp
+            e(1, 2) = 0.3_${k}$*amp*sin(real(i, ${k}$))
+            e(2, 1) = e(1, 2)
+            ang = 0.3_${k}$*sin(0.7_${k}$*real(i, ${k}$))
+            c = cos(ang)
+            s = sin(ang)
+            r(1, :) = [c + ax(1)**2*(1 - c), ax(1)*ax(2)*(1 - c) - ax(3)*s, ax(1)*ax(3)*(1 - c) + ax(2)*s]
+            r(2, :) = [ax(2)*ax(1)*(1 - c) + ax(3)*s, c + ax(2)**2*(1 - c), ax(2)*ax(3)*(1 - c) - ax(1)*s]
+            r(3, :) = [ax(3)*ax(1)*(1 - c) - ax(2)*s, ax(3)*ax(2)*(1 - c) + ax(1)*s, c + ax(3)**2*(1 - c)]
+            x = e
+            x(1, 1) = x(1, 1) + 1.0_${k}$
+            x(2, 2) = x(2, 2) + 1.0_${k}$
+            x(3, 3) = x(3, 3) + 1.0_${k}$
+            x = matmul(r, x)
+            f(:, i) = reshape(x, [9])
+        end do
+        props = [210000.0_${k}$, 0.3_${k}$, 200.0_${k}$, 1000.0_${k}$, NEWTON_TOL_${k}$, 50.0_${k}$]
+        #:for m in MATS
+        call mat_init_${m}$(mat_${m}$, props, status)
+        if (status /= 0) error stop 'init'
+        hn_${m}$ = 0.0_${k}$
+        chk = 0.0_${k}$
+        nplast = 0
+        call system_clock(t0, rate)
+        do rep = 1, NREP
+            do i = 1, NPTS
+                call muscle_point_${m}$(mat_${m}$, fn, f(:, i), 0.0_${k}$, hn_${m}$, hp_${m}$, sig, status, iters, dd)
+                chk = chk + sig(1) + dd(1, 1)
+                if (rep == 1 .and. iters > 0) nplast = nplast + 1
+            end do
+        end do
+        call system_clock(t1)
+        print '(a, f9.1, a, i0, a, es12.4)', 'KIN ${m}$ ${k}$ ns/point ', &
+            real(t1 - t0, dp)/real(rate, dp)*1.0e9_dp/real(NREP*NPTS, dp), ' plastic ', nplast, ' chk ', chk
+        #:endfor
+    end subroutine run_${k}$
+    #:endfor
+end program bench_kin_kernel

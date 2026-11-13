@@ -1,0 +1,63 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+program test_mat_cp2_singular
+    !! Singular Newton system of the monolithic closest point kernel (closest_point_2, Phase 7, D-018):
+    !! a NaN strain gives a NaN 7x7 system, which `LU7SOLVE` reports as singular (`OK_FLAG = .false.`,
+    !! D-016.10). The kernel then leaves the iterate unchanged and the step ends with
+    !! `STATUS_NOT_CONVERGED` after `iter_nw` iterations, with the plastic variables of the converged
+    !! state (no NaN propagated to the state), in every kind.
+    use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
+    use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
+    use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
+    use muscle_elas_linear, only : elas_linear_init
+    use muscle_mat_cp2_vm_bilinear, only : mat_update, ${', '.join('mat_cp2_vm_bilinear_' + k for k in REAL_KINDS)}$
+    use muscle_test_utils, only : check_true
+    implicit none
+
+    logical :: passed
+
+    passed = .true.
+    #:for k in REAL_KINDS
+    call run_${k}$()
+    #:endfor
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_mat_cp2_singular'
+        stop 1
+    end if
+    print '(a)', ' PASS: test_mat_cp2_singular'
+
+contains
+    #:for k in REAL_KINDS
+
+    subroutine run_${k}$()
+        !! The singular branch in `real(${k}$)`.
+        integer, parameter :: ITER_NW = 3
+        type(mat_cp2_vm_bilinear_${k}$) :: mat
+        type(plastic_state_${k}$) :: sn, snp1
+        type(${tname('3D2Osym', k)}$) :: strain, stress
+        type(${tname('3D4O2sym', k)}$) :: tangent
+        integer :: status, iters
+
+        call elas_linear_init(mat%elas, young=210000.0_${k}$, poisson=0.3_${k}$, status=status)
+        call check_true(passed, 'elastic init (${k}$)', status == STATUS_OK)
+        mat%hard%y0 = 200.0_${k}$
+        mat%hard%K = 1000.0_${k}$
+        mat%iter_nw = ITER_NW
+        sn%strain_p%vals = [1.0e-3_${k}$, -5.0e-4_${k}$, -5.0e-4_${k}$, 2.0e-4_${k}$, 0.0_${k}$, 0.0_${k}$]
+        sn%strain_pf = 1.2e-3_${k}$
+        strain%vals = ieee_value(1.0_${k}$, ieee_quiet_nan)
+        call mat_update(mat, strain, 0.0_${k}$, sn, snp1, stress, tangent, status, iters)
+        call check_true(passed, 'singular system: not converged (${k}$)', status == STATUS_NOT_CONVERGED)
+        call check_true(passed, 'singular system: iter_nw iterations (${k}$)', iters == ITER_NW)
+        call check_true(passed, 'singular system: plastic strain unchanged (${k}$)', &
+            all(snp1%strain_p%vals == sn%strain_p%vals))
+        call check_true(passed, 'singular system: equivalent plastic strain unchanged (${k}$)', &
+            snp1%strain_pf == sn%strain_pf)
+    end subroutine run_${k}$
+    #:endfor
+
+end program test_mat_cp2_singular

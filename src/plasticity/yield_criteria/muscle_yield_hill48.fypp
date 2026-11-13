@@ -1,0 +1,182 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_yield_hill48
+    !! Hill (1948, Eq. 5) quadratic anisotropic yield criterion:
+    !! \[ \sigma_{eq}^2 = F(\sigma_{yy} - \sigma_{zz})^2 + G(\sigma_{zz} - \sigma_{xx})^2
+    !!    + H(\sigma_{xx} - \sigma_{yy})^2 + 2L\sigma_{yz}^2 + 2M\sigma_{xz}^2 + 2N\sigma_{xy}^2
+    !!    = \boldsymbol\sigma : \mathbb{P} : \boldsymbol\sigma \]
+    !! (tensorial shear components), with gradient \( \mathbb{P} : \boldsymbol\sigma/\sigma_{eq} \)
+    !! and Hessian \( (\mathbb{P} - \mathbf{n} \otimes \mathbf{n})/\sigma_{eq} \),
+    !! \( \mathbf{n} = \partial\sigma_{eq}/\partial\boldsymbol\sigma \). At a null equivalent stress
+    !! both derivatives are 0 (D-017.9; the original code gave NaN). With parameters for which
+    !! \( \mathbb{P} \) is not positive semidefinite, \( \sigma_{eq}^2 \) can vanish with
+    !! \( \mathbb{P} : \boldsymbol\sigma \ne 0 \): the derivatives are then 0 too (before, Inf), and
+    !! \( \sigma_{eq}^2 < 0 \) gives NaN. Von Mises is
+    !! \( F = G = H = 1/2 \), \( L = M = N = 3/2 \).
+    !!
+    !! Kernel API: parameter types `yield_hill48_<k>` and `pure` functions
+    !! `yield_stress_eq_hill48_3D_<k>(prm, sigma)`, `yield_dstress_eq_hill48_3D_<k>(prm, sigma)`,
+    !! `yield_ddstress_eq_hill48_3D_<k>(prm, sigma)` and the joint evaluation
+    !! `yield_stress_eq_and_derivatives_hill48_3D_<k>(prm, sigma, f, df[, ddf])` (the three in turn)
+    !! for each real kind, also through the generics `yield_*` of `muscle_yield_laws`.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    #:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
+    #:endfor
+    use muscle_tensors, only : operator(.tdotsym.), operator(/), operator(-), assignment(=)
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: yield_hill48_${k}$
+    public :: yield_stress_eq_hill48_3D_${k}$, yield_dstress_eq_hill48_3D_${k}$, yield_ddstress_eq_hill48_3D_${k}$
+    public :: yield_stress_eq_and_derivatives_hill48_3D_${k}$, yield_joint_evaluation_hill48_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    type :: yield_hill48_${k}$
+        !! Parameters of the Hill (1948) model in `real(${k}$)`.
+        real(${k}$) :: f
+            !! Anisotropy coefficient \( F \) (yy-zz).
+        real(${k}$) :: g
+            !! Anisotropy coefficient \( G \) (zz-xx).
+        real(${k}$) :: h
+            !! Anisotropy coefficient \( H \) (xx-yy).
+        real(${k}$) :: l
+            !! Anisotropy coefficient \( L \) (shear yz).
+        real(${k}$) :: m
+            !! Anisotropy coefficient \( M \) (shear xz).
+        real(${k}$) :: n
+            !! Anisotropy coefficient \( N \) (shear xy).
+    end type yield_hill48_${k}$
+
+    #:endfor
+contains
+    #:for k in REAL_KINDS
+
+    pure function yield_stress_eq_hill48_3D_${k}$(prm, sigma) result(res)
+        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the Hill (1948) model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_hill48_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$) :: res
+            !! \( \sigma_{eq} \).
+        ! Storage of sigma: xx, yy, zz, xy, yz, xz
+        res = (prm%f*(sigma%vals(2) - sigma%vals(3))**2 + &
+               prm%g*(sigma%vals(3) - sigma%vals(1))**2 + &
+               prm%h*(sigma%vals(1) - sigma%vals(2))**2 + &
+               2*prm%l*sigma%vals(5)**2 + &
+               2*prm%m*sigma%vals(6)**2 + &
+               2*prm%n*sigma%vals(4)**2   &
+               )**0.5_${k}$
+    end function yield_stress_eq_hill48_3D_${k}$
+
+    pure function yield_dstress_eq_hill48_3D_${k}$(prm, sigma) result(res)
+        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the Hill (1948) model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_hill48_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        ! d(seq)/d(sigma) = (P : sigma)/seq; the tensorial xy component is n*sxy/seq
+        real(${k}$) :: seq, sxx, syy, szz
+
+        seq = yield_stress_eq_hill48_3D_${k}$(prm, sigma)
+        if (seq == 0.0_${k}$) then
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
+            return
+        end if
+        sxx = sigma%vals(1)
+        syy = sigma%vals(2)
+        szz = sigma%vals(3)
+        res%vals(1) = prm%g*(sxx - szz) + prm%h*(sxx - syy)
+        res%vals(2) = prm%f*(syy - szz) + prm%h*(syy - sxx)
+        res%vals(3) = prm%f*(szz - syy) + prm%g*(szz - sxx)
+        res%vals(4) = prm%n*sigma%vals(4)
+        res%vals(5) = prm%l*sigma%vals(5)
+        res%vals(6) = prm%m*sigma%vals(6)
+        res = res/seq
+    end function yield_dstress_eq_hill48_3D_${k}$
+
+    pure function yield_ddstress_eq_hill48_3D_${k}$(prm, sigma) result(res)
+        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) of the Hill (1948) model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_hill48_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \).
+        ! (P - grad (x) grad)/seq, with P the constant tensor of seq**2 = sigma : P : sigma
+        type(ten_3D2Osym_${k}$) :: grad
+        type(ten_3D4O3sym_${k}$) :: p
+        real(${k}$) :: seq
+
+        seq = yield_stress_eq_hill48_3D_${k}$(prm, sigma)
+        if (seq == 0.0_${k}$) then
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
+            return
+        end if
+        grad = yield_dstress_eq_hill48_3D_${k}$(prm, sigma)
+        ! Storage of P: xxxx, yyyy, zzzz, xyxy, yzyz, xzxz, xxyy, yyzz, ..., xxzz (7, 8, 12), the
+        ! rest 0. Shear entries are n/2, l/2, m/2: the pairs (xy,xy), (xy,yx), (yx,xy) and (yx,yx)
+        ! give 4*p_xyxy*sxy**2, which must equal the term 2*n*sxy**2 of stress_eq.
+        p%vals = 0.0_${k}$
+        p%vals(1) = prm%g + prm%h
+        p%vals(2) = prm%f + prm%h
+        p%vals(3) = prm%f + prm%g
+        p%vals(4) = 0.5_${k}$*prm%n
+        p%vals(5) = 0.5_${k}$*prm%l
+        p%vals(6) = 0.5_${k}$*prm%m
+        p%vals(7) = -prm%h
+        p%vals(8) = -prm%f
+        p%vals(12) = -prm%g
+        res = (p - (.tdotsym. grad))/seq
+    end function yield_ddstress_eq_hill48_3D_${k}$
+
+    pure function yield_joint_evaluation_hill48_${k}$(prm) result(res)
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn): false for the Hill
+        !! (1948) model (`real(${k}$)` parameters; a constant, resolved at compile time).
+        implicit none
+        @:DEVICE()
+        type(yield_hill48_${k}$), intent(in) :: prm
+            !! Parameters (not used: only selects the model).
+        logical :: res
+            !! .false.
+
+        res = .false.
+    end function yield_joint_evaluation_hill48_${k}$
+
+    pure subroutine yield_stress_eq_and_derivatives_hill48_3D_${k}$(prm, sigma, f, df, ddf)
+        !! Equivalent stress and its first and second derivatives at the same stress of the Hill (1948) model in `real(${k}$)` (3D),
+        !! computed by the functions `yield_stress_eq_hill48_3D_${k}$`, `yield_dstress_eq_hill48_3D_${k}$`,
+        !! `yield_ddstress_eq_hill48_3D_${k}$` in turn.
+        implicit none
+        @:DEVICE()
+        type(yield_hill48_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$), intent(out) :: f
+            !! \( \sigma_{eq} \).
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$), intent(out), optional :: ddf
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \). Optional: not computed when absent.
+
+        f = yield_stress_eq_hill48_3D_${k}$(prm, sigma)
+        df = yield_dstress_eq_hill48_3D_${k}$(prm, sigma)
+        if (present(ddf)) ddf = yield_ddstress_eq_hill48_3D_${k}$(prm, sigma)
+    end subroutine yield_stress_eq_and_derivatives_hill48_3D_${k}$
+    #:endfor
+
+end module muscle_yield_hill48

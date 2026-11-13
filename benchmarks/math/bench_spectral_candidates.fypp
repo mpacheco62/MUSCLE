@@ -1,0 +1,30 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module bench_spectral_candidates
+    !! Candidate spectral decompositions of plan C, phase F0 (`spectral_candidates.fypp`), compiled as a module
+    !! of their own (no inlining into the timing loops of the benchmark, as for the library routines).
+    use muscle_kinds, only : sp, dp
+    use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) for k in REAL_KINDS)}$
+    use muscle_tensor_2osym, only : to_matrix
+    use muscle_math_fp, only : fp_exponent, fp_scale
+    implicit none
+    private
+
+    integer, parameter :: CAND_MAX_SWEEPS = 6
+        !! Largest number of sweeps of candidate J (early exit when a sweep makes no rotation).
+    integer, parameter :: CAND_FIXED_SWEEPS = 4
+        !! Sweeps of candidate Jf: the largest number of sweeps with rotations measured on random tensors is 4 (sp and
+        !! dp), and the test suite passes with 4 (with 3 some rotated pure shears do not converge in dp).
+    integer, parameter :: CAND_KJ_SWEEPS = 2
+        !! Largest number of Jacobi sweeps after candidate K in candidate KJ.
+    #:for k in REAL_KINDS
+    public :: cand_jacobi_${k}$, cand_jacobi_fixed_${k}$, cand_jacobi_nobranch_${k}$, cand_jacobi_scalar_${k}$
+    public :: cand_kopp_${k}$, cand_kopp_jacobi_${k}$
+    #:endfor
+
+contains
+#:include "spectral_candidates.fypp"
+
+end module bench_spectral_candidates

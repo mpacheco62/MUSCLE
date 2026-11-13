@@ -1,0 +1,155 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#!
+#! polar_rotation and log_divided_difference (muscle_math_matrix_functions) in every kind, against independent truths
+#! in quad precision:
+#! - polar_rotation: F = R0 Q diag(s) Q^T built from a known rotation R0 and stretches s (from near the identity
+#!   to 1e3 and 1e-2), rounded to the kind; R within C_POLAR eps cond(F) of R0, R^T R = I and det R = 1 within
+#!   C_POLAR eps, and R^T F symmetric (it is U) within C_POLAR eps |F| cond(F).
+#! - log_divided_difference(a, b) = (ln a - ln b)/(a - b) against the quad formula (1/b at a = b), for a/b - 1 = 0,
+#!   tiny, on both sides of the switch to the series (LOG_SERIES of the kind: 1e-2 sp, 1e-4 dp) and far from it,
+#!   at the scales 1 and 1e3: relative error within 2 (T^3/4 + eps/T) + C_LOG eps, T the switch (the truncation
+#!   of the series against the cancellation of the formula, both largest at the switch).
+#:set C_POLAR = 50
+#:set C_LOG = 20
+#:set SWITCH = {'sp': '1.0e-2', 'dp': '1.0e-4'}
+
+module test_math_matrix_functions_ref
+    !! Quad precision truth: rotation and F = R0 Q diag(s) Q^T.
+    use, intrinsic :: iso_fortran_env, only : real128
+    implicit none
+    private
+    integer, parameter, public :: qp = real128
+    public :: rot_q, deform
+
+contains
+
+    pure function rot_q(axis, deg) result(m)
+        !! Rotation of `deg` degrees about `axis` (Rodrigues), quad precision.
+        real(qp), intent(in) :: axis(3), deg
+        real(qp) :: m(3, 3)
+        real(qp), parameter :: PI_Q = 3.14159265358979323846264338327950288_qp
+        real(qp) :: n(3), c, s, t
+        n = axis/sqrt(sum(axis**2))
+        c = cos(deg*PI_Q/180.0_qp)
+        s = sin(deg*PI_Q/180.0_qp)
+        t = 1.0_qp - c
+        m(1, :) = [t*n(1)*n(1) + c, t*n(1)*n(2) - s*n(3), t*n(1)*n(3) + s*n(2)]
+        m(2, :) = [t*n(1)*n(2) + s*n(3), t*n(2)*n(2) + c, t*n(2)*n(3) - s*n(1)]
+        m(3, :) = [t*n(1)*n(3) - s*n(2), t*n(2)*n(3) + s*n(1), t*n(3)*n(3) + c]
+    end function rot_q
+
+    pure function deform(r0, q, s) result(f)
+        !! F = R0 Q diag(s) Q^T, quad precision.
+        real(qp), intent(in) :: r0(3, 3), q(3, 3), s(3)
+        real(qp) :: f(3, 3)
+        real(qp) :: u(3, 3)
+        integer :: a
+        u = 0.0_qp
+        do a = 1, 3
+            u = u + s(a)*spread(q(:, a), 2, 3)*spread(q(:, a), 1, 3)
+        end do
+        f = matmul(r0, u)
+    end function deform
+end module test_math_matrix_functions_ref
+
+program test_math_matrix_functions
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname('3D2O', k) for k in REAL_KINDS)}$
+    use muscle_math_matrix_functions, only : polar_rotation, log_divided_difference
+    use muscle_test_utils, only : check_true
+    use muscle_test_helpers, only : record
+    use test_math_matrix_functions_ref
+    implicit none
+
+    integer :: code
+
+    code = 0
+    #:for i, k in enumerate(REAL_KINDS)
+    call record(test_polar_${k}$(), ${10*i + 1}$, 'polar_rotation against the quad truth ${k}$', code)
+    call record(test_log_${k}$(), ${10*i + 2}$, 'log_divided_difference against the quad formula ${k}$', code)
+    #:endfor
+    if (code /= 0) stop code
+    print '(a)', ' test_math_matrix_functions: PASSED'
+
+contains
+    #:for k in REAL_KINDS
+
+    function test_polar_${k}$() result(passed)
+        !! polar_rotation of F = R0 Q diag(s) Q^T, `real(${k}$)`.
+        logical :: passed
+        integer, parameter :: NCASE = 4
+        real(qp), parameter :: STRETCH(3, NCASE) = reshape([1.0_qp, 1.0_qp + 1.0e-3_qp, 1.0_qp - 2.0e-3_qp, &
+            2.0_qp, 0.5_qp, 1.5_qp, 1.0e3_qp, 1.0_qp, 0.1_qp, 1.0e-2_qp, 3.0_qp, 1.0_qp], [3, NCASE])
+        type(${tname('3D2O', k)}$) :: f, r
+        real(qp) :: r0(3, 3), q(3, 3), fq(3, 3), rk(3, 3), fk(3, 3), u(3, 3), eps, cond, worst, err, det_r
+        integer :: icase
+
+        passed = .true.
+        eps = real(epsilon(1.0_${k}$), qp)
+        r0 = rot_q([1.0_qp, -2.0_qp, 0.5_qp], 71.0_qp)
+        q = rot_q([2.0_qp, 1.0_qp, 3.0_qp], 23.0_qp)
+        worst = 0.0_qp
+        do icase = 1, NCASE
+            fq = deform(r0, q, STRETCH(:, icase))
+            f%vals = real(reshape(fq, [9]), ${k}$)
+            r = polar_rotation(f)
+            rk = reshape(real(r%vals, qp), [3, 3])
+            fk = reshape(real(f%vals, qp), [3, 3])
+            cond = maxval(STRETCH(:, icase))/minval(STRETCH(:, icase))
+            err = maxval(abs(rk - r0))/(${C_POLAR}$*eps*cond)
+            worst = max(worst, err)
+            call check_true(passed, '${k}$ polar_rotation: R = R0', err <= 1.0_qp)
+            call check_true(passed, '${k}$ polar_rotation: R^T R = I', maxval(abs(matmul(transpose(rk), rk) - &
+                            reshape([1, 0, 0, 0, 1, 0, 0, 0, 1], [3, 3]))) <= ${C_POLAR}$*eps)
+            det_r = rk(1, 1)*(rk(2, 2)*rk(3, 3) - rk(2, 3)*rk(3, 2)) - rk(1, 2)*(rk(2, 1)*rk(3, 3) - rk(2, 3)*rk(3, 1)) &
+                + rk(1, 3)*(rk(2, 1)*rk(3, 2) - rk(2, 2)*rk(3, 1))
+            call check_true(passed, '${k}$ polar_rotation: det R = 1', abs(det_r - 1.0_qp) <= ${C_POLAR}$*eps)
+            u = matmul(transpose(rk), fk)
+            call check_true(passed, '${k}$ polar_rotation: R^T F symmetric', &
+                            maxval(abs(u - transpose(u))) <= ${C_POLAR}$*eps*maxval(abs(fk))*cond)
+        end do
+        print '(a, es10.2)', ' ${k}$ polar_rotation worst error / bound:', worst
+    end function test_polar_${k}$
+
+    function test_log_${k}$() result(passed)
+        !! log_divided_difference against the quad formula, `real(${k}$)`.
+        logical :: passed
+        real(qp), parameter :: T = ${SWITCH[k]}$_qp
+        real(qp), parameter :: RS(9) = [0.0_qp, 1.0e-12_qp, 0.5_qp*T, -0.5_qp*T, 0.999_qp*T, 1.001_qp*T, &
+            -2.0_qp*T, 0.5_qp, 3.0_qp]
+        real(qp), parameter :: SCALES(2) = [1.0_qp, 1.0e3_qp]
+        real(${k}$) :: a, b, got
+        real(qp) :: aq, bq, ref, eps, tol, err, worst
+        integer :: i, j
+
+        passed = .true.
+        eps = real(epsilon(1.0_${k}$), qp)
+        tol = 2.0_qp*(T**3/4.0_qp + eps/T) + ${C_LOG}$*eps
+        worst = 0.0_qp
+        do j = 1, size(SCALES)
+            do i = 1, size(RS)
+                b = real(SCALES(j), ${k}$)
+                a = real(SCALES(j)*(1.0_qp + RS(i)), ${k}$)
+                aq = real(a, qp)
+                bq = real(b, qp)
+                if (aq == bq) then
+                    ref = 1.0_qp/bq
+                else
+                    ref = (log(aq) - log(bq))/(aq - bq)
+                end if
+                got = log_divided_difference(a, b)
+                err = abs(real(got, qp) - ref)/abs(ref)
+                worst = max(worst, err/tol)
+                call check_true(passed, '${k}$ log_divided_difference', err <= tol)
+                ! The same divided difference with the arguments swapped (the series is not symmetric in a, b)
+                call check_true(passed, '${k}$ log_divided_difference(b, a)', &
+                                abs(real(log_divided_difference(b, a), qp) - ref)/abs(ref) <= tol)
+            end do
+        end do
+        print '(a, es10.2)', ' ${k}$ log_divided_difference worst error / bound:', worst
+    end function test_log_${k}$
+    #:endfor
+
+end program test_math_matrix_functions

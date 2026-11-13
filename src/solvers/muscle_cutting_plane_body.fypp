@@ -1,0 +1,111 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! Body of the explicit cutting plane return mapping of a declared material, written
+#! once against the family generics `elas_*`, `yield_*` and `hard_*`. Port of the historical solver
+#! (muscle_solver_cutting_plane, now removed) operation by operation, so that both
+#! give the same bits in double precision; relative tolerance and no output in both.
+#!
+#! Included by src/materials/muscle_material.fypp inside its `#:for k` loop (contained procedures of
+#! the material module), with these variables set: `k` (kind), `MAT` (the `muscle_meta.Material`),
+#! `MAT_T`, `ELAS_T`, `SOLVE` (specific procedure name) and `S2` / `C4` / `T4` (see
+#! muscle_closest_point_body.fypp, also for the argument `elas`). 3D only. The material type has the components `yield` and `hard`
+#! (MATERIAL_SOLVERS['cutting_plane']), `iter_nw` (default 100, the historical limit) and `tol`.
+#! The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver).
+#! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
+#:if defined('MAT')
+
+    pure subroutine ${SOLVE}$(mat, elas, strain, dt, state_n, state_np1, stress, tangent, status, iters)
+        !! Cutting plane return mapping of material `${MAT.name}$` at one point, `real(${k}$)`: the state
+        !! at \( t_{n+1} \) and the stress for the total strain `strain` from the converged state
+        !! `state_n`. Rate independent: the time step `dt` of the common kernel signature is not used.
+        !!
+        !! Corrections \( \delta\gamma = f/(\mathbf{n}:\mathbb{C}:\mathbf{n} + d\sigma_y/d\epsilon_p) \)
+        !! of the plastic strain (\( \delta\gamma\,\mathbf{n} \)) and of the equivalent plastic strain,
+        !! with the elastic tangent \( \mathbb{C} \) of the start of the step, until
+        !! \( f < tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \) (the same check decides an
+        !! elastic step, `iters` = 0). `iters`: number of corrections. With `STATUS_NOT_CONVERGED`
+        !! (`mat%iter_nw` corrections) the outputs must not be used: the stress is that
+        !! before the last correction, as the historical solver.
+        !!
+        !! `tangent`: the continuum elastoplastic tangent at the final state (the historical solver has
+        !! none), \( \mathbb{C}^{ep} = \mathbb{C} - (\mathbb{C}:\mathbf{n})\otimes(\mathbf{n}:\mathbb{C})
+        !! /(\mathbf{n}:\mathbb{C}:\mathbf{n} + d\sigma_y/d\epsilon_p) \), the elastic tangent in an elastic
+        !! step. It is not the algorithmic (consistent) tangent of the corrections.
+        use muscle_kinds, only : SY_MIN_${k}$
+        use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
+        use muscle_tensors, only : operator(+), operator(-), operator(*), operator(/), operator(.ddot.), &
+            operator(.tdotsym.), assignment(=)
+        use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material (parameters of its models, iteration limit and tolerance).
+        type(${ELAS_T}$), intent(in) :: elas
+            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
+        type(${S2}$), intent(in) :: strain
+            !! Total strain at \( t_{n+1} \).
+        real(${k}$), intent(in) :: dt
+            !! Time step (not used).
+        type(plastic_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(plastic_state_${k}$), intent(out) :: state_np1
+            !! State at \( t_{n+1} \) (stress, plastic strain, equivalent plastic strain).
+        type(${S2}$), intent(out) :: stress
+            !! Stress at \( t_{n+1} \) (the stress of `state_np1`).
+        type(${T4}$), intent(out) :: tangent
+            !! Continuum elastoplastic tangent (see above).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_NOT_CONVERGED` (muscle_status).
+        integer, intent(out) :: iters
+            !! Plastic corrections (0 in an elastic step, at most `mat%iter_nw`).
+
+        type(${S2}$) :: strain_p, df
+        type(${C4}$) :: elas_tan
+        real(${k}$) :: strain_pf, hard, dhard, f, ddgamma
+        integer :: i
+
+        ! dt: argument of the common kernel signature of the materials, not used here
+        associate (unused_dt => dt)
+        end associate
+
+        strain_p = state_n%strain_p
+        strain_pf = state_n%strain_pf
+        ! The stress of the start of the step: the output only when iter_nw <= 0 (no check is made)
+        stress = elas_stress(elas, strain - strain_p)
+        elas_tan = elas_dstress_dstrain(elas, strain - strain_p)
+        status = STATUS_NOT_CONVERGED
+        do i = 1, mat%iter_nw
+            stress = elas_stress(elas, strain - strain_p)
+            hard = hard_stress(mat%hard, strain_pf)
+            f = yield_stress_eq(mat%yield, stress) - hard
+            if (f < mat%tol*max(hard, SY_MIN_${k}$)) then
+                status = STATUS_OK
+                exit
+            end if
+
+            df = yield_dstress_eq(mat%yield, stress)
+            dhard = hard_dstress_dep(mat%hard, strain_pf)
+            ddgamma = f/(((df .ddot. elas_tan) .ddot. df) + dhard)
+            strain_pf = strain_pf + ddgamma
+            strain_p = strain_p + ddgamma*df
+        end do
+        ! Converged at check i after i - 1 corrections; exhausted: i = iter_nw + 1
+        iters = i - 1
+
+        state_np1%stress = stress
+        state_np1%strain_p = strain_p
+        state_np1%strain_pf = strain_pf
+
+        ! Continuum tangent at the final state (elastic step: the elastic tangent)
+        elas_tan = elas_dstress_dstrain(elas, strain - strain_p)
+        if (iters == 0) then
+            tangent = elas_tan
+        else
+            df = yield_dstress_eq(mat%yield, stress)
+            dhard = hard_dstress_dep(mat%hard, strain_pf)
+            tangent = elas_tan - (.tdotsym. (df .ddot. elas_tan))/((df .ddot. elas_tan .ddot. df) + dhard)
+        end if
+    end subroutine ${SOLVE}$
+#:endif

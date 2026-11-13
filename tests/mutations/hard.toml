@@ -1,0 +1,6 @@
+# Mutation check of the hardening laws (tools/mutation_check.py hard)
+sources = ["src/plasticity/hardening_laws/muscle_hard_*.fypp"]
+# The reference test was deleted (plan R): the unit tests detected all the 48 mutations it detected.
+reference = ""
+unit = "^plasticity-hardening_laws-"
+samples = 30

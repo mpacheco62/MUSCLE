@@ -1,0 +1,143 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_yield_vonmises
+    !! Von Mises yield criterion (no parameters):
+    !! \[ \sigma_{eq} = \sqrt{\tfrac{3}{2}\, \mathbf{s} : \mathbf{s}}, \quad
+    !!    \frac{\partial\sigma_{eq}}{\partial\boldsymbol\sigma} = \frac{3}{2} \frac{\mathbf{s}}{\sigma_{eq}}, \quad
+    !!    \frac{\partial^2\sigma_{eq}}{\partial\boldsymbol\sigma^2} = \frac{3}{2\sigma_{eq}} \mathbb{I}^S
+    !!    - \frac{9}{4\sigma_{eq}} \mathbf{n} \otimes \mathbf{n} - \frac{1}{2\sigma_{eq}} \mathbf{I} \otimes \mathbf{I} \]
+    !! with \( \mathbf{s} = \operatorname{dev}\boldsymbol\sigma \) and \( \mathbf{n} = \mathbf{s}/\sigma_{eq} \)
+    !! (the Hessian is written with \( \mathbf{n} \), not \( \mathbf{s} \otimes \mathbf{s}/\sigma_{eq}^3 \), so
+    !! that no power of \( \sigma_{eq} \) under- or overflows; D-017.10d). At a null equivalent stress
+    !! (zero or hydrostatic stress) both derivatives are 0 (the original code gave NaN; D-017.9).
+    !!
+    !! Kernel API: parameter types `yield_vonmises_<k>` (empty) and `pure` functions
+    !! `yield_stress_eq_vonmises_3D_<k>(prm, sigma)`, `yield_dstress_eq_vonmises_3D_<k>(prm, sigma)`,
+    !! `yield_ddstress_eq_vonmises_3D_<k>(prm, sigma)` and the joint evaluation
+    !! `yield_stress_eq_and_derivatives_vonmises_3D_<k>(prm, sigma, f, df[, ddf])` (the three in turn)
+    !! for each real kind, also through the generics `yield_*` of `muscle_yield_laws`.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    #:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
+    #:endfor
+    use muscle_tensors, only : iden_4O4T, iden_4O3T, operator(.dev.), operator(.ddot.), operator(.tdotsym.), &
+        & operator(*), operator(/), operator(-), assignment(=)
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: yield_vonmises_${k}$
+    public :: yield_stress_eq_vonmises_3D_${k}$, yield_dstress_eq_vonmises_3D_${k}$, yield_ddstress_eq_vonmises_3D_${k}$
+    public :: yield_stress_eq_and_derivatives_vonmises_3D_${k}$, yield_joint_evaluation_vonmises_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    type :: yield_vonmises_${k}$
+        !! Parameters of the von Mises model in `real(${k}$)`.
+    end type yield_vonmises_${k}$
+
+    #:endfor
+contains
+    #:for k in REAL_KINDS
+
+    pure function yield_stress_eq_vonmises_3D_${k}$(prm, sigma) result(res)
+        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the von Mises model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_vonmises_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$) :: res
+            !! \( \sigma_{eq} \).
+        type(ten_3D2Osym_${k}$) :: dev
+
+        dev = .dev. sigma
+        res = (1.5_${k}$*(dev .ddot. dev))**0.5_${k}$
+    end function yield_stress_eq_vonmises_3D_${k}$
+
+    pure function yield_dstress_eq_vonmises_3D_${k}$(prm, sigma) result(res)
+        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the von Mises model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_vonmises_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        type(ten_3D2Osym_${k}$) :: dev
+        real(${k}$) :: seq
+
+        seq = yield_stress_eq_vonmises_3D_${k}$(prm, sigma)
+        if (seq == 0.0_${k}$) then
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
+            return
+        end if
+        dev = .dev. sigma
+        res = 1.5_${k}$*dev/seq
+    end function yield_dstress_eq_vonmises_3D_${k}$
+
+    pure function yield_ddstress_eq_vonmises_3D_${k}$(prm, sigma) result(res)
+        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) of the von Mises model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_vonmises_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \).
+        ! n = dev/seq is O(1): no power of seq beyond the first
+        type(ten_3D2Osym_${k}$) :: n
+        real(${k}$) :: seq
+
+        seq = yield_stress_eq_vonmises_3D_${k}$(prm, sigma)
+        if (seq == 0.0_${k}$) then
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
+            return
+        end if
+        n = (.dev. sigma)/seq
+        res = (3.0_${k}$/(2.0_${k}$*seq))*iden_4O4T() - (9.0_${k}$/(4.0_${k}$*seq))*(.tdotsym. n) &
+            & - (1.0_${k}$/(2.0_${k}$*seq))*iden_4O3T()
+    end function yield_ddstress_eq_vonmises_3D_${k}$
+
+    pure function yield_joint_evaluation_vonmises_${k}$(prm) result(res)
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn): false for the von Mises
+        !! model (`real(${k}$)` parameters; a constant, resolved at compile time).
+        implicit none
+        @:DEVICE()
+        type(yield_vonmises_${k}$), intent(in) :: prm
+            !! Parameters (not used: only selects the model).
+        logical :: res
+            !! .false.
+
+        res = .false.
+    end function yield_joint_evaluation_vonmises_${k}$
+
+    pure subroutine yield_stress_eq_and_derivatives_vonmises_3D_${k}$(prm, sigma, f, df, ddf)
+        !! Equivalent stress and its first and second derivatives at the same stress of the von Mises model in `real(${k}$)` (3D),
+        !! computed by the functions `yield_stress_eq_vonmises_3D_${k}$`, `yield_dstress_eq_vonmises_3D_${k}$`,
+        !! `yield_ddstress_eq_vonmises_3D_${k}$` in turn.
+        implicit none
+        @:DEVICE()
+        type(yield_vonmises_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$), intent(out) :: f
+            !! \( \sigma_{eq} \).
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$), intent(out), optional :: ddf
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \). Optional: not computed when absent.
+
+        f = yield_stress_eq_vonmises_3D_${k}$(prm, sigma)
+        df = yield_dstress_eq_vonmises_3D_${k}$(prm, sigma)
+        if (present(ddf)) ddf = yield_ddstress_eq_vonmises_3D_${k}$(prm, sigma)
+    end subroutine yield_stress_eq_and_derivatives_vonmises_3D_${k}$
+    #:endfor
+
+end module muscle_yield_vonmises

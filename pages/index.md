@@ -13,8 +13,23 @@ Mathematical foundation of the library, including plastic return mapping, yield 
 ### [Tensor Algebra Guide](tensors.html)
 A guide on using the optimized tensor engine, custom operators (`.ddot.`, `.tdotsym.`), and Voigt notation storage.
 
+### [Math Modules](math.html)
+What each module of `src/math/` contains (inverses, small linear systems, eigenvalues, spectral derivatives) and which layer it belongs to.
+
 ### [FEA Integration](integration.html)
-Instructions on how to link MUSCLE with Finite Element solvers like LS-DYNA (UMAT) and ANSYS (USERMAT).
+How to call a declared material from the user subroutines of Abaqus (UMAT), ANSYS (USERMAT) and LS-DYNA (umat41).
 
 ### [Developer Guide](contributing.html)
-Information for developers on how to extend the library by adding new hardening laws or yield criteria using the Object-Oriented framework.
+How to add a model, a material or a solver, with checklists.
+
+### [Conventions](conventions.html)
+The rules every contribution follows: code style, `sp`/`dp`, 2D/3D, minimal FYPP, GPU-safe code and tests.
+
+### [Architecture](architecture.html)
+How a declared material is generated from the registry, the solver bodies and the model families.
+
+### [Glossary](glossary.html)
+Abbreviations of the names of materials, models and solvers (`cp`, `pz`, `vm`, `hsv`, ...).
+
+### [Migration from the OO API](migration.html)
+Equivalence table from the former object-oriented API (`Elasticity_linear`, `Closest_point`, `Plastic_material_history`, ...) to the declared materials, and what is no longer available.

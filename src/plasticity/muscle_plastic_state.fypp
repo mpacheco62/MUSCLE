@@ -1,0 +1,42 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_plastic_state
+    !! Module muscle_plastic_state
+    !! ===========================
+    !! State of an elastoplastic material point for kernels, in every real kind (support module of
+    !! the plasticity models, not a model family). Fixed size (no allocatable components): a state
+    !! is copied (commit, rollback, private copies, device arrays) without allocating memory. 3D only.
+    !!
+    !! - `plastic_state_<k>`: plastic strain, accumulated equivalent plastic strain and stress.
+    !!
+    !! The FE history array layout is that of each material (`mat_pack_<name>` / `mat_unpack_<name>`,
+    !! `MAT_<NAME>_NSTATE` components, without the stress), not of this module.
+    !!
+    !! Kernels keep the converged and candidate states as separate arguments: the caller (the FE
+    !! program, in its history array) keeps the converged one.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    #:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$
+    #:endfor
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: plastic_state_${k}$
+    #:endfor
+    #:for k in REAL_KINDS
+
+    type :: plastic_state_${k}$
+        !! Physical state of an elastoplastic material point at an instant, `real(${k}$)`.
+        type(ten_3D2Osym_${k}$) :: strain_p = ten_3D2Osym_${k}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Plastic strain tensor.
+        real(${k}$) :: strain_pf = 0.0_${k}$
+            !! Accumulated equivalent plastic strain.
+        type(ten_3D2Osym_${k}$) :: stress = ten_3D2Osym_${k}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Constitutive stress tensor.
+    end type plastic_state_${k}$
+    #:endfor
+
+end module muscle_plastic_state

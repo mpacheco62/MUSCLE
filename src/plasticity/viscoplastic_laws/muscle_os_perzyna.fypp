@@ -1,0 +1,127 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_os_perzyna
+    !! Perzyna overstress law:
+    !! \[ g(\sigma_{eq}, \epsilon_p) = \frac{1}{\eta} \langle \psi \rangle^N, \quad
+    !!    \psi = \frac{\sigma_{eq}}{\sigma_y(\epsilon_p)} - 1 \]
+    !! with the static yield stress \( \sigma_y \) of a composed hardening law, viscosity
+    !! \( \eta \) and rate sensitivity exponent \( N \). Derivatives (0 for \( \psi \le 0 \)):
+    !! \[ \frac{\partial g}{\partial\sigma_{eq}} = \frac{g_\psi}{\sigma_y}, \quad
+    !!    \frac{\partial g}{\partial\epsilon_p} = -g_\psi \frac{\sigma_{eq}}{\sigma_y^2}
+    !!    \frac{d\sigma_y}{d\epsilon_p}, \quad g_\psi = \frac{N}{\eta} \psi^{N-1} \]
+    !!
+    !! Composed law: the free functions receive \( \sigma_y \) (`sy`) and
+    !! \( d\sigma_y/d\epsilon_p \) (`dsy_dep`) already evaluated, e.g. with `hard_stress` and
+    !! `hard_dstress_dep` of `muscle_hard_laws`; `ep` is part of the family contract but unused.
+    !! Known issue (D-017.7, kept): division by zero if \( \sigma_y = 0 \).
+    !!
+    !! Kernel API: parameter types `os_perzyna_<k>` and `pure` functions
+    !! `os_flow_rate_perzyna_<k>(prm, sigma_eq, ep, sy)`, `os_dflow_dsigma_perzyna_<k>(prm, sigma_eq,
+    !! ep, sy)` and `os_dflow_dep_perzyna_<k>(prm, sigma_eq, ep, sy, dsy_dep)` for each real kind,
+    !! also through the generics `os_*` of `muscle_os_laws`.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: os_perzyna_${k}$
+    public :: os_flow_rate_perzyna_${k}$, os_dflow_dsigma_perzyna_${k}$, os_dflow_dep_perzyna_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    type :: os_perzyna_${k}$
+        !! Parameters of the Perzyna model in `real(${k}$)`.
+        real(${k}$) :: eta = 1.0_${k}$
+            !! Viscosity (relaxation time) \( \eta \).
+        real(${k}$) :: n = 1.0_${k}$
+            !! Rate sensitivity exponent \( N \).
+    end type os_perzyna_${k}$
+    #:endfor
+
+contains
+    #:for k in REAL_KINDS
+    pure function os_perzyna_dpsi_${k}$(prm, psi) result(res)
+        !! Derivative \( g_\psi \) of the Perzyna law in `real(${k}$)` (0 for \( \psi \le 0 \)).
+        implicit none
+        @:DEVICE()
+        type(os_perzyna_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: psi
+            !! Overstress \( \psi \).
+        real(${k}$) :: res
+            !! \( g_\psi \).
+
+        if (psi <= 0.0_${k}$) then
+            res = 0.0_${k}$
+        else
+            res = prm%n*psi**(prm%n - 1.0_${k}$)/prm%eta
+        end if
+    end function os_perzyna_dpsi_${k}$
+
+    pure function os_flow_rate_perzyna_${k}$(prm, sigma_eq, ep, sy) &
+        & result(res)
+        !! Plastic multiplier rate \( g(\sigma_{eq}, \epsilon_p) \) of the Perzyna model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(os_perzyna_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: sigma_eq
+            !! Equivalent stress \( \sigma_{eq} \).
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: sy
+            !! Static yield stress \( \sigma_y(\epsilon_p) \) of the composed hardening law (`hard_stress`).
+        real(${k}$) :: res
+            !! \( g \).
+        real(${k}$) :: psi
+
+        psi = sigma_eq/sy - 1.0_${k}$
+        if (psi <= 0.0_${k}$) then
+            res = 0.0_${k}$
+        else
+            res = psi**prm%n/prm%eta
+        end if
+    end function os_flow_rate_perzyna_${k}$
+
+    pure function os_dflow_dsigma_perzyna_${k}$(prm, sigma_eq, ep, sy) &
+        & result(res)
+        !! Derivative \( \partial g/\partial\sigma_{eq} \) of the Perzyna model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(os_perzyna_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: sigma_eq
+            !! Equivalent stress \( \sigma_{eq} \).
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: sy
+            !! Static yield stress \( \sigma_y(\epsilon_p) \) of the composed hardening law (`hard_stress`).
+        real(${k}$) :: res
+            !! \( \partial g/\partial\sigma_{eq} \).
+        res = os_perzyna_dpsi_${k}$(prm, sigma_eq/sy - 1.0_${k}$)/sy
+    end function os_dflow_dsigma_perzyna_${k}$
+
+    pure function os_dflow_dep_perzyna_${k}$(prm, sigma_eq, ep, sy, dsy_dep) &
+        & result(res)
+        !! Derivative \( \partial g/\partial\epsilon_p \) of the Perzyna model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(os_perzyna_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: sigma_eq
+            !! Equivalent stress \( \sigma_{eq} \).
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: sy
+            !! Static yield stress \( \sigma_y(\epsilon_p) \) of the composed hardening law (`hard_stress`).
+        real(${k}$), intent(in) :: dsy_dep
+            !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the composed hardening law (`hard_dstress_dep`).
+        real(${k}$) :: res
+            !! \( \partial g/\partial\epsilon_p \).
+        res = -os_perzyna_dpsi_${k}$(prm, sigma_eq/sy - 1.0_${k}$)*sigma_eq*dsy_dep/sy**2
+    end function os_dflow_dep_perzyna_${k}$
+
+    #:endfor
+end module muscle_os_perzyna

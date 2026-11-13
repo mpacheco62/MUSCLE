@@ -1,0 +1,84 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_hard_vocemod
+    !! Modified Voce isotropic hardening law (Voce saturation plus a linear term):
+    !! \[ \sigma_y(\epsilon_p) = \sigma_{y0} + k \epsilon_p + q \left( 1 - e^{-n \epsilon_p} \right), \quad
+    !!    \frac{d\sigma_y}{d\epsilon_p} = k + q n e^{-n \epsilon_p}, \quad
+    !!    \frac{d^2\sigma_y}{d\epsilon_p^2} = -q n^2 e^{-n \epsilon_p} \]
+    !! with initial yield stress \( \sigma_{y0} \) (component `Sy`), linear hardening modulus
+    !! \( k \), saturation stress range \( q \) and saturation rate \( n \). It models materials whose
+    !! hardening rate first decreases quickly and then tends to the constant slope \( k \)
+    !! (classic Voce law with \( k = 0 \)).
+    !!
+    !! Kernel API: parameter types `hard_vocemod_<k>` and `pure` functions
+    !! `hard_stress_vocemod_<k>(prm, ep)`, `hard_dstress_dep_vocemod_<k>(prm, ep)` and
+    !! `hard_ddstress_ddep_vocemod_<k>(prm, ep)` for each real kind, also through the generics
+    !! `hard_stress`, `hard_dstress_dep` and `hard_ddstress_ddep` of `muscle_hard_laws`.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: hard_vocemod_${k}$
+    public :: hard_stress_vocemod_${k}$, hard_dstress_dep_vocemod_${k}$, hard_ddstress_ddep_vocemod_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    type :: hard_vocemod_${k}$
+        !! Parameters of the modified Voce model in `real(${k}$)`.
+        real(${k}$) :: Sy
+            !! Initial yield stress \( \sigma_{y0} \).
+        real(${k}$) :: k
+            !! Linear hardening modulus \( k \) (asymptotic slope).
+        real(${k}$) :: q
+            !! Saturation stress range \( q \) of the exponential term.
+        real(${k}$) :: n
+            !! Saturation rate \( n \).
+    end type hard_vocemod_${k}$
+
+    #:endfor
+contains
+    #:for k in REAL_KINDS
+    pure function hard_stress_vocemod_${k}$(prm, ep) result(res)
+        !! Flow stress \( \sigma_y(\epsilon_p) \) of the modified Voce model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_vocemod_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( \sigma_y \).
+        res = prm%Sy + prm%k*ep + prm%q*(1.0_${k}$ - exp(-prm%n*ep))
+    end function hard_stress_vocemod_${k}$
+
+    pure function hard_dstress_dep_vocemod_${k}$(prm, ep) result(res)
+        !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the modified Voce model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_vocemod_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d\sigma_y/d\epsilon_p \).
+        res = prm%k + prm%q*prm%n*exp(-prm%n*ep)
+    end function hard_dstress_dep_vocemod_${k}$
+
+    pure function hard_ddstress_ddep_vocemod_${k}$(prm, ep) result(res)
+        !! Second derivative \( d^2\sigma_y/d\epsilon_p^2 \) of the modified Voce model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_vocemod_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d^2\sigma_y/d\epsilon_p^2 \).
+        res = -prm%q*prm%n*prm%n*exp(-prm%n*ep)
+    end function hard_ddstress_ddep_vocemod_${k}$
+
+    #:endfor
+end module muscle_hard_vocemod

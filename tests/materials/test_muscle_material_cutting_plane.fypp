@@ -1,0 +1,63 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "mat_sequence_common.fypp"
+#! Materials of the test registry (tools/fypp/muscle_materials.py) solved by cutting_plane: each one needs
+#! at least one entry in CASES, with parameter set names of case_params.py.
+#:set SOLVER = 'cutting_plane'
+#:set MATS = solver_materials(SOLVER)
+
+program test_mat_cutting_plane
+    !! Declared materials with the cutting plane return mapping (Phase 7, D-018): the point kernel
+    !! `mat_update` of the materials of the test registry along the strain sequences of the historical
+    !! reference test, with the checks of mat_sequence_common.fypp: the continuum tangent of the kernel is
+    !! checked against finite differences with a loose tolerance (it is not the algorithmic tangent).
+    !! Von Mises with linear hardening and isotropic elasticity converges in exactly one correction
+    !! (radial return), which checks `iters` as a count. Rate independent: the time step of the cases is
+    !! 0 (not used).
+    !! No reference records (plan R, R6): the mutations of the solver that the historical reference
+    !! records detected are detected by the unit tests (test_muscle_material_return_mapping.fypp and the others of
+    !! tests/mutations/solvers.toml); the cases keep their strain sequences for the checks of
+    !! mat_sequence_common.fypp (sp against dp, the tangent against finite differences, the coverage of
+    !! the registry).
+    $:MAT_TEST_USES(MATS)
+    implicit none
+
+    $:MAT_TEST_DECLS()
+    ! Tolerances relative to the largest component (measured maxima of the cases in brackets,
+    ! gfortran 15.2 Debug; margin 3-20x)
+    real(sp), parameter :: TOL_SP_STRESS = 5.0e-5_sp
+        !! sp vs dp, stress [3.7e-6]: the sp tolerance (1e-5 sigma_y).
+    real(sp), parameter :: TOL_SP_STRAIN_P = 5.0e-5_sp
+        !! sp vs dp, plastic strain [1.3e-5].
+    real(sp), parameter :: TOL_SP_EP = 5.0e-5_sp
+        !! sp vs dp, equivalent plastic strain [1.3e-5].
+    real(sp), parameter :: TOL_SP_TANGENT = 5.0e-6_sp
+        !! sp vs dp, (continuum) tangent [7.6e-7].
+    real(sp), parameter :: TOL_SP_FD = 1.2_sp
+        !! sp continuum tangent vs finite differences [0.38], see TOL_DP_FD.
+    real(dp), parameter :: TOL_DP_FD = 1.2_dp
+        !! dp continuum tangent vs finite differences [0.38; 0.16-0.25 in the small steps, 0.36-0.38 in
+        !! the large increments]: the finite differences give the algorithmic tangent of the
+        !! corrections, which the continuum tangent is not, so this only catches gross errors.
+    type(solver_case), parameter :: CASES(*) = [ &
+        solver_case(0, 'cut_vm_swift', 'lin1000', '', 'swift_small', 'vonmises', 100, 0.0_dp, 3.80e-2_dp), &
+        solver_case(0, 'cut_vm_bilinear', 'steel', '', 'bilinear', 'vonmises', 100, 0.0_dp, 9.09e-4_dp, &
+            iters_exact=1), &
+        solver_case(0, 'cut_hill48_swift', 'steel', '', 'swift', 'hill48-2', 100, 0.0_dp, 5.68e-4_dp), &
+        solver_case(0, 'cut_dp_bilinear', 'steel', '', 'bilinear', 'dp-1', 100, 0.0_dp, 9.05e-4_dp), &
+        solver_case(0, 'cut_cpb06_vocemod', 'steel', '', 'vocemod', 'cpb06-2', 100, 0.0_dp, 1.23e-3_dp), &
+        solver_case(0, 'cut_yld2004_ludwik', 'steel', '', 'ludwik', 'yld2004-2', 100, 0.0_dp, 8.97e-4_dp), &
+        solver_case(0, 'cut_maxwell_vm_bilinear', 'maxwell', '', 'bilinear', 'vonmises', 100, 0.1_dp, 1.56e-2_dp), &
+        solver_case(0, 'cut_cpb06ex2_swift', 'steel', '', 'swift', 'cpb06ex2-1', 100, 0.0_dp, 5.61e-4_dp)]
+        !! Cases of the historical test_cutting_plane_golden (case number 0, material, parameter set names,
+        !! iteration limit, time step: that of the viscoelastic elasticity, A_Y).
+
+    $:MAT_TEST_MAIN('test_mat_cutting_plane', None, MATS)
+
+contains
+    $:MAT_TEST_PROCS(SOLVER, MATS, 'cutting_plane', reference_tangent=None, zero_stress=False, &
+        & flag_codes=True)
+
+end program test_mat_cutting_plane

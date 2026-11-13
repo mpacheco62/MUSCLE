@@ -1,0 +1,99 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:set VISCO = ['maxwell', 'kelvin']
+
+module visco_test_steps
+    !! Steps of a viscoelastic model for the physical checks (dp, host): the kernel calls of a material
+    !! point (visco_step_coefficients, visco_freeze, visco_update) grouped as the tests use them. A
+    !! status other than STATUS_OK stops the test (the status itself is checked in test_visco_kinds).
+    use muscle_kinds, only : dp
+    use muscle_status, only : STATUS_OK
+    use muscle_tensors, only : ten_3D2Osym
+    use muscle_visco_laws, only : visco_step_coefficients, visco_freeze, visco_update, visco_n_branches, &
+        visco_state_init, visco_state_dp, visco_coefs_dp, elas_frozen_dp, &
+        ${', '.join('visco_' + m + '_dp' for m in VISCO)}$
+    implicit none
+    private
+
+    public :: step_coefs, new_state, freeze_dt, advance
+
+    interface step_coefs
+        !! Coefficients of a time step.
+        module procedure ${', '.join('step_coefs_' + m for m in VISCO)}$
+    end interface step_coefs
+
+    interface new_state
+        !! Initial state of a point (optionally with an initial elastic strain).
+        module procedure ${', '.join('new_state_' + m for m in VISCO)}$
+    end interface new_state
+
+    interface freeze_dt
+        !! Frozen elasticity of a time step from the converged state.
+        module procedure ${', '.join('freeze_dt_' + m for m in VISCO)}$
+    end interface freeze_dt
+
+    interface advance
+        !! Update of the state with the converged elastic strain of a step, and commit.
+        module procedure ${', '.join('advance_' + m for m in VISCO)}$
+    end interface advance
+
+contains
+    #:for m in VISCO
+
+    function step_coefs_${m}$(model, dt) result(coefs)
+        !! Coefficients of the step `dt` of the ${m}$ model.
+        type(visco_${m}$_dp), intent(in) :: model
+            !! Model.
+        real(dp), intent(in) :: dt
+            !! Time step.
+        type(visco_coefs_dp) :: coefs
+            !! Coefficients.
+        integer :: status
+        call visco_step_coefficients(model, dt, coefs, status)
+        if (status /= STATUS_OK) error stop 'visco_test_steps: invalid time step'
+    end function step_coefs_${m}$
+
+    subroutine new_state_${m}$(model, state, strain_e)
+        !! Initial state of a point of the ${m}$ model.
+        type(visco_${m}$_dp), intent(in) :: model
+            !! Model.
+        type(visco_state_dp), intent(out) :: state
+            !! State.
+        type(ten_3D2Osym), intent(in), optional :: strain_e
+            !! Initial elastic strain.
+        integer :: status
+        call visco_state_init(state, visco_n_branches(model), status, strain_e)
+        if (status /= STATUS_OK) error stop 'visco_test_steps: invalid number of branches'
+    end subroutine new_state_${m}$
+
+    function freeze_dt_${m}$(model, dt, state) result(elas)
+        !! Frozen elasticity of the step `dt` of the ${m}$ model from the converged state.
+        type(visco_${m}$_dp), intent(in) :: model
+            !! Model.
+        real(dp), intent(in) :: dt
+            !! Time step.
+        type(visco_state_dp), intent(in) :: state
+            !! Converged state.
+        type(elas_frozen_dp) :: elas
+            !! Frozen elasticity.
+        elas = visco_freeze(model, step_coefs(model, dt), state)
+    end function freeze_dt_${m}$
+
+    subroutine advance_${m}$(model, coefs, strain_e, state)
+        !! Updates the state of the ${m}$ model with the converged elastic strain of the step and
+        !! commits it.
+        type(visco_${m}$_dp), intent(in) :: model
+            !! Model.
+        type(visco_coefs_dp), intent(in) :: coefs
+            !! Coefficients of the step.
+        type(ten_3D2Osym), intent(in) :: strain_e
+            !! Elastic strain at the end of the step.
+        type(visco_state_dp), intent(inout) :: state
+            !! Converged state at t_n on entry, at t_n+1 on exit.
+        type(visco_state_dp) :: state_np1
+        call visco_update(model, coefs, state, strain_e, state_np1)
+        state = state_np1
+    end subroutine advance_${m}$
+    #:endfor
+
+end module visco_test_steps

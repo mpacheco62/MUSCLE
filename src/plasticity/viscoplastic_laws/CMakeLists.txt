@@ -1,12 +1,13 @@
-target_sources(muscle PRIVATE
-                 muscle_vp_base.f90
-                 muscle_vp_chaboche.f90
-                 muscle_vp_jc.f90
-                 muscle_vp_jcfull.f90
-                 muscle_vp_mrk.f90
-                 muscle_vp_nnl.f90
-                 muscle_vp_overstress_base.f90
-                 muscle_vp_perzyna.f90
-                 muscle_vp_rk.f90
-                 muscle_vp_va.f90
+# Laws written by hand and the family modules with the generics vp_* (flow stress laws) and os_* (overstress laws)
+muscle_add_fypp_sources(muscle
+                 muscle_vp_jc.fypp
+                 muscle_vp_jcfull.fypp
+                 muscle_vp_mrk.fypp
+                 muscle_vp_nnl.fypp
+                 muscle_vp_rk.fypp
+                 muscle_vp_va.fypp
+                 muscle_vp_laws.fypp
+                 muscle_os_chaboche.fypp
+                 muscle_os_perzyna.fypp
+                 muscle_os_laws.fypp
                  )

@@ -1,0 +1,323 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Threshold of eigenvals per kind (on s = sqrt(J2/3) and on |1 - d|), D-016.5. dp: 1e-10
+#! (historically a default real literal, ~1.0000000134e-10; now the exact dp value). sp: 1e-9, a
+#! guard against 0/0, not a precision commitment (measured error <= 2e-7, ~3e-5 with 4e-5).
+#:set EIG_EPS = {'sp': '1.0e-9', 'dp': '1.0e-10'}
+
+module muscle_math_eigen
+    !! Eigenvalues, eigenvectors and eigenprojections of symmetric second-order tensors (3D), kernel routines
+    !! in every real kind:
+    !!
+    !! - `eigenvals(s)`: the eigenvalues, descending, by the closed form (trigonometric, Cayley-Hamilton);
+    !!   the cheap path when only the values are needed (with an absolute threshold, D-017.9).
+    !! - `spectral_decomposition(s, lam, V)`: eigenvalues and orthonormal eigenvectors (columns of V), "K"
+    !!   (D-032): the deviator scaled by a power of 2, its closed-form eigenvalues (Kopp), the most
+    !!   separated eigenvector by a cross product of rows, the remaining pair by one plane rotation and the
+    !!   eigenvalues as Rayleigh quotients; accurate for every eigenvalue gap. Used with
+    !!   `spectral_gradient`/`spectral_hessian` (`muscle_math_spectral_derivs`) by the anisotropic yield
+    !!   criteria, also for their equivalent stress.
+    !! - `eigenprojections(s, eig, proj)` and `eigenvals_refined(s, eig)`: the eigenvalues and eigenprojections
+    !!   \( P_a = v_a \otimes v_a \) of `spectral_decomposition` (the finite strain kinematics), accurate also
+    !!   for close eigenvalues (D-032; they replaced the closed form with a band of Jacobi rotations).
+    use muscle_kinds, only : sp, dp
+    use muscle_tensors
+    use muscle_tensor_2osym, only : square
+    use muscle_math_fp, only : fp_exponent, fp_scale
+    implicit none
+    private
+
+    public :: eigenvals, spectral_decomposition, eigenprojections, eigenvals_refined
+    #:for k in REAL_KINDS
+    public :: eigenvals_3D2Osym_${k}$, spectral_decomposition_${k}$, eigenprojections_${k}$, eigenvals_refined_${k}$
+    #:endfor
+
+    interface eigenvals
+        module procedure ${kspecifics('{0}_3D2Osym_{1}', 'eigenvals')}$
+    end interface eigenvals
+
+    #:for name in ['spectral_decomposition', 'eigenprojections', 'eigenvals_refined']
+    interface ${name}$
+        module procedure ${kspecifics('{0}_{1}', name)}$
+    end interface ${name}$
+
+    #:endfor
+contains
+    #:for k in REAL_KINDS
+    #:set T2 = tname('3D2Osym', k)
+
+    pure function eigenvals_3D2Osym_${k}$(mat) result(res)
+        !! Eigenvalues of a symmetric `${T2}$`, in descending order (closed form, based on
+        !! https://doi.org/10.1002/nme.7153).
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: mat
+                !! Symmetric tensor.
+        real(${k}$) :: res(3)
+                !! Eigenvalues, \( \lambda_1 \ge \lambda_2 \ge \lambda_3 \).
+
+        real(${k}$), parameter :: EPS = ${EIG_EPS[k]}$_${k}$
+        real(${k}$) :: I1, J2, s, d, alpha, n1, n2
+        real(${k}$) :: J2_sqrt
+        real(${k}$) :: cd, lam_a, lam_b, lam_c, sd
+        integer :: sj
+        type(${T2}$) :: Sm, T, d1, d2
+        type(iden_2O) :: Iden
+
+        I1 = sum(mat%vals(1:3))
+        J2 = ((mat%vals(1)-mat%vals(2))**2.0_${k}$ + (mat%vals(2)-mat%vals(3))**2.0_${k}$ &
+             + (mat%vals(3)-mat%vals(1))**2.0_${k}$)/6.0_${k}$ &
+             + (mat%vals(4)**2 + mat%vals(5)**2 + mat%vals(6)**2)
+        s = (J2/3.0_${k}$)**0.5_${k}$
+
+        if (abs(s) <= EPS) then
+            res = I1/3.0_${k}$
+            return
+        end if
+
+        Sm = mat - (I1/3.0_${k}$)*Iden
+        T = square(Sm) - (2.0_${k}$/3.0_${k}$)*J2*Iden
+        d1 = T - s*Sm
+        d2 = T + s*Sm
+        n1 = d1 .ddot. d1
+        n2 = d2 .ddot. d2
+        J2_sqrt = J2**0.5_${k}$
+
+        if (n2 <= n1/huge(n1)) then
+            ! d = sqrt(n1/n2) would be infinite (d2 = 0: the largest root is repeated) or overflow: its
+            ! limit, atan(1/d) = 0, without the division by zero (same result as the Inf it gave before)
+            sj = -1
+            alpha = 0.0_${k}$
+        else
+            d = (n1 / n2)**0.5_${k}$
+            if (abs(1.0_${k}$ - d) <= EPS) then
+                res(1) = J2_sqrt
+                res(2) = 0.0_${k}$
+                res(3) = -res(1)
+                res = res + I1/3.0_${k}$
+                return
+            end if
+
+            sj = int(sign(1.0_${k}$,(1.0_${k}$-d)))
+            alpha = 2.0_${k}$/3.0_${k}$ * atan(d**sj)
+        end if
+        cd = sj*s*cos(alpha)
+        lam_a = 2.0_${k}$*cd
+
+        sd = J2_sqrt*sin(alpha)
+        lam_b = -cd + sd
+        lam_c = -cd - sd
+
+        res(1) = max(lam_a, max(lam_b, lam_c))
+        res(3) = min(lam_a, min(lam_b, lam_c))
+        res(2) = lam_a + lam_b + lam_c - res(1) - res(3)
+        res = res + I1/3.0_${k}$
+    end function eigenvals_3D2Osym_${k}$
+
+    pure subroutine spectral_decomposition_${k}$(T, lam, V)
+        !! Eigenvalues and orthonormal eigenvectors of a symmetric `${T2}$` (D-032, "K", Kopp 2008 improved).
+        !! T = m I + 2^e D with m the mean and D the deviator scaled by a power of 2 (exact) to a largest
+        !! entry in [1/2, 1): the closed-form eigenvalues of D (Kopp, dsyevc3) choose the eigenvalue farthest
+        !! from the middle one, whose eigenvector is the largest cross product of two rows of D - l I (Kopp,
+        !! 2008, Eq. 39); the other two come from one plane rotation that diagonalizes D in the plane normal
+        !! to it (stable for close and repeated eigenvalues, without overflow, D-028), and every eigenvalue is
+        !! the Rayleigh quotient of its eigenvector. Errors of a few eps of max|lam - m| for every eigenvalue
+        !! gap (plus the rounding of m in each eigenvalue), from tiny to huge/3 (the sum of the diagonal),
+        !! without floating-point exceptions (`ESPECTRAL_F0.md`). A multiple of the identity gives V = I; a NaN
+        !! entry gives NaN eigenvalues. Used by the anisotropic yield criteria (their eigenvalues, gradients and
+        !! Hessians, with `spectral_gradient` and `spectral_hessian`) and by `eigenprojections` (finite strain
+        !! kinematics).
+        implicit none
+        @:DEVICE()
+        type(${T2}$), intent(in) :: T
+            !! Symmetric tensor
+        real(${k}$), intent(out) :: lam(3)
+            !! Eigenvalues, in descending order
+        real(${k}$), intent(out) :: V(3,3)
+            !! Eigenvectors, column a belongs to lam(a)
+
+        real(${k}$), parameter :: THIRD = 1.0_${k}$/3.0_${k}$
+        real(${k}$) :: x(6), m, amax, d(3,3), l(3), w(3), tr, de, dd, ee, ff, c1, c0, p, q, sqrt_p, phi, c, sn
+        real(${k}$) :: r1(3), r2(3), r3(3), x1(3), x2(3), x3(3), ca(3), n1, n2, n3, na
+        real(${k}$) :: u(3), wv(3), du(3), dw(3), pp, pq, pr, diff, theta, tg, cs, si, la, tl, tv(3)
+        integer :: a, b, e, i, j
+
+        ! T = m I + 2^e D, D the deviator with its largest entry in [1/2, 1)
+        m = (T%vals(1) + T%vals(2) + T%vals(3))*THIRD
+        x = T%vals
+        x(1:3) = x(1:3) - m
+        amax = maxval(abs(x))
+        V = 0.0_${k}$
+        V(1,1) = 1.0_${k}$
+        V(2,2) = 1.0_${k}$
+        V(3,3) = 1.0_${k}$
+        ! (sum, not amax: maxval skips a NaN when another entry is finite, and the NaN must reach lam)
+        if (sum(abs(x)) == 0.0_${k}$) then
+            ! A multiple of the identity: any orthonormal basis is an eigenbasis
+            lam = m
+            return
+        end if
+        e = fp_exponent(amax)
+        x = fp_scale(x, -e)
+        d(1,:) = [x(1), x(4), x(6)]
+        d(2,:) = [x(4), x(2), x(5)]
+        d(3,:) = [x(6), x(5), x(3)]
+
+        ! Closed-form eigenvalues of D (Kopp 2008, dsyevc3), descending
+        tr = x(1) + x(2) + x(3)
+        de = x(4)*x(5)
+        dd = x(4)*x(4)
+        ee = x(5)*x(5)
+        ff = x(6)*x(6)
+        c1 = x(1)*x(2) + x(1)*x(3) + x(2)*x(3) - (dd + ee + ff)
+        c0 = x(3)*dd + x(1)*ee + x(2)*ff - x(1)*x(2)*x(3) - 2.0_${k}$*x(6)*de
+        p = tr*tr - 3.0_${k}$*c1
+        q = tr*(p - 1.5_${k}$*c1) - 13.5_${k}$*c0
+        sqrt_p = sqrt(abs(p))
+        phi = 27.0_${k}$*(0.25_${k}$*c1*c1*(p - c1) + c0*(q + 6.75_${k}$*c0))
+        phi = THIRD*atan2(sqrt(abs(phi)), q)
+        c = sqrt_p*cos(phi)
+        sn = sqrt_p*sin(phi)/sqrt(3.0_${k}$)
+        w(2) = THIRD*(tr - c)
+        w(3) = w(2) + sn
+        w(1) = w(2) + c
+        w(2) = w(2) - sn
+        l(1) = max(w(1), w(2), w(3))
+        l(3) = min(w(1), w(2), w(3))
+        l(2) = w(1) + w(2) + w(3) - l(1) - l(3)
+
+        ! a: most separated eigenvalue; b, b+1: the remaining pair
+        if (l(1) - l(2) >= l(2) - l(3)) then
+            a = 1
+            b = 2
+        else
+            a = 3
+            b = 1
+        end if
+
+        ! Rows of D - l(a) I and their pairwise cross products; the largest one is v_a
+        la = l(a)
+        r1 = [d(1,1) - la, d(1,2), d(1,3)]
+        r2 = [d(2,1), d(2,2) - la, d(2,3)]
+        r3 = [d(3,1), d(3,2), d(3,3) - la]
+        x1 = cross_${k}$(r1, r2)
+        x2 = cross_${k}$(r2, r3)
+        x3 = cross_${k}$(r3, r1)
+        n1 = dot_product(x1, x1)
+        n2 = dot_product(x2, x2)
+        n3 = dot_product(x3, x3)
+        if (n1 >= n2 .and. n1 >= n3) then
+            ca = x1
+            na = n1
+        else if (n2 >= n3) then
+            ca = x2
+            na = n2
+        else
+            ca = x3
+            na = n3
+        end if
+        if (.not. (na > 0.0_${k}$)) then
+            ! Only reached with a NaN entry (for a nonzero finite deviator the most separated eigenvalue is
+            ! simple): NaN eigenvalues through l
+            lam = m + fp_scale(l, e)
+            return
+        end if
+        V(:,a) = ca/sqrt(na)
+
+        ! Orthonormal basis (u, w) of the plane normal to v_a and the plane rotation that diagonalizes
+        ! [[pp, pq], [pq, pr]], the restriction of D to it (tangent without overflow, D-028)
+        if (abs(V(1,a)) > abs(V(2,a))) then
+            u = [-V(3,a), 0.0_${k}$, V(1,a)]/sqrt(V(1,a)**2 + V(3,a)**2)
+        else
+            u = [0.0_${k}$, V(3,a), -V(2,a)]/sqrt(V(2,a)**2 + V(3,a)**2)
+        end if
+        wv = cross_${k}$(V(:,a), u)
+        du = d(:,1)*u(1) + d(:,2)*u(2) + d(:,3)*u(3)
+        dw = d(:,1)*wv(1) + d(:,2)*wv(2) + d(:,3)*wv(3)
+        pp = dot_product(u, du)
+        pq = dot_product(u, dw)
+        pr = dot_product(wv, dw)
+        tg = 0.0_${k}$
+        if (abs(pq) > 0.0_${k}$) then
+            diff = pr - pp
+            if (abs(2.0_${k}$*pq) <= 1.0e-15_${k}$*abs(diff)) then
+                tg = pq/diff
+            else
+                theta = diff/(2.0_${k}$*pq)
+                tg = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
+            end if
+        end if
+        cs = 1.0_${k}$/sqrt(tg*tg + 1.0_${k}$)
+        si = tg*cs
+        ! Rotated pair: pp - tg pq for cs u - si w, pr + tg pq for si u + cs w; v_a by its Rayleigh quotient
+        V(:,b) = cs*u - si*wv
+        V(:,b+1) = si*u + cs*wv
+        l(b) = pp - tg*pq
+        l(b+1) = pr + tg*pq
+        du = d(:,1)*V(1,a) + d(:,2)*V(2,a) + d(:,3)*V(3,a)
+        l(a) = dot_product(V(:,a), du)
+
+        ! Descending order with the columns of V
+        do i = 1, 2
+            do j = 1, 3 - i
+                if (l(j) < l(j+1)) then
+                    tl = l(j)
+                    l(j) = l(j+1)
+                    l(j+1) = tl
+                    tv = V(:,j)
+                    V(:,j) = V(:,j+1)
+                    V(:,j+1) = tv
+                end if
+            end do
+        end do
+        lam = m + fp_scale(l, e)
+    end subroutine spectral_decomposition_${k}$
+
+    pure subroutine eigenprojections_${k}$(s, eig, proj)
+        !! Eigenvalues and eigenprojections \( P_a = v_a \otimes v_a \) of a symmetric tensor, `real(${k}$)`, from
+        !! `spectral_decomposition` (D-032): accurate also for close eigenvalues (the spectral decompositions of
+        !! the finite strain kinematics). A repeated eigenvalue gives one valid basis of its eigenspace (the sum of
+        !! its eigenprojections is unique).
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: s
+            !! Symmetric tensor.
+        real(${k}$), intent(out) :: eig(3)
+            !! Eigenvalues (descending).
+        type(ten_3D2Osym_${k}$), intent(out) :: proj(3)
+            !! Eigenprojections.
+        real(${k}$) :: v(3, 3)
+        integer :: a
+
+        call spectral_decomposition_${k}$(s, eig, v)
+        do a = 1, 3
+            proj(a)%vals = [v(1, a)**2, v(2, a)**2, v(3, a)**2, v(1, a)*v(2, a), v(2, a)*v(3, a), v(1, a)*v(3, a)]
+        end do
+    end subroutine eigenprojections_${k}$
+
+    pure subroutine eigenvals_refined_${k}$(s, eig)
+        !! The eigenvalues of `eigenprojections`, `real(${k}$)` (the same bits), without the eigenprojections.
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: s
+            !! Symmetric tensor.
+        real(${k}$), intent(out) :: eig(3)
+            !! Eigenvalues (descending).
+        real(${k}$) :: v(3, 3)
+
+        call spectral_decomposition_${k}$(s, eig, v)
+    end subroutine eigenvals_refined_${k}$
+
+    pure function cross_${k}$(x, y) result(res)
+        ! Cross product x * y; used by spectral_decomposition
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: x(3), y(3)
+        real(${k}$) :: res(3)
+
+        res = [x(2)*y(3) - x(3)*y(2), x(3)*y(1) - x(1)*y(3), x(1)*y(2) - x(2)*y(1)]
+    end function cross_${k}$
+    #:endfor
+
+end module muscle_math_eigen

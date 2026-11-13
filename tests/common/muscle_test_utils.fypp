@@ -1,0 +1,457 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_test_utils
+    !! Assertions shared by the unit tests.
+    !!
+    !! Every check receives the accumulated `passed` flag, a label naming the operation under
+    !! test, the obtained value and the expected one. The flag is AND-ed with the result, so a
+    !! test can run all of its checks and report every failure instead of stopping at the first.
+    !!
+    !! On failure the check prints the label, the acceptance criterion with its numeric
+    !! threshold, and one line per component outside the tolerance with the obtained value,
+    !! the expected value and the absolute and relative differences:
+    !!
+    !! ```text
+    !!  FAIL: a + b [ten_2D2Osym]
+    !!    criterion: |got - expected| <= tol * scale = 1.00E-12 * 6.00E+00 = 6.00E-12
+    !!    scale = max(max|got|, max|expected|)
+    !!    1 of 4 component(s) outside tolerance:
+    !!    comp        got                       expected                  |diff|     |diff|/scale
+    !!    xy           2.000000000000000E+00     2.500000000000000E+00   5.00E-01   8.33E-02
+    !! ```
+    !!
+    !! Acceptance criteria:
+    !!
+    !! - Tensors: the verdict is the type's own `is_approx` (same default tolerance as
+    !!   `.approx.`), i.e. \( |a_I - b_I| \le tol \cdot \max(\max|a|, \max|b|, 10^{-30}) \).
+    !! - Real arrays: the same component-wise criterion; `tol = 0` means exact equality.
+    !! - Real scalars: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \) (absolute below 1,
+    !!   relative above); `tol = 0` means exact equality.
+    !! - Real scalars and arrays: an Inf or NaN component passes only if it equals the expected one
+    !!   (the same Inf), and the scale of an array is that of its finite components (an Inf scale
+    !!   would accept any finite difference).
+    !! - `check_scaled`: \( |a - b| \le tol \cdot scale \) with the natural scale of the rounding
+    !!   error given by the caller (sum of |terms| of a dot product or of a determinant).
+    !! - `check_target` (results of a kernel in an OpenMP target region against the same kernel on
+    !!   the CPU, `(nout, npts)`, testing.md): bit for bit when the region ran on the host (CPU
+    !!   builds, host fallback); on a device every point (column) `p` within `tol amp(p)` (default
+    !!   `TOL_DEVICE_<k>`; `amp`: condition number of the point, default 1) relative to its largest
+    !!   component, or to `scale_min(p)` if larger (the natural scale of a value obtained by
+    !!   cancellation: for the plastic strain, the total strain of the point). Compare each kind of
+    !!   result (stress, tangent, ...) in its own call. `check_target_ran`: the region ran on
+    !!   the host in a build without MUSCLE_GPU (with it, it only reports where).
+    !!
+    !! Real checks exist for every kind in `MUSCLE_REAL_KINDS`; the default tolerance is that of
+    !! the kind (`TOL_APPROX_sp`/`TOL_APPROX_dp` of `muscle_kinds`). Tensor checks cover the
+    !! types that exist so far (double precision). Component labels come from the layout
+    !! metadata (`tools/fypp/muscle_meta.py`), e.g. `xy` or `xxyz`.
+    use, intrinsic :: iso_fortran_env, only : output_unit
+    use, intrinsic :: ieee_arithmetic, only : ieee_is_nan
+    use muscle_kinds, only : sp, dp, TOL_APPROX_sp, TOL_APPROX_dp, EPS_ABS_sp, EPS_ABS_dp
+    use muscle_tensors
+    implicit none
+    private
+
+    public :: check_approx, check_true, check_scaled, check_target, check_target_ran, target_on_device
+    #:for k in REAL_KINDS
+    public :: TOL_DEVICE_${k}$
+    #:endfor
+
+#! check_target on a device: tolerance in units of epsilon(1.0_k) relative to the scale of a point (times
+#! its amplification). Measured on the Intel UHD 770 (ifx 2026.2, sp native, dp emulated): math kernels
+#! <= 2.0 eps, LU6SOLVE <= 0.1 eps kappa_inf(A), kinematics <= 19 eps kappa(C) (dp material logarithmic
+#! tangent; sp <= 7.4), closest point batch (IGC optimizations off) <= 10 eps; 64 leaves a margin of ~3.
+    #:set TOL_DEVICE_ULPS = 64
+#! Tensor types checked: every (family, dim), double precision only until the sp types exist.
+    #:set TENSORS = [(fam, dim) for dim in DIMS for fam in FAMILIES]
+    #:for k in REAL_KINDS
+    real(${k}$), parameter :: DEFAULT_TOL_${k}$ = TOL_APPROX_${k}$
+        !! Default relative tolerance for `real(${k}$)` values (same as `.approx.` for most tensor types).
+    #:endfor
+    #:for k in REAL_KINDS
+    real(${k}$), parameter :: TOL_DEVICE_${k}$ = ${TOL_DEVICE_ULPS}$*epsilon(1.0_${k}$)
+        !! Default tolerance of `check_target` on a device, `real(${k}$)`: relative to the largest
+        !! component of each point. Another compiler back end (FMA contraction, operation order,
+        !! device math library) changes the rounding of every operation; a point kernel then differs
+        !! by a few eps relative to its scale (see `TOL_DEVICE_ULPS`).
+    #:endfor
+    real(dp), parameter :: DEFAULT_TOL_4O2SYM = 1.0e-8_dp
+        !! Default tolerance of `.approx.` for the minor-symmetric 4th-order types.
+
+    #:for fam, dim in TENSORS
+    #:set comps = layout(fam, dim).comps
+    character(len=4), parameter :: NAMES_${dim}$${fam}$(${len(comps)}$) = [character(len=4) :: &
+        ${', '.join("'" + c.name + "'" for c in comps)}$]
+        !! Storage labels of `ten_${dim}$${fam}$` (column-major for matrix storage).
+    #:endfor
+
+    interface check_approx
+        !! Approximate (or, with `tol = 0`, exact) comparison with a detailed failure report.
+        #:for k in REAL_KINDS
+        module procedure check_real_${k}$
+        module procedure check_real_1d_${k}$
+        module procedure check_real_2d_${k}$
+        #:endfor
+        #:for fam, dim in TENSORS
+        module procedure check_${dim}$${fam}$
+        #:endfor
+    end interface check_approx
+
+    interface check_target
+        !! Kernel results of a target region against the CPU, `(nout, npts)`: exact on the host,
+        !! within a tolerance relative to each point on a device.
+        #:for k in REAL_KINDS
+        module procedure check_target_${k}$
+        #:endfor
+    end interface check_target
+
+    interface check_scaled
+        !! Scalar comparison with an explicit error scale: \( |got - expected| \le tol \cdot scale \).
+        #:for k in REAL_KINDS
+        module procedure check_scaled_${k}$
+        #:endfor
+    end interface check_scaled
+
+contains
+
+    subroutine check_true(passed, label, cond)
+        !! Checks a logical property (e.g. that two tensors are *not* approximately equal).
+        logical, intent(inout) :: passed
+            !! Accumulated test result; set to `.false.` if `cond` is false.
+        character(len=*), intent(in) :: label
+            !! Description of the property, printed on failure.
+        logical, intent(in) :: cond
+            !! Property to check.
+        if (.not. cond) then
+            print '(a)', ' FAIL: ' // label
+            print '(a)', '   expected condition evaluated to .false.'
+            flush(output_unit)
+        end if
+        passed = passed .and. cond
+    end subroutine check_true
+
+    function target_on_device() result(device)
+        !! A target region runs on a device: always false without the fypp define MUSCLE_GPU (no
+        !! device code); with it, as decided at run time (OMP_TARGET_OFFLOAD, available devices).
+        #:if defined('MUSCLE_GPU')
+        use omp_lib, only : omp_is_initial_device
+        #:endif
+        logical :: device
+            !! The region ran on a device.
+        device = .false.
+        #:if defined('MUSCLE_GPU')
+        !$omp target map(from: device)
+        device = .not. omp_is_initial_device()
+        !$omp end target
+        #:endif
+    end function target_on_device
+
+    subroutine check_target_ran(passed, label, host)
+        !! Where an OpenMP target region ran (`host` = `omp_is_initial_device()` inside it): without
+        !! the fypp define MUSCLE_GPU the library has no device code and the region must fall back to
+        !! the host; with it, either (OMP_TARGET_OFFLOAD) is valid and only reported.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Region under test.
+        logical, intent(in) :: host
+            !! The region ran on the initial (host) device.
+        #:if defined('MUSCLE_GPU')
+        print '(a)', ' ' // label // ': target region ran on the ' // merge('host  ', 'device', host)
+        #:else
+        call check_true(passed, label // ': target region ran on the host (no offload in this build)', host)
+        #:endif
+    end subroutine check_target_ran
+    #:for k in REAL_KINDS
+
+    subroutine check_target_${k}$(passed, label, got, expected, device, tol, amp, scale_min)
+        !! `real(${k}$)` results of a kernel in a target region (`got(:, p)`, point `p`) against the
+        !! same kernel on the CPU: bit for bit unless `device`; on a device each point within
+        !! `tol amp(p)` (default `TOL_DEVICE_${k}$` and 1) relative to its largest component, or to
+        !! `scale_min(p)` if larger (a value computed by cancellation, e.g. the plastic strain
+        !! \( \varepsilon - C^{-1}:\sigma \), carries the rounding of the larger terms). On a device it
+        !! also prints the largest error found, in units of epsilon (times `amp(p)`).
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Kernel under test.
+        real(${k}$), intent(in) :: got(:, :)
+            !! Results of the target region.
+        real(${k}$), intent(in) :: expected(:, :)
+            !! Results on the CPU (same shape).
+        logical, intent(in) :: device
+            !! The region ran on a device (not the host).
+        real(${k}$), optional, intent(in) :: tol
+            !! Relative tolerance on a device.
+        real(${k}$), optional, intent(in) :: amp(:)
+            !! Amplification of the rounding errors at each point (a condition number, >= 1).
+        real(${k}$), optional, intent(in) :: scale_min(:)
+            !! Smallest error scale of each point on a device (default: none).
+        real(${k}$) :: t, scale, err, a
+        character(len=16) :: names(size(got, 1))
+        character(len=12) :: point
+        integer :: i, p
+
+        if (.not. device) then
+            call check_approx(passed, label // ' (target region on the host: bit for bit)', got, expected, 0.0_${k}$)
+            return
+        end if
+        t = TOL_DEVICE_${k}$
+        if (present(tol)) t = tol
+        do i = 1, size(got, 1)
+            write(names(i), '("(", i0, ")")') i
+        end do
+        err = 0.0_${k}$
+        do p = 1, size(got, 2)
+            a = 1.0_${k}$
+            if (present(amp)) a = amp(p)
+            scale = max(maxval(abs(got(:, p))), maxval(abs(expected(:, p))), EPS_ABS_${k}$)
+            if (present(scale_min)) scale = max(scale, scale_min(p))
+            err = max(err, maxval(abs(got(:, p) - expected(:, p)))/(scale*a))
+            write(point, '(i0)') p
+            call compare_${k}$(passed, label // ' (device), point ' // trim(point), got(:, p), expected(:, p), names, &
+                               t*a, scale)
+        end do
+        print '(a, f0.1, a)', ' ' // label // ': device vs CPU, max error ', err/epsilon(1.0_${k}$), &
+            merge(' eps amp', ' eps    ', present(amp)) // ' relative to the point' &
+            // merge(' (or scale_min)', '               ', present(scale_min))
+    end subroutine check_target_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    subroutine check_real_${k}$(passed, label, got, expected, tol)
+        !! Scalar `real(${k}$)` comparison: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \).
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got
+            !! Obtained value.
+        real(${k}$), intent(in) :: expected
+            !! Expected value.
+        real(${k}$), optional, intent(in) :: tol
+            !! Tolerance (default `DEFAULT_TOL_${k}$`; `0` = exact).
+        real(${k}$) :: t, scale, diff
+        logical :: ok
+
+        t = DEFAULT_TOL_${k}$
+        if (present(tol)) t = tol
+        scale = max(1.0_${k}$, abs(got), abs(expected))
+        diff = abs(got - expected)
+        ok = diff <= t*scale
+        ! An Inf would make the scale infinite and pass any finite value: a non-finite operand
+        ! passes only if both are the same Inf
+        if (.not. (abs(got) <= huge(got) .and. abs(expected) <= huge(expected))) ok = got == expected
+        if (.not. ok) then
+            print '(a)', ' FAIL: ' // label
+            call print_criterion_${k}$(t, scale, 'max(1, |got|, |expected|)')
+            print '(a)', '   got                       expected                  |diff|     |diff|/scale'
+            print '(3x, es24.15, 2x, es24.15, 2x, es9.2, 2x, es9.2)', got, expected, diff, diff/scale
+            flush(output_unit)
+        end if
+        passed = passed .and. ok
+    end subroutine check_real_${k}$
+
+    subroutine check_scaled_${k}$(passed, label, got, expected, scale, tol)
+        !! Scalar `real(${k}$)` check with an explicit error scale (e.g. the sum of |terms| of a dot
+        !! product or of a determinant): \( |got - expected| \le tol \cdot \max(scale, tiny) \).
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got
+            !! Obtained value.
+        real(${k}$), intent(in) :: expected
+            !! Reference value.
+        real(${k}$), intent(in) :: scale
+            !! Natural scale of the rounding error.
+        real(${k}$), intent(in) :: tol
+            !! Relative tolerance.
+        logical :: ok
+        ok = abs(got - expected) <= tol*max(scale, tiny(1.0_${k}$))
+        if (.not. ok) then
+            print '(a)', ' FAIL: ' // label
+            print '(a, es24.15, a, es24.15)', '   got ', got, '  expected ', expected
+            print '(a, es9.2, a, es9.2, a, es9.2)', '   |diff| ', abs(got - expected), &
+                '  tol*max(scale, tiny) ', tol*max(scale, tiny(1.0_${k}$)), '  scale ', scale
+            flush(output_unit)
+        end if
+        passed = passed .and. ok
+    end subroutine check_scaled_${k}$
+
+    subroutine check_real_1d_${k}$(passed, label, got, expected, tol)
+        !! Component-wise comparison of two `real(${k}$)` vectors relative to their largest component.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got(:)
+            !! Obtained values.
+        real(${k}$), intent(in) :: expected(:)
+            !! Expected values (same size as `got`).
+        real(${k}$), optional, intent(in) :: tol
+            !! Relative tolerance (default `DEFAULT_TOL_${k}$`; `0` = exact).
+        real(${k}$) :: t
+        character(len=16) :: names(size(got))
+        integer :: i
+
+        t = DEFAULT_TOL_${k}$
+        if (present(tol)) t = tol
+        do i = 1, size(got)
+            write(names(i), '("(", i0, ")")') i
+        end do
+        call compare_${k}$(passed, label, got, expected, names, t)
+    end subroutine check_real_1d_${k}$
+
+    subroutine check_real_2d_${k}$(passed, label, got, expected, tol)
+        !! Component-wise comparison of two `real(${k}$)` matrices relative to their largest entry.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got(:,:)
+            !! Obtained values.
+        real(${k}$), intent(in) :: expected(:,:)
+            !! Expected values (same shape as `got`).
+        real(${k}$), optional, intent(in) :: tol
+            !! Relative tolerance (default `DEFAULT_TOL_${k}$`; `0` = exact).
+        real(${k}$) :: t
+        character(len=16) :: names(size(got))
+        integer :: i, j
+
+        t = DEFAULT_TOL_${k}$
+        if (present(tol)) t = tol
+        do j = 1, size(got, 2)
+            do i = 1, size(got, 1)
+                write(names(i + (j-1)*size(got, 1)), '("(", i0, ",", i0, ")")') i, j
+            end do
+        end do
+        call compare_${k}$(passed, label, reshape(got, [size(got)]), reshape(expected, [size(expected)]), &
+                     names, t)
+    end subroutine check_real_2d_${k}$
+
+    #:endfor
+    #:for fam, dim in TENSORS
+    #:set tol_name = 'DEFAULT_TOL_4O2SYM' if fam == '4O2sym' else 'DEFAULT_TOL_dp'
+    #:set n = len(layout(fam, dim).comps)
+    subroutine check_${dim}$${fam}$(passed, label, got, expected, tol)
+        !! Compares two `ten_${dim}$${fam}$` (verdict: `is_approx`).
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        type(ten_${dim}$${fam}$), intent(in) :: got
+            !! Obtained tensor.
+        type(ten_${dim}$${fam}$), intent(in) :: expected
+            !! Expected tensor.
+        real(dp), optional, intent(in) :: tol
+            !! Relative tolerance (default: that of `.approx.`, `${tol_name}$`).
+        real(dp) :: t
+        t = ${tol_name}$
+        if (present(tol)) t = tol
+        call report_dp(passed, label // ' [ten_${dim}$${fam}$]', got%is_approx(expected, tol=t), &
+                       reshape(got%vals, [${n}$]), reshape(expected%vals, [${n}$]), NAMES_${dim}$${fam}$, t)
+    end subroutine check_${dim}$${fam}$
+
+    #:endfor
+    ! -------------------------------------------------------------------------
+    ! Private helpers
+    ! -------------------------------------------------------------------------
+
+    #:for k in REAL_KINDS
+    subroutine compare_${k}$(passed, label, got, expected, names, tol, scale_min)
+        !! Applies the component-wise relative criterion to `real(${k}$)` values and reports on failure.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        real(${k}$), intent(in) :: got(:)
+            !! Obtained components.
+        real(${k}$), intent(in) :: expected(:)
+            !! Expected components.
+        character(len=*), intent(in) :: names(:)
+            !! Component labels.
+        real(${k}$), intent(in) :: tol
+            !! Relative tolerance.
+        real(${k}$), optional, intent(in) :: scale_min
+            !! Smallest error scale (default: none).
+        real(${k}$) :: scale
+        logical :: finite(size(got))
+        ! Scale over the finite components (an Inf would pass any finite value); a non-finite
+        ! component passes only if both are the same Inf
+        finite = abs(got) <= huge(got) .and. abs(expected) <= huge(expected)
+        scale = max(maxval(abs(got), mask=finite), maxval(abs(expected), mask=finite), EPS_ABS_${k}$)
+        if (present(scale_min)) scale = max(scale, scale_min)
+        call report_${k}$(passed, label, all(merge(abs(got - expected) <= tol*scale, got == expected, finite)), &
+                          got, expected, names, tol, scale_min)
+    end subroutine compare_${k}$
+
+    subroutine report_${k}$(passed, label, ok, got, expected, names, tol, scale_min)
+        !! Updates `passed` and, if `ok` is false, prints the `real(${k}$)` components outside the tolerance.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        logical, intent(in) :: ok
+            !! Verdict of the comparison.
+        real(${k}$), intent(in) :: got(:)
+            !! Obtained components.
+        real(${k}$), intent(in) :: expected(:)
+            !! Expected components.
+        character(len=*), intent(in) :: names(:)
+            !! Component labels.
+        real(${k}$), intent(in) :: tol
+            !! Relative tolerance used for the verdict.
+        real(${k}$), optional, intent(in) :: scale_min
+            !! Smallest error scale used for the verdict (default: none).
+        real(${k}$) :: scale, diff
+        integer :: i, n_bad
+        character(len=10) :: comp
+        logical :: finite(size(got))
+
+        passed = passed .and. ok
+        if (ok) return
+
+        finite = abs(got) <= huge(got) .and. abs(expected) <= huge(expected)
+        scale = max(maxval(abs(got), mask=finite), maxval(abs(expected), mask=finite), EPS_ABS_${k}$)
+        if (present(scale_min)) scale = max(scale, scale_min)
+        n_bad = count(.not. merge(abs(got - expected) <= tol*scale, got == expected, finite))
+        print '(a)', ' FAIL: ' // label
+        if (present(scale_min)) then
+            call print_criterion_${k}$(tol, scale, 'max(max|got|, max|expected|, scale_min)')
+        else
+            call print_criterion_${k}$(tol, scale, 'max(max|got|, max|expected|)')
+        end if
+        if (any(ieee_is_nan(got)) .or. any(ieee_is_nan(expected))) then
+            print '(a)', '   (NaN present in the operands)'
+        end if
+        print '(3x, i0, a, i0, a)', n_bad, ' of ', size(got), ' component(s) outside tolerance:'
+        print '(a)', '   comp        got                       expected                  |diff|     |diff|/scale'
+        do i = 1, size(got)
+            diff = abs(got(i) - expected(i))
+            if (.not. merge(diff <= tol*scale, got(i) == expected(i), finite(i))) then
+                comp = names(i)
+                print '(3x, a10, es24.15, 2x, es24.15, 2x, es9.2, 2x, es9.2)', &
+                    comp, got(i), expected(i), diff, diff/scale
+            end if
+        end do
+        flush(output_unit)
+    end subroutine report_${k}$
+
+    subroutine print_criterion_${k}$(tol, scale, scale_def)
+        !! Prints the acceptance criterion with its numeric threshold.
+        real(${k}$), intent(in) :: tol
+            !! Tolerance.
+        real(${k}$), intent(in) :: scale
+            !! Scale multiplying the tolerance.
+        character(len=*), intent(in) :: scale_def
+            !! Definition of the scale.
+        print '(a, es8.2, a, es8.2, a, es8.2)', &
+            '   criterion: |got - expected| <= tol * scale = ', tol, ' * ', scale, ' = ', tol*scale
+        print '(a)', '   scale = ' // scale_def
+    end subroutine print_criterion_${k}$
+
+    #:endfor
+end module muscle_test_utils

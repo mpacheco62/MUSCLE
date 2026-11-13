@@ -1,0 +1,61 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_hard_laws
+    !! Isotropic hardening laws for kernels: the parameter types of every law
+    !! (`hard_<name>_<k>`) and the family generics (prefix `hard_`), with the same names and
+    !! arguments for every law and kind:
+    !!
+    !! - `hard_stress(prm, ep)`: flow stress \( \sigma_y(\epsilon_p) \);
+    !! - `hard_dstress_dep(prm, ep)`: hardening modulus \( d\sigma_y/d\epsilon_p \);
+    !! - `hard_ddstress_ddep(prm, ep)`: \( d^2\sigma_y/d\epsilon_p^2 \).
+    !!
+    !! `prm` is the parameter type of a law and `ep` the equivalent plastic strain, of the same kind.
+    !! Example: `sy = hard_stress(hard_bilinear_dp(y0=250.0_dp, K=1000.0_dp), 0.01_dp)`.
+    !!
+    !! To add a law: write `muscle_hard_<name>.fypp`, then add a `use` statement of its own and its names to
+    !! the three interfaces below (the compiler rejects a name that does not exist).
+    #:for k in REAL_KINDS
+    use muscle_hard_bilinear, only : hard_bilinear_${k}$, hard_stress_bilinear_${k}$, &
+        & hard_dstress_dep_bilinear_${k}$, hard_ddstress_ddep_bilinear_${k}$
+    use muscle_hard_ludwik, only : hard_ludwik_${k}$, hard_stress_ludwik_${k}$, &
+        & hard_dstress_dep_ludwik_${k}$, hard_ddstress_ddep_ludwik_${k}$
+    use muscle_hard_swift, only : hard_swift_${k}$, hard_stress_swift_${k}$, &
+        & hard_dstress_dep_swift_${k}$, hard_ddstress_ddep_swift_${k}$
+    use muscle_hard_vocemod, only : hard_vocemod_${k}$, hard_stress_vocemod_${k}$, &
+        & hard_dstress_dep_vocemod_${k}$, hard_ddstress_ddep_vocemod_${k}$
+    #:endfor
+    implicit none
+    private
+
+    public :: hard_stress, hard_dstress_dep, hard_ddstress_ddep
+    #:for k in REAL_KINDS
+    public :: hard_bilinear_${k}$, hard_ludwik_${k}$, hard_swift_${k}$, hard_vocemod_${k}$
+    #:endfor
+
+    interface hard_stress
+        !! Flow stress \( \sigma_y(\epsilon_p) \) (every law and kind of the family).
+        #:for k in REAL_KINDS
+        module procedure hard_stress_bilinear_${k}$, hard_stress_ludwik_${k}$, &
+            & hard_stress_swift_${k}$, hard_stress_vocemod_${k}$
+        #:endfor
+    end interface hard_stress
+
+    interface hard_dstress_dep
+        !! Hardening modulus \( d\sigma_y/d\epsilon_p \) (every law and kind of the family).
+        #:for k in REAL_KINDS
+        module procedure hard_dstress_dep_bilinear_${k}$, hard_dstress_dep_ludwik_${k}$, &
+            & hard_dstress_dep_swift_${k}$, hard_dstress_dep_vocemod_${k}$
+        #:endfor
+    end interface hard_dstress_dep
+
+    interface hard_ddstress_ddep
+        !! Second derivative \( d^2\sigma_y/d\epsilon_p^2 \) (every law and kind of the family).
+        #:for k in REAL_KINDS
+        module procedure hard_ddstress_ddep_bilinear_${k}$, hard_ddstress_ddep_ludwik_${k}$, &
+            & hard_ddstress_ddep_swift_${k}$, hard_ddstress_ddep_vocemod_${k}$
+        #:endfor
+    end interface hard_ddstress_ddep
+
+end module muscle_hard_laws

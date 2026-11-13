@@ -1,4 +1,6 @@
-target_sources(muscle PRIVATE
-                 muscle_elasticity_base.f90
-                 muscle_elasticity_linear.f90
+# Models and family module written by hand
+
+muscle_add_fypp_sources(muscle
+                 muscle_elas_linear.fypp
+                 muscle_elas_laws.fypp
                  )

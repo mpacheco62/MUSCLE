@@ -1,0 +1,142 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_yield_laws
+    !! Yield criteria for kernels: the parameter types of every registered criterion
+    !! (`yield_<name>_<k>`, `YIELD_MODELS` of tools/fypp/muscle_meta.py) and the family generics
+    !! (prefix `yield_`), with the same names for every criterion, kind and dimension
+    !! (only 3D so far):
+    !!
+    !! - `yield_stress_eq(prm, sigma)`: equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \);
+    !! - `yield_dstress_eq(prm, sigma)`: gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \)
+    !!   (a `2Osym`);
+    !! - `yield_ddstress_eq(prm, sigma)`: second derivative
+    !!   \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) (a `4O3sym`);
+    !! - `call yield_stress_eq_and_derivatives(prm, sigma, f, df[, ddf])`: the three at once (the second
+    !!   derivative only if `ddf` is present), cheaper when the criterion shares work between them;
+    !! - `yield_joint_evaluation(prm)`: constant, true when the criterion writes its own joint
+    !!   evaluation (then a return mapping calls `yield_stress_eq_and_derivatives`; otherwise the
+    !!   functions one by one, the second derivative only when needed).
+    !!
+    !! `prm` is the parameter type of a criterion and `sigma` the stress tensor of the same kind.
+    !! At a null equivalent stress the derivatives are 0. Example:
+    !! `f = yield_stress_eq(h, sigma) - hard_stress(law, ep)`.
+    !!
+    !! To add a criterion: write `muscle_yield_<name>.fypp`, then add a `use` statement of its own and its names to the
+    !! interfaces and the `public` list below (the compiler rejects a name that does not exist).
+    #:for k in REAL_KINDS
+    use muscle_yield_vonmises, only : yield_vonmises_${k}$, &
+        & yield_stress_eq_vonmises_3D_${k}$, &
+        & yield_dstress_eq_vonmises_3D_${k}$, &
+        & yield_ddstress_eq_vonmises_3D_${k}$, &
+        & yield_stress_eq_and_derivatives_vonmises_3D_${k}$, &
+        & yield_joint_evaluation_vonmises_${k}$
+    use muscle_yield_hill48, only : yield_hill48_${k}$, &
+        & yield_stress_eq_hill48_3D_${k}$, &
+        & yield_dstress_eq_hill48_3D_${k}$, &
+        & yield_ddstress_eq_hill48_3D_${k}$, &
+        & yield_stress_eq_and_derivatives_hill48_3D_${k}$, &
+        & yield_joint_evaluation_hill48_${k}$
+    use muscle_yield_druckerprager, only : yield_druckerprager_${k}$, &
+        & yield_stress_eq_druckerprager_3D_${k}$, &
+        & yield_dstress_eq_druckerprager_3D_${k}$, &
+        & yield_ddstress_eq_druckerprager_3D_${k}$, &
+        & yield_stress_eq_and_derivatives_druckerprager_3D_${k}$, &
+        & yield_joint_evaluation_druckerprager_${k}$
+    use muscle_yield_cpb06, only : yield_cpb06_${k}$, &
+        & yield_stress_eq_cpb06_3D_${k}$, &
+        & yield_dstress_eq_cpb06_3D_${k}$, &
+        & yield_ddstress_eq_cpb06_3D_${k}$, &
+        & yield_stress_eq_and_derivatives_cpb06_3D_${k}$, &
+        & yield_joint_evaluation_cpb06_${k}$
+    use muscle_yield_cpb06ex2, only : yield_cpb06ex2_${k}$, &
+        & yield_stress_eq_cpb06ex2_3D_${k}$, &
+        & yield_dstress_eq_cpb06ex2_3D_${k}$, &
+        & yield_ddstress_eq_cpb06ex2_3D_${k}$, &
+        & yield_stress_eq_and_derivatives_cpb06ex2_3D_${k}$, &
+        & yield_joint_evaluation_cpb06ex2_${k}$
+    use muscle_yield_yld2004, only : yield_yld2004_${k}$, &
+        & yield_stress_eq_yld2004_3D_${k}$, &
+        & yield_dstress_eq_yld2004_3D_${k}$, &
+        & yield_ddstress_eq_yld2004_3D_${k}$, &
+        & yield_stress_eq_and_derivatives_yld2004_3D_${k}$, &
+        & yield_joint_evaluation_yld2004_${k}$
+    #:endfor
+    implicit none
+    private
+
+    public :: yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, yield_stress_eq_and_derivatives, yield_joint_evaluation
+    #:for k in REAL_KINDS
+    public :: yield_vonmises_${k}$
+    public :: yield_hill48_${k}$
+    public :: yield_druckerprager_${k}$
+    public :: yield_cpb06_${k}$
+    public :: yield_cpb06ex2_${k}$
+    public :: yield_yld2004_${k}$
+    #:endfor
+
+    interface yield_stress_eq
+        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) (every model, kind and dimension of the family).
+        #:for k in REAL_KINDS
+        module procedure yield_stress_eq_vonmises_3D_${k}$
+        module procedure yield_stress_eq_hill48_3D_${k}$
+        module procedure yield_stress_eq_druckerprager_3D_${k}$
+        module procedure yield_stress_eq_cpb06_3D_${k}$
+        module procedure yield_stress_eq_cpb06ex2_3D_${k}$
+        module procedure yield_stress_eq_yld2004_3D_${k}$
+        #:endfor
+    end interface yield_stress_eq
+
+    interface yield_dstress_eq
+        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) (every model, kind and dimension of the family).
+        #:for k in REAL_KINDS
+        module procedure yield_dstress_eq_vonmises_3D_${k}$
+        module procedure yield_dstress_eq_hill48_3D_${k}$
+        module procedure yield_dstress_eq_druckerprager_3D_${k}$
+        module procedure yield_dstress_eq_cpb06_3D_${k}$
+        module procedure yield_dstress_eq_cpb06ex2_3D_${k}$
+        module procedure yield_dstress_eq_yld2004_3D_${k}$
+        #:endfor
+    end interface yield_dstress_eq
+
+    interface yield_ddstress_eq
+        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) (every model, kind and dimension of the
+        !! family).
+        #:for k in REAL_KINDS
+        module procedure yield_ddstress_eq_vonmises_3D_${k}$
+        module procedure yield_ddstress_eq_hill48_3D_${k}$
+        module procedure yield_ddstress_eq_druckerprager_3D_${k}$
+        module procedure yield_ddstress_eq_cpb06_3D_${k}$
+        module procedure yield_ddstress_eq_cpb06ex2_3D_${k}$
+        module procedure yield_ddstress_eq_yld2004_3D_${k}$
+        #:endfor
+    end interface yield_ddstress_eq
+
+    interface yield_stress_eq_and_derivatives
+        !! Equivalent stress and its first and second derivatives at the same stress (every model, kind and dimension of the
+        !! family).
+        #:for k in REAL_KINDS
+        module procedure yield_stress_eq_and_derivatives_vonmises_3D_${k}$
+        module procedure yield_stress_eq_and_derivatives_hill48_3D_${k}$
+        module procedure yield_stress_eq_and_derivatives_druckerprager_3D_${k}$
+        module procedure yield_stress_eq_and_derivatives_cpb06_3D_${k}$
+        module procedure yield_stress_eq_and_derivatives_cpb06ex2_3D_${k}$
+        module procedure yield_stress_eq_and_derivatives_yld2004_3D_${k}$
+        #:endfor
+    end interface yield_stress_eq_and_derivatives
+
+    interface yield_joint_evaluation
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn) (every model, kind and
+        !! dimension of the family).
+        #:for k in REAL_KINDS
+        module procedure yield_joint_evaluation_vonmises_${k}$
+        module procedure yield_joint_evaluation_hill48_${k}$
+        module procedure yield_joint_evaluation_druckerprager_${k}$
+        module procedure yield_joint_evaluation_cpb06_${k}$
+        module procedure yield_joint_evaluation_cpb06ex2_${k}$
+        module procedure yield_joint_evaluation_yld2004_${k}$
+        #:endfor
+    end interface yield_joint_evaluation
+
+end module muscle_yield_laws

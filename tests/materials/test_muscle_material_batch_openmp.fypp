@@ -1,0 +1,155 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+program test_mat_batch_openmp
+    !! Thread safety of the batch API (D-008.2, D-018.7), in every kind: the declared-material
+    !! equivalent of the historical test_muscle_openmp.f90 of the OO solvers (closest point, von Mises,
+    !! Swift hardening, 10000 points). Material `cp_vm_swift` (E = 200000, nu = 0.3, Swift k = 500,
+    !! e0 = 1e-3, n = 0.2, as the OO test); every point is computed sequentially with the point kernel
+    !! and with `muscle_update_cp_vm_swift` on 1, 2 and 4 OpenMP threads, which must give the same bits
+    !! (stress, history, tangent, status, iterations). Two load sets: the uniaxial strain xx = 0.005 of
+    !! the OO test at every point (plastic) and a ramp from 0 to 1e-2 (elastic and plastic points).
+    !! With MUSCLE_GPU the batch runs on data mapped beforehand (`target enter data`, the contract of
+    !! the batch API) and, if the target region runs on a device, the real outputs of each point are
+    !! compared with `check_target` (TOL_DEVICE_<k> relative to the point; statuses and iterations exact)
+    !! instead of bit for bit.
+    use omp_lib, only : omp_set_num_threads, omp_get_max_threads, omp_get_num_threads
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
+    use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
+    use muscle_elas_linear, only : elas_linear_init
+    use muscle_plastic_state, only : ${', '.join('plastic_state_' + k for k in REAL_KINDS)}$
+    use muscle_mat_cp_vm_swift, only : mat_update, mat_pack_cp_vm_swift, mat_unpack_cp_vm_swift, &
+        muscle_update_cp_vm_swift, MAT_CP_VM_SWIFT_NSTATE, ${', '.join('mat_cp_vm_swift_' + k for k in REAL_KINDS)}$
+    use muscle_test_utils, only : check_true, check_target, target_on_device
+    implicit none
+
+    logical :: passed, device
+
+    passed = .true.
+    device = target_on_device()
+    print '(a, l1)', ' batch target regions on a device: ', device
+    #:for k in REAL_KINDS
+    call run_${k}$()
+    #:endfor
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_mat_batch_openmp'
+        stop 1
+    end if
+    print '(a)', ' PASS: test_mat_batch_openmp'
+
+contains
+    #:for k in REAL_KINDS
+
+    subroutine run_${k}$()
+        !! Every check in `real(${k}$)`.
+        integer, parameter :: N = 10000
+        integer, parameter :: NS = MAT_CP_VM_SWIFT_NSTATE
+        integer, parameter :: THREADS(3) = [1, 2, 4]
+        real(${k}$), parameter :: DT = 0.0_${k}$
+        type(mat_cp_vm_swift_${k}$) :: mat
+        type(plastic_state_${k}$) :: sn, snp1
+        type(${tname('3D2Osym', k)}$) :: strain, stress
+        type(${tname('3D4O2sym', k)}$) :: tang
+        real(${k}$), allocatable :: eps(:, :), hn(:, :), hr(:, :), hb(:, :), sr(:, :), sb(:, :), tr(:, :, :), tb(:, :, :), &
+            got(:, :), ref(:, :)
+        integer, allocatable :: str(:), stb(:), itr(:), itb(:)
+        real(${k}$) :: hsv(NS)
+        integer :: i, it, load, active, st
+
+        allocate(eps(N, 6), hn(N, NS), hr(N, NS), hb(N, NS), sr(N, 6), sb(N, 6), tr(N, 6, 6), tb(N, 6, 6), &
+            str(N), stb(N), itr(N), itb(N))
+        call elas_linear_init(mat%elas, young=200000.0_${k}$, poisson=0.3_${k}$, status=st)
+        call check_true(passed, 'elastic init (${k}$)', st == STATUS_OK)
+        mat%hard%k = 500.0_${k}$
+        mat%hard%e0 = 1.0e-3_${k}$
+        mat%hard%n = 0.2_${k}$
+        hn = 0.0_${k}$
+        #:if defined('MUSCLE_GPU')
+        !$omp target enter data map(to: mat)
+        #:endif
+
+        do load = 1, 2
+            eps = 0.0_${k}$
+            if (load == 1) then
+                eps(:, 1) = 0.005_${k}$
+            else
+                do i = 1, N
+                    eps(i, :) = 1.0e-2_${k}$*real(i, ${k}$)/real(N, ${k}$) &
+                        *[1.0_${k}$, -0.4_${k}$, -0.2_${k}$, 0.2_${k}$, 0.0_${k}$, 0.0_${k}$]
+                end do
+            end if
+
+            ! Sequential reference: the point kernel point by point
+            do i = 1, N
+                hsv = hn(i, :)
+                call mat_unpack_cp_vm_swift(hsv, sn)
+                strain%vals = eps(i, :)
+                call mat_update(mat, strain, DT, sn, snp1, stress, tang, str(i), itr(i))
+                call mat_pack_cp_vm_swift(snp1, hsv)
+                hr(i, :) = hsv
+                sr(i, :) = stress%vals
+                tr(i, :, :) = tang%vals
+            end do
+            #:if defined('MUSCLE_GPU')
+            !$omp target enter data map(to: eps, hn) map(alloc: hb, sb, tb, stb, itb)
+            #:endif
+            call check_true(passed, 'every point converges (${k}$)', all(str == STATUS_OK))
+            if (load == 1) then
+                call check_true(passed, 'uniaxial 0.005: every point plastic (${k}$)', all(itr > 0))
+            else
+                call check_true(passed, 'ramp: elastic and plastic points (${k}$)', any(itr == 0) .and. any(itr > 0))
+            end if
+
+            do it = 1, size(THREADS)
+                call omp_set_num_threads(THREADS(it))
+                active = 0
+                !$omp parallel
+                !$omp master
+                active = omp_get_num_threads()
+                !$omp end master
+                !$omp end parallel
+                call check_true(passed, 'OpenMP threads active (${k}$)', active == THREADS(it) &
+                    .and. omp_get_max_threads() == THREADS(it))
+                hb = -7.0_${k}$
+                sb = -7.0_${k}$
+                tb = -7.0_${k}$
+                stb = -7
+                itb = -7
+                #:if defined('MUSCLE_GPU')
+                !$omp target update to(hb, sb, tb, stb, itb)
+                #:endif
+                call muscle_update_cp_vm_swift(mat, eps, DT, hn, hb, sb, stb, itb, ddsdde=tb)
+                #:if defined('MUSCLE_GPU')
+                !$omp target update from(hb, sb, tb, stb, itb)
+                #:endif
+                if (device) then
+                    call check_true(passed, 'batch == sequential: status and iterations (${k}$)', all(stb == str) &
+                        .and. all(itb == itr))
+                    ! Points along the second dimension for check_target (allocatable copies: N is large)
+                    got = transpose(sb)
+                    ref = transpose(sr)
+                    call check_target(passed, 'batch == sequential: stress (${k}$)', got, ref, device)
+                    got = transpose(hb)
+                    ref = transpose(hr)
+                    call check_target(passed, 'batch == sequential: history (${k}$)', got, ref, device)
+                    got = transpose(reshape(tb, [N, 36]))
+                    ref = transpose(reshape(tr, [N, 36]))
+                    call check_target(passed, 'batch == sequential: tangent (${k}$)', got, ref, device)
+                else
+                    call check_true(passed, 'batch == sequential, bit for bit (${k}$)', all(stb == str) &
+                        .and. all(itb == itr) .and. all(sb == sr) .and. all(hb == hr) .and. all(tb == tr))
+                end if
+            end do
+            #:if defined('MUSCLE_GPU')
+            !$omp target exit data map(delete: eps, hn, hb, sb, tb, stb, itb)
+            #:endif
+        end do
+        #:if defined('MUSCLE_GPU')
+        !$omp target exit data map(delete: mat)
+        #:endif
+    end subroutine run_${k}$
+    #:endfor
+
+end program test_mat_batch_openmp

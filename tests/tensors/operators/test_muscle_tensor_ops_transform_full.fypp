@@ -1,0 +1,7 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! `.transform.` against F S F^T and F_ia F_jb F_kc F_ld C_abcd on the full tensors
+#! (every entry of op_entries, every dimension and kind; see ops_full_common.fypp).
+#:set FULL_NAME = 'test_ops_transform_full'
+#:set FULL_GENERICS = ['.transform.']
+#:include "ops_full_common.fypp"

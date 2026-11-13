@@ -1,0 +1,102 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Definitions shared by every MUSCLE template. Include with `#:include "muscle_common.fypp"`.
+#! Rules: .claude/rules/fypp-templates.md
+#:mute
+
+#! Every kind MUSCLE knows, and the subset to instantiate. CMake passes MUSCLE_REAL_KINDS
+#! (cache variable of the same name); dp is required by the historical aliases.
+#:set ALL_KINDS = list(muscle_meta.KINDS)
+#:if defined('MUSCLE_REAL_KINDS')
+#:set REAL_KINDS = MUSCLE_REAL_KINDS
+#:else
+#:set REAL_KINDS = ALL_KINDS
+#:endif
+#:assert all(k in ALL_KINDS for k in REAL_KINDS)
+#:assert 'dp' in REAL_KINDS
+#:set REAL_TYPES = ['real({})'.format(k) for k in REAL_KINDS]
+
+#! Space dimensions and tensor families with a template instance.
+#:set DIMS = list(muscle_meta.DIMS)
+#:set FAMILIES = list(muscle_meta.FAMILIES)
+
+#! Concrete tensor type name: ${tname('3D2Osym', k)}$ -> ten_3D2Osym_dp
+#:set tname = muscle_meta.tname
+#! Fortran module of a tensor family: ${family_module('2Osym')}$ -> muscle_tensor_2osym
+#:set family_module = muscle_meta.family_module
+#! Terms of the family `norm` of a 2nd-order tensor: norm_terms(layout('2Osym', '3D'), 'a%vals')
+#:set norm_terms = muscle_meta.norm_terms
+
+#! Identity tensors (dimension independent): IDENTITIES = ['2O', '4O3T', '4O4T'] (unscaled names,
+#! the scaled ones append 'S'); type names: ${iname('2O')}$ -> iden_2O, ${iname('2OS', k)}$ ->
+#! iden_2OS_dp; iden_matrix(name, one, half, zero): rows of the matrix shown by their output.
+#:set IDENTITIES = list(muscle_meta.IDENTITIES)
+#:set iname = muscle_meta.iname
+#:set iden_matrix = muscle_meta.iden_matrix
+
+#! Storage layout of a tensor type (components, positions in `vals`, tensor indices):
+#! layout('2Osym', '2D').comps -> [Comp(name='xx', pos=(1,), idx=(1, 1)), ...]
+#:set layout = muscle_meta.layout
+
+#! One expression term per line: ${join_terms(['a', 'b'])}$ -> a &\n + b (keeps lines <= 132)
+#:set join_terms = muscle_meta.join_terms
+#! Assignment at column `col` (indentation of the line), one term per line if too long:
+#! ${assign_terms('W11', ['a', 'b'], 8)}$ -> W11 = a + b
+#:set assign_terms = muscle_meta.assign_terms
+
+#! Comma-separated specific procedure names of a generic, one per dimension and kind of a family.
+#! Placeholders: {0} = dimension + family, {1} = kind (the kind goes last, once):
+#! ${specifics('ddot_{0}_{0}_{1}', '2Osym')}$ -> ddot_3D2Osym_3D2Osym_sp, ddot_3D2Osym_3D2Osym_dp, ...
+#:def specifics(fmt, family)
+${', '.join(fmt.format(d + family, k) for d in DIMS for k in REAL_KINDS)}$
+#:enddef
+
+#! Comma-separated specific procedure names of a generic, one per kind, for types without a
+#! dimension (the identities). Placeholders as in `specifics`: {0} = name, {1} = kind:
+#! ${kspecifics('mul_I{0}S_real_{1}', '2O')}$ -> mul_I2OS_real_sp, mul_I2OS_real_dp
+#:def kspecifics(fmt, name)
+${', '.join(fmt.format(name, k) for k in REAL_KINDS)}$
+#:enddef
+
+#! Marks a procedure as callable from OpenMP target regions. Expands to nothing unless the
+#! build defines MUSCLE_GPU. Use `@:DEVICE()` instead of writing the directive.
+#:def DEVICE()
+#:if defined('MUSCLE_GPU')
+!$omp declare target
+#:endif
+#:enddef
+
+#! Column-major copy of a 3x3 array into its 9 components, `reshape(src, [9])` without reshape: in device
+#! code gfortran calls its runtime routine (_gfortran_reshape_r<4|8>, tools/audit_kernels.sh). Same values,
+#! bit for bit. The other way, from a `ten_3D2O` or `ten_3D2Osym`, is `to_matrix` (muscle_tensor_functions).
+#:def MAT33_TO_VEC9(dst, src)
+${dst}$(1:3) = ${src}$(:, 1)
+${dst}$(4:6) = ${src}$(:, 2)
+${dst}$(7:9) = ${src}$(:, 3)
+#:enddef
+
+#! Parallel loop over the points of a batch: put it right before the `do`. On the CPU an
+#! OpenMP `parallel do`; with the define MUSCLE_GPU a `target teams distribute parallel do` on data
+#! already resident on the device: `present` lists the variables the caller must have mapped
+#! (`map(present, alloc: ...)`, OpenMP 5.1: never transferred), `dev` the arrays given by their device
+#! address (`has_device_addr`, OpenMP 5.1: memory of `omp_target_alloc` or of a device library, not in
+#! the present table; or None), `to` the small host values of the call copied in (or None). Call it
+#! with `$:` (with `@:` the arguments arrive as text).
+#! Other scalars: firstprivate in the target region, shared in the CPU `parallel do` (only the loop
+#! index is private); either way the loop body must not need private variables (call a
+#! `@:DEVICE()` procedure per point: derived types in `private` break ifx).
+#:def BATCH_LOOP(present, to=None, dev=None)
+#:if defined('MUSCLE_GPU')
+#:set clauses = ['map(present, alloc: {})'.format(present)] + (['has_device_addr({})'.format(dev)] if dev else []) &
+    & + (['map(to: {})'.format(to)] if to else [])
+!$omp target teams distribute parallel do ${clauses[0]}$${' &' if len(clauses) > 1 else ''}$
+#:for i, c in enumerate(clauses[1:])
+!$omp& ${c}$${' &' if i < len(clauses) - 2 else ''}$
+#:endfor
+#:else
+!$omp parallel do
+#:endif
+#:enddef
+
+#:endmute

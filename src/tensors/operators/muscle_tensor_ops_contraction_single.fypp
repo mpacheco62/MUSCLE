@@ -1,0 +1,73 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_tensor_ops_common.fypp"
+#! Single contraction `*` between second-order tensors and identities: the pairs come from
+#! OP_TABLE['*'] (muscle_meta); the tensor products are written once in index notation,
+#! C_ij = A_ik B_kj with k = 1, 2, 3 in order, and the layouts drop the structural zeros of 2D.
+#:set MODULE = 'contraction_single'
+
+module muscle_tensor_ops_${MODULE}$
+    !! This module defines the overloaded single contraction (or matrix multiplication) operator `*`
+    !! for mixed second-order and identity tensors, in 3D and 2D, single and double precision
+    !! (both operands of the same kind).
+    !!
+    !! Mathematically, the single contraction of two second-order tensors \(\mathbf{A}\) and \(\mathbf{B}\)
+    !! represents their standard dot product (matrix multiplication):
+    !! \[ \mathbf{C} = \mathbf{A} \cdot \mathbf{B} \quad \implies \quad C_{ij} = A_{ik} B_{kj} \]
+    !!
+    !! Since the product of two symmetric second-order tensors is generally non-symmetric (unless they commute),
+    !! these mixed operations safely return a general second-order tensor (`ten_3D2O`, `ten_2D2O`).
+    !! In 2D the in-plane 2x2 blocks multiply as matrices and the out-of-plane components as
+    !! scalars (\(C_{33} = A_{33} B_{33}\)).
+$:OP_USES(MODULE)
+    implicit none
+    private
+
+$:OP_INTERFACES(MODULE)
+contains
+
+    #:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for e in op_entries('*', d, k)
+    #:set x, y = op_args(e)
+    #:set iden = op_iden(e.tag_a) or op_iden(e.tag_b)
+    #:set A, B, _ = op_symbols(e)
+    #:if iden
+#! Identity * tensor = tensor * identity: c A (the identity is the first or second operand)
+    #:set scaled = iden[1]
+    #:set doc = 'Single contraction \\({} \\cdot {} = {}\\mathbf{{A}}\\)'.format(A, B, 'c' if scaled else '')
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
+        #:if scaled
+        res%vals = I2%val * a%vals
+        #:else
+        res%vals = a%vals
+        #:endif
+    end function ${e.name}$
+
+    #:else
+    #:set la, lb = op_layout(e.tag_a), op_layout(e.tag_b)
+    #:set doc = 'Single contraction \\(\\mathbf{A}\\cdot\\mathbf{B}\\), \\( C_{ij} = A_{ik} B_{kj} \\)'
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
+        #:for c in op_layout(e.tag_res).comps
+        res%vals(${c.pos[0]}$) = ${' + '.join(op_dot_terms(la, 'a%vals', lb, 'b%vals', *c.idx))}$ ! ${c.name}$
+        #:endfor
+    end function ${e.name}$
+
+    #:endif
+    #:endfor
+    #:endfor
+    #:endfor
+end module muscle_tensor_ops_${MODULE}$

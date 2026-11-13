@@ -1,4 +1,4 @@
-add_muscle_test(bilinear test_muscle_hard_bilinear.f90)
-add_muscle_test(ludwik test_muscle_hard_ludwik.f90)
-add_muscle_test(swift test_muscle_hard_swift.f90)
-add_muscle_test(vocemod test_muscle_hard_vocemod.f90)
+# Kernel API of the hardening laws (D-017) in every kind: free functions of the hardening_model
+# contract macro through the generics of muscle_hard_laws, finite-difference defaults of the macro,
+# and a pure @:DEVICE() point procedure
+add_muscle_fypp_test(hard_laws_kinds test_muscle_hard_laws_kinds.fypp)

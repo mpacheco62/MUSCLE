@@ -1,0 +1,607 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! ---------------------------------------------------------------------------------------------
+#! Identity tensors in single and double precision (D-014), written from the decision, not from
+#! the template:
+#! - unscaled identities (iden_2O, iden_4O3T, iden_4O4T) have no kind; a scalar of kind k times
+#!   (or divided into) one gives the scaled identity of kind k (iden_<X>S_<k>);
+#! - operations between unscaled identities (I + I, I - I, -I) give iden_2OS_dp; I * I = I;
+#! - only the 2nd-order identity has + - .approx. %init; the 4th-order ones only * and / by a
+#!   scalar;
+#! - .approx. tolerance TOL_APPROX_IDEN_<k>: 1.0e-10_dp / 1.0e-5_sp,
+#!   |a - b| <= tol * max(1, |a|, |b|);
+#! - historical names iden_<X>S = iden_<X>S_dp from muscle_tensors and the compatibility modules;
+#! - formatted output (ENABLE_UDTIO): iden_2O/iden_2OS keep the original text (captured from the
+#!   original muscle_tensor_iden_2o.f90 / _2os.f90 at ec6b13d, compiled separately); the
+#!   4th-order ones print `[ c ]` and the 6x6 Voigt matrix (iden_4O3T: c in the normal 3x3 block;
+#!   iden_4O4T: diag(c, c, c, c/2, c/2, c/2)).
+#! ---------------------------------------------------------------------------------------------
+#! Rows of the matrix printed by each identity with factor c (half = c/2), in Python, from D-014.
+#:set MATRIX = {'2O': lambda c, h: [[c if i == j else 0 for j in range(3)] for i in range(3)], &
+    & '4O3T': lambda c, h: [[c if i < 3 and j < 3 else 0 for j in range(6)] for i in range(6)], &
+    & '4O4T': lambda c, h: [[(c if i < 3 else h) if i == j else 0 for j in range(6)] for i in range(6)]}
+#! Expected text of one row, Fortran `n(Fw.d, 2X)` (trailing blanks trimmed).
+#:set ROWTXT = lambda row, w, d: '  '.join('{:{}.{}f}'.format(v, w, d) for v in row)
+#! Factor of the scaled identities in the UDTIO tests (c/2 exact in F10.4 and F7.2).
+#:set CS = -2.5
+
+module test_iden_kinds_compat
+    !! Checks that only `use` the historical compatibility modules (`muscle_tensor_iden_<name>`),
+    !! never `muscle_tensors` or `muscle_tensor_iden`: the historical names keep working there.
+    use muscle_kinds, only: dp
+    use muscle_test_utils, only: check_approx, check_true
+    implicit none
+    private
+    public :: test_compat_2o, test_compat_4o3t, test_compat_4o4t
+
+contains
+
+    subroutine test_compat_2o(passed)
+        !! Historical names from `muscle_tensors`: iden_2O, iden_2OS (dp) and their operations, as in
+        !! the original modules.
+        use muscle_tensors
+        logical, intent(out) :: passed
+        type(iden_2O) :: I
+        type(iden_2OS) :: S, T
+        real(dp), parameter :: ZERO = 0.0_dp
+        #:if defined('ENABLE_UDTIO')
+        character(len=100) :: buf
+        integer :: ios
+        #:endif
+
+        passed = .true.
+        call S%init(3.0_dp)
+        call check_approx(passed, 'compat 2os: init', S%val, 3.0_dp, tol=ZERO)
+        call check_true(passed, 'compat 2os: kind(val) = dp', kind(S%val) == dp)
+        T = I + S
+        call check_approx(passed, 'compat 2o: I + S', T%val, 4.0_dp, tol=ZERO)
+        T = S - I
+        call check_approx(passed, 'compat 2o: S - I', T%val, 2.0_dp, tol=ZERO)
+        T = I + I
+        call check_approx(passed, 'compat 2o: I + I', T%val, 2.0_dp, tol=ZERO)
+        T = -I
+        call check_approx(passed, 'compat 2o: -I', T%val, -1.0_dp, tol=ZERO)
+        T = 2.0_dp * I
+        call check_approx(passed, 'compat 2o: 2 * I', T%val, 2.0_dp, tol=ZERO)
+        T = I / 4.0_dp
+        call check_approx(passed, 'compat 2o: I / 4', T%val, 0.25_dp, tol=ZERO)
+        T = S + S
+        call check_approx(passed, 'compat 2os: S + S', T%val, 6.0_dp, tol=ZERO)
+        T = S * S
+        call check_approx(passed, 'compat 2os: S * S', T%val, 9.0_dp, tol=ZERO)
+        T = S / 4.0_dp
+        call check_approx(passed, 'compat 2os: S / 4', T%val, 0.75_dp, tol=ZERO)
+        call check_true(passed, 'compat 2os: S .approx. S', S .approx. S)
+        call check_true(passed, 'compat 2os: .not. S .approx. 2 S', .not. (S .approx. (2.0_dp*S)))
+        #:if defined('ENABLE_UDTIO')
+        buf = ''
+        write(buf, '(DT"LIST")', iostat=ios) S
+        call check_true(passed, 'compat 2os: UDTIO list', ios == 0 .and. trim(buf) == '[    3.0000 ]')
+        buf = ''
+        write(buf, '(DT"LIST")', iostat=ios) I
+        call check_true(passed, 'compat 2o: UDTIO list', ios == 0 .and. trim(buf) == '[    1.0000 ]')
+        #:endif
+    end subroutine test_compat_2o
+
+    #:for X in ['4O3T', '4O4T']
+    subroutine test_compat_${X.lower()}$(passed)
+        !! Historical names from `muscle_tensors`: ${iname(X)}$, ${iname(X + 'S')}$ (dp) and `*`, `/`
+        !! by a dp scalar.
+        use muscle_tensors
+        logical, intent(out) :: passed
+        type(${iname(X)}$) :: I
+        type(${iname(X + 'S')}$) :: S, T
+        real(dp), parameter :: ZERO = 0.0_dp
+        #:if defined('ENABLE_UDTIO')
+        character(len=100) :: buf
+        integer :: ios
+        #:endif
+
+        passed = .true.
+        S = 3.0_dp * I
+        call check_approx(passed, 'compat ${X}$: 3 * I', S%val, 3.0_dp, tol=ZERO)
+        call check_true(passed, 'compat ${X}$: kind(val) = dp', kind(S%val) == dp)
+        T = I * (-2.0_dp)
+        call check_approx(passed, 'compat ${X}$: I * (-2)', T%val, -2.0_dp, tol=ZERO)
+        T = I / 4.0_dp
+        call check_approx(passed, 'compat ${X}$: I / 4', T%val, 0.25_dp, tol=ZERO)
+        T = S * 2.0_dp
+        call check_approx(passed, 'compat ${X}$S: S * 2', T%val, 6.0_dp, tol=ZERO)
+        T = 2.0_dp * S
+        call check_approx(passed, 'compat ${X}$S: 2 * S', T%val, 6.0_dp, tol=ZERO)
+        T = S / 4.0_dp
+        call check_approx(passed, 'compat ${X}$S: S / 4', T%val, 0.75_dp, tol=ZERO)
+        #:if defined('ENABLE_UDTIO')
+        buf = ''
+        write(buf, '(DT"LIST")', iostat=ios) S
+        call check_true(passed, 'compat ${X}$S: UDTIO list', ios == 0 .and. trim(buf) == '[    3.0000 ]')
+        #:endif
+    end subroutine test_compat_${X.lower()}$
+
+    #:endfor
+end module test_iden_kinds_compat
+
+#:if defined('ENABLE_UDTIO')
+module test_iden_kinds_io
+    !! Helpers of the UDTIO checks: reading back every record written to an external unit.
+    use muscle_test_utils, only: check_true
+    implicit none
+    private
+    public :: check_records
+
+contains
+
+    subroutine check_records(passed, label, u, expected)
+        !! Rewinds the scratch unit `u`, reads all its records and compares them (trailing blanks
+        !! ignored) with `expected`, which also fixes their number; closes `u`.
+        logical, intent(inout) :: passed
+            !! Accumulated test result.
+        character(len=*), intent(in) :: label
+            !! Operation under test.
+        integer, intent(in) :: u
+            !! Scratch unit holding the output.
+        character(len=*), intent(in) :: expected(:)
+            !! Expected records.
+        character(len=300) :: got(size(expected) + 1)
+        integer :: i, n, ios
+        logical :: ok
+
+        rewind(u)
+        n = 0
+        got = ''
+        do
+            if (n == size(got)) exit
+            read(u, '(a)', iostat=ios) got(n + 1)
+            if (ios /= 0) exit
+            n = n + 1
+        end do
+        close(u)
+        ok = n == size(expected)
+        if (ok) ok = all(got(1:n) == expected)
+        call check_true(passed, label, ok)
+        if (.not. ok) then
+            print '(3x, a, i0, a, i0)', 'records: got ', n, ', expected ', size(expected)
+            do i = 1, max(n, size(expected))
+                if (i <= n) print '(3x, a, i0, a)', 'got      ', i, ': "' // trim(got(i)) // '"'
+                if (i <= size(expected)) print '(3x, a, i0, a)', 'expected ', i, ': "' // &
+                    trim(expected(i)) // '"'
+            end do
+        end if
+    end subroutine check_records
+
+end module test_iden_kinds_io
+
+#:endif
+program test_muscle_tensor_iden_kinds
+    !! Identity tensors (`muscle_tensor_iden`, D-014) in every kind of `MUSCLE_REAL_KINDS`.
+    !!
+    !! Every input and result is exactly representable in both kinds (factors 1/4, 3/4, 5/2...),
+    !! so values are compared with `tol = 0`, except `I / 3` (compared with the same rounded
+    !! quotient `1/3` of the kind, also exactly). The kind and type of each result are checked
+    !! through an `associate` on the expression (`kind(r%val)`) and an assignment to a variable of
+    !! the expected type (a wrong type does not compile).
+    use muscle_kinds, only: sp, dp
+    #:for k in REAL_KINDS
+    use muscle_kinds, only: TOL_APPROX_IDEN_${k}$
+    #:endfor
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_test_helpers, only: record
+    use test_iden_kinds_compat
+    #:if defined('ENABLE_UDTIO')
+    use test_iden_kinds_io
+    #:endif
+    implicit none
+    logical :: passed
+    integer :: code
+
+    code = 0
+    #:set nt = 0
+    #:set nt = nt + 1
+    call test_tolerances(passed)
+    call record(passed, ${nt}$, 'test_tolerances', code)
+    #:set nt = nt + 1
+    call test_unscaled_2O(passed)
+    call record(passed, ${nt}$, 'test_unscaled_2O', code)
+    #:for k in REAL_KINDS
+    #:for X in IDENTITIES
+    #:set nt = nt + 1
+    call test_scalar_${X}$_${k}$(passed)
+    call record(passed, ${nt}$, 'test_scalar_${X}$_${k}$', code)
+    #:endfor
+    #:set nt = nt + 1
+    call test_algebra_2O_${k}$(passed)
+    call record(passed, ${nt}$, 'test_algebra_2O_${k}$', code)
+    #:set nt = nt + 1
+    call test_approx_2O_${k}$(passed)
+    call record(passed, ${nt}$, 'test_approx_2O_${k}$', code)
+    #:endfor
+    #:set nt = nt + 1
+    call test_historical_aliases(passed)
+    call record(passed, ${nt}$, 'test_historical_aliases', code)
+    #:for X in IDENTITIES
+    #:set nt = nt + 1
+    call test_compat_${X.lower()}$(passed)
+    call record(passed, ${nt}$, 'test_compat_${X.lower()}$', code)
+    #:endfor
+    #:if defined('ENABLE_UDTIO')
+    #:for X in IDENTITIES
+    #:for k in [None] + REAL_KINDS
+    #:set nt = nt + 1
+    call test_udtio_${X}$${'S_' + k if k else ''}$(passed)
+    call record(passed, ${nt}$, 'test_udtio_${X}$${'S_' + k if k else ''}$', code)
+    #:endfor
+    #:endfor
+    #:else
+    print '(a)', ' UDTIO tests skipped (built without ENABLE_UDTIO)'
+    #:endif
+    if (code /= 0) stop code
+
+    print *, "Passed!"
+    stop 0
+
+contains
+
+    subroutine test_tolerances(passed)
+        !! TOL_APPROX_IDEN_<k> of muscle_kinds: 1.0e-10_dp and 1.0e-5_sp exactly (D-014, point 5;
+        !! the dp one is no longer the real32 literal 1e-10).
+        logical, intent(out) :: passed
+        passed = .true.
+        #:for k in REAL_KINDS
+        call check_true(passed, 'TOL_APPROX_IDEN_${k}$ is real(${k}$)', kind(TOL_APPROX_IDEN_${k}$) == ${k}$)
+        #:endfor
+        #:if 'dp' in REAL_KINDS
+        call check_true(passed, 'TOL_APPROX_IDEN_dp == 1.0e-10_dp', TOL_APPROX_IDEN_dp == 1.0e-10_dp)
+        call check_true(passed, 'TOL_APPROX_IDEN_dp /= real(1e-10 real32)', &
+            TOL_APPROX_IDEN_dp /= real(real(1.0e-10_dp, sp), dp))
+        #:endif
+        #:if 'sp' in REAL_KINDS
+        call check_true(passed, 'TOL_APPROX_IDEN_sp == 1.0e-5_sp', TOL_APPROX_IDEN_sp == 1.0e-5_sp)
+        #:endif
+    end subroutine test_tolerances
+
+    subroutine test_unscaled_2O(passed)
+        !! Operations between unscaled identities: no scalar fixes the kind, the result is double
+        !! precision (D-014): I + I = 2 I, I - I = 0 I, -I = -1 I (iden_2OS_dp) and I * I = I.
+        logical, intent(out) :: passed
+        real(dp), parameter :: ZERO = 0.0_dp
+        type(iden_2O) :: I, J
+        type(iden_2OS_dp) :: x
+
+        passed = .true.
+        associate (r => I + I)
+            call check_true(passed, 'I + I: kind dp', kind(r%val) == dp)
+            x = r
+        end associate
+        call check_approx(passed, 'I + I = 2', x%val, 2.0_dp, tol=ZERO)
+        associate (r => I - I)
+            call check_true(passed, 'I - I: kind dp', kind(r%val) == dp)
+            x = r
+        end associate
+        call check_approx(passed, 'I - I = 0', x%val, 0.0_dp, tol=ZERO)
+        associate (r => -I)
+            call check_true(passed, '-I: kind dp', kind(r%val) == dp)
+            x = r
+        end associate
+        call check_approx(passed, '-I = -1', x%val, -1.0_dp, tol=ZERO)
+        associate (r => I * I)
+            call check_true(passed, 'I * I is an iden_2O', same_type_as(r, J))
+            J = r
+        end associate
+        ! I * I = I, so (I * I) + I = 2 I
+        x = (I * I) + I
+        call check_approx(passed, '(I * I) + I = 2', x%val, 2.0_dp, tol=ZERO)
+    end subroutine test_unscaled_2O
+
+    #:for k in REAL_KINDS
+    #:for X in IDENTITIES
+    #:set U = iname(X)
+    #:set S = iname(X + 'S', k)
+    subroutine test_scalar_${X}$_${k}$(passed)
+        !! `*` and `/` by a `real(${k}$)` scalar of `${U}$` and `${S}$`: the result is a `${S}$`
+        !! (kind of the scalar) with `val` = the scalar (I * a, a * I), its inverse (I / a) or
+        !! the product/quotient of the factors (S * a, a * S, S / a).
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        type(${U}$) :: I
+        type(${S}$) :: s3, x
+
+        passed = .true.
+        associate (r => 2.5_${k}$ * I)
+            call check_true(passed, 'a * ${U}$: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '2.5 * ${U}$', x%val, 2.5_${k}$, tol=ZERO)
+        associate (r => I * (-0.75_${k}$))
+            call check_true(passed, '${U}$ * a: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '${U}$ * (-0.75)', x%val, -0.75_${k}$, tol=ZERO)
+        associate (r => I / (-4.0_${k}$))
+            call check_true(passed, '${U}$ / a: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '${U}$ / (-4)', x%val, -0.25_${k}$, tol=ZERO)
+        x = I / 3.0_${k}$
+        call check_approx(passed, '${U}$ / 3 = 1/3', x%val, 1.0_${k}$/3.0_${k}$, tol=ZERO)
+
+        s3%val = 3.0_${k}$
+        associate (r => s3 * 2.5_${k}$)
+            call check_true(passed, '${S}$ * a: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '3 I * 2.5', x%val, 7.5_${k}$, tol=ZERO)
+        associate (r => (-0.5_${k}$) * s3)
+            call check_true(passed, 'a * ${S}$: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '(-0.5) * 3 I', x%val, -1.5_${k}$, tol=ZERO)
+        associate (r => s3 / (-4.0_${k}$))
+            call check_true(passed, '${S}$ / a: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '3 I / (-4)', x%val, -0.75_${k}$, tol=ZERO)
+        ! chained: (I * 2) * 3 / 4 = 1.5 I
+        x = ((I * 2.0_${k}$) * 3.0_${k}$) / 4.0_${k}$
+        call check_approx(passed, '((I * 2) * 3) / 4', x%val, 1.5_${k}$, tol=ZERO)
+    end subroutine test_scalar_${X}$_${k}$
+
+    #:endfor
+    #:set S = iname('2OS', k)
+    subroutine test_algebra_2O_${k}$(passed)
+        !! Algebra of the 2nd-order identity in `real(${k}$)`: `%init`, `+`, `-` (binary, unary)
+        !! between `iden_2O` and `${S}$` and `*` between scaled identities; results are `${S}$`.
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: ZERO = 0.0_${k}$
+        type(iden_2O) :: I
+        type(${S}$) :: a, b, x
+
+        passed = .true.
+        call a%init(2.5_${k}$)
+        call check_approx(passed, '%init(2.5)', a%val, 2.5_${k}$, tol=ZERO)
+        call b%init(-0.75_${k}$)
+        call check_approx(passed, '%init(-0.75)', b%val, -0.75_${k}$, tol=ZERO)
+        call a%init(3.0_${k}$)
+        call check_approx(passed, '%init overwrites', a%val, 3.0_${k}$, tol=ZERO)
+
+        associate (r => I + a)
+            call check_true(passed, 'I + S: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, 'I + 3 I', x%val, 4.0_${k}$, tol=ZERO)
+        associate (r => b + I)
+            call check_true(passed, 'S + I: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '-0.75 I + I', x%val, 0.25_${k}$, tol=ZERO)
+        associate (r => a + b)
+            call check_true(passed, 'S + S: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '3 I + (-0.75 I)', x%val, 2.25_${k}$, tol=ZERO)
+        associate (r => I - a)
+            call check_true(passed, 'I - S: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, 'I - 3 I', x%val, -2.0_${k}$, tol=ZERO)
+        associate (r => a - I)
+            call check_true(passed, 'S - I: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '3 I - I', x%val, 2.0_${k}$, tol=ZERO)
+        associate (r => b - a)
+            call check_true(passed, 'S - S: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '-0.75 I - 3 I', x%val, -3.75_${k}$, tol=ZERO)
+        associate (r => -b)
+            call check_true(passed, '-S: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '-(-0.75 I)', x%val, 0.75_${k}$, tol=ZERO)
+        associate (r => a * b)
+            call check_true(passed, 'S * S: kind ${k}$', kind(r%val) == ${k}$)
+            x = r
+        end associate
+        call check_approx(passed, '3 I * (-0.75 I)', x%val, -2.25_${k}$, tol=ZERO)
+        ! operands unchanged
+        call check_approx(passed, 'operand a unchanged', a%val, 3.0_${k}$, tol=ZERO)
+        call check_approx(passed, 'operand b unchanged', b%val, -0.75_${k}$, tol=ZERO)
+        ! mixed with scalar operations: (2 I + I) * (I / 4) - I = 3/4 I - I = -1/4 I
+        x = ((2.0_${k}$ * I) + I) * (I / 4.0_${k}$) - I
+        call check_approx(passed, '(2 I + I) * (I / 4) - I', x%val, -0.25_${k}$, tol=ZERO)
+    end subroutine test_algebra_2O_${k}$
+
+    subroutine test_approx_2O_${k}$(passed)
+        !! `${S}$ .approx. ${S}$`: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \) with
+        !! `tol = TOL_APPROX_IDEN_${k}$`: a perturbation of 0.5 tol (times the scale) is accepted,
+        !! one of 2 tol rejected, at scales below 1 (absolute criterion) and above (relative), in
+        !! both orders of the operands; an Inf factor matches only the same Inf, NaN nothing.
+        use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_positive_inf, ieee_negative_inf
+        logical, intent(out) :: passed
+        real(${k}$), parameter :: TOL = TOL_APPROX_IDEN_${k}$
+        real(${k}$), parameter :: BASE(5) = [1.0_${k}$, 0.0_${k}$, 0.25_${k}$, 1000.0_${k}$, -1000.0_${k}$]
+        type(${S}$) :: a, b
+        character(len=40) :: tag
+        real(${k}$) :: scale
+        integer :: i
+
+        passed = .true.
+        do i = 1, size(BASE)
+            write(tag, '(" [val = ", f8.2, ", ${k}$]")') BASE(i)
+            call a%init(BASE(i))
+            scale = max(1.0_${k}$, abs(BASE(i)))
+            call check_true(passed, 'a .approx. a' // trim(tag), a .approx. a)
+            call b%init(BASE(i) + 0.5_${k}$*TOL*scale)
+            call check_true(passed, 'a .approx. (a + 0.5 tol)' // trim(tag), a .approx. b)
+            call check_true(passed, '(a + 0.5 tol) .approx. a' // trim(tag), b .approx. a)
+            call b%init(BASE(i) - 0.5_${k}$*TOL*scale)
+            call check_true(passed, 'a .approx. (a - 0.5 tol)' // trim(tag), a .approx. b)
+            call b%init(BASE(i) + 2.0_${k}$*TOL*scale)
+            call check_true(passed, '.not. a .approx. (a + 2 tol)' // trim(tag), .not. (a .approx. b))
+            call check_true(passed, '.not. (a + 2 tol) .approx. a' // trim(tag), .not. (b .approx. a))
+            call b%init(BASE(i) - 2.0_${k}$*TOL*scale)
+            call check_true(passed, '.not. a .approx. (a - 2 tol)' // trim(tag), .not. (a .approx. b))
+        end do
+        ! opposite signs are far apart; results of the algebra compare as equal
+        call a%init(1.0_${k}$)
+        call b%init(-1.0_${k}$)
+        call check_true(passed, '.not. I .approx. -I', .not. (a .approx. b))
+        a = 2.0_${k}$ * iden_2O()
+        b = iden_2O() + iden_2O() * 1.0_${k}$
+        call check_true(passed, '2 I .approx. (I + 1 I)', a .approx. b)
+        ! An infinite scale would accept any finite factor
+        call a%init(ieee_value(1.0_${k}$, ieee_positive_inf))
+        call check_true(passed, 'Inf I .approx. Inf I', a .approx. a)
+        call b%init(1.0_${k}$)
+        call check_true(passed, '.not. Inf I .approx. I', .not. (a .approx. b))
+        call check_true(passed, '.not. I .approx. Inf I', .not. (b .approx. a))
+        call b%init(ieee_value(1.0_${k}$, ieee_negative_inf))
+        call check_true(passed, '.not. Inf I .approx. -Inf I', .not. (a .approx. b))
+        call a%init(ieee_value(1.0_${k}$, ieee_quiet_nan))
+        call check_true(passed, '.not. NaN I .approx. NaN I', .not. (a .approx. a))
+    end subroutine test_approx_2O_${k}$
+
+    #:endfor
+    subroutine test_historical_aliases(passed)
+        !! Historical names from `muscle_tensors`: iden_<X>S is iden_<X>S_dp (an assignment
+        !! between different derived types would not compile) and their factor is real(dp).
+        logical, intent(out) :: passed
+        #:for X in IDENTITIES
+        type(${iname(X + 'S')}$) :: h${X}$
+        type(${iname(X + 'S', 'dp')}$) :: d${X}$
+        #:endfor
+
+        passed = .true.
+        #:for X in IDENTITIES
+        d${X}$ = 1.5_dp * ${iname(X)}$()
+        h${X}$ = d${X}$
+        d${X}$ = h${X}$
+        call check_true(passed, '${iname(X + 'S')}$ == ${iname(X + 'S', 'dp')}$', same_type_as(h${X}$, d${X}$))
+        call check_true(passed, '${iname(X + 'S')}$: kind(val) = dp', kind(h${X}$%val) == dp)
+        call check_approx(passed, '${iname(X + 'S')}$ = 1.5 I', h${X}$%val, 1.5_dp, tol=0.0_dp)
+        #:endfor
+    end subroutine test_historical_aliases
+
+    #:if defined('ENABLE_UDTIO')
+    #:for X in IDENTITIES
+    #:for k in [None] + REAL_KINDS
+    #:set T = iname(X + 'S', k) if k else iname(X)
+    #:set c = CS if k else 1.0
+    #:set N = len(MATRIX[X](c, c / 2))
+    #:set NAME = X + ('S_' + k if k else '')
+    subroutine test_udtio_${NAME}$(passed)
+        !! Formatted output of `${T}$` (factor ${c}$):
+        !!
+        !! - list mode (`DT"LIST"`, `DT"LIST"(w,d)`): `[`, the factor in `Fw.d` (default F10.4),
+        !!   `]`;
+        !! - matrix mode (`DT`, `DT(w,d)`, list-directed): an empty record, then the ${N}$x${N}$
+        !!   matrix, one row per record, `Fw.d` entries separated by 2 blanks (external unit:
+        !!   gfortran 15 ignores the record breaks of a child transfer to an internal unit);
+        !! - a failed write sets `iostat` and an `iomsg` naming the identity's own routine.
+        #:if X == '2O'
+        !!
+        !! Expected texts of the 2nd-order identity captured from the original
+        !! muscle_tensor_iden_2o.f90 / muscle_tensor_iden_2os.f90 (ec6b13d) compiled separately.
+        #:else
+        !!
+        !! New output (D-014): ${'c in the normal 3x3 block' if X == '4O3T' else 'diag(c, c, c, c/2, c/2, c/2)'}$
+        !! of the 6x6 Voigt matrix; expected texts written from that rule.
+        #:endif
+        logical, intent(out) :: passed
+        type(${T}$) :: a
+        character(len=100) :: buf
+        character(len=5) :: small
+        character(len=300) :: msg
+        character(len=200) :: rows(${N + 1}$)
+        integer :: ios, u, mode
+        character(len=*), parameter :: TN = ' [UDTIO, ${T}$]'
+
+        passed = .true.
+        #:if k
+        a%val = ${c}$_${k}$
+        #:endif
+
+        ! ---- List mode ---------------------------------------------------------------------
+        buf = ''
+        write(buf, '(DT"LIST")', iostat=ios) a
+        call check_true(passed, 'list: iostat = 0' // TN, ios == 0)
+        #:if X == '2O' and not k
+        call check_true(passed, 'list: text' // TN, trim(buf) == '[    1.0000 ]')
+        #:elif X == '2O'
+        call check_true(passed, 'list: text' // TN, trim(buf) == '[   -2.5000 ]')
+        #:else
+        call check_true(passed, 'list: text' // TN, trim(buf) == '[${'{:10.4f}'.format(c)}$ ]')
+        #:endif
+        if (.not. passed) print '(a)', '   got: "' // trim(buf) // '"'
+        buf = ''
+        write(buf, '(DT"LIST"(8,3))', iostat=ios) a
+        call check_true(passed, 'list(8,3): iostat = 0' // TN, ios == 0)
+        #:if X == '2O' and not k
+        call check_true(passed, 'list(8,3): text' // TN, trim(buf) == '[   1.000 ]')
+        #:elif X == '2O'
+        call check_true(passed, 'list(8,3): text' // TN, trim(buf) == '[  -2.500 ]')
+        #:else
+        call check_true(passed, 'list(8,3): text' // TN, trim(buf) == '[${'{:8.3f}'.format(c)}$ ]')
+        #:endif
+        if (.not. passed) print '(a)', '   got: "' // trim(buf) // '"'
+
+        ! ---- Matrix mode: DT (1), list-directed (2), DT(7,2) (3) -----------------------------
+        do mode = 1, 3
+            open(newunit=u, status='scratch', form='formatted', action='readwrite')
+            select case (mode)
+            case (1)
+                write(u, '(DT)', iostat=ios) a
+            case (2)
+                write(u, *, iostat=ios) a
+            case default
+                write(u, '(DT(7,2))', iostat=ios) a
+            end select
+            call check_true(passed, 'matrix: iostat = 0' // TN, ios == 0)
+            rows = ''
+            if (mode <= 2) then
+                #:if X == '2O' and not k
+                rows(2) = '    1.0000      0.0000      0.0000'
+                rows(3) = '    0.0000      1.0000      0.0000'
+                rows(4) = '    0.0000      0.0000      1.0000'
+                #:elif X == '2O'
+                rows(2) = '   -2.5000      0.0000      0.0000'
+                rows(3) = '    0.0000     -2.5000      0.0000'
+                rows(4) = '    0.0000      0.0000     -2.5000'
+                #:else
+                #:for i, row in enumerate(MATRIX[X](c, c / 2))
+                rows(${i + 2}$) = '${ROWTXT(row, 10, 4)}$'
+                #:endfor
+                #:endif
+            else
+                #:if X == '2O' and not k
+                rows(2) = '   1.00     0.00     0.00'
+                rows(3) = '   0.00     1.00     0.00'
+                rows(4) = '   0.00     0.00     1.00'
+                #:elif X == '2O'
+                rows(2) = '  -2.50     0.00     0.00'
+                rows(3) = '   0.00    -2.50     0.00'
+                rows(4) = '   0.00     0.00    -2.50'
+                #:else
+                #:for i, row in enumerate(MATRIX[X](c, c / 2))
+                rows(${i + 2}$) = '${ROWTXT(row, 7, 2)}$'
+                #:endfor
+                #:endif
+            end if
+            call check_records(passed, 'matrix: records (mode 1 DT, 2 *, 3 DT(7,2))' // TN, u, rows)
+        end do
+
+        ! ---- Failed write: too short internal record -----------------------------------------
+        msg = ''
+        write(small, '(DT"LIST")', iostat=ios, iomsg=msg) a
+        call check_true(passed, 'error: iostat /= 0' // TN, ios /= 0)
+        call check_true(passed, 'error: iomsg names its routine (print_I${NAME}$)' // TN, &
+            trim(msg) == 'Error in print_I${NAME}$: Failed to write to the specified unit.')
+        if (.not. passed) print '(a)', '   iomsg: "' // trim(msg) // '"'
+    end subroutine test_udtio_${NAME}$
+
+    #:endfor
+    #:endfor
+    #:endif
+end program test_muscle_tensor_iden_kinds

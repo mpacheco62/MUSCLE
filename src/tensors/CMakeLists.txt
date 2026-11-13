@@ -1,25 +1,26 @@
 target_sources(muscle PRIVATE
-                   types/muscle_tensor_3d2o.f90
-                   types/muscle_tensor_3d2osym.f90
-                   types/muscle_tensor_2d2o.f90
-                   types/muscle_tensor_2d2osym.f90
-                   types/muscle_tensor_3d4o3sym.f90
-                   types/muscle_tensor_2d4o3sym.f90
-                   types/muscle_tensor_2d4o2sym.f90
-                   types/muscle_tensor_2d4o.f90
-                   types/muscle_tensor_3d4o2sym.f90
-                   types/muscle_tensor_3d4o.f90
-                   types/muscle_tensor_iden_2os.f90
-                   types/muscle_tensor_iden_2o.f90
-                   types/muscle_tensor_iden_4o3ts.f90
-                   types/muscle_tensor_iden_4o3t.f90
-                   types/muscle_tensor_iden_4o4ts.f90
-                   types/muscle_tensor_iden_4o4t.f90
-                   muscle_tensors.f90
-                   operators/muscle_tensor_ops_addition_subtraction.f90
-                   operators/muscle_tensor_ops_contraction_double.f90
-                   operators/muscle_tensor_ops_dyadic.f90
-                   operators/muscle_tensor_ops_contraction_single.f90
-                   operators/muscle_tensor_ops_assignment.f90
-                   operators/muscle_tensor_ops_transform.f90
+                   muscle_tensor_functions.f90
+                   )
+
+muscle_add_fypp_sources(muscle
+                   types/muscle_tensor_2osym.fypp
+                   types/muscle_tensor_2o.fypp
+                   types/muscle_tensor_4o3sym.fypp
+                   types/muscle_tensor_4o2sym.fypp
+                   types/muscle_tensor_4o.fypp
+                   types/muscle_tensor_iden.fypp
+                   muscle_tensor_io.fypp
+                   muscle_tensor_minus.fypp
+                   muscle_tensors.fypp
+                   )
+
+# Operators between types: generated from the pair table of tools/fypp/muscle_meta.py
+muscle_add_fypp_sources(muscle
+                   operators/muscle_tensor_ops_addition_subtraction.fypp
+                   operators/muscle_tensor_ops_assignment.fypp
+                   operators/muscle_tensor_ops_dyadic.fypp
+                   operators/muscle_tensor_ops_contraction_double.fypp
+                   operators/muscle_tensor_ops_contraction_single.fypp
+                   operators/muscle_tensor_ops_transform.fypp
+                   DEPENDS "${MUSCLE_FYPP_INCLUDE_DIR}/muscle_tensor_ops_common.fypp"
                    )

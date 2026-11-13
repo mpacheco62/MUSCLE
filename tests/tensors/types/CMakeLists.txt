@@ -1,17 +1,12 @@
-add_muscle_test(2d4o3sym test_muscle_tensor_2d4o3sym.f90)
-add_muscle_test(3d2o test_muscle_tensor_3d2o.f90)
-add_muscle_test(3d2osym test_muscle_tensor_3d2osym.f90)
-add_muscle_test(3d4o3sym test_muscle_tensor_3d4o3sym.f90)
-add_muscle_test(iden_2o test_muscle_tensor_iden_2o.f90)
-add_muscle_test(iden_2os test_muscle_tensor_iden_2os.f90)
-add_muscle_test(iden_4o3t test_muscle_tensor_iden_4o3t.f90)
-add_muscle_test(iden_4o3ts test_muscle_tensor_iden_4o3ts.f90)
-add_muscle_test(iden_4o4t test_muscle_tensor_iden_4o4t.f90)
-add_muscle_test(iden_4o4ts test_muscle_tensor_iden_4o4ts.f90)
-add_muscle_test(3d2osym_openmp test_muscle_tensor_openmp.f90)
-add_muscle_test(3d2osym_openmp2 test_muscle_tensor_openmp2.f90)
-add_muscle_test(2d2osym test_muscle_tensor_2d2osym.f90)
-add_muscle_test(2d2o test_muscle_tensor_2d2o.f90)
-add_muscle_test(2d4o test_muscle_tensor_2d4o.f90)
-add_muscle_test(3d4o test_muscle_tensor_3d4o.f90)
-add_muscle_test(inverses test_muscle_tensor_inverses.f90)
+add_muscle_fypp_test(layouts test_muscle_tensor_layouts.fypp)
+add_muscle_fypp_test(2osym_kinds test_muscle_tensor_2osym_kinds.fypp
+                     DEPENDS ${BASE_TESTS_DIR}/common/muscle_test_tensor_cases.fypp)
+add_muscle_fypp_test(2o_kinds test_muscle_tensor_2o_kinds.fypp
+                     DEPENDS ${BASE_TESTS_DIR}/common/muscle_test_tensor_cases.fypp)
+add_muscle_fypp_test(4o3sym_kinds test_muscle_tensor_4o3sym_kinds.fypp
+                     DEPENDS ${BASE_TESTS_DIR}/common/muscle_test_tensor_cases.fypp)
+add_muscle_fypp_test(4o2sym_kinds test_muscle_tensor_4o2sym_kinds.fypp
+                     DEPENDS ${BASE_TESTS_DIR}/common/muscle_test_tensor_cases.fypp)
+add_muscle_fypp_test(4o_kinds test_muscle_tensor_4o_kinds.fypp
+                     DEPENDS ${BASE_TESTS_DIR}/common/muscle_test_tensor_cases.fypp)
+add_muscle_fypp_test(iden_kinds test_muscle_tensor_iden_kinds.fypp)

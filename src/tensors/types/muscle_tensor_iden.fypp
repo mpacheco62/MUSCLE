@@ -1,0 +1,421 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Identity tensors, in one module because they are tiny, independent of the dimension and their
+#! operations mix the unscaled and the scaled type:
+#! - IDENTITIES (muscle_meta): 2O, 4O3T, 4O4T. The unscaled type (iden_2O, ...) has no kind and no
+#!   components; the scaled one has a type per kind (iden_2OS_sp, iden_2OS_dp, ...) storing `val`;
+#! - every identity has `*` and `/` by a scalar; the kind of the scalar fixes the kind of the result
+#!   (`2.0_sp * I` -> iden_2OS_sp);
+#! - the 2nd-order identity also has `+`, `-`, `*` between identities, `.approx.` and `%init`
+#!   (ALGEBRA): the 4th-order ones never had them. Operations between unscaled identities have no
+#!   scalar to fix the kind and return dp, as before (D-014);
+#! - every operation is a free `type` procedure marked @:DEVICE(); `%init` is a `class` wrapper
+#!   (`*_tbp`) kept for the historical API; the formatted output is in muscle_tensor_io;
+#! - the historical names (iden_2OS = dp, ...) come from muscle_tensors.
+#:set ALGEBRA = ['2O']
+#:set FORMULA = {'2O': r'\delta_{ij}', '4O3T': r'\delta_{ij}\delta_{kl}', &
+    & '4O4T': r'\frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})'}
+#:set DESCRIPTION = {'2O': 'second-order identity', &
+    & '4O3T': r'fourth-order identity of type 3 (\(\mathbf{I} \otimes \mathbf{I}\))', &
+    & '4O4T': r'fourth-order symmetric identity (type 4, \(\mathbb{I}^{sym}\))'}
+
+module muscle_tensor_iden
+    !! Module muscle_tensor_iden
+    !! =========================
+    !!
+    !! Identity tensors, valid for 3D and 2D tensors (they do not depend on the dimension):
+    !!
+    !! - `iden_2O`: \( \delta_{ij} \); `iden_2OS_sp`, `iden_2OS_dp`: \( c\,\delta_{ij} \).
+    !! - `iden_4O3T`: \( \delta_{ij}\delta_{kl} \) (type 3); `iden_4O3TS_sp`, `iden_4O3TS_dp`:
+    !!   \( c\,\delta_{ij}\delta_{kl} \).
+    !! - `iden_4O4T`: \( \frac{1}{2}(\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk}) \) (type 4,
+    !!   symmetric identity); `iden_4O4TS_sp`, `iden_4O4TS_dp`: the same scaled by \(c\).
+    !!
+    !! The unscaled types are symbolic: they have no components and serve both kinds. The scaled
+    !! types store the factor \(c\) in `val`, one type per kind.
+    !!
+    !! Operations (operands of the same kind):
+    !!
+    !! - Every identity: `I * a`, `a * I`, `I / a` with a scalar `a` of kind `k` give the scaled
+    !!   identity of kind `k` (`val = a`, `val = 1/a`); `S * a`, `a * S`, `S / a` scale `val`.
+    !! - Second order only: `+` and `-` (binary and unary) between identities, `I * I = I`,
+    !!   `S * S`, `S .approx. S` and `call S%init(c)`. Without a scalar to fix the kind
+    !!   (`I + I`, `I - I`, `-I`) the result is `iden_2OS_dp`.
+    !!
+    !! ```fortran
+    !! use muscle_tensors                      ! iden_2OS is iden_2OS_dp
+    !! type(iden_2O)     :: I
+    !! type(iden_2OS)    :: S
+    !! type(iden_2OS_sp) :: S1
+    !! S  = 3.0_dp * I                         ! S%val = 3
+    !! S  = S + I                              ! S%val = 4
+    !! S1 = I / 2.0_sp                         ! S1%val = 0.5 (single precision)
+    !! ```
+    !!
+    !! For more information see [[muscle_tensors]]
+    use muscle_kinds, only: sp, dp
+    #:for k in REAL_KINDS
+    use muscle_kinds, only: TOL_APPROX_IDEN_${k}$
+    #:endfor
+    implicit none
+    private
+
+    #:for X in IDENTITIES
+    type, public :: ${iname(X)}$
+        !! Unscaled ${DESCRIPTION[X]}$ (no components, implicit factor 1, valid for every kind):
+        !! \( ${FORMULA[X]}$ \).
+    end type ${iname(X)}$
+
+    #:for k in REAL_KINDS
+    #:set TS = iname(X + 'S', k)
+    type, public :: ${TS}$
+        !! Scaled ${DESCRIPTION[X]}$ in `real(${k}$)`:
+        !! \( c \, ${FORMULA[X]}$ \).
+        real(${k}$) :: val
+            !! The scaling factor \(c\).
+        #:if X in ALGEBRA
+        contains
+            generic, public :: init => init_I${X}$S_${k}$_tbp
+                !! Sets the scaling factor `val`.
+            procedure, private :: init_I${X}$S_${k}$_tbp
+        #:endif
+    end type ${TS}$
+
+    #:endfor
+    #:endfor
+    public :: operator(*)
+    interface operator (*)
+        #:for X in IDENTITIES
+        module procedure ${kspecifics('mul_I{0}_real_{1}', X)}$
+        module procedure ${kspecifics('mul_real_I{0}_{1}', X)}$
+        module procedure ${kspecifics('mul_I{0}S_real_{1}', X)}$
+        module procedure ${kspecifics('mul_real_I{0}S_{1}', X)}$
+        #:if X in ALGEBRA
+        module procedure mul_I${X}$_I${X}$
+        module procedure ${kspecifics('mul_I{0}S_I{0}S_{1}', X)}$
+        #:endif
+        #:endfor
+    end interface
+
+    public :: operator( / )
+    interface operator ( / )
+        #:for X in IDENTITIES
+        module procedure ${kspecifics('div_I{0}_real_{1}', X)}$
+        module procedure ${kspecifics('div_I{0}S_real_{1}', X)}$
+        #:endfor
+    end interface
+
+    public :: operator(+)
+    interface operator (+)
+        #:for X in ALGEBRA
+        module procedure sum_I${X}$_I${X}$
+        module procedure ${kspecifics('sum_I{0}_I{0}S_{1}', X)}$
+        module procedure ${kspecifics('sum_I{0}S_I{0}_{1}', X)}$
+        module procedure ${kspecifics('sum_I{0}S_I{0}S_{1}', X)}$
+        #:endfor
+    end interface
+
+    public :: operator(-)
+    interface operator (-)
+        #:for X in ALGEBRA
+        module procedure subU_I${X}$
+        module procedure sub_I${X}$_I${X}$
+        module procedure ${kspecifics('sub_I{0}_I{0}S_{1}', X)}$
+        module procedure ${kspecifics('sub_I{0}S_I{0}_{1}', X)}$
+        module procedure ${kspecifics('subU_I{0}S_{1}', X)}$
+        module procedure ${kspecifics('sub_I{0}S_I{0}S_{1}', X)}$
+        #:endfor
+    end interface
+
+    public :: operator(.approx.)
+    interface operator (.approx.)
+        #:for X in ALGEBRA
+        module procedure ${kspecifics('approx_I{0}S_{1}', X)}$
+        #:endfor
+    end interface
+
+contains
+
+    #:for X in IDENTITIES
+    #:set U = iname(X)
+    #:set I = 'I' + X
+    #:if X in ALGEBRA
+    #:set S = iname(X + 'S', 'dp')
+    ! ---------------------------------------------------------------------------------------
+    ! ${U}$ (op) ${U}$: no scalar fixes the kind, the result is double precision
+    ! ---------------------------------------------------------------------------------------
+
+    pure function sum_${I}$_${I}$(a, b) result(res)
+        !! `${U}$ + ${U}$` = `2 I` (`${S}$`).
+        implicit none
+        @:DEVICE()
+        type(${U}$), intent(in) :: a
+            !! First identity.
+        type(${U}$), intent(in) :: b
+            !! Second identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = 2`.
+        res%val = 2.0_dp
+    end function sum_${I}$_${I}$
+
+    pure function subU_${I}$(a) result(res)
+        !! `-${U}$` = `-1 I` (`${S}$`).
+        implicit none
+        @:DEVICE()
+        type(${U}$), intent(in) :: a
+            !! Identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = -1`.
+        res%val = -1.0_dp
+    end function subU_${I}$
+
+    pure function sub_${I}$_${I}$(a, b) result(res)
+        !! `${U}$ - ${U}$` = `0 I` (`${S}$`).
+        implicit none
+        @:DEVICE()
+        type(${U}$), intent(in) :: a
+            !! Minuend.
+        type(${U}$), intent(in) :: b
+            !! Subtrahend.
+        type(${S}$) :: res
+            !! Scaled identity with `val = 0`.
+        res%val = 0.0_dp
+    end function sub_${I}$_${I}$
+
+    pure function mul_${I}$_${I}$(a, b) result(res)
+        !! `${U}$ * ${U}$` = `${U}$` (\( \mathbf{I} \cdot \mathbf{I} = \mathbf{I} \)).
+        implicit none
+        @:DEVICE()
+        type(${U}$), intent(in) :: a
+            !! First identity.
+        type(${U}$), intent(in) :: b
+            !! Second identity.
+        type(${U}$) :: res
+            !! The identity.
+
+        res = a
+    end function mul_${I}$_${I}$
+
+    #:endif
+    #:for k in REAL_KINDS
+    #:set S = iname(X + 'S', k)
+    #:set IS = I + 'S'
+    ! ---------------------------------------------------------------------------------------
+    ! ${U}$ and ${S}$
+    ! ---------------------------------------------------------------------------------------
+
+    pure function mul_${I}$_real_${k}$(a, b) result(res)
+        !! `${U}$ * real(${k}$)`: scaled identity with `val = b`.
+        implicit none
+        @:DEVICE()
+        type(${U}$), intent(in) :: a
+            !! Identity.
+        real(${k}$), intent(in) :: b
+            !! Scalar factor.
+        type(${S}$) :: res
+            !! Scaled identity.
+        res%val = b
+    end function mul_${I}$_real_${k}$
+
+    pure function mul_real_${I}$_${k}$(a, b) result(res)
+        !! `real(${k}$) * ${U}$`: scaled identity with `val = a`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: a
+            !! Scalar factor.
+        type(${U}$), intent(in) :: b
+            !! Identity.
+        type(${S}$) :: res
+            !! Scaled identity.
+        res%val = a
+    end function mul_real_${I}$_${k}$
+
+    pure function div_${I}$_real_${k}$(a, b) result(res)
+        !! `${U}$ / real(${k}$)`: scaled identity with `val = 1/b`.
+        implicit none
+        @:DEVICE()
+        type(${U}$), intent(in) :: a
+            !! Identity.
+        real(${k}$), intent(in) :: b
+            !! Scalar divisor (must be non-zero).
+        type(${S}$) :: res
+            !! Scaled identity.
+        res%val = 1.0_${k}$/b
+    end function div_${I}$_real_${k}$
+
+    pure function mul_${IS}$_real_${k}$(a, b) result(res)
+        !! `${S}$ * real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(${S}$), intent(in) :: a
+            !! Scaled identity.
+        real(${k}$), intent(in) :: b
+            !! Scalar factor.
+        type(${S}$) :: res
+            !! Scaled identity with `val = a%val * b`.
+        res%val = a%val * b
+    end function mul_${IS}$_real_${k}$
+
+    pure function mul_real_${IS}$_${k}$(a, b) result(res)
+        !! `real(${k}$) * ${S}$`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: a
+            !! Scalar factor.
+        type(${S}$), intent(in) :: b
+            !! Scaled identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = b%val * a` (historical operand order).
+        res%val = b%val * a
+    end function mul_real_${IS}$_${k}$
+
+    pure function div_${IS}$_real_${k}$(a, b) result(res)
+        !! `${S}$ / real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(${S}$), intent(in) :: a
+            !! Scaled identity.
+        real(${k}$), intent(in) :: b
+            !! Scalar divisor (must be non-zero).
+        type(${S}$) :: res
+            !! Scaled identity with `val = a%val / b`.
+        res%val = a%val/b
+    end function div_${IS}$_real_${k}$
+
+    #:if X in ALGEBRA
+    pure function sum_${I}$_${IS}$_${k}$(a, b) result(res)
+        !! `${U}$ + ${S}$`.
+        implicit none
+        @:DEVICE()
+        type(${U}$), intent(in) :: a
+            !! Identity.
+        type(${S}$), intent(in) :: b
+            !! Scaled identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = 1 + b%val`.
+        res%val = 1.0_${k}$ + b%val
+    end function sum_${I}$_${IS}$_${k}$
+
+    pure function sum_${IS}$_${I}$_${k}$(a, b) result(res)
+        !! `${S}$ + ${U}$`.
+        implicit none
+        @:DEVICE()
+        type(${S}$), intent(in) :: a
+            !! Scaled identity.
+        type(${U}$), intent(in) :: b
+            !! Identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = a%val + 1`.
+        res%val = a%val + 1.0_${k}$
+    end function sum_${IS}$_${I}$_${k}$
+
+    pure function sum_${IS}$_${IS}$_${k}$(a, b) result(res)
+        !! `${S}$ + ${S}$`.
+        implicit none
+        @:DEVICE()
+        type(${S}$), intent(in) :: a
+            !! First scaled identity.
+        type(${S}$), intent(in) :: b
+            !! Second scaled identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = a%val + b%val`.
+        res%val = a%val + b%val
+    end function sum_${IS}$_${IS}$_${k}$
+
+    pure function sub_${I}$_${IS}$_${k}$(a, b) result(res)
+        !! `${U}$ - ${S}$`.
+        implicit none
+        @:DEVICE()
+        type(${U}$), intent(in) :: a
+            !! Identity.
+        type(${S}$), intent(in) :: b
+            !! Scaled identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = 1 - b%val`.
+        res%val = 1.0_${k}$ - b%val
+    end function sub_${I}$_${IS}$_${k}$
+
+    pure function sub_${IS}$_${I}$_${k}$(a, b) result(res)
+        !! `${S}$ - ${U}$`.
+        implicit none
+        @:DEVICE()
+        type(${S}$), intent(in) :: a
+            !! Scaled identity.
+        type(${U}$), intent(in) :: b
+            !! Identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = a%val - 1`.
+        res%val = a%val - 1.0_${k}$
+    end function sub_${IS}$_${I}$_${k}$
+
+    pure function subU_${IS}$_${k}$(a) result(res)
+        !! `-${S}$`.
+        implicit none
+        @:DEVICE()
+        type(${S}$), intent(in) :: a
+            !! Scaled identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = -a%val`.
+        res%val = -a%val
+    end function subU_${IS}$_${k}$
+
+    pure function sub_${IS}$_${IS}$_${k}$(a, b) result(res)
+        !! `${S}$ - ${S}$`.
+        implicit none
+        @:DEVICE()
+        type(${S}$), intent(in) :: a
+            !! Minuend.
+        type(${S}$), intent(in) :: b
+            !! Subtrahend.
+        type(${S}$) :: res
+            !! Scaled identity with `val = a%val - b%val`.
+        res%val = a%val - b%val
+    end function sub_${IS}$_${IS}$_${k}$
+
+    pure function mul_${IS}$_${IS}$_${k}$(a, b) result(res)
+        !! `${S}$ * ${S}$` (\( a\mathbf{I} \cdot b\mathbf{I} = ab\,\mathbf{I} \)).
+        implicit none
+        @:DEVICE()
+        type(${S}$), intent(in) :: a
+            !! First scaled identity.
+        type(${S}$), intent(in) :: b
+            !! Second scaled identity.
+        type(${S}$) :: res
+            !! Scaled identity with `val = a%val * b%val`.
+        res%val = a%val*b%val
+    end function mul_${IS}$_${IS}$_${k}$
+
+    pure function approx_${IS}$_${k}$(a, b) result(res)
+        !! `${S}$ .approx. ${S}$`: \( |a - b| \le tol \cdot \max(1, |a|, |b|) \) with
+        !! `tol = TOL_APPROX_IDEN_${k}$`; an Inf or NaN factor matches only the same Inf.
+        implicit none
+        @:DEVICE()
+        type(${S}$), intent(in) :: a
+            !! First scaled identity.
+        type(${S}$), intent(in) :: b
+            !! Second scaled identity.
+        logical :: res
+            !! `.true.` if both factors are approximately equal.
+        real(${k}$) :: tol
+
+        tol = TOL_APPROX_IDEN_${k}$*max(1.0_${k}$, abs(a%val), abs(b%val))
+        res = (abs(a%val - b%val)) <= tol
+        ! abs(x) <= huge(x) is false for Inf and NaN: an infinite scale would accept any finite value
+        if (.not. (abs(a%val) <= huge(tol) .and. abs(b%val) <= huge(tol))) res = a%val == b%val
+    end function approx_${IS}$_${k}$
+
+    pure subroutine init_${IS}$_${k}$_tbp(self, val)
+        !! `%init(val)`: sets the scaling factor of a `${S}$`.
+        implicit none
+        class(${S}$), intent(inout) :: self
+            !! Scaled identity to initialize.
+        real(${k}$), intent(in) :: val
+            !! Scaling factor.
+        self%val = val
+    end subroutine init_${IS}$_${k}$_tbp
+
+    #:endif
+    #:endfor
+    #:endfor
+end module muscle_tensor_iden

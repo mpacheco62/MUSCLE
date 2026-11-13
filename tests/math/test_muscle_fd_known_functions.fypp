@@ -1,0 +1,573 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#! Finite differences of tests/common/muscle_fd.fypp (FD_DERIV, FD_GRAD, FD_JAC, FD_HESS; formerly the
+#! `procedure(...)` API derivative/derivative2O, removed in D-018.18b) on functions with known
+#! derivatives, double precision, 3D (the analytical dsquare is tested in test_muscle_math_spectral_derivs_cases).
+module test_fd_known_functions_mod
+    use muscle_kinds, only : dp
+    implicit none
+    private
+    public :: fun_scalar_scalar_test1, fun_scalar_scalar_test2, fun_scalar_scalar_test3
+    public :: fun_scalar_test1, fun_scalar_test2, fun_scalar_test3, energy_hooke
+    public :: fun_tens_x, fun_tens_2x, fun_tens_tenx, fun_nonlinear_tens
+    public :: fun_scalar_normal_shear
+    type, public :: mytype_test
+        real(dp) :: a
+        contains
+        procedure, public :: fun => fun_object_scalar_test1
+        procedure, public :: der => derivative_fun1
+    end type
+
+contains
+
+    pure function fun_object_scalar_test1(self, x) result(res)
+        use muscle_kinds, only : dp
+        use muscle_tensors, only : ten_3D2Osym
+        implicit none
+        class(mytype_test), intent(in) :: self
+        type(ten_3D2Osym), intent(in) :: x
+        real(dp) :: res
+
+        res =   self%a*(abs(x%vals(1)) + abs(x%vals(2)) + abs(x%vals(3)) &
+            + 2*abs(x%vals(4)) + 2*abs(x%vals(5)) + 2*abs(x%vals(6)))
+    end function
+
+    pure function derivative_fun1(self, x) result(res)
+        use muscle_kinds, only : dp
+        use muscle_tensors, only : ten_3D2Osym
+        implicit none
+        class(mytype_test), intent(in) :: self
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: res
+
+        ! The type-bound function is called directly by the macro (no internal wrapper)
+        @:FD_GRAD(res, self%fun({x}), x, dp, 3D)
+    end function
+
+
+    pure function fun_scalar_scalar_test1(x) result(res)
+        use muscle_kinds, only : dp
+        implicit none
+        real(dp) :: res
+        real(dp), intent(in) :: x
+
+        res = abs(x)
+    end function
+
+    pure function fun_scalar_scalar_test2(x) result(res)
+        use muscle_kinds, only : dp
+        implicit none
+        real(dp) :: res
+        real(dp), intent(in) :: x
+
+        res = 3*abs(x)
+    end function
+
+    pure function fun_scalar_scalar_test3(x) result(res)
+        use muscle_kinds, only : dp
+        implicit none
+        real(dp) :: res
+        real(dp), intent(in) :: x
+
+        res = sin(x)
+    end function
+
+    pure function fun_scalar_test1(x) result(res)
+        use muscle_kinds, only : dp
+        use muscle_tensors, only : ten_3D2Osym
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        real(dp) :: res
+
+        res =   abs(x%vals(1)) + abs(x%vals(2)) + abs(x%vals(3)) &
+            + 2*abs(x%vals(4)) + 2*abs(x%vals(5)) + 2*abs(x%vals(6))
+    end function
+
+    pure function fun_scalar_test2(x) result(res)
+        use muscle_kinds, only : dp
+        use muscle_tensors, only : ten_3D2Osym
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: y
+        real(dp) :: res
+
+        y%vals = 2*x%vals
+
+        res =   abs(y%vals(1)) + abs(y%vals(2)) + abs(y%vals(3)) &
+            + 2*abs(y%vals(4)) + 2*abs(y%vals(5)) + 2*abs(y%vals(6))
+    end function
+
+    pure function fun_scalar_test3(x) result(res)
+        use muscle_kinds, only : dp
+        use muscle_tensors, only : ten_3D2Osym
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        real(dp) :: res
+
+        res =   abs(x%vals(1))*1 + abs(x%vals(2))*2 + abs(x%vals(3))*3 &
+            + 2*abs(x%vals(4))*4 + 2*abs(x%vals(5))*5 + 2*abs(x%vals(6))*6
+    end function
+
+    pure function energy_hooke(strain) result(energy)
+            use muscle_tensors
+            implicit none
+            type(ten_3D2Osym), intent(in) :: strain
+            real(dp) :: energy
+            type(ten_3D2Osym) :: strain2
+            real(dp) :: E, nu, lam, mu
+
+            E=100.0_dp; nu=0.3_dp
+            lam = E*nu/((1.0_dp+nu)*(1.0_dp-2.0_dp*nu))
+            mu = E/(2.0_dp*(1.0_dp+nu))
+            strain2 = strain%square()
+            energy = mu*sum(strain2%vals(1:3)) + lam/2.0_dp*sum(strain%vals(1:3))**2
+    end function
+
+
+    pure function fun_tens_x(x) result(res)
+        use muscle_tensors, only : ten_3D2Osym
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: res
+        res = x
+    end function
+
+    pure function fun_tens_2x(x) result(res)
+        use muscle_tensors, only : ten_3D2Osym, operator(*)
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: res
+        res = 2.0_dp*x
+    end function
+
+    pure function fun_tens_tenx(x) result(res)
+        use muscle_tensors, only : ten_3D2Osym, ten_3D4O3sym, operator(*), operator(.ddot.)
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: res
+        type(ten_3D4O3sym) :: C
+        integer :: i
+        call C%init([(real(i, dp), i = 1, 21)])
+        res = C.ddot.x
+    end function
+
+    ! f(x) = tr(x) * x
+    pure function fun_nonlinear_tens(x) result(res)
+        use muscle_tensors, only : ten_3D2Osym
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        type(ten_3D2Osym) :: res
+        real(dp) :: trace        
+        trace = x%vals(1) + x%vals(2) + x%vals(3)
+        res%vals = trace * x%vals
+    end function
+
+    ! f(x) = (x_xx + 2 x_yy + 3 x_zz) * (5 x_xy + 7 x_yz + 11 x_xz): its only second derivatives
+    ! are the normal-shear ones
+    pure function fun_scalar_normal_shear(x) result(res)
+        use muscle_kinds, only : dp
+        use muscle_tensors, only : ten_3D2Osym
+        implicit none
+        type(ten_3D2Osym), intent(in) :: x
+        real(dp) :: res
+
+        res = (x%vals(1) + 2.0_dp*x%vals(2) + 3.0_dp*x%vals(3)) &
+              *(5.0_dp*x%vals(4) + 7.0_dp*x%vals(5) + 11.0_dp*x%vals(6))
+    end function
+end module test_fd_known_functions_mod
+
+
+! ********************** PROGRAM TEST ************************************
+program test_fd_known_functions
+    implicit none
+    
+    logical :: passed
+
+    call test_derivative_scalar_scalar(passed)
+    if (.not. passed) STOP 1
+
+    call test_derivate_scalar_ten(passed)
+    if (.not. passed) STOP 2
+
+    call test_derivate_ten_ten(passed)
+    if (.not. passed) STOP 3
+
+    call test_object_derivate_scalar_ten(passed)
+    if (.not. passed) STOP 4
+
+    call test_derivate2O_scalar_ten(passed)
+    if (.not. passed) STOP 5
+
+    call test_derivate2O_normal_shear(passed)
+    if (.not. passed) STOP 6
+
+    STOP 0
+end program test_fd_known_functions
+
+
+subroutine test_derivative_scalar_scalar(passed)
+    use muscle_kinds, only : dp
+    use test_fd_known_functions_mod
+    implicit none
+    
+    logical, intent(out) :: passed
+
+    real(dp) :: to_test
+    real(dp) :: expected, result
+    real(dp) :: pi
+    pi = 4.0_dp * atan(1.0_dp)
+    
+
+    to_test = 5.0_dp
+    expected = 1.0_dp
+    @:FD_DERIV(result, fun_scalar_scalar_test1({x}), to_test, dp, indent=4)
+    passed = abs(expected - result) < 1.0e-7_dp
+
+    if (.not. passed) print*, "Case 1 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test = -5.0_dp
+    expected = -1.0_dp
+    @:FD_DERIV(result, fun_scalar_scalar_test1({x}), to_test, dp, indent=4)
+    passed = abs(expected - result) < 1.0e-7_dp
+
+    if (.not. passed) print*, "Case 2 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test = 5.0_dp
+    expected = 3.0_dp
+    @:FD_DERIV(result, fun_scalar_scalar_test2({x}), to_test, dp, indent=4)
+    passed = abs(expected - result) < 1.0e-7_dp
+
+    if (.not. passed) print*, "Case 3 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test = -5.0_dp
+    expected = -3.0_dp
+    @:FD_DERIV(result, fun_scalar_scalar_test2({x}), to_test, dp, indent=4)
+    passed = abs(expected - result) < 1.0e-7_dp
+
+    if (.not. passed) print*, "Case 4 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test = pi
+    expected = -1.0_dp
+    @:FD_DERIV(result, fun_scalar_scalar_test3({x}), to_test, dp, indent=4)
+    passed = abs(expected - result) < 1.0e-7_dp
+
+    if (.not. passed) print*, "Case 5 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+
+    to_test = 0
+    expected = 1.0_dp
+    @:FD_DERIV(result, fun_scalar_scalar_test3({x}), to_test, dp, indent=4)
+    passed = abs(expected - result) < 1.0e-7_dp
+
+    if (.not. passed) print*, "Case 6 Derivate fun(scalar)=> scalar",  new_line('A'), &
+                              "The value obtained is different from the expected one", new_line('A'), &
+                              "The value obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    ! call expected%init(vals=(/2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp/))
+    ! result = derivative(fun_scalar_test2, to_test)
+    ! passed = expected .approx. result
+
+    ! if (.not. passed) print*, "Case 2 Derivate",  new_line('A'), &
+    !                           "The eigenvalues obtained is different from the expected one", new_line('A'), &
+    !                           "The values obtained are:", result, new_line('A'), &
+    !                           "The expected are:", expected
+    ! if (.not. passed) return
+
+
+    ! call expected%init(vals=(/1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp, 6.0_dp/))
+    ! result = derivative(fun_scalar_test3, to_test)
+    ! passed = expected .approx. result
+
+    ! if (.not. passed) print*, "Case 3 Derivate",  new_line('A'), &
+    !                           "The eigenvalues obtained is different from the expected one", new_line('A'), &
+    !                           "The values obtained are:", result, new_line('A'), &
+    !                           "The expected are:", expected
+    ! if (.not. passed) return
+end subroutine
+
+
+subroutine test_derivate_scalar_ten(passed)
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use test_fd_known_functions_mod
+    implicit none
+    
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym):: to_test
+    type(ten_3D2Osym) :: expected, result
+
+    call to_test%init(vals=(/1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp/))
+    call expected%init(vals=(/1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp/))
+    @:FD_GRAD(result, fun_scalar_test1({x}), to_test, dp, 3D, indent=4)
+    passed = result%is_approx(expected, tol=1.0e-10_dp)
+
+    if (.not. passed) print*, "Case 1 Derivate",  new_line('A'), &
+                              "The eigenvalues obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected, new_line('A'), &
+                              "The differences:", result - expected
+    if (.not. passed) return
+
+    call expected%init(vals=(/2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp, 2.0_dp/))
+    @:FD_GRAD(result, fun_scalar_test2({x}), to_test, dp, 3D, indent=4)
+    passed = result%is_approx(expected, tol=1.0e-10_dp)
+
+    if (.not. passed) print*, "Case 2 Derivate",  new_line('A'), &
+                              "The eigenvalues obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected, new_line('A'), &
+                              "The differences:", result - expected
+    if (.not. passed) return
+
+
+    call expected%init(vals=(/1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp, 6.0_dp/))
+    @:FD_GRAD(result, fun_scalar_test3({x}), to_test, dp, 3D, indent=4)
+    passed = result%is_approx(expected, tol=1.0e-10_dp)
+
+    if (.not. passed) print*, "Case 3 Derivate",  new_line('A'), &
+                              "The eigenvalues obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+end subroutine
+
+
+subroutine test_derivate_ten_ten(passed)
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use test_fd_known_functions_mod
+    implicit none
+    
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym) :: to_test
+    type(iden_4O4T) :: I4O4T
+    type(iden_2O) :: I2O
+    type(ten_3D4O2sym) :: expected, result
+
+    call to_test%init(vals=(/1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp/))
+    expected = I4O4T
+    @:FD_JAC(result, fun_tens_x({x}), to_test, dp, 3D, indent=4)
+    passed = expected .approx. result
+
+    if (.not. passed) print*, "Case 1 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test%vals = (/1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp, 6.0_dp/)
+    expected = I4O4T
+    @:FD_JAC(result, fun_tens_x({x}), to_test, dp, 3D, indent=4)
+    passed = expected .approx. result
+
+    if (.not. passed) print*, "Case 2 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+
+    call to_test%init(vals=(/1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp/))
+    expected = 2.0_dp*I4O4T
+    @:FD_JAC(result, fun_tens_2x({x}), to_test, dp, 3D, indent=4)
+    passed = expected .approx. result
+
+    if (.not. passed) print*, "Case 3 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    to_test%vals = (/1.0_dp, 2.0_dp, 3.0_dp, 4.0_dp, 5.0_dp, 6.0_dp/)
+    expected = 2.0_dp*I4O4T
+    @:FD_JAC(result, fun_tens_2x({x}), to_test, dp, 3D, indent=4)
+    passed = expected .approx. result
+
+    if (.not. passed) print*, "Case 4 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+
+    call expected%init(xxxx=1.0_dp,   yyyy=2.0_dp,   zzzz=3.0_dp,  &
+                       xyxy=4.0_dp,   yzyz=5.0_dp,   xzxz=6.0_dp,  &
+                       xxyy=7.0_dp,   yyzz=8.0_dp,              &
+                       yyxx=7.0_dp,   zzyy=8.0_dp,              &
+                       zzxy=9.0_dp,   xyyz=10.0_dp,  yzxz=11.0_dp, &
+                       xyzz=9.0_dp,   yzxy=10.0_dp,  xzyz=11.0_dp, &
+                       xxzz=12.0_dp,                         &
+                       zzxx=12.0_dp,                         &
+                       yyxy=13.0_dp,  zzyz=14.0_dp,  xyxz=15.0_dp, &
+                       xyyy=13.0_dp,  yzzz=14.0_dp,  xzxy=15.0_dp, &
+                       xxxy=16.0_dp,  yyyz=17.0_dp,  zzxz=18.0_dp, &
+                       xyxx=16.0_dp,  yzyy=17.0_dp,  xzzz=18.0_dp, &
+                       xxyz=19.0_dp,  yyxz=20.0_dp,  xxxz=21.0_dp, &
+                       yzxx=19.0_dp,  xzyy=20.0_dp,  xzxx=21.0_dp  &
+                       )
+    @:FD_JAC(result, fun_tens_tenx({x}), to_test, dp, 3D, indent=4)
+    passed = expected .approx. result
+
+    if (.not. passed) print*, "Case 5 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+
+    expected = sum(to_test%vals(1:3))*I4O4T 
+    expected = expected + (to_test .tdot. I2O)  ! TODO suma de I4O3TS y I4O4TS
+    @:FD_JAC(result, fun_nonlinear_tens({x}), to_test, dp, 3D, indent=4)
+    passed = expected .approx. result
+
+    if (.not. passed) print*, "Case 6 Derivate tensor=>tensor",  new_line('A'), &
+                              "The values obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+end subroutine
+
+
+
+subroutine test_object_derivate_scalar_ten(passed)
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use test_fd_known_functions_mod
+    implicit none
+    
+    logical, intent(out) :: passed
+
+    type(mytype_test) :: obj
+    type(ten_3D2Osym) :: to_test
+    type(ten_3D2Osym) :: expected, result
+
+    obj%a = 5.0_dp
+    call to_test%init(vals=(/1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp/))
+    call expected%init(vals=(/5.0_dp, 5.0_dp, 5.0_dp, 5.0_dp, 5.0_dp, 5.0_dp/))
+    result = obj%der(to_test)
+
+    passed = result%is_approx(expected, tol=1.0e-10_dp)
+
+
+    if (.not. passed) print*, "Case 1 Derivate object",  new_line('A'), &
+                              "The eigenvalues obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+
+end subroutine
+
+
+
+subroutine test_derivate2O_scalar_ten(passed)
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use test_fd_known_functions_mod
+    implicit none
+    
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym):: to_test
+    type(ten_3D4O3sym) :: expected, result
+    real(dp) :: E, nu, lam, mu
+
+    call to_test%init(vals=(/1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp/))
+    expected%vals = 0.0_dp
+    @:FD_HESS(result, fun_scalar_test1({x}), to_test, dp, 3D, indent=4)
+    passed = expected%is_approx(result, tol=1.0e-8_dp)
+
+    if (.not. passed) print*, "Case 1 second derivative",  new_line('A'), &
+                              "The eigenvalues obtained is different from the expected one", new_line('A'), &
+                              "The values obtained are:", result, new_line('A'), &
+                              "The expected are:", expected
+    if (.not. passed) return
+
+    E=100.0_dp; nu=0.3_dp
+    lam = E*nu/((1.0_dp+nu)*(1.0_dp-2.0_dp*nu))
+    mu = E/(2.0_dp*(1.0_dp+nu))
+    call to_test%init(vals=(/1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp/))
+    call expected%init(xxxx=2.0_dp*mu+lam, yyyy=2.0_dp*mu+lam, zzzz=2.0_dp*mu+lam, &
+                       xyxy=mu,         yzyz=mu,         xzxz=mu,         &
+                       xxyy=lam,        yyzz=lam,                         &
+                       zzxy=0.0_dp,        xyyz=0.0_dp,        yzxz=0.0_dp,        &
+                       xxzz=lam,                                          &
+                       yyxy=0.0_dp,        zzyz=0.0_dp,        xyxz=0.0_dp,        &
+                       xxxy=0.0_dp,        yyyz=0.0_dp,        zzxz=0.0_dp,        &
+                       xxyz=0.0_dp,        yyxz=0.0_dp,        xxxz=0.0_dp         &
+                       )
+    @:FD_HESS(result, energy_hooke({x}), to_test, dp, 3D, indent=4)
+    passed = expected%is_approx(result, tol=1.0e-8_dp)
+    if (.not. passed) print*, "Case 2 second derivative",  new_line('A'), &
+                              "The hook law by derivative is different to analitical", new_line('A'), &
+                              "The values obtained are:", new_line('A'),  &
+                              result%vals(:), new_line('A'), &
+                              "The expected are:", new_line('A'), &
+                              expected%vals(:), new_line('A')
+                             
+    if (.not. passed) return
+end subroutine
+
+
+subroutine test_derivate2O_normal_shear(passed)
+    ! Second derivative of f(x) = (x_xx + 2 x_yy + 3 x_zz) * (5 x_xy + 7 x_yz + 11 x_xz) in a state
+    ! with all components non-zero. With tensorial shears, d2f/dx_ii dx_jk is half the product of
+    ! the weights of x_ii and x_jk (the stored shear is shared by x_jk and x_kj); every other entry
+    ! is zero. These nine normal-shear entries are the ones that are zero in the cases above, and
+    ! their weights are all different, so two entries stored in each other's place do not pass.
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use test_fd_known_functions_mod
+    implicit none
+
+    logical, intent(out) :: passed
+
+    type(ten_3D2Osym) :: to_test
+    type(ten_3D4O3sym) :: expected, result
+
+    call to_test%init(vals=(/1.3_dp, -0.4_dp, 0.7_dp, 0.5_dp, -0.8_dp, 0.2_dp/))
+    call expected%init(xxxx=0.0_dp,   yyyy=0.0_dp,    zzzz=0.0_dp,    &
+                       xyxy=0.0_dp,   yzyz=0.0_dp,    xzxz=0.0_dp,    &
+                       xxyy=0.0_dp,   yyzz=0.0_dp,                 &
+                       zzxy=7.5_dp, xyyz=0.0_dp,    yzxz=0.0_dp,    &
+                       xxzz=0.0_dp,                             &
+                       yyxy=5.0_dp,   zzyz=10.5_dp, xyxz=0.0_dp,    &
+                       xxxy=2.5_dp, yyyz=7.0_dp,    zzxz=16.5_dp, &
+                       xxyz=3.5_dp, yyxz=11.0_dp,   xxxz=5.5_dp   &
+                       )
+    @:FD_HESS(result, fun_scalar_normal_shear({x}), to_test, dp, 3D, indent=4)
+    passed = expected%is_approx(result, tol=1.0e-8_dp)
+    if (.not. passed) print*, "Case 3 second derivative",  new_line('A'), &
+                              "The normal-shear entries differ from the analytical ones", new_line('A'), &
+                              "The values obtained are:", new_line('A'),  &
+                              result%vals(:), new_line('A'), &
+                              "The expected are:", new_line('A'), &
+                              expected%vals(:), new_line('A')
+end subroutine

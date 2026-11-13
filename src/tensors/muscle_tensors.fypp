@@ -1,0 +1,247 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_tensors
+    !! author: MPacheco
+    !! version: 1.0 - Initial documentation
+    !!
+    !! Tensors Types Module
+    !! ====================
+    !!
+    !! This module serves as the central access point for various tensor types.
+    !! 
+    !! This module serves as the central access point for various tensor types and their associated
+    !! operations within the MUSCLE library. It aggregates tensor definitions and operator
+    !! implementations from specialized submodules, providing a unified interface for users.
+    !!
+    !! Instead of defining the tensor types and operations directly, this module uses other
+    !! modules (`muscle_tensor_*`) and makes specific types and
+    !! operators publicly available. This promotes modularity and organization within the library.
+    !!
+    !! Nomenclature
+    !! ------------
+    !!
+    !! The module exposes two main categories of tensor types: Regular Tensors and Identity Tensors.
+    !!
+    !! ### Regular Tensors:
+    !!
+    !! Nomenclature `ten_xyz`:
+    !!
+    !! - `x`: Dimensions of the tensor (e.g., 3D, 2D)
+    !! - `y`: Order of the tensor (e.g., 2O, 4O)
+    !! - `z`: Number of symmetries of the tensor (e.g., sym, 2sym, 3sym)
+    !!
+    !! `2D` tensors describe plane (strain/stress) or axisymmetric states: the
+    !! out-of-plane coupling components (13, 23, 31, 32) vanish, but the
+    !! out-of-plane normal component (33) is kept.
+    !!
+    !! Examples:
+    !!
+    !! - `ten_3D2O`: 3D tensor, second order, no specific symmetry assumed in the type name (likely stored as 3x3).
+    !! - `ten_3D2Osym`: 3D tensor, second order, symmetric (likely stored efficiently, e.g., 6 components).
+    !! - `ten_3D4O2sym`: 3D tensor, fourth order, with minor symmetries (\(C_{ijkl} = C_{jikl} = C_{ijlk}\)).
+    !! - `ten_3D4O3sym`: 3D tensor, fourth order, with major and minor symmetries (\(C_{ijkl} = C_{jikl} = C_{ijlk} = C_{klij}\)).
+    !! - `ten_2D2Osym`: 2D symmetric second-order tensor (4 components: 11, 22, 33, 12).
+    !! - `ten_2D2O`: 2D general second-order tensor (5 components: 11, 21, 12, 22, 33).
+    !!
+    !! ### Identity Tensors:
+    !!
+    !! Nomenclature `iden_xyz` or `iden_xyzS`:
+    !!
+    !! - `x`: Dimensions of the tensor (e.g., 3D)
+    !! - `y`: Order of the tensor (e.g., 2O, 4O)
+    !! - `z`: Type of identity (e.g., None, 1T, 2T, 3T, 4T)
+    !!     * `None`: Standard second-order identity tensor \(\delta_{ij}\). (`iden_2O`)
+    !!     * `1T`: \(\delta_{ik}\delta_{jl}\), only valid for a fourth order tensor.
+    !!     * `2T`: \(\delta_{il}\delta_{jk}\), only valid for a fourth order tensor.
+    !!     * `3T`: \(\delta_{ij}\delta_{kl}\), only valid for a fourth order tensor. (`iden_4O3T`)
+    !!     * `4T`: \(\frac{\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk}}{2}\), symmetric fourth-order identity. (`iden_4O4T`)
+    !! - `S`: Suffix indicating a *scaled* identity tensor (e.g., `val * identity`). (`iden_2OS`, `iden_4O3TS`, `iden_4O4TS`)
+    !!
+    !! Examples:
+    !!
+    !! - `iden_2O`: 3D identity tensor, second order (\(\delta_{ij}\)).
+    !! - `iden_2OS`: Scaled 3D identity tensor, second order (\(c \delta_{ij}\)).
+    !! - `iden_4O3T`: 3D identity tensor, fourth order, type 3 (\(\delta_{ij}\delta_{kl}\)).
+    !! - `iden_4O4T`: 3D identity tensor, fourth order, type 4 (symmetric identity).
+    !! - `iden_4O4TS`: Scaled 3D identity tensor, fourth order, type 4
+    !!   (\(c \cdot (\delta_{ik}\delta_{jl} + \delta_{il}\delta_{jk})/2\)).
+    !!
+    !! Public Entities
+    !! ---------------
+    !!
+    !! This module makes the following entities publicly available:
+    !!
+    !! ### Derived Types:
+    !!
+    !! - `ten_3D2O`:         General 3D second-order tensor, alias of [[ten_3D2O_dp]]
+    !!                      (also `ten_3D2O_sp`; from [[muscle_tensor_2o]]).
+    !! - `ten_3D2Osym`:      Symmetric 3D second-order tensor, alias of [[ten_3D2Osym_dp]]
+    !!                      (also `ten_3D2Osym_sp`; from [[muscle_tensor_2osym]]).
+    !! - `ten_3D4O2sym`:     3D fourth-order tensor with minor symmetries, alias of
+    !!                      [[ten_3D4O2sym_dp]] (also `ten_3D4O2sym_sp`; from [[muscle_tensor_4o2sym]]).
+    !! - `ten_3D4O3sym`:     3D fourth-order tensor with major and minor symmetries, alias of
+    !!                      [[ten_3D4O3sym_dp]] (also `ten_3D4O3sym_sp`; from [[muscle_tensor_4o3sym]]).
+    !! - `ten_3D4O`:         General (unsymmetric) 3D fourth-order tensor, 9x9 matrix, alias of
+    !!                      [[ten_3D4O_dp]] (also `ten_3D4O_sp`; from [[muscle_tensor_4o]]).
+    !! - `ten_2D2O`:         General 2D second-order tensor, alias of [[ten_2D2O_dp]]
+    !!                      (also `ten_2D2O_sp`; from [[muscle_tensor_2o]]).
+    !! - `ten_2D2Osym`:      Symmetric 2D second-order tensor, alias of [[ten_2D2Osym_dp]]
+    !!                      (also `ten_2D2Osym_sp`; from [[muscle_tensor_2osym]]).
+    !! - `ten_2D4O2sym`:     2D fourth-order tensor with minor symmetries, alias of
+    !!                      [[ten_2D4O2sym_dp]] (also `ten_2D4O2sym_sp`; from [[muscle_tensor_4o2sym]]).
+    !! - `ten_2D4O3sym`:     2D fourth-order tensor with major and minor symmetries, alias of
+    !!                      [[ten_2D4O3sym_dp]] (also `ten_2D4O3sym_sp`; from [[muscle_tensor_4o3sym]]).
+    !! - `ten_2D4O`:         General (unsymmetric) 2D fourth-order tensor, 5x5 matrix, alias of
+    !!                      [[ten_2D4O_dp]] (also `ten_2D4O_sp`; from [[muscle_tensor_4o]]).
+    !! - `iden_2O`:          Second-order identity \(\delta_{ij}\), valid for every kind and
+    !!                      dimension (from [[muscle_tensor_iden]]).
+    !! - `iden_2OS`:         Scaled second-order identity, alias of [[iden_2OS_dp]] (also
+    !!                      `iden_2OS_sp`; from [[muscle_tensor_iden]]).
+    !! - `iden_4O3T`:        Fourth-order identity of type 3, \(\delta_{ij}\delta_{kl}\), every kind
+    !!                      (from [[muscle_tensor_iden]]).
+    !! - `iden_4O3TS`:       Scaled type 3 identity, alias of [[iden_4O3TS_dp]] (also `iden_4O3TS_sp`).
+    !! - `iden_4O4T`:        Symmetric fourth-order identity (type 4), every kind (from
+    !!                      [[muscle_tensor_iden]]).
+    !! - `iden_4O4TS`:       Scaled type 4 identity, alias of [[iden_4O4TS_dp]] (also `iden_4O4TS_sp`).
+    !!   A scalar times an unscaled identity gives the scaled one of the kind of the scalar
+    !!   (`2.0_sp * iden_2O()` is an `iden_2OS_sp`); `I + I`, `I - I`, `-I` give `iden_2OS_dp`.
+    !!
+    !! ### Operators:
+    !!
+    !! The following operators are overloaded for various combinations of the public tensor types
+    !! and scalars of the same kind. Operations within a family come from its module
+    !! (`muscle_tensor_<family>`); operators between types from the `muscle_tensor_ops_*` modules,
+    !! generated from the pair table of `tools/fypp/muscle_meta.py`.
+    !!
+    !! - `+`: Addition (e.g., `tensor + tensor`).
+    !! - `-`: Subtraction (e.g., `tensor - tensor`).
+    !! - `*`: Multiplication (scalar * tensor, tensor * scalar, potentially tensor * tensor depending on definitions).
+    !! - `/`: Division (tensor / scalar).
+    !! - `.approx.`: Custom equality comparison for tensors (checks for approximate equality of components).
+    !! - `.dev.`: Deviatoric part of a second-order tensor.
+    !! - `.ddot.`: Double dot product (e.g., `tensor4 : tensor2`, `tensor2 : tensor2`).
+    !! - `.tdot.`: Tensor dot product (specific definition depends on implementation, often
+    !!   \( (A \otimes B)_{ijkl} = A_{ij} B_{kl} \) for second order).
+    !! - `.inv.`: Inverse of a tensor (every `ten_*` type, also as the method `%inv()`); quiet NaN if singular.
+    !! - `inverse`: `call inverse(a, a_inv, ok [, cond])`, inverse with a success flag and the condition number.
+    !! - `.tdotsym.`: Symmetrized dyadic product \( \frac{1}{2}(\mathbf{a}\otimes\mathbf{b} + \mathbf{b}\otimes\mathbf{a}) \).
+    !! - `.transform.`: Congruence transformation \( \mathbf{F}\cdot\mathbf{S}\cdot\mathbf{F}^T \) (2nd and 4th order).
+    !! - `transpose`: Transpose of a general second-order tensor.
+    !!
+    !! ### Assignment:
+    !!
+    !! - `=`: Overloaded assignment allows copying between compatible tensor types.
+    !!
+    !! Usage
+    !! -----
+    !!
+    !! To use the tensor types and operations defined here, simply add `use muscle_tensors`
+    !! to your Fortran code.
+    !!
+    !! ```fortran
+    !! program example_usage
+    !!   use muscle_tensors
+    !!   implicit none
+    !!
+    !!   type(ten_3D2Osym) :: stress, strain, stress_dev
+    !!   type(ten_3D4O3sym) :: C_elastic
+    !!   real(real64) :: scalar_val
+    !!
+    !!   ! ... initialize tensors ...
+    !!
+    !!   stress = C_elastic .ddot. strain  ! Double dot product via overloaded operator
+    !!   stress_dev = .dev. stress   ! Deviatoric part
+    !!   stress = stress + stress_dev * scalar_val ! Addition, multiplication
+    !!
+    !!   ! ... etc ...
+    !!
+    !! end program example_usage
+    !! ```
+
+    use, intrinsic :: iso_fortran_env
+    ! Types of every kind and the historical names, which are the double precision ones
+    #:for F in FAMILIES
+    use muscle_tensor_${F.lower()}$, only: ${', '.join(tname(d + F, k) for d in DIMS for k in REAL_KINDS)}$, &
+        & ${', '.join('{0} => {1}'.format(tname(d + F, 'dp')[:-3], tname(d + F, 'dp')) for d in DIMS)}$
+    #:endfor
+    use muscle_tensor_iden, only: ${', '.join(iname(X) for X in IDENTITIES)}$, &
+        & ${', '.join(iname(X + 'S', k) for X in IDENTITIES for k in REAL_KINDS)}$, &
+        & ${', '.join('{0} => {1}'.format(iname(X + 'S', 'dp')[:-3], iname(X + 'S', 'dp')) for X in IDENTITIES)}$
+    ! Operations defined with each family (the generics merge across modules)
+    use muscle_tensor_2osym, only: operator(.approx.), operator(+), operator(*), &
+        & operator(/), operator(.dev.), operator(.ddot.), operator(.inv.), assignment(=), inverse
+    use muscle_tensor_2o, only: operator(.approx.), operator(+), operator(*), &
+        & operator(/), operator(.dev.), operator(.ddot.), operator(.inv.), assignment(=), inverse, &
+        & transpose
+    #:for F in ['4O3sym', '4O2sym', '4O']
+    use muscle_tensor_${F.lower()}$, only: operator(.approx.), operator(+), &
+        & operator(*), operator(/), operator(.inv.), assignment(=), inverse
+    #:endfor
+    use muscle_tensor_iden, only: operator(+), operator(*), operator(/), operator(.approx.)
+    #:if defined('ENABLE_UDTIO')
+    use muscle_tensor_io, only: write(formatted)
+    #:endif
+    ! operator(-) only through muscle_tensor_minus (ifx: see the note there)
+    use muscle_tensor_minus, only: operator(-)
+    use muscle_tensor_ops_addition_subtraction, only: operator(+)
+    use muscle_tensor_ops_contraction_double
+    use muscle_tensor_ops_dyadic
+    use muscle_tensor_ops_contraction_single
+    use muscle_tensor_ops_assignment
+    use muscle_tensor_ops_transform
+    implicit None
+
+    public :: ten_3D2O
+    public :: ten_3D2Osym
+    public :: ten_2D2O
+    public :: ten_2D2Osym
+    public :: ten_3D4O3sym
+    public :: ten_2D4O3sym
+    public :: ten_2D4O2sym
+    public :: ten_2D4O
+    public :: ten_3D4O2sym
+    public :: ten_3D4O
+    public :: iden_2OS
+    public :: iden_2O
+    public :: iden_4O3TS
+    public :: iden_4O3T
+    public :: iden_4O4TS
+    public :: iden_4O4T
+    ! Types with an instance per kind (historical names above are the dp ones)
+    public :: ${', '.join(tname(d + '2Osym', k) for d in DIMS for k in REAL_KINDS)}$
+    public :: ${', '.join(tname(d + '2O', k) for d in DIMS for k in REAL_KINDS)}$
+    public :: ${', '.join(tname(d + '4O3sym', k) for d in DIMS for k in REAL_KINDS)}$
+    public :: ${', '.join(tname(d + '4O2sym', k) for d in DIMS for k in REAL_KINDS)}$
+    public :: ${', '.join(tname(d + '4O', k) for d in DIMS for k in REAL_KINDS)}$
+    ! Scaled identities, one per kind (the unscaled ones serve every kind)
+    public :: ${', '.join(iname(X + 'S', k) for X in IDENTITIES for k in REAL_KINDS)}$
+
+    private 
+
+    public :: operator(.approx.)
+    public :: operator(+)
+    public :: operator(-)
+    public :: operator(*)
+    public :: operator( / )
+    
+    public :: operator(.dev.)
+
+    public :: operator(.ddot.)
+
+    public :: operator(.tdot.)
+    public :: operator(.tdotsym.)
+    public :: operator(.inv.)
+    public :: inverse
+    public :: operator(.transform.)
+
+    public :: transpose
+    
+
+    public :: assignment (=)
+
+    #:if defined('ENABLE_UDTIO')
+    public :: write(formatted)
+    #:endif
+end module muscle_tensors

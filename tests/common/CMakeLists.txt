@@ -1,0 +1,1 @@
+add_muscle_fypp_test(fypp_smoke test_muscle_fypp_smoke.fypp)

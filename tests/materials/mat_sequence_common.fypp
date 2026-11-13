@@ -1,0 +1,440 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! Common part of the reference tests of the return mapping solvers on the declared materials (Phase 7,
+#! D-018): test_muscle_material_<solver>.fypp only declares its reference cases and tolerances.
+#!
+#! - dp (the tests that keep a reference, plan R, R6: the cases with a case number): within the tolerance
+#!   of its category (D-021) against every record of tests/reference/solvers/<solver>_dp.txt (captured from
+#!   the historical OO solvers, which the kernels reproduce bit for bit; D-018.18f): strain sequence
+#!   and first increment of muscle_test_solver_sequence, `result` (the OO result codes rebuilt from
+#!   status and iters), the analytic `tangent` and the numerical `tangent_num` (FD_JAC of the kernel
+#!   stress, the macro of the historical `derivative`). `<test> --write FILE` regenerates the file
+#!   (regenerate.sh there); `<test> --mutate rel` perturbs one parameter set by MUTATE_REL (ctest
+#!   `*_reference_mutation`) and `<test> --mutate ulp` by one ulp (`*_reference_mutation_strict`, strict mode).
+#! - sp: the same sequences converge where dp converges and agree with dp within the per-kind
+#!   tolerances of the test.
+#! - Both kinds: the analytic tangent of every converged plastic step against central finite
+#!   differences of the kernel stress (FD_JAC, tests/common/muscle_fd.fypp; no closures).
+#!
+#! The state goes from step to step through the FE history layout (`mat_pack_<name>` /
+#! `mat_unpack_<name>`, without the stress). The parameter sets by parameter set name are in
+#! case_params.py (same directory). The test program declares the tolerances `TOL_SP_STRESS`,
+#! `TOL_SP_STRAIN_P`, `TOL_SP_EP`, `TOL_SP_TANGENT`, `TOL_SP_FD` and `TOL_DP_FD` (the tangent checks use
+#! the largest of these and `solver_case%fd_tol`) and the array `CASES` of `solver_case`.
+#:set PARAMS = muscle_meta.load_python_file('case_params.py', base=_THIS_FILE_)
+#! Fortran statements setting the parameters of model (p, model) in variable `v` (kind `k`) to the reference
+#! set `name` of case_params.py, for a first line indented by the template and the others by `ind`
+#:set param_set = lambda p, model, name, v, k, ind: ('\n' + ' ' * ind).join( &
+    & st.format(v=v, k=k).replace('@@', '&\n' + ' ' * (ind + 4)) for st in PARAMS.CASE_PARAMS[(p, model)][name])
+#! Parameter perturbed by `--mutate` in a reference set: the field of its first statement if that is an
+#! assignment `{v}%<field> = ...` (None for an initializer call)
+#:set param_field = lambda stmts: stmts[0][4:].split(' = ')[0] if stmts and stmts[0].startswith('{v}%') else None
+#! Field of `solver_case` with the parameter set name of the model of each family
+#:set CASE_FIELD = {'yield': 'yld', 'os': 'visc', 'vp': 'visc', 'hard': 'hard', 'visco': 'elas'}
+#! State type of a material in kind k, and the component with its plastic state ('' or '%plastic')
+#:set state_t = lambda m, k: muscle_meta.material_state(muscle_meta.material(m), k)[1]
+#:set plastic_of = lambda m: '%plastic' if muscle_meta.material_visco(muscle_meta.material(m)) else ''
+#! Argument with the coefficients of the time step of a viscoelastic material ('' for the others)
+#:set coefs_arg = lambda m, name: ', ' + name if muscle_meta.material_visco(muscle_meta.material(m)) else ''
+#! Small strain materials of the test registry solved by a solver (the finite strain ones, D-018.15, are
+#! tested by test_muscle_material_kinematics.fypp)
+#:set solver_materials = lambda solver: [m.name for m in muscle_meta.load_materials() if m.solver == solver and m.kin is None]
+#! Whether the reference keys of a solver name an overstress / viscoplastic law
+#:set has_visc = lambda solver: any(p in ('os', 'vp') for p in muscle_meta.MATERIAL_SOLVERS[solver].families)
+
+#! `use` statements of a test of the materials `mats`
+#:def MAT_TEST_USES(mats)
+#:set yields = sorted({muscle_meta.material(m).yield_ for m in mats} & set(PARAMS.YIELD_USES))
+#:set viscos = sorted({muscle_meta.material(m).visco for m in mats} - {None})
+#:set state_mods = sorted({muscle_meta.material_state(muscle_meta.material(m), 'dp')[0] for m in mats})
+    use muscle_kinds, only : sp, dp
+    use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
+    use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
+    #:for mod in state_mods
+    #:set state_names = sorted({state_t(m, k) for m in mats for k in REAL_KINDS &
+        & if muscle_meta.material_state(muscle_meta.material(m), k)[0] == mod})
+    use ${mod}$, only : ${', '.join(state_names)}$
+    #:endfor
+    use muscle_elas_linear, only : elas_linear_init
+    #:for y in yields
+    use ${PARAMS.YIELD_USES[y][0]}$, only : ${', '.join(PARAMS.YIELD_USES[y][1])}$
+    #:endfor
+    #:for v in viscos
+    use ${PARAMS.VISCO_USES[v][0]}$, only : ${', '.join(PARAMS.VISCO_USES[v][1])}$
+    #:endfor
+    #:for m in mats
+    use ${muscle_meta.material_module(m)}$, only : mat_update, ${', '.join(muscle_meta.material_type(m, k) for k in REAL_KINDS)}$, &
+        mat_pack_${m}$, mat_unpack_${m}$, ${muscle_meta.material_nstate(m)}$${coefs_arg(m, 'mat_step')}$
+    #:endfor
+    #:if viscos
+    use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
+    #:endif
+    use muscle_test_reference, only : reference_init, reference_finish, REFERENCE_TOL_SOLVER
+    use muscle_test_utils, only : check_approx, check_true
+    use muscle_test_solver_sequence, only : NSTEP, seq_strain, first_strain, step_key, record_result, record_tangent, &
+        mutation_requested, mutation_ulp, mutate_name, MUTATE_REL
+#:enddef
+
+#! Declarations of a test: result codes of the OO solvers, the reference case type and the result of the
+#! checks
+#:def MAT_TEST_DECLS()
+    integer, parameter :: OO_ELASTIC = 0, OO_CONVERGED = 1, OO_NONCONVERGED = 2
+        !! Result codes of the historical OO solvers recorded in the reference.
+
+    type :: solver_case
+        !! A case of the reference test reproduced by a material of the registry.
+        integer :: ic
+            !! Case number in the reference test (0: no reference case, only the sp and tangent checks).
+        character(len=32) :: material
+            !! Material of the registry.
+        character(len=8) :: elas
+            !! Elasticity (`lin1000` or `steel`, linear with nu = 0.3; `maxwell` or `kelvin`, the frozen
+            !! elasticity of a viscoelastic model).
+        character(len=8) :: visc
+            !! Overstress or viscoplastic law (parameter set name; '' if the solver uses none).
+        character(len=12) :: hard
+            !! Hardening law (parameter set name; '-' if the viscoplastic law composes none).
+        character(len=12) :: yld
+            !! Yield criterion (parameter set name).
+        integer :: iter_nw
+            !! Newton iteration limit.
+        real(dp) :: dt
+            !! Time step (ignored by a rate-independent solver).
+        real(dp) :: a_y
+            !! Yield strain A_Y of the strain sequence.
+        real(dp) :: fd_tol = 0.0_dp
+            !! Tolerance of the analytic tangent against finite differences, both kinds (relative; the
+            !! largest of this and TOL_DP_FD / TOL_SP_FD).
+        logical :: check_sp = .true.
+            !! Run the sp checks (dp only otherwise).
+        integer :: iters_exact = -1
+            !! Iterations of every converged plastic step, both kinds, when the solver needs a known
+            !! number (-1: not checked); `iters` = 0 exactly when the equivalent plastic strain does not
+            !! change.
+    end type solver_case
+    logical :: passed
+#:enddef
+
+#! Main program of a test: every case of CASES (in the order of the reference cases: the records are
+#! written in that order) with its material, the coverage of the registry and every reference record;
+#! `reference`: the reference file under tests/reference, or None (no reference records: every case has
+#! case number 0, only the sp, tangent and coverage checks); `mutate`: the parameter set perturbed by
+#! `--mutate`; `extra`: a subroutine of the test called after the cases (more records), or None
+#:def MAT_TEST_MAIN(name, reference, mats, mutate=None, extra=None)
+    integer :: i
+
+    passed = .true.
+    #:if reference
+    if (mutation_requested()) mutate_name = '${mutate}$'
+    call reference_init('${reference}$', tol=REFERENCE_TOL_SOLVER)
+    #:else
+    if (any(CASES%ic /= 0)) error stop '${name}$: a case with a case number but no reference file'
+    #:endif
+    do i = 1, size(CASES)
+        select case (trim(CASES(i)%material))
+        #:for m in mats
+        case ('${m}$')
+            call run_${m}$(CASES(i))
+        #:endfor
+        case default
+            error stop '${name}$: CASES names a material that is not in the registry'
+        end select
+    end do
+    #:if extra
+    call ${extra}$()
+    #:endif
+    #:for m in mats
+    call check_true(passed, 'material ${m}$ has a case (add a solver_case for it, case number 0, to CASES in ' // &
+        '${name}$.fypp)', any(CASES%material == '${m}$'))
+    #:endfor
+    if (.not. passed) then
+        print '(a)', ' FAIL: ${name}$ (sp, tangent or coverage checks)'
+        stop 5
+    end if
+    #:if reference
+    call reference_finish()
+    #:endif
+#:enddef
+
+#! Procedures of a test program for the materials `mats`: `make_<m>_<k>(c, mat)` builds the material
+#! with the parameters of a `solver_case`; `fd_check_<m>_<k>(label, mat, strain, dt[, coefs], state_n,
+#! tangent, tol)` checks an analytic tangent against central finite differences of the kernel stress,
+#! for every material (`fd_check` True), none (False) or those listed (`<m>` in every kind, `<m>:<k>` in
+#! kind k)
+#:def MAT_CASE_PROCS(mats, fd_check=True)
+    #:for k in REAL_KINDS
+    #:for m in mats
+    #:set mat = muscle_meta.material(m)
+    #:set comps = muscle_meta.material_components(mat)
+    #:set fd_on = fd_check is True or (fd_check is not False and (m in fd_check or m + ':' + k in fd_check))
+
+    subroutine make_${m}$_${k}$(c, mat)
+        !! Material `${m}$` with the parameters of the reference case `c`, `real(${k}$)`.
+        type(solver_case), intent(in) :: c
+        type(${muscle_meta.material_type(m, k)}$), intent(out) :: mat
+        integer :: status
+        #:if not mat.visco
+        call elas_linear_init(mat%elas, young=merge(210000.0_${k}$, 1000.0_${k}$, c%elas == 'steel'), &
+            poisson=0.3_${k}$, status=status)
+        if (status /= STATUS_OK) error stop 'elas_linear_init failed'
+        #:endif
+        #:for p, model in comps
+        #:if p != 'elas'
+        #:if (p, model) not in PARAMS.CASE_PARAMS
+        #:stop 'no reference parameter sets for ' + p + ' ' + model + ': add the entry (' + repr(p) + ', ' + repr(model) &
+            & + ') to CASE_PARAMS in tests/materials/case_params.py'
+        #:endif
+        select case (trim(c%${CASE_FIELD[p]}$))
+        #:for name in PARAMS.CASE_PARAMS[(p, model)]
+        case ('${name}$')
+            #:if PARAMS.CASE_PARAMS[(p, model)][name]
+            ${param_set(p, model, name, 'mat%' + p, k, 12)}$
+            #:endif
+            #:set mf = param_field(PARAMS.CASE_PARAMS[(p, model)][name])
+            #:if mf
+            if (trim(mutate_name) == '${name}$') then
+                if (mutation_ulp()) then
+                    mat%${p}$%${mf}$ = nearest(mat%${p}$%${mf}$, 1.0_${k}$)
+                else
+                    mat%${p}$%${mf}$ = mat%${p}$%${mf}$*(1.0_${k}$ + real(MUTATE_REL, ${k}$))
+                end if
+            end if
+            #:endif
+        #:endfor
+        case default
+            error stop 'make_${m}$_${k}$: no ${p}$ parameters for the parameter set name ' // trim(c%${CASE_FIELD[p]}$)
+        end select
+        #:endif
+        #:endfor
+        mat%iter_nw = c%iter_nw
+    end subroutine make_${m}$_${k}$
+    #:if fd_on
+
+    pure function stress_${m}$_${k}$(mat, strain, dt${coefs_arg(m, 'coefs')}$, state_n) result(stress)
+        !! Stress of the kernel of `${m}$` from `state_n` (the function differentiated by FD_JAC).
+        type(${muscle_meta.material_type(m, k)}$), intent(in) :: mat
+        type(${tname('3D2Osym', k)}$), intent(in) :: strain
+        real(${k}$), intent(in) :: dt
+        #:if mat.visco
+        type(visco_coefs_${k}$), intent(in) :: coefs
+        #:endif
+        type(${state_t(m, k)}$), intent(in) :: state_n
+        type(${tname('3D2Osym', k)}$) :: stress
+        type(${state_t(m, k)}$) :: state_np1
+        type(${tname('3D4O2sym', k)}$) :: tangent
+        integer :: status, iters
+        call mat_update(mat, strain, dt${coefs_arg(m, 'coefs')}$, state_n, state_np1, stress, tangent, status, iters)
+    end function stress_${m}$_${k}$
+
+    subroutine fd_check_${m}$_${k}$(label, mat, strain, dt${coefs_arg(m, 'coefs')}$, state_n, tangent, tol)
+        !! Analytic tangent of `${m}$` against the central finite differences of its stress, `real(${k}$)`.
+        character(len=*), intent(in) :: label
+        type(${muscle_meta.material_type(m, k)}$), intent(in) :: mat
+        type(${tname('3D2Osym', k)}$), intent(in) :: strain
+        real(${k}$), intent(in) :: dt
+        #:if mat.visco
+        type(visco_coefs_${k}$), intent(in) :: coefs
+        #:endif
+        type(${state_t(m, k)}$), intent(in) :: state_n
+        type(${tname('3D4O2sym', k)}$), intent(in) :: tangent
+        real(${k}$), intent(in) :: tol
+        type(${tname('3D4O2sym', k)}$) :: tn
+        @:FD_JAC(tn, stress_${m}$_${k}$(mat, {x}, dt${coefs_arg(m, 'coefs')}$, state_n), strain, ${k}$, 3D)
+        call check_approx(passed, label // ' analytic vs FD tangent (${k}$)', tangent%vals, tn%vals, tol)
+    end subroutine fd_check_${m}$_${k}$
+    #:endif
+    #:endfor
+    #:endfor
+#:enddef
+
+#! Reference record `tangent_num` of a step of material `m` from the state at t_n (inside run_<m>)
+#:def NUM_TANGENT(m)
+@:FD_JAC(tan_num, num_stress_${m}$(mat_dp, {x}, c%dt${coefs_arg(m, 'coefs_dp')}$, sn_dp), strain_dp, dp, 3D, indent=20)
+                    call record_tangent(key, 'tangent_num', tan_num)
+#:enddef
+
+#! Procedures of the test program for the materials `mats` of solver `solver`; `tag`: first field of
+#! the reference keys; `reference_tangent`: the steps whose analytic tangent the reference test records,
+#! 'always', 'plastic' (iters > 0) or None (the historical solver has no tangent); `zero_stress`: the OO
+#! solver returns a zero stress when it does not converge (D-017.14f: the kernel returns the last
+#! iterate, so the record is rebuilt with a zero stress); `flag_codes`: the reference records an error
+#! flag (1 when not converged, else 0) and 0 iterations instead of the OO result codes; `fd_check`:
+#! check the tangent against finite differences; `tangent_num`: the reference records the numerical
+#! tangent of every step (central differences of the stress from the state at t_n, D-018.18h) 'after'
+#! or 'before' the analytic tangent (the order of the records), or None.
+#:def MAT_TEST_PROCS(solver, mats, tag, reference_tangent, zero_stress, flag_codes=False, fd_check=True, tangent_num=None)
+#:if reference_tangent not in ('always', 'plastic', None)
+#:stop 'MAT_TEST_PROCS: reference_tangent must be always, plastic or None, not {}'.format(reference_tangent)
+#:endif
+#:if tangent_num not in ('after', 'before', None)
+#:stop 'MAT_TEST_PROCS: tangent_num must be after, before or None, not {}'.format(tangent_num)
+#:endif
+$:MAT_CASE_PROCS(mats, fd_check)
+    #:for m in mats
+    #:set PS = plastic_of(m)
+    #:if tangent_num
+
+    function num_stress_${m}$(mat, strain, dt${coefs_arg(m, 'coefs')}$, state_n) result(stress)
+        !! Stress of the kernel of `${m}$` from `state_n` as the historical solver returns it (the
+        !! function of the reference numerical tangent), `real(dp)`.
+        type(${muscle_meta.material_type(m, 'dp')}$), intent(in) :: mat
+        type(${tname('3D2Osym', 'dp')}$), intent(in) :: strain
+        real(dp), intent(in) :: dt
+        #:if PS
+        type(visco_coefs_dp), intent(in) :: coefs
+        #:endif
+        type(${state_t(m, 'dp')}$), intent(in) :: state_n
+        type(${tname('3D2Osym', 'dp')}$) :: stress
+        type(${state_t(m, 'dp')}$) :: state_np1
+        type(${tname('3D4O2sym', 'dp')}$) :: tangent
+        integer :: status, iters
+        call mat_update(mat, strain, dt${coefs_arg(m, 'coefs')}$, state_n, state_np1, stress, tangent, status, iters)
+        #:if zero_stress
+        if (status /= STATUS_OK) stress%vals = 0.0_dp
+        #:endif
+    end function num_stress_${m}$
+    #:endif
+
+    subroutine run_${m}$(c)
+        !! Reference case `c` with material `${m}$`: the strain sequence and the first increment in dp
+        !! (reference, unless c%ic = 0) and sp (against dp), with the finite difference checks of the
+        !! tangent.
+        type(solver_case), intent(in) :: c
+        #:for k in REAL_KINDS
+        type(${muscle_meta.material_type(m, k)}$) :: mat_${k}$
+        type(${state_t(m, k)}$) :: sn_${k}$, snp1_${k}$
+        type(${tname('3D2Osym', k)}$) :: strain_${k}$, stress_${k}$
+        type(${tname('3D4O2sym', k)}$) :: tan_${k}$
+        integer :: status_${k}$, iters_${k}$
+        real(${k}$) :: hsv_${k}$(${muscle_meta.material_nstate(m)}$)
+        #:if PS
+        type(visco_coefs_${k}$) :: coefs_${k}$
+        #:endif
+        #:endfor
+        type(${tname('3D2Osym', 'dp')}$) :: stress_rec
+        #:if tangent_num
+        type(${tname('3D4O2sym', 'dp')}$) :: tan_num
+        #:endif
+        character(len=:), allocatable :: key, prefix
+        character(len=8) :: buf
+        integer :: is, s0, s1, pass_first
+        logical :: first
+
+        write(buf, '(i0)') c%ic
+        #:if has_visc(solver)
+        prefix = '${tag}$ | ' // trim(buf) // ' ' // trim(c%elas) // ' ' // trim(c%visc) // '+' // &
+            trim(c%hard) // ' ' // trim(c%yld)
+        #:else
+        prefix = '${tag}$ | ' // trim(buf) // ' ' // trim(c%elas) // ' ' // trim(c%hard) // ' ' // trim(c%yld)
+        #:endif
+        #:for k in REAL_KINDS
+        call make_${m}$_${k}$(c, mat_${k}$)
+        #:if PS
+        ! Coefficients of the time step: once for every step of the case (constant dt)
+        call mat_step(mat_${k}$, real(c%dt, ${k}$), coefs_${k}$, status_${k}$)
+        if (status_${k}$ /= STATUS_OK) error stop 'run_${m}$: mat_step failed (${k}$)'
+        #:endif
+        #:endfor
+        do pass_first = 0, 1
+            first = pass_first == 1
+            #:for k in REAL_KINDS
+            sn_${k}$ = ${state_t(m, k)}$()
+            #:endfor
+            s0 = merge(-1, 0, first)
+            s1 = merge(-1, NSTEP - 1, first)
+            do is = s0, s1
+                key = step_key(prefix, is)
+                if (first) then
+                    strain_dp = first_strain(c%a_y)
+                else
+                    strain_dp = seq_strain(is, c%a_y)
+                end if
+                #:if 'sp' in REAL_KINDS
+                strain_sp%vals = real(strain_dp%vals, sp)
+                #:endif
+                #:for k in REAL_KINDS
+                call mat_update(mat_${k}$, strain_${k}$, real(c%dt, ${k}$)${coefs_arg(m, 'coefs_' + k)}$, sn_${k}$, &
+                    snp1_${k}$, stress_${k}$, tan_${k}$, status_${k}$, iters_${k}$)
+                #:endfor
+                ! dp: the reference records of the OO solver
+                if (c%ic > 0) then
+                    stress_rec = stress_dp
+                    #:if zero_stress
+                    if (status_dp /= STATUS_OK) stress_rec%vals = 0.0_dp
+                    #:endif
+                    #:if flag_codes
+                    call record_result(key, strain_dp, stress_rec, snp1_dp${PS}$%strain_pf, snp1_dp${PS}$%strain_p, &
+                        merge(1, 0, status_dp /= STATUS_OK), 0)
+                    #:else
+                    call record_result(key, strain_dp, stress_rec, snp1_dp${PS}$%strain_pf, snp1_dp${PS}$%strain_p, &
+                        oo_status(status_dp, iters_dp), iters_dp)
+                    #:endif
+#:if tangent_num == 'before'
+$:NUM_TANGENT(m)
+#:endif
+                    #:if reference_tangent == 'always'
+                    call record_tangent(key, 'tangent', tan_dp)
+                    #:elif reference_tangent == 'plastic'
+                    if (iters_dp > 0) call record_tangent(key, 'tangent', tan_dp)
+                    #:endif
+#:if tangent_num == 'after'
+$:NUM_TANGENT(m)
+#:endif
+                end if
+                #:for k in REAL_KINDS
+                if (c%iters_exact >= 0 .and. status_${k}$ == STATUS_OK) then
+                    call check_true(passed, key // ' iters (${k}$)', (iters_${k}$ == 0 .or. iters_${k}$ == c%iters_exact) &
+                        .and. ((iters_${k}$ == 0) .eqv. (snp1_${k}$${PS}$%strain_pf == sn_${k}$${PS}$%strain_pf)))
+                end if
+                #:endfor
+                #:if fd_check
+                if (status_dp == STATUS_OK .and. iters_dp > 0) then
+                    call fd_check_${m}$_dp(key, mat_dp, strain_dp, c%dt${coefs_arg(m, 'coefs_dp')}$, sn_dp, tan_dp, &
+                        max(TOL_DP_FD, c%fd_tol))
+                end if
+                #:endif
+                #:if 'sp' in REAL_KINDS
+                ! sp: converges where dp converges, elastic where dp is elastic, agrees with dp
+                if (c%check_sp) then
+                    call check_true(passed, key // ' sp status', status_sp == status_dp .or. &
+                        (status_dp == STATUS_NOT_CONVERGED .and. status_sp == STATUS_OK))
+                    if (status_dp == STATUS_OK) then
+                        call check_true(passed, key // ' sp elastic', (iters_sp == 0) .eqv. (iters_dp == 0))
+                        call check_approx(passed, key // ' sp stress', stress_sp%vals, real(stress_dp%vals, sp), &
+                            TOL_SP_STRESS)
+                        call check_approx(passed, key // ' sp strain_p', snp1_sp${PS}$%strain_p%vals, &
+                            real(snp1_dp${PS}$%strain_p%vals, sp), TOL_SP_STRAIN_P)
+                        call check_approx(passed, key // ' sp ep', [snp1_sp${PS}$%strain_pf], &
+                            [real(snp1_dp${PS}$%strain_pf, sp)], TOL_SP_EP)
+                        call check_approx(passed, key // ' sp tangent', tan_sp%vals, real(tan_dp%vals, sp), &
+                            TOL_SP_TANGENT)
+                        #:if fd_check
+                        if (iters_sp > 0) then
+                            call fd_check_${m}$_sp(key, mat_sp, strain_sp, real(c%dt, sp)${coefs_arg(m, 'coefs_sp')}$, &
+                                sn_sp, tan_sp, max(TOL_SP_FD, real(c%fd_tol, sp)))
+                        end if
+                        #:endif
+                    end if
+                end if
+                #:endif
+                #:for k in REAL_KINDS
+                call mat_pack_${m}$(snp1_${k}$, hsv_${k}$)
+                call mat_unpack_${m}$(hsv_${k}$, sn_${k}$)
+                #:endfor
+            end do
+        end do
+    end subroutine run_${m}$
+    #:endfor
+
+    pure integer function oo_status(status, iters)
+        !! Result code of the historical OO solver from the status and iterations of the kernel.
+        integer, intent(in) :: status, iters
+        if (status /= STATUS_OK) then
+            oo_status = OO_NONCONVERGED
+        else if (iters == 0) then
+            oo_status = OO_ELASTIC
+        else
+            oo_status = OO_CONVERGED
+        end if
+    end function oo_status
+#:enddef

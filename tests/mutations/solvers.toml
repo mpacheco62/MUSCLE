@@ -1,0 +1,15 @@
+# Mutation check of the return mapping solvers (tools/mutation_check.py solvers)
+sources = ["src/solvers/muscle_*.fypp"]
+# Reduced reference (plan R, R6): only closest_point_time (cases 3 and 6, 50 records) and closest_point_perzyna
+# (case 6, 27 records) keep reference records; closest_point, closest_point_2 and cutting_plane have none (1 557
+# records before). How it was measured (--samples all, 200 mutations, 2026-11-09): the original five tests with
+# the full reference as the `reference` group (temporary copies), and as `unit` the unit tests below plus the
+# five reduced tests: the full reference killed 130, all of them also killed by the unit + reduced set
+# (CRITERION: OK). The unit tests alone kill 117 of the 130; the other 13 change only the iteration path of a
+# Newton loop (relaxation factor and multiplier clipping of closest_point_time, the plastic strain residual
+# norm of its convergence check, the backtracking line search and merit function of closest_point_perzyna),
+# which has no independent truth: only the reduced reference detects them. With this file the check reports
+# those 13 as killed only by the reference (expected).
+reference = "^materials-mat_(closest_point_perzyna|closest_point_time)$"
+unit = "^materials-mat_(closest_point|closest_point_2|cutting_plane|solver_checks|perzyna_checks|cp_anisotropic|cp2_singular|visco_errors|return_mapping)$"
+samples = 50

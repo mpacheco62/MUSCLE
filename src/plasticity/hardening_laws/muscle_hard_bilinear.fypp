@@ -1,0 +1,76 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_hard_bilinear
+    !! Bilinear (linear isotropic) hardening law:
+    !! \[ \sigma_y(\epsilon_p) = \sigma_{y0} + K \epsilon_p, \quad
+    !!    \frac{d\sigma_y}{d\epsilon_p} = K, \quad \frac{d^2\sigma_y}{d\epsilon_p^2} = 0 \]
+    !! (perfect plasticity with \( K = 0 \), softening with \( K < 0 \)).
+    !!
+    !! Kernel API: parameter types `hard_bilinear_<k>` and `pure` functions
+    !! `hard_stress_bilinear_<k>(prm, ep)`, `hard_dstress_dep_bilinear_<k>(prm, ep)` and
+    !! `hard_ddstress_ddep_bilinear_<k>(prm, ep)` for each real kind, also through the generics
+    !! `hard_stress`, `hard_dstress_dep` and `hard_ddstress_ddep` of `muscle_hard_laws`.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: hard_bilinear_${k}$
+    public :: hard_stress_bilinear_${k}$, hard_dstress_dep_bilinear_${k}$, hard_ddstress_ddep_bilinear_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    type :: hard_bilinear_${k}$
+        !! Parameters of the bilinear model in `real(${k}$)`.
+        real(${k}$) :: y0
+            !! Initial yield stress \( \sigma_{y0} \).
+        real(${k}$) :: K
+            !! Hardening modulus \( K \).
+    end type hard_bilinear_${k}$
+
+    #:endfor
+contains
+    #:for k in REAL_KINDS
+    pure function hard_stress_bilinear_${k}$(prm, ep) result(res)
+        !! Flow stress \( \sigma_y(\epsilon_p) \) of the bilinear model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_bilinear_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( \sigma_y \).
+        res = prm%y0 + prm%K*ep
+    end function hard_stress_bilinear_${k}$
+
+    pure function hard_dstress_dep_bilinear_${k}$(prm, ep) result(res)
+        !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the bilinear model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_bilinear_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d\sigma_y/d\epsilon_p \).
+        res = prm%K
+    end function hard_dstress_dep_bilinear_${k}$
+
+    pure function hard_ddstress_ddep_bilinear_${k}$(prm, ep) result(res)
+        !! Second derivative \( d^2\sigma_y/d\epsilon_p^2 \) of the bilinear model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(hard_bilinear_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$) :: res
+            !! \( d^2\sigma_y/d\epsilon_p^2 \).
+        res = 0.0_${k}$
+    end function hard_ddstress_ddep_bilinear_${k}$
+
+    #:endfor
+end module muscle_hard_bilinear

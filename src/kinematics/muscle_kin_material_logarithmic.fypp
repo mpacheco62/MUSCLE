@@ -1,0 +1,167 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_kin_material_logarithmic
+    !! Module muscle_kin_material_logarithmic
+    !! ======================================
+    !! Kinematic strategy using Material Hencky strain H = ln(U) = 0.5*ln(C).
+    !! Conjugate stress is Rotated Kirchhoff stress tau_R.
+    !!
+    !! The rotated Kirchhoff stress is converted to Cauchy with the rotation of the polar
+    !! decomposition, \( \boldsymbol\sigma = J^{-1}\mathbf{R}\boldsymbol\tau_R\mathbf{R}^T \), and the
+    !! constitutive tangent \( d\boldsymbol\tau_R/d\mathbf{H} \) to the spatial one with
+    !! the derivative of \( \ln\mathbf{C} \) and the rotation R (`kin_log_tangent`, divided by J;
+    !! formerly only \( c_{ijkl} = J^{-1} R_{iI} R_{jJ} R_{kK} R_{lL} C_{IJKL} \), still its value
+    !! with C = I); the geometric term at a fixed rotated Kirchhoff stress is the spin of R
+    !! (`kin_spin_tangent`). The Hencky strain drops the eigenvalues of C at or below
+    !! `KIN_EIG_MIN_<k>` (which also give `STATUS_INVALID_DEFORMATION`).
+    !!
+    !! Kernel API: the (empty) parameter type `kin_material_logarithmic_<k>` and the
+    !! `pure` procedures `kin_update_material_logarithmic_<k>(prm, F, state, status)` (one spectral
+    !! decomposition of C for the rotation and the strain),
+    !! `kin_to_cauchy_material_logarithmic_<k>(prm, state, stress)`,
+    !! `kin_to_spatial_tangent_material_logarithmic_<k>(prm, state, tangent)`,
+    !! `kin_geometric_tangent_material_logarithmic_<k>(prm, state, stress)` and
+    !! `kin_is_finite_strain_material_logarithmic_<k>(prm)`, also through the generics `kin_*` of
+    !! muscle_kin_laws.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    #:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2O_${k}$, ten_3D2Osym_${k}$, ten_3D4O2sym_${k}$
+    use muscle_kin_finite, only : kin_state_${k}$
+    #:endfor
+    use muscle_tensors, only : operator(.transform.), operator(/)
+    use muscle_kin_finite, only : kin_finite_update, kin_log_measure, kin_log_tangent, kin_spin_tangent
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: kin_material_logarithmic_${k}$
+    public :: kin_update_material_logarithmic_${k}$
+    public :: kin_update_norot_material_logarithmic_${k}$
+    public :: kin_to_cauchy_material_logarithmic_${k}$
+    public :: kin_to_spatial_tangent_material_logarithmic_${k}$
+    public :: kin_geometric_tangent_material_logarithmic_${k}$
+    public :: kin_is_finite_strain_material_logarithmic_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    type :: kin_material_logarithmic_${k}$
+        !! Parameters of the material logarithmic model in `real(${k}$)`.
+    end type kin_material_logarithmic_${k}$
+
+    #:endfor
+contains
+    #:for k in REAL_KINDS
+
+    pure subroutine kin_update_material_logarithmic_${k}$(prm, F, state, status)
+        !! Kinematic state of a deformation gradient \( \mathbf{F} \) (the deformation gradient is validated) of the material
+        !! logarithmic model in `real(${k}$)`.
+        !! Strain: material Hencky \( \mathbf{H} = \tfrac{1}{2}\ln\mathbf{C} \), from the spectral decomposition of the rotation.
+        implicit none
+        @:DEVICE()
+        type(kin_material_logarithmic_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2O_${k}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state (not valid when `status` is not `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (muscle_status).
+        real(${k}$) :: eig(3)
+        type(ten_3D2Osym_${k}$) :: proj(3)
+
+        call kin_finite_update(F, state, status, eig, proj)
+        state%strain = kin_log_measure(eig, proj)
+    end subroutine kin_update_material_logarithmic_${k}$
+
+    pure subroutine kin_update_norot_material_logarithmic_${k}$(prm, F, state, status)
+        !! `kin_update` without the polar decomposition: the rotation R of the state is the identity, unless the
+        !! functions of the kinematics read it (`KINEMATICS_ROTATION`: then the same state as `kin_update`); every other component
+        !! and `status` are the same bits of the material logarithmic model in `real(${k}$)`.
+        !! The same as `kin_update` (its conversions read R (KINEMATICS_ROTATION)).
+        implicit none
+        @:DEVICE()
+        type(kin_material_logarithmic_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2O_${k}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state without R (not valid when `status` is not `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (muscle_status).
+
+        call kin_update_material_logarithmic_${k}$(prm, F, state, status)
+    end subroutine kin_update_norot_material_logarithmic_${k}$
+
+    pure function kin_to_cauchy_material_logarithmic_${k}$(prm, state, stress) result(res)
+        !! Cauchy stress from the constitutive stress (work conjugate of the strain of the kinematics) of the material logarithmic
+        !! model in `real(${k}$)`.
+        !! Rotated Kirchhoff stress to Cauchy, \( J^{-1}\mathbf{R}\boldsymbol\tau_R\mathbf{R}^T \).
+        implicit none
+        @:DEVICE()
+        type(kin_material_logarithmic_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D2Osym_${k}$), intent(in) :: stress
+            !! Constitutive stress.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Cauchy stress \( \boldsymbol\sigma \).
+
+        res = (state%R .transform. stress) / state%J
+    end function kin_to_cauchy_material_logarithmic_${k}$
+
+    pure function kin_to_spatial_tangent_material_logarithmic_${k}$(prm, state, tangent) result(res)
+        !! Spatial tangent from the constitutive tangent: the part of \(
+        !! J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) through the constitutive stress, for \( \delta\mathbf{F}
+        !! = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (with the derivative of the strain measure; without the
+        !! geometric term) of the material logarithmic model in `real(${k}$)`.
+        !! Through the derivative of \( \ln\mathbf{C} \), rotated with R (`kin_log_tangent`), divided by J.
+        implicit none
+        @:DEVICE()
+        type(kin_material_logarithmic_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D4O2sym_${k}$), intent(in) :: tangent
+            !! Constitutive tangent.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Spatial tangent.
+
+        res = kin_log_tangent(state, tangent) / state%J
+    end function kin_to_spatial_tangent_material_logarithmic_${k}$
+
+    pure function kin_geometric_tangent_material_logarithmic_${k}$(prm, state, stress) result(res)
+        !! Geometric term of the spatial tangent: the part of \( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) at
+        !! a fixed constitutive stress; `to_spatial_tangent` plus this is the tangent of the Jaumann rate of the
+        !! Kirchhoff stress of the material logarithmic model in `real(${k}$)`.
+        !! The spin of R at a fixed rotated Kirchhoff stress (`kin_spin_tangent`).
+        implicit none
+        @:DEVICE()
+        type(kin_material_logarithmic_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D2Osym_${k}$), intent(in) :: stress
+            !! Cauchy stress.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Geometric term.
+
+        res = kin_spin_tangent(state, stress)
+    end function kin_geometric_tangent_material_logarithmic_${k}$
+
+    pure function kin_is_finite_strain_material_logarithmic_${k}$(prm) result(res)
+        !! Whether the kinematics is a finite strain one of the material logarithmic model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(kin_material_logarithmic_${k}$), intent(in) :: prm
+            !! Parameters.
+        logical :: res
+            !! `.true.` for a finite strain kinematics.
+
+        res = .true.
+    end function kin_is_finite_strain_material_logarithmic_${k}$
+    #:endfor
+
+end module muscle_kin_material_logarithmic

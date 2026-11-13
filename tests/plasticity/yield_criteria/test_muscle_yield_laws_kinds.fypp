@@ -1,0 +1,1320 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#!
+#! Kernel API of the yield criteria (D-017) in every kind: von Mises, Hill48, Drucker-Prager, CPB06,
+#! CPB06ex2 and Yld2004 through the family generics of muscle_yield_laws:
+#! - dp: the equivalent stress against closed forms (von Mises sqrt(3 J2), Hill48 quadratic form,
+#!   isotropic CPB06, CPB06ex2 and Yld2004 = von Mises, Drucker-Prager with beta = 0 and K = 1 = von
+#!   Mises), positive homogeneity, and the analytical gradient and Hessian
+#!   against central differences (of stress_eq and of the analytical gradient), computed here;
+#! - sp against dp from the same inputs (the sp parameters and stresses converted to dp);
+#! - sp over magnitude ranges (CPB06, CPB06ex2 and Yld2004 scaled by max |lambda|, D-017.10c,
+#!   |sigma| 1e-8..1e5 (since D-032 without the threshold of eigenvals); Drucker-Prager with its stable
+#!   Hessian, D-017.11d, 1e-8..1e12; von Mises Hessian with n = dev/seq, D-017.10d);
+#! - null equivalent stress (zero and hydrostatic stresses): f = 0 and zero derivatives, no NaN
+#!   (D-017.9); CPB06 on hydrostatic stresses that are not exact in binary (f = 0 exactly, D-032); Yld2004 on
+#!   hydrostatic stresses (not exactly pressure insensitive: f tiny, finite gradient); Drucker-Prager
+#!   at zero and hydrostatic stresses of both signs (f = tan(beta) f_factor p, constant gradient,
+#!   zero Hessian; pressure added to general states);
+#! - joint evaluation (default: the three functions in turn, same bits; Yld2004: its own, same bits as
+#!   the three functions; with and without the optional second derivative, D-017.10a), its flag
+#!   (true only for Yld2004) and the generics = specifics;
+#! - the finite-difference derivatives (FD_GRAD and FD_HESS)
+#!   on a test-only criterion (Hill48 written with stress_eq only, with its own joint
+#!   evaluation), against the analytical Hill48 derivatives; the kernel types with
+#!   derived parameters are built only with their initializers (private components, D-017.10b; the
+#!   compile-fail checks are the ctests *_private_params);
+#! - `pure`, `@:DEVICE()` point procedures that call the generics;
+#! - isotropic CPB06 with a = 2 and k = +-1 at pure shears (t, 0, -t principal values, exact): f and
+#!   gradient against closed forms in every kind, Hessian (dp) against central differences across the
+#!   null principal value (documented mean curvature) and on the flat side of psi; at t = 1 the sum
+#!   Phi of the scaled principal values is exactly 1.
+#! Tolerances (relative to the largest component; scalars relative to max(1, |f|)), measured
+#! maximum x ~10:
+#! - FD_REF: central differences of this test (step 1e-5 |sigma|) against the analytical dp
+#!   derivatives (measured 7.8e-10 gradient, 1.6e-9 Hessian, CPB06 with a = 8; Yld2004 1.3e-9 and
+#!   CPB06ex2 9.3e-10 Hessian; the states where Sigma has a null principal value are skipped for
+#!   CPB06 with k /= 0, see below);
+#! - TOL_K: sp against dp, also over the magnitude sweeps (CPB06, CPB06ex2 and Yld2004 |sigma|
+#!   1e-8..1e5 (see test_vs_dp), Drucker-Prager 1e-8..1e12, von
+#!   Mises 1e-15..1e15) (measured 5.6e-7 stress_eq, Drucker-Prager; 6.3e-7 gradient and 1.7e-6 Hessian,
+#!   CPB06ex2);
+#! - FD_TOL: FD_GRAD/FD_HESS against the analytical derivatives with the default steps of FD_GRAD and
+#!   FD_HESS (measured sp 1.1e-4 / 4.7e-3, dp 1.1e-10 / 1.2e-7).
+#:set TOL_K = {'sp': {'f': '3.0e-6', 'df': '1.0e-5', 'ddf': '1.0e-5'}, 'dp': {'f': '0.0', 'df': '0.0', 'ddf': '0.0'}}
+#:set FD_TOL = {'sp': {'d1': '1.0e-3', 'd2': '5.0e-2'}, 'dp': {'d1': '1.0e-9', 'd2': '1.0e-6'}}
+#:set FD_REF = '2.0e-8'
+#! Test-only criterion: Hill48 with stress_eq only (derivatives by FD_GRAD and FD_HESS)
+#:set LAY4 = layout('4O3sym', '3D')
+
+module muscle_yield_fdhill
+    !! Test criterion: Hill48 equivalent stress only, derivatives by finite differences, and its own
+    !! joint evaluation (a model not registered in the family): the three functions,
+    !! the second derivative only when requested.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: yield_fdhill_${k}$
+    #:endfor
+    #:for k in REAL_KINDS
+    public :: yield_stress_eq_fdhill_3D_${k}$, yield_dstress_eq_fdhill_3D_${k}$, yield_ddstress_eq_fdhill_3D_${k}$
+    public :: yield_stress_eq_and_derivatives_fdhill_3D_${k}$, yield_joint_evaluation_fdhill_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    type :: yield_fdhill_${k}$
+        !! Parameters of the fdhill model in `real(${k}$)`.
+        real(${k}$) :: f
+            !! F.
+        real(${k}$) :: g
+            !! G.
+        real(${k}$) :: h
+            !! H.
+        real(${k}$) :: l
+            !! L.
+        real(${k}$) :: m
+            !! M.
+        real(${k}$) :: n
+            !! N.
+    end type yield_fdhill_${k}$
+
+    #:endfor
+contains
+    #:for k in REAL_KINDS
+
+    pure function yield_stress_eq_fdhill_3D_${k}$(prm, sigma) result(res)
+        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the fdhill model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$) :: res
+            !! \( \sigma_{eq} \).
+        res = sqrt(prm%f*(sigma%vals(2) - sigma%vals(3))**2 + prm%g*(sigma%vals(3) - sigma%vals(1))**2 &
+                   + prm%h*(sigma%vals(1) - sigma%vals(2))**2 + 2.0_${k}$*prm%l*sigma%vals(5)**2 &
+                   + 2.0_${k}$*prm%m*sigma%vals(6)**2 + 2.0_${k}$*prm%n*sigma%vals(4)**2)
+    end function yield_stress_eq_fdhill_3D_${k}$
+
+    pure function yield_dstress_eq_fdhill_3D_${k}$(prm, sigma) result(res)
+        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the fdhill model in `real(${k}$)` (3D),
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        @:FD_GRAD(res, yield_stress_eq_fdhill_3D_${k}$(prm, {x}), sigma, ${k}$, 3D)
+    end function yield_dstress_eq_fdhill_3D_${k}$
+
+    pure function yield_ddstress_eq_fdhill_3D_${k}$(prm, sigma) result(res)
+        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) of the fdhill model in `real(${k}$)` (3D),
+        !! computed with central finite differences.
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \).
+        @:FD_HESS(res, yield_stress_eq_fdhill_3D_${k}$(prm, {x}), sigma, ${k}$, 3D)
+    end function yield_ddstress_eq_fdhill_3D_${k}$
+
+    pure function yield_joint_evaluation_fdhill_${k}$(prm) result(res)
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn):
+        !! true for the fdhill model (`real(${k}$)` parameters; a constant, resolved at compile time).
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters (not used: only selects the model).
+        logical :: res
+            !! .true.
+
+        res = .true.
+    end function yield_joint_evaluation_fdhill_${k}$
+
+    pure subroutine yield_stress_eq_and_derivatives_fdhill_3D_${k}$(prm, sigma, f, df, ddf)
+        !! Equivalent stress and its first and second derivatives at the same stress of the fdhill model
+        !! in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_fdhill_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$), intent(out) :: f
+            !! \( \sigma_{eq} \).
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$), intent(out), optional :: ddf
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \). Optional: not computed when absent.
+        f = yield_stress_eq_fdhill_3D_${k}$(prm, sigma)
+        df = yield_dstress_eq_fdhill_3D_${k}$(prm, sigma)
+        if (present(ddf)) ddf = yield_ddstress_eq_fdhill_3D_${k}$(prm, sigma)
+    end subroutine yield_stress_eq_and_derivatives_fdhill_3D_${k}$
+    #:endfor
+
+end module muscle_yield_fdhill
+
+module test_yield_point
+    !! Point procedures (kernels) that call the yield generics, for every kind.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
+    use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
+        yield_stress_eq_and_derivatives, yield_joint_evaluation, &
+        ${', '.join('yield_{}_{}'.format(m, k) for m in ('vonmises', 'hill48', 'cpb06') for k in REAL_KINDS)}$, &
+        ${', '.join('yield_{}_{}'.format(m, k) for m in ('druckerprager', 'cpb06ex2', 'yld2004') for k in REAL_KINDS)}$
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: point_${k}$, point2_${k}$
+    #:endfor
+
+contains
+    #:for k in REAL_KINDS
+
+    pure subroutine point_${k}$(v, h, c, s, f, df, ddf, joint)
+        !! Everything a return mapping point would call from the criteria `v`, `h` and `c`, in
+        !! `real(${k}$)`: f(i), df(i), ddf(i) of criterion i (1 von Mises, 2 Hill48, 3 CPB06, by the
+        !! functions; 4-6 the same by the joint evaluation) and the joint flags.
+        @:DEVICE()
+        type(yield_vonmises_${k}$), intent(in) :: v
+        type(yield_hill48_${k}$), intent(in) :: h
+        type(yield_cpb06_${k}$), intent(in) :: c
+        type(${tname('3D2Osym', k)}$), intent(in) :: s
+        real(${k}$), intent(out) :: f(6)
+        type(${tname('3D2Osym', k)}$), intent(out) :: df(6)
+        type(${tname('3D4O3sym', k)}$), intent(out) :: ddf(6)
+        logical, intent(out) :: joint(3)
+
+        f(1) = yield_stress_eq(v, s)
+        df(1) = yield_dstress_eq(v, s)
+        ddf(1) = yield_ddstress_eq(v, s)
+        f(2) = yield_stress_eq(h, s)
+        df(2) = yield_dstress_eq(h, s)
+        ddf(2) = yield_ddstress_eq(h, s)
+        f(3) = yield_stress_eq(c, s)
+        df(3) = yield_dstress_eq(c, s)
+        ddf(3) = yield_ddstress_eq(c, s)
+        call yield_stress_eq_and_derivatives(v, s, f(4), df(4), ddf(4))
+        call yield_stress_eq_and_derivatives(h, s, f(5), df(5), ddf(5))
+        call yield_stress_eq_and_derivatives(c, s, f(6), df(6), ddf(6))
+        joint = [yield_joint_evaluation(v), yield_joint_evaluation(h), yield_joint_evaluation(c)]
+    end subroutine point_${k}$
+
+    pure subroutine point2_${k}$(p, x, y, s, f, df, ddf, joint)
+        !! As `point_${k}$` for the criteria `p` (Drucker-Prager), `x` (CPB06ex2) and `y` (Yld2004):
+        !! 1-3 by the functions, 4-6 by the joint evaluation, and the joint flags.
+        @:DEVICE()
+        type(yield_druckerprager_${k}$), intent(in) :: p
+        type(yield_cpb06ex2_${k}$), intent(in) :: x
+        type(yield_yld2004_${k}$), intent(in) :: y
+        type(${tname('3D2Osym', k)}$), intent(in) :: s
+        real(${k}$), intent(out) :: f(6)
+        type(${tname('3D2Osym', k)}$), intent(out) :: df(6)
+        type(${tname('3D4O3sym', k)}$), intent(out) :: ddf(6)
+        logical, intent(out) :: joint(3)
+
+        f(1) = yield_stress_eq(p, s)
+        df(1) = yield_dstress_eq(p, s)
+        ddf(1) = yield_ddstress_eq(p, s)
+        f(2) = yield_stress_eq(x, s)
+        df(2) = yield_dstress_eq(x, s)
+        ddf(2) = yield_ddstress_eq(x, s)
+        f(3) = yield_stress_eq(y, s)
+        df(3) = yield_dstress_eq(y, s)
+        ddf(3) = yield_ddstress_eq(y, s)
+        call yield_stress_eq_and_derivatives(p, s, f(4), df(4), ddf(4))
+        call yield_stress_eq_and_derivatives(x, s, f(5), df(5), ddf(5))
+        call yield_stress_eq_and_derivatives(y, s, f(6), df(6), ddf(6))
+        joint = [yield_joint_evaluation(p), yield_joint_evaluation(x), yield_joint_evaluation(y)]
+    end subroutine point2_${k}$
+    #:endfor
+
+end module test_yield_point
+
+#:set MODELS = ['vonmises', 'hill48', 'druckerprager', 'cpb06', 'cpb06ex2', 'yld2004']
+#:set ALLM = MODELS + ['fdhill']
+module test_yield_eval
+    !! `ev(y, s)`: [stress_eq, dstress_eq%vals, ddstress_eq%vals] (28 values) of a criterion `y`
+    !! (the registered ones through the family generics, the test criterion through its specifics),
+    !! and `ev_joint(y, s)`: the same from the joint evaluation; `ev_joint_noddf(y, s)`: [f, df%vals]
+    !! from the joint evaluation without the optional second derivative.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
+    use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
+        yield_stress_eq_and_derivatives, &
+        ${', '.join('yield_{}_{}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$
+    use muscle_yield_fdhill, only : ${', '.join('yield_fdhill_' + k for k in REAL_KINDS)}$, &
+        #:set fdhill_funcs = ('stress_eq', 'dstress_eq', 'ddstress_eq', 'stress_eq_and_derivatives')
+        ${', '.join('yield_{}_fdhill_3D_{}'.format(f, k) for f in fdhill_funcs for k in REAL_KINDS)}$
+    implicit none
+    private
+
+    public :: ev, ev_joint, ev_joint_noddf
+
+    interface ev
+        #:for m in ALLM
+        module procedure ${', '.join('ev_{}_{}'.format(m, k) for k in REAL_KINDS)}$
+        #:endfor
+    end interface ev
+
+    interface ev_joint
+        #:for m in ALLM
+        module procedure ${', '.join('ev_joint_{}_{}'.format(m, k) for k in REAL_KINDS)}$
+        #:endfor
+    end interface ev_joint
+
+    interface ev_joint_noddf
+        #:for m in ALLM
+        module procedure ${', '.join('ev_joint_noddf_{}_{}'.format(m, k) for k in REAL_KINDS)}$
+        #:endfor
+    end interface ev_joint_noddf
+
+contains
+    #:for k in REAL_KINDS
+    #:for m in ALLM
+    #:set sfx = '' if m != 'fdhill' else '_fdhill_3D_' + k
+
+    function ev_${m}$_${k}$(y, s) result(r)
+        type(yield_${m}$_${k}$), intent(in) :: y
+        type(${tname('3D2Osym', k)}$), intent(in) :: s
+        real(${k}$) :: r(28)
+        type(${tname('3D2Osym', k)}$) :: df
+        type(${tname('3D4O3sym', k)}$) :: ddf
+        df = yield_dstress_eq${sfx}$(y, s)
+        ddf = yield_ddstress_eq${sfx}$(y, s)
+        r = [yield_stress_eq${sfx}$(y, s), df%vals, ddf%vals]
+    end function ev_${m}$_${k}$
+
+    function ev_joint_${m}$_${k}$(y, s) result(r)
+        type(yield_${m}$_${k}$), intent(in) :: y
+        type(${tname('3D2Osym', k)}$), intent(in) :: s
+        real(${k}$) :: r(28)
+        type(${tname('3D2Osym', k)}$) :: df
+        type(${tname('3D4O3sym', k)}$) :: ddf
+        real(${k}$) :: f
+        call yield_stress_eq_and_derivatives${sfx}$(y, s, f, df, ddf)
+        r = [f, df%vals, ddf%vals]
+    end function ev_joint_${m}$_${k}$
+
+    function ev_joint_noddf_${m}$_${k}$(y, s) result(r)
+        type(yield_${m}$_${k}$), intent(in) :: y
+        type(${tname('3D2Osym', k)}$), intent(in) :: s
+        real(${k}$) :: r(7)
+        type(${tname('3D2Osym', k)}$) :: df
+        real(${k}$) :: f
+        call yield_stress_eq_and_derivatives${sfx}$(y, s, f, df)
+        r = [f, df%vals]
+    end function ev_joint_noddf_${m}$_${k}$
+    #:endfor
+    #:endfor
+
+end module test_yield_eval
+
+module test_yield_cases
+    !! Test cases (module procedures, so that they can contain their own helpers).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
+    use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, yield_joint_evaluation, &
+        ${', '.join('yield_{}_{}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$
+    use muscle_yield_cpb06, only : yield_cpb06_init
+    use muscle_yield_druckerprager, only : yield_druckerprager_init, DP_HARDENING_TENSION, DP_HARDENING_COMPRESSION, &
+        DP_HARDENING_SHEAR
+    use muscle_yield_cpb06ex2, only : yield_cpb06ex2_init
+    use muscle_yield_yld2004, only : yield_yld2004_init
+    use muscle_status, only : STATUS_OK
+    use muscle_yield_fdhill, only : ${', '.join('yield_fdhill_' + k for k in REAL_KINDS)}$, &
+        ${', '.join('yield_joint_evaluation_fdhill_' + k for k in REAL_KINDS)}$
+    use test_yield_eval, only : ev, ev_joint, ev_joint_noddf
+    use muscle_test_utils, only : check_approx, check_true, check_scaled
+    use muscle_test_helpers, only : record, park_miller, rnd
+    implicit none
+    private
+
+    public :: run_all
+
+    integer, parameter :: NFIX = 8, NRND = 24, NS = NFIX + NRND
+        !! Fixed and pseudo-random stress states.
+    real(dp), parameter :: FIXED(6, NFIX) = reshape([ &
+        1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, &            ! uniaxial
+        1.0_dp, -1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, &           ! tension-compression
+        0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, &            ! pure shear xy
+        3.0_dp, -1.0_dp, 2.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, &           ! triaxial
+        1.205_dp, -0.3525_dp, 0.6075_dp, 0.425_dp, -0.28_dp, 0.3325_dp, &  ! general
+        0.2_dp, -0.6_dp, 0.1_dp, 0.9_dp, -0.4_dp, 0.7_dp, &          ! shear dominated
+        250.0_dp, -80.0_dp, 30.0_dp, 120.0_dp, -45.0_dp, 60.0_dp, &  ! stress magnitude
+        2.0e-3_dp, 1.0e-3_dp, -1.5e-3_dp, 4.0e-4_dp, 0.0_dp, -7.0e-4_dp], [6, NFIX])  ! small
+        !! Fixed stress states (xx, yy, zz, xy, yz, xz).
+    real(dp), parameter :: HILLV(6, 3) = reshape([ &
+        0.5_dp, 0.5_dp, 0.5_dp, 1.5_dp, 1.5_dp, 1.5_dp, &
+        0.25_dp, 0.4_dp, 0.6_dp, 1.3_dp, 1.7_dp, 1.45_dp, &
+        0.7_dp, 0.2_dp, 0.35_dp, 2.0_dp, 0.9_dp, 1.1_dp], [6, 3])
+        !! Hill48: f, g, h, l, m, n (isotropic = von Mises, anisotropic, strongly anisotropic).
+    real(dp), parameter :: CPBV(14, 6) = reshape([ &
+        1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 0.0_dp, 2.0_dp, &
+        1.0_dp, -2.373_dp, -2.364_dp, -2.373_dp, -1.838_dp, 1.196_dp, -2.364_dp, 1.196_dp, -2.444_dp, &
+        3.607_dp, 3.607_dp, 3.607_dp, -0.136_dp, 2.0_dp, &
+        1.0_dp, -2.373_dp, -2.364_dp, -1.5_dp, -1.838_dp, 1.196_dp, -2.364_dp, 0.8_dp, -2.444_dp, &
+        3.607_dp, 2.9_dp, 4.1_dp, 0.25_dp, 2.0_dp, &
+        1.0_dp, -2.373_dp, -2.364_dp, -2.373_dp, -1.838_dp, 1.196_dp, -2.364_dp, 1.196_dp, -2.444_dp, &
+        3.607_dp, 3.607_dp, 3.607_dp, -0.136_dp, 8.0_dp, &
+        1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 0.5_dp, 3.0_dp, &
+        1.2_dp, -2.373_dp, -2.364_dp, -1.5_dp, -1.838_dp, 1.196_dp, -2.364_dp, 0.8_dp, -2.444_dp, &
+        3.607_dp, 2.9_dp, 4.1_dp, 0.25_dp, 2.0_dp], &
+        [14, 6])
+        !! CPB06: c11, c12, c13, c21, c22, c23, c31, c32, c33, c44, c55, c66, k, a (1: isotropic, = von
+        !! Mises; 2: Ti-6Al-4V; 3: non-symmetric C1; 4: Ti-6Al-4V with a = 8; 5: isotropic, k = 0.5, a = 3;
+        !! 6: set 3 with c11 = 1.2, the only set with c11 /= 1, so that C11 is not a neutral factor).
+    real(dp), parameter :: DPV(2, 5) = reshape([ &
+        20.0_dp, 0.8_dp, 20.0_dp, 0.8_dp, 30.0_dp, 1.0_dp, 45.0_dp, 0.778_dp, 0.0_dp, 1.0_dp], [2, 5])
+        !! Drucker-Prager: beta (degrees), K (5: beta = 0, K = 1, = von Mises).
+    integer, parameter :: DPMODE(5) = [DP_HARDENING_TENSION, DP_HARDENING_COMPRESSION, DP_HARDENING_SHEAR, &
+        DP_HARDENING_TENSION, DP_HARDENING_TENSION]
+        !! Drucker-Prager calibration mode of each set.
+    real(dp), parameter :: EX2V(27, 5) = reshape([ &
+        1.283_dp, 0.208_dp, -0.421_dp, 0.208_dp, 0.535_dp, -0.791_dp, -0.421_dp, -0.791_dp, 0.746_dp, &
+        1.156_dp, 1.418_dp, 1.329_dp, 0.030_dp, &
+        1.283_dp, 0.380_dp, -0.001_dp, 0.380_dp, 2.145_dp, 0.792_dp, -0.001_dp, 0.792_dp, 0.218_dp, &
+        1.721_dp, 1.418_dp, 1.329_dp, -0.027_dp, 5.0_dp, &
+        0.250_dp, -1.399_dp, -0.971_dp, -1.399_dp, -0.375_dp, -2.254_dp, -0.971_dp, -2.254_dp, -0.831_dp, &
+        1.316_dp, 1.403_dp, 1.101_dp, 0.0_dp, &
+        0.250_dp, -0.840_dp, -1.330_dp, -0.840_dp, 0.780_dp, -0.565_dp, -1.330_dp, -0.565_dp, 0.479_dp, &
+        1.413_dp, 1.094_dp, 1.448_dp, 0.0_dp, 12.0_dp, &
+        0.771_dp, -0.914_dp, -1.312_dp, -0.914_dp, 0.654_dp, -1.209_dp, -1.312_dp, -1.209_dp, -0.293_dp, &
+        1.617_dp, 1.0_dp, 1.0_dp, 0.295_dp, &
+        0.771_dp, 0.337_dp, -0.764_dp, 0.337_dp, 0.646_dp, -0.401_dp, -0.764_dp, -0.401_dp, -0.022_dp, &
+        0.499_dp, 1.0_dp, 1.0_dp, 0.900_dp, 4.0_dp, &
+        1.0_dp, -0.2_dp, 0.3_dp, 0.15_dp, 0.8_dp, -0.4_dp, -0.1_dp, 0.2_dp, 1.2_dp, &
+        1.3_dp, 0.7_dp, 1.1_dp, 0.25_dp, &
+        1.0_dp, -0.2_dp, 0.3_dp, 0.15_dp, 0.8_dp, -0.4_dp, -0.1_dp, 0.2_dp, 1.2_dp, &
+        1.3_dp, 0.7_dp, 1.1_dp, 0.25_dp, 4.0_dp, &
+        1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 0.0_dp, &
+        1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 0.0_dp, 0.0_dp, 0.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 0.0_dp, &
+        2.0_dp], [27, 5])
+        !! CPB06ex2: c11..c33, c44, c55, c66, k, cp11..cp33, cp44, cp55, cp66, kp, a (Plunkett et al.,
+        !! 2008: 1 steel, a = 5; 2 6111-T4, a = 12; 3 AZ31B; 4 two equal non-symmetric maps, a = 4;
+        !! 5 isotropic, a = 2, = von Mises).
+    real(dp), parameter :: YLDV(19, 4) = reshape([ &
+        1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, &
+        1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 2.0_dp, &
+        -0.069888_dp, 0.936408_dp, 0.079143_dp, 1.003060_dp, 0.524741_dp, 1.363180_dp, &
+        0.954322_dp, 1.023770_dp, 1.069060_dp, &
+        0.981171_dp, 0.476741_dp, 0.575316_dp, 0.866827_dp, 1.145010_dp, -0.079294_dp, &
+        1.404620_dp, 1.051660_dp, 1.147100_dp, 8.0_dp, &
+        1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, 1.0_dp, &
+        1.0_dp, 1.0_dp, 0.575316_dp, 0.866827_dp, 1.145010_dp, -0.079294_dp, &
+        1.404620_dp, 1.051660_dp, 1.147100_dp, 2.0_dp, &
+        -0.069888_dp, 0.936408_dp, 0.079143_dp, 1.003060_dp, 0.524741_dp, 1.363180_dp, &
+        0.954322_dp, 1.023770_dp, 1.069060_dp, &
+        0.981171_dp, 0.476741_dp, 0.575316_dp, 0.866827_dp, 1.145010_dp, -0.079294_dp, &
+        1.404620_dp, 1.051660_dp, 1.147100_dp, 6.0_dp], [19, 4])
+        !! Yld2004: cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66, cpp12..cpp66, a (1 isotropic,
+        !! a = 2, = von Mises; 2 AA2090-T3, a = 8; 3 C' isotropic, C'' of AA2090-T3, a = 2; 4 AA2090-T3,
+        !! a = 6).
+    real(dp), parameter :: PRESSURES(6) = [1.0_dp, -1.0_dp, 2.0_dp, 0.5_dp, 250.0_dp, -1.0e5_dp]
+        !! Hydrostatic stresses (3p/3 = p exactly, so dev = 0 exactly).
+    real(dp), parameter :: NOISY(3) = [0.1_dp, -0.3_dp, 7.1_dp]
+        !! Hydrostatic stresses with 3p/3 /= p in binary (dev = rounding noise).
+    real(dp), parameter :: DP_NOISY(5) = [0.1_dp, -0.3_dp, 7.1_dp, -1.7_dp, 0.9_dp]
+        !! Hydrostatic stresses with a rounding-noise deviator in dp (first three) or sp (last two).
+    integer, parameter :: MULT(6) = [1, 1, 1, 2, 2, 2]
+        !! Tensor components represented by each stored component (shears: 2).
+    integer, parameter :: POS4(6, 6) = reshape([ &
+        #:for J in range(1, 7)
+        #:set pos4_row = [str(LAY4.index(*(LAY4.base.comps[I - 1].idx + LAY4.base.comps[J - 1].idx))[0]) for I in range(1, 7)]
+        ${', '.join(pos4_row)}$${', &' if J < 6 else '], [6, 6])'}$
+        #:endfor
+        !! Storage position in `ten_3D4O3sym` of the Voigt entry (I, J).
+    real(dp) :: states(6, NS)
+        !! Stress states (make_states).
+
+contains
+
+    subroutine run_all(code)
+        !! Runs every test case; `code` = exit code of the first failure (0 if none).
+        integer, intent(out) :: code
+
+        call make_states()
+        code = 0
+        #:for i, k in enumerate(REAL_KINDS)
+        call record(test_null_${k}$(), ${10*i + 1}$, 'null equivalent stress ${k}$ (D-017.9)', code)
+        call record(test_generics_${k}$(), ${10*i + 2}$, 'generics, joint evaluation and flag ${k}$', code)
+        call record(test_point_${k}$(), ${10*i + 3}$, 'pure point procedure ${k}$', code)
+        call record(test_model_fd_${k}$(), ${10*i + 4}$, 'FD_GRAD gradient and FD_HESS Hessian ${k}$', code)
+        #:if k != 'dp'
+        call record(test_vs_dp_${k}$(), ${10*i + 5}$, '${k}$ against dp', code)
+        #:endif
+        #:endfor
+        call record(test_formulas(), 91, 'closed forms and homogeneity (dp)', code)
+        call record(test_fd_reference(), 92, 'analytical derivatives against central differences (dp)', code)
+        #:for i, k in enumerate(REAL_KINDS)
+        call record(test_cpb_flat_${k}$(), ${10*i + 6}$, 'CPB06 with |k| = 1 at pure shear, closed forms ${k}$', code)
+        #:endfor
+        call record(test_cpb_flat_fd(), 93, 'CPB06 with |k| = 1 at pure shear, Hessian vs central differences', code)
+        #:for i, k in enumerate(REAL_KINDS)
+        call record(test_cpb_uniaxial_${k}$(), ${10*i + 7}$, 'CPB06 normalization: uniaxial tension along x, f = s ${k}$', &
+                    code)
+        call record(test_ex2_swap_${k}$(), ${10*i + 8}$, 'CPB06ex2 swap symmetry and C'' = 0 = CPB06 ${k}$', code)
+        call record(test_small_shear_${k}$(), ${10*i + 9}$, 'CPB06/CPB06ex2 tiny shear on a pressure ${k}$ (D-032)', code)
+        #:endfor
+    end subroutine run_all
+
+    subroutine make_states()
+        !! Fixed states, then pseudo-random ones of magnitude ~100.
+        type(park_miller) :: rng
+        integer :: j, i
+        rng = park_miller(20261031)
+        states(:, 1:NFIX) = FIXED
+        do j = NFIX + 1, NS
+            do i = 1, 6
+                states(i, j) = 100.0_dp*rnd(rng)
+            end do
+        end do
+    end subroutine make_states
+    #:for k in REAL_KINDS
+
+    function stress_${k}$(j) result(s)
+        !! j-th stress state in `real(${k}$)` (j = 0: zero tensor).
+        integer, intent(in) :: j
+        type(${tname('3D2Osym', k)}$) :: s
+        s%vals = 0.0_${k}$
+        if (j > 0) s%vals = real(states(:, j), ${k}$)
+    end function stress_${k}$
+
+    function hill_${k}$(i) result(p)
+        !! i-th Hill48 parameter set in `real(${k}$)`.
+        integer, intent(in) :: i
+        type(yield_hill48_${k}$) :: p
+        real(${k}$) :: v(6)
+        v = real(HILLV(:, i), ${k}$)
+        p = yield_hill48_${k}$(f=v(1), g=v(2), h=v(3), l=v(4), m=v(5), n=v(6))
+    end function hill_${k}$
+
+    function fdhill_${k}$(i) result(p)
+        !! i-th Hill48 parameter set for the test criterion in `real(${k}$)`.
+        integer, intent(in) :: i
+        type(yield_fdhill_${k}$) :: p
+        real(${k}$) :: v(6)
+        v = real(HILLV(:, i), ${k}$)
+        p = yield_fdhill_${k}$(f=v(1), g=v(2), h=v(3), l=v(4), m=v(5), n=v(6))
+    end function fdhill_${k}$
+
+    function cpb_${k}$(i) result(p)
+        !! i-th CPB06 parameter set in `real(${k}$)` (initializer of the kernel API).
+        integer, intent(in) :: i
+        type(yield_cpb06_${k}$) :: p
+        real(${k}$) :: c(14)
+        integer :: status
+        c = real(CPBV(:, i), ${k}$)
+        call yield_cpb06_init(p, c11=c(1), c12=c(2), c13=c(3), c21=c(4), c22=c(5), c23=c(6), c31=c(7), &
+                              c32=c(8), c33=c(9), c44=c(10), c55=c(11), c66=c(12), k=c(13), a=c(14), status=status)
+        if (status /= STATUS_OK) error stop 'yield_cpb06_init failed'
+    end function cpb_${k}$
+
+    function dpr_${k}$(i) result(p)
+        !! i-th Drucker-Prager parameter set in `real(${k}$)` (initializer of the kernel API).
+        integer, intent(in) :: i
+        type(yield_druckerprager_${k}$) :: p
+        integer :: status
+        call yield_druckerprager_init(p, beta_deg=real(DPV(1, i), ${k}$), K=real(DPV(2, i), ${k}$), &
+                                      hardening_mode=DPMODE(i), status=status)
+        if (status /= STATUS_OK) error stop 'yield_druckerprager_init failed'
+    end function dpr_${k}$
+
+    function dp_i1_${k}$(i) result(r)
+        !! Pressure coefficient tan(beta) f of the i-th Drucker-Prager set in `real(${k}$)`, from the
+        !! calibration formulas (Abaqus): f = 1/(1/K + tan(beta)/3), 1/(1 - tan(beta)/3) or 1.
+        integer, intent(in) :: i
+        real(${k}$) :: r, t
+        t = tan(real(DPV(1, i), ${k}$)*acos(-1.0_${k}$)/180.0_${k}$)
+        select case (DPMODE(i))
+        case (DP_HARDENING_TENSION)
+            r = t/(1.0_${k}$/real(DPV(2, i), ${k}$) + t/3.0_${k}$)
+        case (DP_HARDENING_COMPRESSION)
+            r = t/(1.0_${k}$ - t/3.0_${k}$)
+        case default
+            r = t
+        end select
+    end function dp_i1_${k}$
+
+    function test_small_shear_${k}$() result(passed)
+        !! CPB06, CPB06ex2 and Yld2004 (f through `ev`, the family generics) at a shear tau e12 far below the old
+        !! absolute threshold of `eigenvals` (1e-10 dp, 1e-9 sp on sqrt(J2/3), D-017.9), alone and on a
+        !! pressure p = 1 or 0.1, `real(${k}$)`. f takes its
+        !! eigenvalues from `spectral_decomposition` (D-032), which has no absolute threshold, so:
+        !! - f(tau e12) = tau f(e12) bit for bit (degree 1 homogeneity with tau a power of 2: the scaling of
+        !!   the decomposition and of f by powers of 2 is exact), > 0 (before: f = 0);
+        !! - f(p I + tau e12) = f(tau e12) bit for bit (Sigma = L : sigma acts on the differences of the
+        !!   normal stresses, so the pressure cancels exactly).
+        logical :: passed
+        real(${k}$), parameter :: TAU = 2.0_${k}$**(${-40 if k == 'dp' else -34}$)
+        real(${k}$), parameter :: PRESSURE(2) = [1.0_${k}$, 0.1_${k}$]
+        type(${tname('3D2Osym', k)}$) :: s1, st, sps
+        real(${k}$) :: f1, ft, fp, r(28)
+        integer :: i, j
+
+        passed = .true.
+        s1%vals = 0.0_${k}$
+        s1%vals(4) = 1.0_${k}$
+        st%vals = TAU*s1%vals
+        do i = 1, size(CPBV, 2)
+            r = ev(cpb_${k}$(i), s1)
+            f1 = r(1)
+            r = ev(cpb_${k}$(i), st)
+            ft = r(1)
+            call check_true(passed, '${k}$ CPB06 tiny shear: f > 0', ft > 0.0_${k}$)
+            call check_true(passed, '${k}$ CPB06 tiny shear: f(tau e12) = tau f(e12)', ft == TAU*f1)
+            do j = 1, size(PRESSURE)
+                sps = st
+                sps%vals(1:3) = PRESSURE(j)
+                r = ev(cpb_${k}$(i), sps)
+                fp = r(1)
+                call check_true(passed, '${k}$ CPB06 tiny shear on a pressure: f(p I + tau e12) = f(tau e12)', fp == ft)
+            end do
+        end do
+        do i = 1, size(EX2V, 2)
+            r = ev(ex2_${k}$(i), s1)
+            f1 = r(1)
+            r = ev(ex2_${k}$(i), st)
+            ft = r(1)
+            call check_true(passed, '${k}$ CPB06ex2 tiny shear: f > 0', ft > 0.0_${k}$)
+            call check_true(passed, '${k}$ CPB06ex2 tiny shear: f(tau e12) = tau f(e12)', ft == TAU*f1)
+            do j = 1, size(PRESSURE)
+                sps = st
+                sps%vals(1:3) = PRESSURE(j)
+                r = ev(ex2_${k}$(i), sps)
+                fp = r(1)
+                call check_true(passed, '${k}$ CPB06ex2 tiny shear on a pressure: f(p I + tau e12) = f(tau e12)', fp == ft)
+            end do
+        end do
+        ! Yld2004: not exactly insensitive to a pressure (D-017.9), so only the shear alone
+        do i = 1, size(YLDV, 2)
+            r = ev(yld_${k}$(i), s1)
+            f1 = r(1)
+            r = ev(yld_${k}$(i), st)
+            ft = r(1)
+            call check_true(passed, '${k}$ Yld2004 tiny shear: f > 0', ft > 0.0_${k}$)
+            call check_true(passed, '${k}$ Yld2004 tiny shear: f(tau e12) = tau f(e12)', ft == TAU*f1)
+        end do
+    end function test_small_shear_${k}$
+
+    function ex2_${k}$(i) result(p)
+        !! i-th CPB06ex2 parameter set in `real(${k}$)` (initializer of the kernel API, positional).
+        integer, intent(in) :: i
+        type(yield_cpb06ex2_${k}$) :: p
+        real(${k}$) :: c(27)
+        integer :: status
+        c = real(EX2V(:, i), ${k}$)
+        call yield_cpb06ex2_init(p, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), c(12), &
+                                 c(13), c(14), c(15), c(16), c(17), c(18), c(19), c(20), c(21), c(22), c(23), &
+                                 c(24), c(25), c(26), c(27), status)
+        if (status /= STATUS_OK) error stop 'yield_cpb06ex2_init failed'
+    end function ex2_${k}$
+
+    function yld_${k}$(i) result(p)
+        !! i-th Yld2004 parameter set in `real(${k}$)` (initializer of the kernel API).
+        integer, intent(in) :: i
+        type(yield_yld2004_${k}$) :: p
+        real(${k}$) :: c(19)
+        integer :: status
+        c = real(YLDV(:, i), ${k}$)
+        call yield_yld2004_init(p, cp12=c(1), cp13=c(2), cp21=c(3), cp23=c(4), cp31=c(5), cp32=c(6), &
+                                cp44=c(7), cp55=c(8), cp66=c(9), cpp12=c(10), cpp13=c(11), cpp21=c(12), &
+                                cpp23=c(13), cpp31=c(14), cpp32=c(15), cpp44=c(16), cpp55=c(17), cpp66=c(18), &
+                                a=c(19), status=status)
+        if (status /= STATUS_OK) error stop 'yield_yld2004_init failed'
+    end function yld_${k}$
+
+    function test_null_${k}$() result(passed)
+        !! Zero and hydrostatic stresses: f = 0 and both derivatives exactly 0 (D-017.9), every set;
+        !! CPB06 on hydrostatic stresses that are not exact in binary.
+        logical :: passed
+        type(${tname('3D2Osym', k)}$) :: s
+        type(yield_vonmises_${k}$) :: v
+        real(${k}$) :: r(28)
+        logical :: noise
+        integer :: i, j
+
+        passed = .true.
+        do j = 0, size(PRESSURES)
+            s%vals = 0.0_${k}$
+            if (j > 0) s%vals(1:3) = real(PRESSURES(j), ${k}$)
+            call check_null('von Mises', ev(v, s))
+            do i = 1, size(HILLV, 2)
+                call check_null('Hill48', ev(hill_${k}$(i), s))
+            end do
+            do i = 1, size(CPBV, 2)
+                call check_null('CPB06', ev(cpb_${k}$(i), s))
+            end do
+            do i = 1, size(EX2V, 2)
+                call check_null('CPB06ex2', ev(ex2_${k}$(i), s))
+            end do
+            do i = 1, size(YLDV, 2)
+                ! Yld2004 is not exactly pressure insensitive (D-017.9): null only at the zero tensor
+                if (j == 0) then
+                    call check_null('Yld2004', ev(yld_${k}$(i), s))
+                    call check_null('Yld2004 joint', ev_joint(yld_${k}$(i), s))
+                else
+                    call check_yld_hydro(ev(yld_${k}$(i), s), abs(s%vals(1)))
+                end if
+            end do
+            do i = 1, size(DPV, 2)
+                call check_dp_hydro(i, ev(dpr_${k}$(i), s), s%vals(1))
+            end do
+        end do
+        ! Drucker-Prager: a pressure added to a general state changes f by tan(beta) f_factor p and
+        ! leaves both derivatives (functions of the deviator) unchanged
+        do j = 1, NS
+            s = stress_${k}$(j)
+            do i = 1, size(DPV, 2)
+                call check_dp_pressure(i, s, 0.7_${k}$*maxval(abs(s%vals)))
+                call check_dp_pressure(i, s, -1.3_${k}$*maxval(abs(s%vals)))
+            end do
+        end do
+        ! Drucker-Prager detects a hydrostatic stress that is not exact in binary as hydrostatic in
+        ! both kinds (relative threshold 1e-9 dp, 1e-4 sp, D-017.11b); in sp -1.7 and 0.9 leave
+        ! q/|sigma| ~ 8e-8 (0.1, -0.3 and 7.1 do in dp)
+        do j = 1, size(DP_NOISY)
+            s%vals = 0.0_${k}$
+            s%vals(1:3) = real(DP_NOISY(j), ${k}$)
+            do i = 1, size(DPV, 2)
+                call check_dp_hydro(i, ev(dpr_${k}$(i), s), s%vals(1))
+            end do
+        end do
+        ! A hydrostatic stress that is not exact in binary (3p/3 /= p): CPB06 gives f = 0 exactly and
+        ! finite, bounded derivatives. Sigma = L : sigma acts on the differences of the normal stresses,
+        ! so it is exactly 0 there, and f takes its eigenvalues from the same Sigma (D-032; before, f used
+        ! C1 : dev(sigma), whose rounding left a tiny f > 0 in dp)
+        noise = .false.
+        do j = 1, size(NOISY)
+            s%vals = 0.0_${k}$
+            s%vals(1:3) = real(NOISY(j), ${k}$)
+            do i = 1, size(CPBV, 2)
+                r = ev(cpb_${k}$(i), s)
+                noise = noise .or. r(1) /= 0.0_${k}$
+                call check_noise(r, abs(s%vals(1)))
+            end do
+        end do
+        call check_true(passed, '${k}$ CPB06 noisy hydrostatic: f = 0 exactly', .not. noise)
+    contains
+        subroutine check_yld_hydro(r, p)
+            real(${k}$), intent(in) :: r(28), p
+            call check_true(passed, '${k}$ Yld2004 hydrostatic: 0 <= f <= 100 eps |p|', &
+                            r(1) >= 0.0_${k}$ .and. r(1) <= 100.0_${k}$*epsilon(p)*p)
+            call check_true(passed, '${k}$ Yld2004 hydrostatic: finite gradient', &
+                            all(abs(r(2:7)) <= huge(p)))
+        end subroutine check_yld_hydro
+
+        subroutine check_dp_hydro(i, r, p)
+            ! Zero or hydrostatic stress p: f = I1 p, gradient (I1/3) I, Hessian 0 (same guards as the
+            ! original code)
+            integer, intent(in) :: i
+            real(${k}$), intent(in) :: r(28), p
+            real(${k}$) :: i1
+            i1 = dp_i1_${k}$(i)
+            call check_approx(passed, '${k}$ Drucker-Prager hydrostatic f = tan(beta) f p', [r(1)], [i1*p], &
+                              10.0_${k}$*epsilon(p))
+            call check_approx(passed, '${k}$ Drucker-Prager hydrostatic gradient = (tan(beta) f/3) I', r(2:7), &
+                              [i1/3.0_${k}$, i1/3.0_${k}$, i1/3.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$], &
+                              10.0_${k}$*epsilon(p))
+            call check_true(passed, '${k}$ Drucker-Prager hydrostatic Hessian = 0', all(r(8:28) == 0.0_${k}$))
+        end subroutine check_dp_hydro
+
+        subroutine check_dp_pressure(i, s, p)
+            integer, intent(in) :: i
+            type(${tname('3D2Osym', k)}$), intent(in) :: s
+            real(${k}$), intent(in) :: p
+            type(${tname('3D2Osym', k)}$) :: sp_
+            real(${k}$) :: r0(28), r1(28), tol
+            sp_ = s
+            sp_%vals(1:3) = s%vals(1:3) + p
+            r0 = ev(dpr_${k}$(i), s)
+            r1 = ev(dpr_${k}$(i), sp_)
+            tol = ${'1.0e-4' if k == 'sp' else '1.0e-12'}$_${k}$
+            call check_scaled(passed, '${k}$ Drucker-Prager f(s + p I) = f(s) + tan(beta) f p', r1(1), &
+                              r0(1) + dp_i1_${k}$(i)*p, abs(r0(1)) + abs(p), tol)
+            call check_approx(passed, '${k}$ Drucker-Prager gradient independent of p', r1(2:7), r0(2:7), tol)
+            call check_approx(passed, '${k}$ Drucker-Prager Hessian independent of p', r1(8:28), r0(8:28), tol)
+        end subroutine check_dp_pressure
+
+        subroutine check_noise(r, p)
+            real(${k}$), intent(in) :: r(28), p
+            call check_true(passed, '${k}$ CPB06 noisy hydrostatic: 0 <= f <= 100 eps |p|', &
+                            r(1) >= 0.0_${k}$ .and. r(1) <= 100.0_${k}$*epsilon(p)*p)
+            call check_true(passed, '${k}$ CPB06 noisy hydrostatic: finite, bounded derivatives', &
+                            all(abs(r(2:7)) <= 10.0_${k}$) .and. all(abs(r(8:28)) <= 10.0_${k}$/p))
+        end subroutine check_noise
+
+        subroutine check_null(name, r)
+            character(len=*), intent(in) :: name
+            real(${k}$), intent(in) :: r(28)
+            call check_true(passed, '${k}$ ' // name // ' f = 0 at a null stress', r(1) == 0.0_${k}$)
+            call check_true(passed, '${k}$ ' // name // ' df = 0 at a null stress', all(r(2:7) == 0.0_${k}$))
+            call check_true(passed, '${k}$ ' // name // ' ddf = 0 at a null stress', all(r(8:28) == 0.0_${k}$))
+        end subroutine check_null
+    end function test_null_${k}$
+
+    function test_generics_${k}$() result(passed)
+        !! Generics = specifics; default joint evaluation = the three functions (same bits); flags false.
+        use muscle_yield_vonmises, only : yield_stress_eq_vonmises_3D_${k}$
+        use muscle_yield_hill48, only : yield_dstress_eq_hill48_3D_${k}$
+        use muscle_yield_cpb06, only : yield_ddstress_eq_cpb06_3D_${k}$
+        use muscle_yield_druckerprager, only : yield_stress_eq_druckerprager_3D_${k}$
+        use muscle_yield_cpb06ex2, only : yield_dstress_eq_cpb06ex2_3D_${k}$
+        use muscle_yield_yld2004, only : yield_ddstress_eq_yld2004_3D_${k}$, yield_stress_eq_and_derivatives_yld2004_3D_${k}$
+        logical :: passed
+        type(${tname('3D2Osym', k)}$) :: s, d1, d2
+        type(${tname('3D4O3sym', k)}$) :: h1, h2
+        type(yield_vonmises_${k}$) :: v
+        type(yield_hill48_${k}$) :: h
+        type(yield_cpb06_${k}$) :: c
+        real(${k}$) :: r(28), f
+        integer :: i, j
+
+        passed = .true.
+        h = hill_${k}$(2)
+        c = cpb_${k}$(4)
+        call check_true(passed, '${k}$ joint flags are false', &
+                        .not. (yield_joint_evaluation(v) .or. yield_joint_evaluation(h) .or. yield_joint_evaluation(c)))
+        do j = 0, NS
+            s = stress_${k}$(j)
+            call check_approx(passed, '${k}$ generic = specific (von Mises)', yield_stress_eq(v, s), &
+                              yield_stress_eq_vonmises_3D_${k}$(v, s), 0.0_${k}$)
+            d1 = yield_dstress_eq(h, s)
+            d2 = yield_dstress_eq_hill48_3D_${k}$(h, s)
+            call check_approx(passed, '${k}$ generic = specific (Hill48)', d1%vals, d2%vals, 0.0_${k}$)
+            h1 = yield_ddstress_eq(c, s)
+            h2 = yield_ddstress_eq_cpb06_3D_${k}$(c, s)
+            call check_approx(passed, '${k}$ generic = specific (CPB06)', h1%vals, h2%vals, 0.0_${k}$)
+            call check_approx(passed, '${k}$ joint = functions (von Mises)', ev_joint(v, s), ev(v, s), 0.0_${k}$)
+            call check_approx(passed, '${k}$ joint = functions (Hill48)', ev_joint(h, s), ev(h, s), 0.0_${k}$)
+            call check_approx(passed, '${k}$ joint = functions (CPB06)', ev_joint(c, s), ev(c, s), 0.0_${k}$)
+            r = ev(c, s)
+            call check_approx(passed, '${k}$ joint without ddf (CPB06)', ev_joint_noddf(c, s), r(1:7), 0.0_${k}$)
+            r = ev(v, s)
+            call check_approx(passed, '${k}$ joint without ddf (von Mises)', ev_joint_noddf(v, s), r(1:7), 0.0_${k}$)
+        end do
+        call check_true(passed, '${k}$ joint flags: Drucker-Prager, CPB06ex2 false, Yld2004 true', &
+                        .not. (yield_joint_evaluation(dpr_${k}$(1)) .or. yield_joint_evaluation(ex2_${k}$(1))) &
+                        .and. yield_joint_evaluation(yld_${k}$(1)))
+        do j = 0, NS
+            s = stress_${k}$(j)
+            do i = 1, size(DPV, 2)
+                call check_approx(passed, '${k}$ generic = specific (Drucker-Prager)', yield_stress_eq(dpr_${k}$(i), s), &
+                                  yield_stress_eq_druckerprager_3D_${k}$(dpr_${k}$(i), s), 0.0_${k}$)
+                r = ev(dpr_${k}$(i), s)
+                call check_approx(passed, '${k}$ joint = functions (Drucker-Prager)', ev_joint(dpr_${k}$(i), s), r, 0.0_${k}$)
+                call check_approx(passed, '${k}$ joint without ddf (Drucker-Prager)', ev_joint_noddf(dpr_${k}$(i), s), &
+                                  r(1:7), 0.0_${k}$)
+            end do
+            do i = 1, size(EX2V, 2)
+                d1 = yield_dstress_eq(ex2_${k}$(i), s)
+                d2 = yield_dstress_eq_cpb06ex2_3D_${k}$(ex2_${k}$(i), s)
+                call check_approx(passed, '${k}$ generic = specific (CPB06ex2)', d1%vals, d2%vals, 0.0_${k}$)
+                r = ev(ex2_${k}$(i), s)
+                call check_approx(passed, '${k}$ joint = functions (CPB06ex2)', ev_joint(ex2_${k}$(i), s), r, 0.0_${k}$)
+                call check_approx(passed, '${k}$ joint without ddf (CPB06ex2)', ev_joint_noddf(ex2_${k}$(i), s), &
+                                  r(1:7), 0.0_${k}$)
+            end do
+            ! Yld2004 writes its own joint evaluation: the same bits as the three functions, with and
+            ! without the optional second derivative; generic = specific
+            do i = 1, size(YLDV, 2)
+                h1 = yield_ddstress_eq(yld_${k}$(i), s)
+                h2 = yield_ddstress_eq_yld2004_3D_${k}$(yld_${k}$(i), s)
+                call check_approx(passed, '${k}$ generic = specific (Yld2004)', h1%vals, h2%vals, 0.0_${k}$)
+                r = ev(yld_${k}$(i), s)
+                call check_approx(passed, '${k}$ joint = functions (Yld2004)', ev_joint(yld_${k}$(i), s), r, 0.0_${k}$)
+                call check_approx(passed, '${k}$ joint without ddf (Yld2004)', ev_joint_noddf(yld_${k}$(i), s), &
+                                  r(1:7), 0.0_${k}$)
+                call yield_stress_eq_and_derivatives_yld2004_3D_${k}$(yld_${k}$(i), s, f, d1, h1)
+                call check_approx(passed, '${k}$ joint specific = functions (Yld2004)', [f, d1%vals, h1%vals], r, 0.0_${k}$)
+            end do
+        end do
+    end function test_generics_${k}$
+
+    function test_point_${k}$() result(passed)
+        !! The pure point procedure gives the same bits as the direct calls.
+        use test_yield_point, only : point_${k}$, point2_${k}$
+        logical :: passed
+        type(${tname('3D2Osym', k)}$) :: s, df(6)
+        type(${tname('3D4O3sym', k)}$) :: ddf(6)
+        type(yield_vonmises_${k}$) :: v
+        type(yield_hill48_${k}$) :: h
+        type(yield_cpb06_${k}$) :: c
+        real(${k}$) :: f(6), ref(28, 3)
+        logical :: joint(3)
+        integer :: j, i
+
+        passed = .true.
+        h = hill_${k}$(3)
+        c = cpb_${k}$(2)
+        do j = 0, NS
+            s = stress_${k}$(j)
+            call point_${k}$(v, h, c, s, f, df, ddf, joint)
+            ref(:, 1) = ev(v, s)
+            ref(:, 2) = ev(h, s)
+            ref(:, 3) = ev(c, s)
+            do i = 1, 6
+                call check_approx(passed, '${k}$ point', [f(i), df(i)%vals, ddf(i)%vals], ref(:, mod(i - 1, 3) + 1), &
+                                  0.0_${k}$)
+            end do
+            call check_true(passed, '${k}$ point joint flags', .not. any(joint))
+        end do
+        do j = 0, NS
+            s = stress_${k}$(j)
+            call point2_${k}$(dpr_${k}$(4), ex2_${k}$(1), yld_${k}$(2), s, f, df, ddf, joint)
+            ref(:, 1) = ev(dpr_${k}$(4), s)
+            ref(:, 2) = ev(ex2_${k}$(1), s)
+            ref(:, 3) = ev(yld_${k}$(2), s)
+            do i = 1, 6
+                call check_approx(passed, '${k}$ point2', [f(i), df(i)%vals, ddf(i)%vals], ref(:, mod(i - 1, 3) + 1), &
+                                  0.0_${k}$)
+            end do
+            call check_true(passed, '${k}$ point2 joint flags', all(joint .eqv. [.false., .false., .true.]))
+        end do
+    end function test_point_${k}$
+
+    function test_model_fd_${k}$() result(passed)
+        !! FD_GRAD and FD_HESS of stress_eq on the test criterion against the analytical
+        !! Hill48 derivatives; its own joint evaluation (flag true), with and without ddf.
+        logical :: passed
+        real(${k}$), parameter :: TOL1 = ${FD_TOL[k]['d1']}$_${k}$, TOL2 = ${FD_TOL[k]['d2']}$_${k}$
+        real(${k}$) :: rt(28), rh(28)
+        integer :: i, j
+
+        passed = .true.
+        call check_true(passed, '${k}$ joint evaluation flag true', yield_joint_evaluation_fdhill_${k}$(fdhill_${k}$(1)))
+        do i = 1, size(HILLV, 2)
+            do j = 1, NS
+                rt = ev(fdhill_${k}$(i), stress_${k}$(j))
+                rh = ev(hill_${k}$(i), stress_${k}$(j))
+                call check_approx(passed, '${k}$ FD stress_eq = Hill48', rt(1), rh(1), 2.0_${k}$*epsilon(1.0_${k}$))
+                call check_approx(passed, '${k}$ FD gradient (FD_GRAD)', rt(2:7), rh(2:7), TOL1)
+                call check_approx(passed, '${k}$ FD Hessian (FD_HESS)', rt(8:28), rh(8:28), TOL2)
+                call check_approx(passed, '${k}$ joint evaluation = functions', ev_joint(fdhill_${k}$(i), stress_${k}$(j)), &
+                                  rt, 0.0_${k}$)
+                call check_approx(passed, '${k}$ joint evaluation without ddf', ev_joint_noddf(fdhill_${k}$(i), stress_${k}$(j)), &
+                                  rt(1:7), 0.0_${k}$)
+            end do
+        end do
+    end function test_model_fd_${k}$
+    #:if k != 'dp'
+
+    function test_vs_dp_${k}$() result(passed)
+        !! The `real(${k}$)` functions against the dp functions on the same inputs (the ${k}$ inputs are
+        !! exact in dp, so the dp result is the reference), on the stress states and over a range of
+        !! magnitudes: CPB06, CPB06ex2 and Yld2004 |sigma| from 1e-8 to 1e5 (scaling by max |lambda|,
+        !! D-017.10c), Drucker-Prager over the same range, and von Mises from 1e-15 to 1e15 (Hessian
+        !! with n = dev/seq, D-017.10d).
+        logical :: passed
+        real(${k}$), parameter :: TF = ${TOL_K[k]['f']}$_${k}$, TD = ${TOL_K[k]['df']}$_${k}$, TDD = ${TOL_K[k]['ddf']}$_${k}$
+        type(yield_vonmises_${k}$) :: v
+        type(yield_vonmises_dp) :: vd
+        type(yield_hill48_dp) :: hd
+        type(yield_cpb06_dp) :: cd
+        type(${tname('3D2Osym', 'dp')}$) :: sd
+        type(${tname('3D2Osym', k)}$) :: s
+        real(dp) :: x(6)
+        integer, parameter :: RANGE_STATES(6) = [4, 5, 6, NFIX + 1, NFIX + 2, NFIX + 3]
+            !! States of the magnitude sweep (unit or ~100 magnitude, normalized below).
+        integer :: i, j, e, jj
+
+        passed = .true.
+        do jj = 1, size(RANGE_STATES)
+            j = RANGE_STATES(jj)
+            x = states(:, j)/sqrt(sum(states(:, j)**2))
+            do e = -15, 15
+                s%vals = real(10.0_dp**e*x, ${k}$)
+                sd%vals = real(s%vals, dp)
+                call compare('von Mises (magnitude sweep)', ev(v, s), ev(vd, sd))
+                call compare_new(' (magnitude sweep)', e)
+                if (e < -8 .or. e > 5) cycle
+                do i = 1, size(CPBV, 2)
+                    call cpb_from_${k}$(i, cd)
+                    call compare('CPB06 (magnitude sweep)', ev(cpb_${k}$(i), s), ev(cd, sd))
+                end do
+            end do
+        end do
+        do j = 1, NS
+            s = stress_${k}$(j)
+            sd%vals = real(s%vals, dp)
+            call compare('von Mises', ev(v, s), ev(vd, sd))
+            do i = 1, size(HILLV, 2)
+                x = real(real(HILLV(:, i), ${k}$), dp)
+                hd = yield_hill48_dp(f=x(1), g=x(2), h=x(3), l=x(4), m=x(5), n=x(6))
+                call compare('Hill48', ev(hill_${k}$(i), s), ev(hd, sd))
+            end do
+            do i = 1, size(CPBV, 2)
+                call cpb_from_${k}$(i, cd)
+                call compare('CPB06', ev(cpb_${k}$(i), s), ev(cd, sd))
+            end do
+            call compare_new('', 0)
+        end do
+    contains
+        subroutine compare_new(suffix, e)
+            ! Drucker-Prager, CPB06ex2 and Yld2004 at the current s / sd (magnitude 10**e), dp
+            ! parameters from the `real(${k}$)` values of each set (exact conversion). Drucker-Prager
+            ! from 1e-8 to 1e12 (stable Hessian, D-017.11d; the equivalent stress and the gradient
+            ! keep q**3, which overflows in sp above ~7e12). CPB06ex2 and Yld2004 from 1e-8 to 1e5, as CPB06 (before
+            ! D-032 from 1e-7: their f took the eigenvalues of `eigenvals`, whose absolute threshold, 1e-9 in sp, discarded
+            ! the deviator below)
+            character(len=*), intent(in) :: suffix
+            integer, intent(in) :: e
+            type(yield_druckerprager_dp) :: pd
+            type(yield_cpb06ex2_dp) :: xd
+            type(yield_yld2004_dp) :: yd
+            real(dp) :: c(27)
+            integer :: i, status
+            if (e < -8 .or. e > 12) return
+            do i = 1, size(DPV, 2)
+                c(1:2) = real(real(DPV(:, i), ${k}$), dp)
+                call yield_druckerprager_init(pd, beta_deg=c(1), K=c(2), hardening_mode=DPMODE(i), status=status)
+                call check_true(passed, 'Drucker-Prager dp init status', status == STATUS_OK)
+                call compare('Drucker-Prager' // suffix, ev(dpr_${k}$(i), s), ev(pd, sd))
+            end do
+            if (e < -8 .or. e > 5) return
+            do i = 1, size(EX2V, 2)
+                c = real(real(EX2V(:, i), ${k}$), dp)
+                call yield_cpb06ex2_init(xd, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), &
+                                         c(12), c(13), c(14), c(15), c(16), c(17), c(18), c(19), c(20), c(21), &
+                                         c(22), c(23), c(24), c(25), c(26), c(27), status)
+                call check_true(passed, 'CPB06ex2 dp init status', status == STATUS_OK)
+                call compare('CPB06ex2' // suffix, ev(ex2_${k}$(i), s), ev(xd, sd))
+            end do
+            do i = 1, size(YLDV, 2)
+                c(1:19) = real(real(YLDV(:, i), ${k}$), dp)
+                call yield_yld2004_init(yd, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), &
+                                        c(12), c(13), c(14), c(15), c(16), c(17), c(18), c(19), status)
+                call check_true(passed, 'Yld2004 dp init status', status == STATUS_OK)
+                call compare('Yld2004' // suffix, ev(yld_${k}$(i), s), ev(yd, sd))
+            end do
+        end subroutine compare_new
+
+        subroutine compare(name, r, rd)
+            character(len=*), intent(in) :: name
+            real(${k}$), intent(in) :: r(28)
+            real(dp), intent(in) :: rd(28)
+            call check_approx(passed, '${k}$ ' // name // ' stress_eq vs dp', [real(r(1), dp)], [rd(1)], real(TF, dp))
+            call check_approx(passed, '${k}$ ' // name // ' dstress_eq vs dp', real(r(2:7), dp), rd(2:7), real(TD, dp))
+            call check_approx(passed, '${k}$ ' // name // ' ddstress_eq vs dp', real(r(8:28), dp), rd(8:28), real(TDD, dp))
+        end subroutine compare
+
+        subroutine cpb_from_${k}$(i, cd)
+            ! dp CPB06 parameters from the `real(${k}$)` values of set i (exact conversion)
+            integer, intent(in) :: i
+            type(yield_cpb06_dp), intent(out) :: cd
+            real(dp) :: c(14)
+            integer :: status
+            c = real(real(CPBV(:, i), ${k}$), dp)
+            call yield_cpb06_init(cd, c11=c(1), c12=c(2), c13=c(3), c21=c(4), c22=c(5), c23=c(6), c31=c(7), &
+                                  c32=c(8), c33=c(9), c44=c(10), c55=c(11), c66=c(12), k=c(13), a=c(14), status=status)
+            call check_true(passed, 'CPB06 dp init status', status == STATUS_OK)
+        end subroutine cpb_from_${k}$
+    end function test_vs_dp_${k}$
+    #:endif
+    #:endfor
+
+    function test_formulas() result(passed)
+        !! dp: von Mises = sqrt(3 J2); Hill48 = its quadratic form, and = von Mises with the isotropic
+        !! set; isotropic CPB06 (C = I, k = 0, a = 2) = von Mises; positive homogeneity of degree 1
+        !! (f), 0 (gradient) and -1 (Hessian) with a factor 2 (exact in binary).
+        logical :: passed
+        type(ten_3D2Osym_dp) :: s, s2
+        type(yield_vonmises_dp) :: v
+        real(dp) :: x(6), vm, q, r(28)
+        integer :: i, j
+
+        passed = .true.
+        do j = 1, NS
+            s = stress_dp(j)
+            x = s%vals
+            s2%vals = 2.0_dp*x
+            vm = sqrt(0.5_dp*((x(1) - x(2))**2 + (x(2) - x(3))**2 + (x(3) - x(1))**2) &
+                      + 3.0_dp*(x(4)**2 + x(5)**2 + x(6)**2))
+            call check_approx(passed, 'von Mises = sqrt(3 J2)', yield_stress_eq(v, s), vm, 1.0e-14_dp)
+            call check_approx(passed, 'isotropic Hill48 = von Mises', yield_stress_eq(hill_dp(1), s), vm, 1.0e-14_dp)
+            call check_approx(passed, 'isotropic CPB06 = von Mises', yield_stress_eq(cpb_dp(1), s), vm, 1.0e-13_dp)
+            call check_approx(passed, 'isotropic CPB06ex2 = von Mises', yield_stress_eq(ex2_dp(5), s), vm, 1.0e-13_dp)
+            call check_approx(passed, 'isotropic Yld2004 = von Mises', yield_stress_eq(yld_dp(1), s), vm, 1.0e-13_dp)
+            call check_approx(passed, 'Drucker-Prager beta = 0, K = 1 = von Mises', yield_stress_eq(dpr_dp(5), s), vm, &
+                              1.0e-13_dp)
+            call check_homogeneous('von Mises', ev(v, s), ev(v, s2))
+            do i = 1, size(HILLV, 2)
+                q = HILLV(1, i)*(x(2) - x(3))**2 + HILLV(2, i)*(x(3) - x(1))**2 + HILLV(3, i)*(x(1) - x(2))**2 &
+                    + 2.0_dp*(HILLV(4, i)*x(5)**2 + HILLV(5, i)*x(6)**2 + HILLV(6, i)*x(4)**2)
+                r = ev(hill_dp(i), s)
+                call check_approx(passed, 'Hill48 quadratic form', r(1)**2, q, 1.0e-14_dp)
+                call check_homogeneous('Hill48', r, ev(hill_dp(i), s2))
+            end do
+            do i = 1, size(CPBV, 2)
+                call check_homogeneous('CPB06', ev(cpb_dp(i), s), ev(cpb_dp(i), s2))
+            end do
+            do i = 1, size(DPV, 2)
+                call check_homogeneous('Drucker-Prager', ev(dpr_dp(i), s), ev(dpr_dp(i), s2))
+            end do
+            do i = 1, size(EX2V, 2)
+                call check_homogeneous('CPB06ex2', ev(ex2_dp(i), s), ev(ex2_dp(i), s2))
+            end do
+            do i = 1, size(YLDV, 2)
+                call check_homogeneous('Yld2004', ev(yld_dp(i), s), ev(yld_dp(i), s2))
+            end do
+        end do
+    contains
+        subroutine check_homogeneous(name, r1, r2)
+            character(len=*), intent(in) :: name
+            real(dp), intent(in) :: r1(28), r2(28)
+            call check_approx(passed, name // ' f(2 s) = 2 f(s)', r2(1), 2.0_dp*r1(1), 1.0e-13_dp)
+            call check_approx(passed, name // ' df(2 s) = df(s)', r2(2:7), r1(2:7), 1.0e-12_dp)
+            call check_approx(passed, name // ' ddf(2 s) = ddf(s)/2', 2.0_dp*r2(8:28), r1(8:28), 1.0e-12_dp)
+        end subroutine check_homogeneous
+    end function test_formulas
+
+    function test_fd_reference() result(passed)
+        !! dp: analytical gradient against central differences of stress_eq, and analytical Hessian
+        !! against central differences of the analytical gradient, every criterion and set (step
+        !! 1e-5 |sigma|; the derivative with respect to a stored shear is 2 x the tensorial component).
+        logical :: passed
+        type(yield_vonmises_dp) :: v
+        type(ten_3D2Osym_dp) :: s, sp_, sm
+        real(dp) :: h, r(28), rp(28, 6), rm(28, 6)
+        character(len=40) :: label
+        integer :: i, j, q
+
+        passed = .true.
+        do j = 1, NS
+            s = stress_dp(j)
+            h = 1.0e-5_dp*sqrt(sum(s%vals**2))
+            #:for m, n, sets, y in [('vonmises', 'von Mises', None, 'v'), ('hill48', 'Hill48', 'HILLV', 'hill_dp(i)'), &
+                & ('cpb06', 'CPB06', 'CPBV', 'cpb_dp(i)'), ('druckerprager', 'Drucker-Prager', 'DPV', 'dpr_dp(i)'), &
+                & ('cpb06ex2', 'CPB06ex2', 'EX2V', 'ex2_dp(i)'), ('yld2004', 'Yld2004', 'YLDV', 'yld_dp(i)')]
+            do i = 1, ${'1' if sets is None else 'size({}, 2)'.format(sets)}$
+                #:if m == 'cpb06'
+                ! States 2 and 3 give Sigma a null principal value: with k /= 0 the second derivative
+                ! of |lam| - k lam jumps there and the central differences are only first order
+                if (CPBV(13, i) /= 0.0_dp .and. (j == 2 .or. j == 3)) cycle
+                #:endif
+                r = ev(${y}$, s)
+                do q = 1, 6
+                    sp_ = s
+                    sm = s
+                    sp_%vals(q) = s%vals(q) + h
+                    sm%vals(q) = s%vals(q) - h
+                    rp(:, q) = ev(${y}$, sp_)
+                    rm(:, q) = ev(${y}$, sm)
+                end do
+                write(label, '(a, " set ", i0, " state ", i0)') '${n}$', i, j
+                call check_fd(trim(label), r, rp, rm, h)
+            end do
+            #:endfor
+        end do
+    contains
+        subroutine check_fd(name, r, rp, rm, h)
+            character(len=*), intent(in) :: name
+            real(dp), intent(in) :: r(28), rp(28, 6), rm(28, 6), h
+            real(dp) :: fdg(6), fdh(21)
+            integer :: p, q
+            do q = 1, 6
+                fdg(q) = (rp(1, q) - rm(1, q))/(2.0_dp*h)/MULT(q)
+                do p = 1, 6
+                    fdh(POS4(p, q)) = (rp(1 + p, q) - rm(1 + p, q))/(2.0_dp*h)/MULT(q)
+                end do
+            end do
+            call check_approx(passed, name // ' gradient vs central differences', r(2:7), fdg, ${FD_REF}$_dp)
+            call check_approx(passed, name // ' Hessian vs central differences', r(8:28), fdh, ${FD_REF}$_dp)
+        end subroutine check_fd
+    end function test_fd_reference
+
+    #:for k in REAL_KINDS
+
+    function cpb_flat_${k}$(kk) result(p)
+        !! Isotropic CPB06 (C = I) with strength differential parameter kk and a = 2, in `real(${k}$)`.
+        real(${k}$), intent(in) :: kk
+        type(yield_cpb06_${k}$) :: p
+        integer :: status
+        call yield_cpb06_init(p, c11=1.0_${k}$, c12=0.0_${k}$, c13=0.0_${k}$, c21=0.0_${k}$, c22=1.0_${k}$, &
+                              c23=0.0_${k}$, c31=0.0_${k}$, c32=0.0_${k}$, c33=1.0_${k}$, c44=1.0_${k}$, &
+                              c55=1.0_${k}$, c66=1.0_${k}$, k=kk, a=2.0_${k}$, status=status)
+        if (status /= STATUS_OK) error stop 'yield_cpb06_init failed'
+    end function cpb_flat_${k}$
+
+    function test_cpb_flat_${k}$() result(passed)
+        !! Isotropic CPB06 with a = 2 and k = 1 or k = -1 at the pure shear xy = t (t = 1, 2, 1/2, powers
+        !! of two), in `real(${k}$)`. Sigma = dev(sigma) has the principal values (t, 0, -t) (exact) with
+        !! eigenvectors (1, 1, 0)/sqrt(2), e_z and (1, -1, 0)/sqrt(2). With k = 1, psi_i = 2 max(-lam_i, 0)
+        !! (Cazacu et al., 2006, Eq. 9): only the compressive principal value counts, so
+        !! f = B 2 t with B = (sum_i (|g_i| - g_i)**2)**(-1/2) = 3/(2 sqrt(2)) (g = (2, -1, -1)/3, the
+        !! principal values of dev of a unit uniaxial tension), and df = -2 B dev(E3) pulled back
+        !! (shear factor 1) = B (-1/3, -1/3, 2/3, 1, 0, 0) (tensorial shear: E3_xy = -1/2). With k = -1,
+        !! psi_i = 2 max(lam_i, 0): f = B 2 t with B = 3/4 and df = 2 B dev(E1) = B (1/3, 1/3, -2/3, 1, 0, 0).
+        !! At t = 1 the sum Phi of the scaled principal values (1/2, 0, -1/2) is exactly 1, the
+        !! principal value on the flat side of psi (lam1 = t for k = 1, lam3 = -t for k = -1) has
+        !! psi = 0 next to the null middle value.
+        logical :: passed
+        type(${tname('3D2Osym', k)}$) :: s
+        real(${k}$), parameter :: TS(3) = [1.0_${k}$, 2.0_${k}$, 0.5_${k}$]
+            !! Shear stresses t.
+        real(${k}$) :: r(28), t, b
+        integer :: i
+
+        passed = .true.
+        do i = 1, 3
+            t = TS(i)
+            s%vals = 0.0_${k}$
+            s%vals(4) = t
+            b = 3.0_${k}$/(2.0_${k}$*sqrt(2.0_${k}$))
+            r = ev(cpb_flat_${k}$(1.0_${k}$), s)
+            call check_approx(passed, '${k}$ CPB06 k = 1 shear f = 2 B t', r(1), 2.0_${k}$*b*t)
+            call check_approx(passed, '${k}$ CPB06 k = 1 shear gradient', r(2:7), &
+                              b*[-1.0_${k}$/3.0_${k}$, -1.0_${k}$/3.0_${k}$, 2.0_${k}$/3.0_${k}$, 1.0_${k}$, &
+                                 0.0_${k}$, 0.0_${k}$])
+            call check_true(passed, '${k}$ CPB06 k = 1 shear Hessian not null', maxval(abs(r(8:28))) > 0.1_${k}$/t)
+            b = 0.75_${k}$
+            r = ev(cpb_flat_${k}$(-1.0_${k}$), s)
+            call check_approx(passed, '${k}$ CPB06 k = -1 shear f = 2 B t', r(1), 2.0_${k}$*b*t)
+            call check_approx(passed, '${k}$ CPB06 k = -1 shear gradient', r(2:7), &
+                              b*[1.0_${k}$/3.0_${k}$, 1.0_${k}$/3.0_${k}$, -2.0_${k}$/3.0_${k}$, 1.0_${k}$, &
+                                 0.0_${k}$, 0.0_${k}$])
+            call check_true(passed, '${k}$ CPB06 k = -1 shear Hessian not null', maxval(abs(r(8:28))) > 0.1_${k}$/t)
+        end do
+    end function test_cpb_flat_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+
+    function test_cpb_uniaxial_${k}$() result(passed)
+        !! CPB06 normalization (Cazacu et al., 2006, Eq. 12: B makes sigma_eq equal to the yield stress
+        !! in uniaxial tension along x, the rolling direction), every parameter set, in `real(${k}$)`:
+        !! sigma = s e_x (x) e_x with s > 0 gives f = s. A wrong B is only a constant factor of f and
+        !! its derivatives, to which the FD, homogeneity and sp-vs-dp checks are blind. The tensions s
+        !! are powers of two times a representable value (no rounding in the input).
+        logical :: passed
+        type(${tname('3D2Osym', k)}$) :: s
+        real(${k}$), parameter :: TS(4) = [1.0_${k}$, 3.0_${k}$, 0.125_${k}$, 256.0_${k}$]
+            !! Uniaxial tensions s.
+        integer :: i, j
+
+        passed = .true.
+        do i = 1, size(CPBV, 2)
+            do j = 1, size(TS)
+                s%vals = 0.0_${k}$
+                s%vals(1) = TS(j)
+                call check_approx(passed, '${k}$ CPB06 uniaxial tension along x: f = s', &
+                                  yield_stress_eq(cpb_${k}$(i), s), TS(j))
+            end do
+        end do
+    end function test_cpb_uniaxial_${k}$
+
+    function test_ex2_swap_${k}$() result(passed)
+        !! CPB06ex2 (Plunkett et al., 2008, Eq. 8) in `real(${k}$)`, every anisotropic set and stress state:
+        !! - the sum over Sigma and Sigma' is symmetric, so swapping (C, k) and (C', k') gives the
+        !!   same f, gradient and Hessian (B is normalized on the same sum);
+        !! - with C' = 0 the second sum vanishes and the model is CPB06 with (C, k, a), normalized to
+        !!   uniaxial tension along x as well (Cazacu et al., 2006, Eq. 12): same f, gradient and Hessian.
+        !! Both catch C' taking a component of C (or the reverse) when the maps are built.
+        logical :: passed
+        type(yield_cpb06ex2_${k}$) :: x, xs, x0
+        type(yield_cpb06_${k}$) :: c
+        type(${tname('3D2Osym', k)}$) :: s
+        real(${k}$) :: v(27), z(13)
+        integer :: i, j, status
+
+        passed = .true.
+        z = 0.0_${k}$
+        do i = 1, size(EX2V, 2) - 1
+            v = real(EX2V(:, i), ${k}$)
+            x = ex2_${k}$(i)
+            call yield_cpb06ex2_init(xs, v(14), v(15), v(16), v(17), v(18), v(19), v(20), v(21), v(22), v(23), &
+                                     v(24), v(25), v(26), v(1), v(2), v(3), v(4), v(5), v(6), v(7), v(8), v(9), &
+                                     v(10), v(11), v(12), v(13), v(27), status)
+            call check_true(passed, '${k}$ CPB06ex2 swapped init status', status == STATUS_OK)
+            call yield_cpb06ex2_init(x0, v(1), v(2), v(3), v(4), v(5), v(6), v(7), v(8), v(9), v(10), v(11), &
+                                     v(12), v(13), z(1), z(2), z(3), z(4), z(5), z(6), z(7), z(8), z(9), z(10), &
+                                     z(11), z(12), z(13), v(27), status)
+            call check_true(passed, '${k}$ CPB06ex2 C'' = 0 init status', status == STATUS_OK)
+            call yield_cpb06_init(c, c11=v(1), c12=v(2), c13=v(3), c21=v(4), c22=v(5), c23=v(6), c31=v(7), &
+                                  c32=v(8), c33=v(9), c44=v(10), c55=v(11), c66=v(12), k=v(13), a=v(27), &
+                                  status=status)
+            call check_true(passed, '${k}$ CPB06 init status', status == STATUS_OK)
+            do j = 1, NS
+                s = stress_${k}$(j)
+                call check_approx(passed, '${k}$ CPB06ex2 f(C, k, C'', k'') = f(C'', k'', C, k)', ev(xs, s), ev(x, s))
+                call check_approx(passed, '${k}$ CPB06ex2 with C'' = 0 = CPB06(C, k, a)', ev(x0, s), ev(c, s))
+            end do
+        end do
+    end function test_ex2_swap_${k}$
+    #:endfor
+
+    function test_cpb_flat_fd() result(passed)
+        !! dp: the Hessian of the isotropic CPB06 with a = 2 and k = +-1 at the pure shear xy = t (see
+        !! test_cpb_flat) against central differences of the analytical gradient (step 1e-5 t). The
+        !! middle principal value of Sigma is null, where the second derivative of psi**2 jumps
+        !! between 0 and 4 (|k| = 1): the documented value there is the mean of the one-sided values
+        !! (yield_cpb_curvature), which is what a central difference gives up to O(h) (FD_FLAT, also
+        !! for the gradient, whose central difference of f crosses the same jump); on the
+        !! flat side of psi (psi = 0 around lam1 = t for k = 1, lam3 = -t for k = -1) the curvature is
+        !! 0. Also the gradient against central differences of stress_eq.
+        logical :: passed
+        type(ten_3D2Osym_dp) :: s, sp_, sm
+        real(dp), parameter :: FD_FLAT = 2.0e-5_dp
+            !! First-order central differences across the jump of the second derivative (step h =
+            !! 1e-5 t): measured 2.2e-6 gradient, 3.6e-6 Hessian. A wrong curvature term or a zero
+            !! derivative is an O(1) relative error.
+        real(dp), parameter :: TS(3) = [1.0_dp, 2.0_dp, 0.5_dp], KS(2) = [1.0_dp, -1.0_dp]
+            !! Shear stresses t and strength differential parameters k.
+        real(dp) :: h, t, kk, r(28), rp(28, 6), rm(28, 6), fdg(6), fdh(21)
+        character(len=48) :: label
+        integer :: i, j, p, q
+
+        passed = .true.
+        do i = 1, 3
+            t = TS(i)
+            do j = 1, 2
+                kk = KS(j)
+                s%vals = 0.0_dp
+                s%vals(4) = t
+                h = 1.0e-5_dp*t
+                r = ev(cpb_flat_dp(kk), s)
+                do q = 1, 6
+                    sp_ = s
+                    sm = s
+                    sp_%vals(q) = s%vals(q) + h
+                    sm%vals(q) = s%vals(q) - h
+                    rp(:, q) = ev(cpb_flat_dp(kk), sp_)
+                    rm(:, q) = ev(cpb_flat_dp(kk), sm)
+                end do
+                do q = 1, 6
+                    fdg(q) = (rp(1, q) - rm(1, q))/(2.0_dp*h)/MULT(q)
+                    do p = 1, 6
+                        fdh(POS4(p, q)) = (rp(1 + p, q) - rm(1 + p, q))/(2.0_dp*h)/MULT(q)
+                    end do
+                end do
+                write(label, '(a, f4.1, a, es8.1)') 'CPB06 k = ', kk, ' shear ', t
+                call check_approx(passed, trim(label) // ' gradient vs central differences', r(2:7), fdg, FD_FLAT)
+                call check_approx(passed, trim(label) // ' Hessian vs central differences', r(8:28), fdh, FD_FLAT)
+            end do
+        end do
+    end function test_cpb_flat_fd
+
+end module test_yield_cases
+
+program test_yield_kinds
+    use test_yield_cases, only : run_all
+    implicit none
+    integer :: code
+
+    call run_all(code)
+    if (code /= 0) stop code
+    print '(a)', ' Passed!'
+end program test_yield_kinds

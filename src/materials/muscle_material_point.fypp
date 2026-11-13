@@ -1,0 +1,219 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! Generic API of a declared material for FE codes: the material from a flat parameter array
+#! `INIT` (public generic `mat_init_<name>`, order `muscle_meta.material_props`), the point API over flat arrays `POINTS`
+#! (without and with the tangent, specifics of the public generic `muscle_point_<name>`) and, for a material whose input is a
+#! strain, the rotation of the tensorial parts of a history array `ROTATE` (public generic `mat_rotate_hsv_<name>`). Included
+#! by src/materials/muscle_material.fypp after muscle_material_batch.fypp with its variables set (`k`,
+#! `MAT`, `MAT_T`, `STATE_T`, `COEFS_T`, `VISCO`, `KIN`, `COROT`, `F_INPUT`, `UPDATE`, `PACK`, `UNPACK`, `NSTATE`,
+#! `S2`, `T4`, `G2`).
+#!
+#! Each `POINTS` specific is a thin wrapper over the point kernel: the same conventions as the batch API
+#! and the same bits as `UNPACK`, `UPDATE`, `PACK` (no derived tensor type in its interface).
+#! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
+#:if defined('MAT')
+#! Point API without and with the tangent (two specifics of one generic: no optional argument, D-018.16b)
+    #:set POINTS = [(muscle_meta.material_proc('point', MAT.name, k), False), &
+        & (muscle_meta.material_proc('pointdd', MAT.name, k), True)]
+    #:set ROTATE = muscle_meta.material_proc('rotate', MAT.name, k)
+#! Names of the input arguments of the point API (`strain`, the public name of this API; `eps` in the batch API)
+    #:set INPUT_ARGS = ['F_n', 'F_np1'] if F_INPUT else ['strain']
+    #:set INIT = muscle_meta.material_proc('init', MAT.name, k)
+    #:set PROPS = muscle_meta.material_props(MAT)
+    #:set NPROPS = muscle_meta.material_nprops(MAT.name)
+    #:set DOMAINS = muscle_meta.material_domain_checks(MAT, k)
+
+    pure subroutine ${INIT}$(mat, props, status)
+        !! Material `${MAT.name}$`, `real(${k}$)`,
+        !! from a flat parameter array of an FE code: the inputs of the model of each
+        !! component (its initializer, or its parameter components) and the settings of the solver, in
+        !! this order (printed as a Markdown table by `muscle_meta.py props <name>`):
+        !!
+        #:for q in PROPS
+        #:set prop_note = (' of branch ' + str(q.branch) if q.branch else '') &
+            & + (' (integer, rounded)' if q.type == 'integer' else '')
+        #:set prop_valid = ', valid if `' + muscle_meta.material_prop_check(q, k) + '`' if q.domain else ''
+        !! - `props(${q.index}$)`: ${q.component + ' ' if q.component else 'solver '}$`${q.name}$`${prop_note}$${prop_valid}$
+        #:endfor
+        !!
+        !! `status`: `STATUS_INVALID_PARAMETER` if `props` has fewer than `${NPROPS}$` values or a
+        !! value outside the domain of its input (the ones marked valid if above:
+        !! ${', '.join('`props({})`'.format(q.index) for q in PROPS if q.domain)}$),
+        !! else that of the initializers of the models (`STATUS_OK` for those without validation); with an
+        !! error the material must not be used.
+        #:for cond, doc in DOMAINS
+        !! Also `STATUS_INVALID_PARAMETER` unless ${doc}$:
+        !! `${cond}$`.
+        #:endfor
+        use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(out) :: mat
+            !! Material (the components not in `props` keep their default values).
+        real(${k}$), intent(in) :: props(:)
+            !! Parameters (at least `${NPROPS}$`; the others are ignored).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or an error code of muscle_status.
+
+        status = STATUS_OK
+        if (size(props) < ${NPROPS}$) then
+            status = STATUS_INVALID_PARAMETER
+            return
+        end if
+        ! Domains of the inputs that are cheap to check here (the model initializers do not)
+        #:for q in PROPS
+        #:if q.domain
+        if (.not. (${muscle_meta.material_prop_check(q, k)}$)) then
+            status = STATUS_INVALID_PARAMETER
+            return
+        end if
+        #:endif
+        #:endfor
+        #:for cond, _ in DOMAINS
+        if (.not. (${cond}$)) then
+            status = STATUS_INVALID_PARAMETER
+            return
+        end if
+        #:endfor
+#:for p, m in COMPS
+#:if muscle_meta.model_init(p, m)
+${muscle_meta.material_init_call(MAT, p, k)}$
+        #:if muscle_meta.model_init(p, m).status
+        if (status /= STATUS_OK) return
+        #:endif
+#:else
+        #:for q in PROPS
+        #:if q.component == p
+        mat%${p}$%${q.name}$ = ${muscle_meta.material_prop_value(q)}$
+        #:endif
+        #:endfor
+#:endif
+#:endfor
+        #:for q in PROPS
+        #:if q.component is None
+        mat%${q.name}$ = ${muscle_meta.material_prop_value(q)}$
+        #:endif
+        #:endfor
+    end subroutine ${INIT}$
+    #:for POINT, TAN in POINTS
+
+    pure subroutine ${POINT}$(mat, ${', '.join(INPUT_ARGS)}$, dt, ${'coefs, ' if VISCO else ''}$hsv_n, hsv_np1, stress, status, &
+        iters${', ddsdde' if TAN else ''}$)
+        !! Point API of material `${MAT.name}$` for FE codes, `real(${k}$)`, ${'with' if TAN else 'without'}$ the
+        !! tangent `ddsdde` (both are specifics of the generic `${muscle_meta.material_point(MAT.name)}$`): the point kernel
+        !! `mat_update` on flat arrays, bit for bit `mat_unpack_${MAT.name}$`, `mat_update` and
+        !! `mat_pack_${MAT.name}$`, with the conventions of the batch API: strains and
+        !! stresses in tensorial Voigt order (xx, yy, zz, xy, yz, xz) without the factor 2 of the
+        !! shears${';' if TAN or F_INPUT else '.'}$
+        #:if TAN
+        !! `ddsdde(i, j)` = \( \partial\sigma_i/\partial\varepsilon_j \) for j = 1..3 and
+        !! \( \partial\sigma_i/\partial\gamma_j \) with the engineering shear \( \gamma_j = 2\varepsilon_j \)
+        !! for j = 4..6 (as the DDSDDE of a UMAT)${';' if F_INPUT else '.'}$
+        #:endif
+        #:if F_INPUT
+        !! deformation gradients in column-major order (F11, F21, F31, F12, F22, F32, F13, F23, F33:
+        !! `reshape(DFGRD1, [9])` of a UMAT).
+        #:endif
+        #:if VISCO
+        !!
+        !! `coefs`: the coefficients of the time step, `mat_step(mat, dt, coefs, status)` (once per step
+        !! for every point; the caller checks its status before calling this procedure).
+        #:endif
+        !! `hsv_n` and `hsv_np1` may not be the same array (copy the FE history array to a local one).
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material.
+        #:if F_INPUT
+        real(${k}$), intent(in) :: F_n(9)
+            !! Deformation gradient at \( t_n \) (column-major).
+        real(${k}$), intent(in) :: F_np1(9)
+            !! Deformation gradient at \( t_{n+1} \) (column-major).
+        #:else
+        real(${k}$), intent(in) :: strain(6)
+            !! Total strain at \( t_{n+1} \)${' in the corotational frame' if COROT else ''}$ (tensorial Voigt).
+        #:endif
+        real(${k}$), intent(in) :: dt
+            !! Time step.
+        #:if VISCO
+        type(${COEFS_T}$), intent(in) :: coefs
+            !! Coefficients of the time step (`mat_step` with the same `dt`).
+        #:endif
+        real(${k}$), intent(in) :: hsv_n(${NSTATE}$)
+            !! Converged state at \( t_n \) (layout of `mat_pack_${MAT.name}$`).
+        real(${k}$), intent(out) :: hsv_np1(${NSTATE}$)
+            !! State at \( t_{n+1} \).
+        real(${k}$), intent(out) :: stress(6)
+            !! ${'Cauchy stress' if F_INPUT else 'Stress'}$ at \( t_{n+1} \) (tensorial Voigt).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or an error code of muscle_status (outputs not to be used).
+        integer, intent(out) :: iters
+            !! Iterations of the return mapping (0 in an elastic step).
+        #:if TAN
+        real(${k}$), intent(out) :: ddsdde(6, 6)
+            !! Tangent at \( t_{n+1} \) (see above).
+        #:endif
+
+        #:for x in INPUT_ARGS
+        type(${G2 if F_INPUT else S2}$) :: ${x}$_t
+        #:endfor
+        type(${STATE_T}$) :: state_n, state_np1
+        type(${S2}$) :: stress_t
+        type(${T4}$) :: tangent
+
+        #:for x in INPUT_ARGS
+        ${x}$_t%vals = ${x}$
+        #:endfor
+        call ${UNPACK}$(hsv_n, state_n)
+        call ${UPDATE}$(mat, ${', '.join(x + '_t' for x in INPUT_ARGS)}$, dt, ${'coefs, ' if VISCO else ''}$state_n, state_np1, &
+            stress_t, tangent, status, iters)
+        call ${PACK}$(state_np1, hsv_np1)
+        stress = stress_t%vals
+        #:if TAN
+        ddsdde = tangent%vals
+        #:endif
+    end subroutine ${POINT}$
+    #:endfor
+    #:if not F_INPUT
+
+    pure subroutine ${ROTATE}$(hsv, drot)
+        !! Rotates the tensorial parts of a history array of material `${MAT.name}$`, `real(${k}$)`:
+        !! \( \mathbf{A} \leftarrow \Delta\mathbf{R}\,\mathbf{A}\,\Delta\mathbf{R}^T \) for the
+        #:if VISCO
+        !! plastic strain hsv(1:6) and the elastic strain and history tensors of the viscoelastic state,
+        !! hsv(8:${muscle_meta.material_state_size(MAT)}$);
+        #:else
+        !! plastic strain hsv(1:6);
+        #:endif
+        !! the equivalent plastic strain hsv(7) is a scalar. For FE codes that rotate the stress and strain
+        !! to the corotational frame but not the state variables (Abaqus `STATEV` with `DROT`), before
+        !! the point API; a code that rotates its state variables does not need it.
+        use muscle_tensors, only : operator(.transform.)
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(inout) :: hsv(${NSTATE}$)
+            !! History array of a point (layout of `mat_pack_${MAT.name}$`).
+        real(${k}$), intent(in) :: drot(3, 3)
+            !! Rotation increment \( \Delta\mathbf{R} \) (orthogonal; `drot(i, j)` = \( \Delta R_{ij} \)).
+
+        type(${G2}$) :: r
+        type(${S2}$) :: a
+        #:if VISCO
+        integer :: i
+        #:endif
+
+        @:MAT33_TO_VEC9(r%vals, drot)
+        a%vals = hsv(1:6)
+        a = r .transform. a
+        hsv(1:6) = a%vals
+        #:if VISCO
+        ! Elastic strain (i = 0) and history tensors i = 1 .. ${MAT.visco_branches}$
+        do i = 0, ${MAT.visco_branches}$
+            a%vals = hsv(8 + 6*i:13 + 6*i)
+            a = r .transform. a
+            hsv(8 + 6*i:13 + 6*i) = a%vals
+        end do
+        #:endif
+    end subroutine ${ROTATE}$
+    #:endif
+#:endif

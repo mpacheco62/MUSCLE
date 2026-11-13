@@ -1,0 +1,171 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Fixed-size LU bodies shared by the small dense inverses (muscle_math_inverses: M55INV, M66INV,
+#! M99INV and the private LU fallbacks lu_inv3, lu_inv4 of M33INV, M44INV) and the small linear
+#! solvers (muscle_math_lu_solve: LU<n>SOLVE).
+#!
+#! Every body expands at the end of the specification part of a subroutine that declares
+#!   integer, parameter :: N            -- matrix size (compile-time constant)
+#!   real(rk), intent(in)  :: A(N,N)    -- matrix
+#!   logical, intent(out)  :: OK_FLAG
+#! A compile-time N lets the compiler unroll the loops: measured ~20 % faster than a single
+#! routine with N as an argument for the 6x6 case.
+#!
+#! Building blocks (algorithms of LAPACK, unblocked, no external calls):
+#!   lu_factor(rk, LU)    P A = L U in place in LU (which holds A on entry) with partial pivoting,
+#!                        column-oriented like DGETF2; the pivots go to ipiv(N). OK_FLAG = .false.
+#!                        (and the factorization stops) on an exactly zero (or NaN) pivot.
+#!                        Needs the locals: integer :: ipiv(N), i, j, k, p; real(rk) :: r, tmp.
+#!   lu_subst(rk, LU, v)  v <- inv(A) v from the factors of lu_factor, like DGETRS: row
+#!                        interchanges, L y = P v (unit lower), U v = y.
+#!                        Needs the locals: integer :: ipiv(N), i, j, k, p; real(rk) :: tmp.
+#!
+#! `$:lu_inverse_body(rk)` (needs real(rk), intent(out) :: AINV(N,N)), DGETRF + DGETRI:
+#!   1. lu_factor in AINV;
+#!   2. inv(U) in place (like DTRTI2, upper, non-unit);
+#!   3. solve inv(A) L = inv(U) (like DGETRI);
+#!   4. undo the row interchanges as column interchanges, in reverse order.
+#! Singular A (exactly zero pivot): OK_FLAG = .false. and AINV = 0.
+#! `$:lu_inverse_body(rk, kappa=True)` also sets the optional dummy
+#!   real(rk), intent(out), optional :: KAPPA
+#! when present: \kappa_\infty(A) = COND_INF_<rk>(A, AINV) after the inversion, huge(1.0_<rk>) if
+#! A is singular. It does not change AINV or OK_FLAG.
+#!
+#! `$:lu_solve_body(rk)` (needs real(rk), intent(in) :: b(N); real(rk), intent(out) :: x(N);
+#! real(rk), intent(out), optional :: KAPPA), DGETRF + DGETRS without forming the inverse:
+#! x = inv(A) b. Singular A (exactly zero pivot): OK_FLAG = .false., x = 0 and KAPPA =
+#! huge(1.0_<rk>). When KAPPA is present it is \kappa_\infty(A) = |A|_inf |inv(A)|_inf, with
+#! inv(A) obtained column by column from the factors (N more substitutions: the cost of the
+#! inversion, only paid when KAPPA is requested); it does not change x or OK_FLAG.
+#:def lu_factor(rk, LU)
+        OK_FLAG = .true.
+        do k = 1, N
+            p = k
+            do i = k+1, N
+                if (abs(${LU}$(i,k)) > abs(${LU}$(p,k))) p = i
+            end do
+            ipiv(k) = p
+            if (.not. (abs(${LU}$(p,k)) > 0.0_${rk}$)) then     ! zero (or NaN) pivot: singular
+                OK_FLAG = .false.
+                exit
+            end if
+            if (p /= k) then
+                do j = 1, N
+                    tmp = ${LU}$(k,j); ${LU}$(k,j) = ${LU}$(p,j); ${LU}$(p,j) = tmp
+                end do
+            end if
+            r = 1.0_${rk}$ / ${LU}$(k,k)
+            do i = k+1, N
+                ${LU}$(i,k) = ${LU}$(i,k) * r
+            end do
+            do j = k+1, N
+                do i = k+1, N
+                    ${LU}$(i,j) = ${LU}$(i,j) - ${LU}$(i,k) * ${LU}$(k,j)
+                end do
+            end do
+        end do
+#:enddef
+
+#:def lu_subst(rk, LU, v)
+        do k = 1, N
+            p = ipiv(k)
+            if (p /= k) then
+                tmp = ${v}$(k); ${v}$(k) = ${v}$(p); ${v}$(p) = tmp
+            end if
+        end do
+        do j = 1, N-1
+            do i = j+1, N
+                ${v}$(i) = ${v}$(i) - ${LU}$(i,j) * ${v}$(j)
+            end do
+        end do
+        do j = N, 1, -1
+            ${v}$(j) = ${v}$(j) / ${LU}$(j,j)
+            do i = 1, j-1
+                ${v}$(i) = ${v}$(i) - ${LU}$(i,j) * ${v}$(j)
+            end do
+        end do
+#:enddef
+
+#:def lu_inverse_body(rk, kappa=False)
+        integer :: ipiv(N), i, j, k, p
+        real(${rk}$) :: r, tmp, ajj, s, work(N)
+
+        AINV = A
+        ! --- 1. factorization P A = L U ---
+        $:lu_factor(rk, 'AINV')
+        if (.not. OK_FLAG) then
+            AINV = 0.0_${rk}$
+            #:if kappa
+            if (present(KAPPA)) KAPPA = huge(1.0_${rk}$)
+            #:endif
+            return
+        end if
+        ! --- 2. inv(U) in place ---
+        do j = 1, N
+            AINV(j,j) = 1.0_${rk}$ / AINV(j,j)
+            ajj = -AINV(j,j)
+            do i = 1, j-1
+                work(i) = AINV(i,j)
+            end do
+            do i = 1, j-1
+                s = 0.0_${rk}$
+                do k = i, j-1
+                    s = s + AINV(i,k) * work(k)
+                end do
+                AINV(i,j) = s * ajj
+            end do
+        end do
+        ! --- 3. solve inv(A) L = inv(U) ---
+        do j = N-1, 1, -1
+            do i = j+1, N
+                work(i) = AINV(i,j)
+                AINV(i,j) = 0.0_${rk}$
+            end do
+            do k = j+1, N
+                do i = 1, N
+                    AINV(i,j) = AINV(i,j) - AINV(i,k) * work(k)
+                end do
+            end do
+        end do
+        ! --- 4. column interchanges ---
+        do j = N-1, 1, -1
+            p = ipiv(j)
+            if (p /= j) then
+                do i = 1, N
+                    tmp = AINV(i,j); AINV(i,j) = AINV(i,p); AINV(i,p) = tmp
+                end do
+            end if
+        end do
+        #:if kappa
+        if (present(KAPPA)) KAPPA = COND_INF_${rk}$(A, AINV)
+        #:endif
+#:enddef
+
+#:def lu_solve_body(rk)
+        integer :: ipiv(N), i, j, k, p, c
+        real(${rk}$) :: r, tmp, lu(N,N), w(N), rowsum(N)
+
+        lu = A
+        $:lu_factor(rk, 'lu')
+        if (.not. OK_FLAG) then
+            x = 0.0_${rk}$
+            if (present(KAPPA)) KAPPA = huge(1.0_${rk}$)
+            return
+        end if
+        x = b
+        $:lu_subst(rk, 'lu', 'x')
+        if (present(KAPPA)) then
+            ! |inv(A)|_inf from the columns inv(A) e_c
+            rowsum = 0.0_${rk}$
+            do c = 1, N
+                w = 0.0_${rk}$
+                w(c) = 1.0_${rk}$
+                $:lu_subst(rk, 'lu', 'w')
+                do i = 1, N
+                    rowsum(i) = rowsum(i) + abs(w(i))
+                end do
+            end do
+            KAPPA = NORM_INF_${rk}$(A) * maxval(rowsum)
+        end if
+#:enddef

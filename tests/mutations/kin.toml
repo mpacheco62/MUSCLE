@@ -1,0 +1,6 @@
+# Mutation check of the kinematics (tools/mutation_check.py kin)
+sources = ["src/kinematics/muscle_kin_*.fypp"]
+# The reference test was deleted (plan R): the unit tests detected all the 245 mutations it detected.
+reference = ""
+unit = "^kinematics-"
+samples = 40

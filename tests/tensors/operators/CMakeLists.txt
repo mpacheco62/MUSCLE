@@ -1,6 +1,13 @@
-add_muscle_test(test_ddot_4O3_4O3 test_ddot_4O3_4O3.f90)
-add_muscle_test(test_operator_contraction_single test_operator_contraction_single.f90)
-add_muscle_test(test_operator_dyadic test_operator_dyadic.f90)
-add_muscle_test(test_operator_transform test_operator_transform.f90)
-
-add_muscle_test(test_operator_2d_vs_3d test_operator_2d_vs_3d.f90)
+# Every entry of the operator table (op_entries) against the same operation on the full tensors,
+# every dimension and kind (D-015.8), one test per generic (.ddot.) or operator module
+# (ops_full_common.fypp).
+foreach(_name IN ITEMS ddot addition_subtraction assignment contraction_single dyadic transform)
+    # The test file is named after the operator module (`.ddot.` is muscle_tensor_ops_contraction_double)
+    set(_module ${_name})
+    if(_name STREQUAL "ddot")
+        set(_module contraction_double)
+    endif()
+    add_muscle_fypp_test(ops_${_name}_full test_muscle_tensor_ops_${_module}_full.fypp
+                         DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/ops_full_common.fypp
+                                 ${MUSCLE_FYPP_INCLUDE_DIR}/muscle_tensor_ops_common.fypp)
+endforeach()

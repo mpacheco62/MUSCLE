@@ -1,0 +1,224 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_vp_rk
+    !! Rusinek-Klepaczko viscoplastic law (self-contained: it does not compose a hardening law):
+    !! \[ \sigma(\epsilon_p, \dot\epsilon_p) = B(\dot\epsilon_p) (\epsilon_0 + \epsilon_p)^{n(\dot\epsilon_p)}
+    !!    + \sigma^*(\dot\epsilon_p) \]
+    !! \[ n = n_0 \langle 1 - D_2 \log_{10}(\dot\epsilon_p/\dot\epsilon_{min}) \rangle, \quad
+    !!    B = B_0 \left[\log_{10}(\dot\epsilon_{max}/\dot\epsilon_p)\right]^{-\nu}, \quad
+    !!    \sigma^* = \sigma_0^* \langle 1 - D_1 \log_{10}(\dot\epsilon_{max}/\dot\epsilon_p) \rangle^m \]
+    !!
+    !! Known issues, kept with the same results as the original code (D-017.7):
+    !!
+    !! - `flow_stress` is 0 for \( \dot\epsilon_p \le 0 \); it is Inf at \( \dot\epsilon_p =
+    !!   \dot\epsilon_{max} \) and NaN above.
+    !! - The derivatives omit \( \partial\sigma/\partial\epsilon_p \): `dflow_dep` is 0 and
+    !!   `dstress_dep` is only the rate term. They clamp the rate to
+    !!   \( [\dot\epsilon_{min}^{d}, 0.99 \dot\epsilon_{max}] \) (\( \dot\epsilon_{min}^{d} \) =
+    !!   `epmin`), floor \( \log_{10}(\dot\epsilon_{max}/\dot\epsilon_p) \) at 0.01 in \( B \) and drop
+    !!   \( \sigma^* \) when its base is \( \le 10^{-10} \), so they are not the derivatives of
+    !!   `flow_stress` near those limits.
+    !! - `epmax` is unused.
+    !!
+    !! The original default-real literals (`0.0`, `1.0`) are exact, so writing them with the kind
+    !! changes no result.
+    !!
+    !! Kernel API: parameter types `vp_rk_<k>` and `pure` functions `vp_flow_stress_rk_<k>(prm, ep,
+    !! epd)`, `vp_dflow_dep_rk_<k>`, `vp_dflow_depd_rk_<k>(prm, ep, epd)` and
+    !! `vp_dstress_dep_rk_<k>(prm, ep, epd, dt)` for each real kind, also through the generics `vp_*`
+    !! of `muscle_vp_laws`. `dstress_dep` is computed with the time step inside (as the original
+    !! code, same bits in dp), so it equals `dflow_dep + dflow_depd/dt` only up to rounding.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: vp_rk_${k}$
+    public :: vp_flow_stress_rk_${k}$, vp_dflow_dep_rk_${k}$, vp_dflow_depd_rk_${k}$, &
+        & vp_dstress_dep_rk_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    type :: vp_rk_${k}$
+        !! Parameters of the Rusinek-Klepaczko model in `real(${k}$)`.
+        real(${k}$) :: B0
+            !! Modulus of plasticity \( B_0 \).
+        real(${k}$) :: ep0
+            !! Strain offset \( \epsilon_0 \).
+        real(${k}$) :: n0
+            !! Hardening exponent at the reference rate \( n_0 \).
+        real(${k}$) :: D2
+            !! Rate sensitivity of the hardening exponent \( D_2 \).
+        real(${k}$) :: D1
+            !! Rate sensitivity of the effective stress \( D_1 \).
+        real(${k}$) :: nu
+            !! Rate sensitivity of the modulus \( \nu \).
+        real(${k}$) :: epdmin
+            !! Lower limit rate \( \dot\epsilon_{min} \).
+        real(${k}$) :: epdmax
+            !! Upper limit rate \( \dot\epsilon_{max} \).
+        real(${k}$) :: sig0
+            !! Effective stress at 0 K \( \sigma_0^* \).
+        real(${k}$) :: m
+            !! Exponent of the effective stress \( m \).
+        real(${k}$) :: epmin = 1.0e-6_${k}$
+            !! Floor of the rate in the derivatives.
+        real(${k}$) :: epmax = 10000.0_${k}$
+            !! Unused (historical component).
+    end type vp_rk_${k}$
+    #:endfor
+
+contains
+    #:for k in REAL_KINDS
+    pure function vp_flow_stress_rk_${k}$(prm, ep, epd) &
+        & result(res)
+        !! Viscoplastic flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \) of the Rusinek-Klepaczko model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(vp_rk_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \sigma \).
+        real(${k}$) :: n_val, B_val, sig_extra
+        real(${k}$) :: factor_n, factor_sig, log_arg
+
+        if (epd <= 0.0_${k}$) then
+            res = 0.0_${k}$
+            return
+        end if
+
+        factor_n = 1.0_${k}$ - prm%D2*log10(epd/prm%epdmin)
+        if (factor_n > 0.0_${k}$) then
+            n_val = prm%n0*factor_n
+        else
+            n_val = 0.0_${k}$
+        end if
+
+        log_arg = log10(prm%epdmax/epd)
+        B_val = prm%B0*log_arg**(-prm%nu)
+
+        factor_sig = 1.0_${k}$ - prm%D1*log10(prm%epdmax/epd)
+        if (factor_sig > 0.0_${k}$) then
+            sig_extra = prm%sig0*factor_sig**(prm%m)
+        else
+            sig_extra = 0.0_${k}$
+        end if
+
+        res = B_val*(prm%ep0 + ep)**(n_val) + sig_extra
+    end function vp_flow_stress_rk_${k}$
+
+    pure function vp_dflow_dep_rk_${k}$(prm, ep, epd) &
+        & result(res)
+        !! Partial derivative \( \partial\sigma/\partial\epsilon_p \) (at constant \( \dot\epsilon_p \)) of the
+        !! Rusinek-Klepaczko model in `real(${k}$)`.
+        !! Always 0: the original derivative omits this term.
+        implicit none
+        @:DEVICE()
+        type(vp_rk_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \partial\sigma/\partial\epsilon_p \).
+        res = 0.0_${k}$
+    end function vp_dflow_dep_rk_${k}$
+
+    pure function vp_dflow_depd_rk_${k}$(prm, ep, epd) &
+        & result(res)
+        !! Partial derivative \( \partial\sigma/\partial\dot\epsilon_p \) (at constant \( \epsilon_p \)) of the
+        !! Rusinek-Klepaczko model in `real(${k}$)`.
+        !! Rate term of dstress_dep with dt = 1.
+        implicit none
+        @:DEVICE()
+        type(vp_rk_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$) :: res
+            !! \( \partial\sigma/\partial\dot\epsilon_p \).
+        res = vp_rk_drate_${k}$(prm, ep, epd, 1.0_${k}$)
+    end function vp_dflow_depd_rk_${k}$
+
+    pure function vp_dstress_dep_rk_${k}$(prm, ep, epd, dt) &
+        & result(res)
+        !! Derivative of the flow stress with respect to the plastic strain increment, \( \partial\sigma/\partial\epsilon_p
+        !! + \partial\sigma/\partial\dot\epsilon_p/\Delta t \) of the Rusinek-Klepaczko model in `real(${k}$)`.
+        !! Only the rate term, with the time step inside.
+        implicit none
+        @:DEVICE()
+        type(vp_rk_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$), intent(in) :: dt
+            !! Time step \( \Delta t \) (\( \dot\epsilon_p = \Delta\epsilon_p/\Delta t \)).
+        real(${k}$) :: res
+            !! \( d\sigma/d\Delta\epsilon_p \).
+        res = vp_rk_drate_${k}$(prm, ep, epd, dt)
+    end function vp_dstress_dep_rk_${k}$
+
+    pure function vp_rk_drate_${k}$(prm, ep, epd, dt) result(res)
+        !! Rate term of the derivative of the Rusinek-Klepaczko law in `real(${k}$)`,
+        !! \( \partial\sigma/\partial\dot\epsilon_p / \Delta t \) with the clamps of the module
+        !! documentation (original formula and operation order).
+        implicit none
+        @:DEVICE()
+        type(vp_rk_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain.
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate.
+        real(${k}$), intent(in) :: dt
+            !! Time step.
+        real(${k}$) :: res
+            !! Rate term.
+        real(${k}$) :: n_val, B_val, factor_sig, log_arg_B, log_arg_n, epd_tmp
+        real(${k}$) :: dn_depd, dB_depd, inv_ln10
+        real(${k}$) :: K_base, term1_deriv, term2_deriv
+
+        epd_tmp = max(prm%epmin, min(epd, prm%epdmax*0.99_${k}$))
+        inv_ln10 = 1.0_${k}$/log(10.0_${k}$)
+
+        log_arg_n = log10(epd_tmp/prm%epdmin)
+        n_val = prm%n0*max(0.0_${k}$, (1.0_${k}$ - prm%D2*log_arg_n))
+
+        log_arg_B = max(log10(prm%epdmax/epd_tmp), 0.01_${k}$)
+        B_val = prm%B0*(log_arg_B**(-prm%nu))
+
+        factor_sig = 1.0_${k}$ - prm%D1*log10(prm%epdmax/epd_tmp)
+
+        K_base = prm%ep0 + ep
+
+        dn_depd = prm%n0*(-prm%D2)*(inv_ln10/(epd_tmp*dt))
+
+        dB_depd = (prm%B0*prm%nu*(log_arg_B**(-prm%nu - 1.0_${k}$)))* &
+                  (inv_ln10/(epd_tmp*dt))
+
+        term1_deriv = (dB_depd*(K_base**n_val)) + &
+                      (B_val*(K_base**n_val)*log(K_base)*dn_depd)
+
+        if (factor_sig > 1.0e-10_${k}$) then
+            term2_deriv = prm%sig0*prm%m*(factor_sig**(prm%m - 1.0_${k}$))* &
+                          (prm%D1*inv_ln10/(epd_tmp*dt))
+        else
+            term2_deriv = 0.0_${k}$
+        end if
+
+        res = term1_deriv + term2_deriv
+    end function vp_rk_drate_${k}$
+
+    #:endfor
+end module muscle_vp_rk

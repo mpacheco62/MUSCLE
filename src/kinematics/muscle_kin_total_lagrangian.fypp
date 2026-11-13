@@ -1,0 +1,163 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_kin_total_lagrangian
+    !! Module muscle_kin_total_lagrangian
+    !! ==================================
+    !! Total Lagrangian kinematics: the strain is the Green-Lagrange strain
+    !! \( \mathbf{E} = \tfrac{1}{2}(\mathbf{C} - \mathbf{I}) \) and the constitutive stress its work
+    !! conjugate, the second Piola-Kirchhoff stress \( \mathbf{S} \), pushed forward to Cauchy,
+    !! \( \boldsymbol\sigma = J^{-1}\mathbf{F}\mathbf{S}\mathbf{F}^T \); the constitutive tangent is
+    !! pushed forward with F, \( c_{ijkl} = J^{-1} F_{iI} F_{jJ} F_{kK} F_{lL} C_{IJKL} \) (exact for
+    !! \( \delta\mathbf{F} = \delta\boldsymbol\varepsilon\,\mathbf{F} \)), and the geometric term of the
+    !! Jaumann rate is \( \tfrac{1}{2}(\delta_{ik}\sigma_{jl} + \delta_{il}\sigma_{jk} + \sigma_{ik}\delta_{jl} +
+    !! \sigma_{il}\delta_{jk}) \) (`kin_jaumann_tangent`).
+    !!
+    !! Kernel API: the (empty) parameter type `kin_total_lagrangian_<k>` and the `pure`
+    !! procedures `kin_update_total_lagrangian_<k>(prm, F, state, status)` (status:
+    !! `STATUS_INVALID_DEFORMATION` for det F <= 0, a singular F or a vanishing eigenvalue of C),
+    !! `kin_to_cauchy_total_lagrangian_<k>(prm, state, stress)`,
+    !! `kin_to_spatial_tangent_total_lagrangian_<k>(prm, state, tangent)`,
+    !! `kin_geometric_tangent_total_lagrangian_<k>(prm, state, stress)` and
+    !! `kin_is_finite_strain_total_lagrangian_<k>(prm)`, also through the generics `kin_*` of
+    !! muscle_kin_laws.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    #:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2O_${k}$, ten_3D2Osym_${k}$, ten_3D4O2sym_${k}$
+    use muscle_kin_finite, only : kin_state_${k}$
+    #:endfor
+    use muscle_kin_finite, only : kin_finite_update, kin_finite_update_norot, kin_green_lagrange, &
+        kin_pk2_to_cauchy, kin_push_forward_tangent, kin_jaumann_tangent
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: kin_total_lagrangian_${k}$
+    public :: kin_update_total_lagrangian_${k}$
+    public :: kin_update_norot_total_lagrangian_${k}$
+    public :: kin_to_cauchy_total_lagrangian_${k}$
+    public :: kin_to_spatial_tangent_total_lagrangian_${k}$
+    public :: kin_geometric_tangent_total_lagrangian_${k}$
+    public :: kin_is_finite_strain_total_lagrangian_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+    type :: kin_total_lagrangian_${k}$
+        !! Parameters of the total lagrangian model in `real(${k}$)`.
+    end type kin_total_lagrangian_${k}$
+
+    #:endfor
+contains
+    #:for k in REAL_KINDS
+
+    pure subroutine kin_update_total_lagrangian_${k}$(prm, F, state, status)
+        !! Kinematic state of a deformation gradient \( \mathbf{F} \) (the deformation gradient is validated) of the total
+        !! Lagrangian model in `real(${k}$)`.
+        !! Strain: Green-Lagrange \( \mathbf{E} \).
+        implicit none
+        @:DEVICE()
+        type(kin_total_lagrangian_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2O_${k}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state (not valid when `status` is not `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (muscle_status).
+
+        call kin_finite_update(F, state, status)
+        state%strain = kin_green_lagrange(state)
+    end subroutine kin_update_total_lagrangian_${k}$
+
+    pure subroutine kin_update_norot_total_lagrangian_${k}$(prm, F, state, status)
+        !! `kin_update` without the polar decomposition: the rotation R of the state is the identity, unless the
+        !! functions of the kinematics read it (`KINEMATICS_ROTATION`: then the same state as `kin_update`); every other component
+        !! and `status` are the same bits of the total Lagrangian model in `real(${k}$)`.
+        !! `kin_update` with `kin_finite_update_norot` (R not computed).
+        implicit none
+        @:DEVICE()
+        type(kin_total_lagrangian_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2O_${k}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state without R (not valid when `status` is not `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (muscle_status).
+
+        call kin_finite_update_norot(F, state, status)
+        state%strain = kin_green_lagrange(state)
+    end subroutine kin_update_norot_total_lagrangian_${k}$
+
+    pure function kin_to_cauchy_total_lagrangian_${k}$(prm, state, stress) result(res)
+        !! Cauchy stress from the constitutive stress (work conjugate of the strain of the kinematics) of the total Lagrangian model
+        !! in `real(${k}$)`.
+        !! Push-forward of the second Piola-Kirchhoff stress.
+        implicit none
+        @:DEVICE()
+        type(kin_total_lagrangian_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D2Osym_${k}$), intent(in) :: stress
+            !! Constitutive stress.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Cauchy stress \( \boldsymbol\sigma \).
+
+        res = kin_pk2_to_cauchy(state, stress)
+    end function kin_to_cauchy_total_lagrangian_${k}$
+
+    pure function kin_to_spatial_tangent_total_lagrangian_${k}$(prm, state, tangent) result(res)
+        !! Spatial tangent from the constitutive tangent: the part of \(
+        !! J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) through the constitutive stress, for \( \delta\mathbf{F}
+        !! = \delta\boldsymbol\varepsilon\,\mathbf{F} \) (with the derivative of the strain measure; without the
+        !! geometric term) of the total Lagrangian model in `real(${k}$)`.
+        !! Push-forward with F.
+        implicit none
+        @:DEVICE()
+        type(kin_total_lagrangian_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D4O2sym_${k}$), intent(in) :: tangent
+            !! Constitutive tangent.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Spatial tangent.
+
+        res = kin_push_forward_tangent(state, tangent)
+    end function kin_to_spatial_tangent_total_lagrangian_${k}$
+
+    pure function kin_geometric_tangent_total_lagrangian_${k}$(prm, state, stress) result(res)
+        !! Geometric term of the spatial tangent: the part of \( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \) at
+        !! a fixed constitutive stress; `to_spatial_tangent` plus this is the tangent of the Jaumann rate of the
+        !! Kirchhoff stress of the total Lagrangian model in `real(${k}$)`.
+        !! The Kirchhoff stress \( \mathbf{F}\mathbf{S}\mathbf{F}^T \) at a fixed S: `kin_jaumann_tangent`.
+        implicit none
+        @:DEVICE()
+        type(kin_total_lagrangian_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(kin_state_${k}$), intent(in) :: state
+            !! Kinematic state (`kin_update` or `kin_corot_update`).
+        type(ten_3D2Osym_${k}$), intent(in) :: stress
+            !! Cauchy stress.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Geometric term.
+
+        res = kin_jaumann_tangent(stress)
+    end function kin_geometric_tangent_total_lagrangian_${k}$
+
+    pure function kin_is_finite_strain_total_lagrangian_${k}$(prm) result(res)
+        !! Whether the kinematics is a finite strain one of the total Lagrangian model in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(kin_total_lagrangian_${k}$), intent(in) :: prm
+            !! Parameters.
+        logical :: res
+            !! `.true.` for a finite strain kinematics.
+
+        res = .true.
+    end function kin_is_finite_strain_total_lagrangian_${k}$
+    #:endfor
+
+end module muscle_kin_total_lagrangian

@@ -1,0 +1,68 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_tensor_ops_common.fypp"
+#! Assignments between tensor types, generated from the pair table of muscle_meta (OP_TABLE['='])
+#! for every dimension and kind. Each procedure writes every stored component of `a`:
+#! - from a tensor: each component of `a` takes the matching tensor component of `b` (layouts);
+#! - from an identity: zero, then the non-zero components of the identity (iden_combination).
+#:set MODULE = 'assignment'
+
+module muscle_tensor_ops_${MODULE}$
+    !! This module defines the overloaded assignment operator `=` for mixed-type conversions
+    !! between second-order, fourth-order and identity tensors, in 3D and 2D, single and double
+    !! precision (both sides of the same kind; unscaled identities serve every kind).
+    !!
+    !! - `ten_<d>2O = ten_<d>2Osym`: unpacks the symmetric storage into the general one.
+    !! - `ten_<d>4O2sym = ten_<d>4O3sym`: expands the upper triangle to the full Voigt matrix.
+    !! - `ten_<d>2Osym = I` and `ten_<d>4O2sym`/`ten_<d>4O3sym = I` (some identities, scaled or
+    !!   not): sets the components of the identity (scale factor \(c\), \(c/2\) on the shear
+    !!   diagonal of \(\mathbb{I}^S\)) and zeroes the rest.
+$:OP_USES(MODULE)
+    implicit none
+    private
+
+$:OP_INTERFACES(MODULE)
+contains
+
+    #:for g in OP_MODULES[MODULE]
+    #:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for e in op_entries(g, d, k)
+    #:set x, y = op_args(e)
+    #:set A, B, _ = op_symbols(e)
+    #:set la = op_layout(e.tag_a)
+    #:if op_iden(e.tag_b) is None
+    #:set doc = 'Assignment \\({} = {}\\)'.format(A, B)
+    pure subroutine ${e.name}$(${x}$, ${y}$)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(out) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        #:set lb = op_layout(e.tag_b)
+        #:for c in la.comps
+        ${la.ref(x + '%vals', *c.idx)}$ = ${lb.ref(y + '%vals', *c.idx)}$
+        #:endfor
+    end subroutine ${e.name}$
+
+    #:else
+    #:set doc = 'Assignment \\({} = {}\\)'.format(A, B)
+    pure subroutine ${e.name}$(${x}$, ${y}$)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(out) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${x}$%vals = 0.0_${k}$
+        #:for p, v in iden_combination(la, [op_iden_term(e.tag_b, y + '%val')], k)
+        ${x}$%vals(${p}$) = ${v}$
+        #:endfor
+    end subroutine ${e.name}$
+
+    #:endif
+    #:endfor
+    #:endfor
+    #:endfor
+    #:endfor
+end module muscle_tensor_ops_${MODULE}$

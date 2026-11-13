@@ -1,0 +1,15 @@
+# Minimal reference of the math modules (plan R, docs/fypp/ESTADO_OPTIMO.md): the only records whose
+# mutations no unit test can detect. Copied verbatim from math_operations_dp.txt and
+# math_spectral_derivs_dp.txt (captured from the original code, commit dbd900c, GNU Fortran 15.2.0, Debug).
+# - eigenvals middle near mean: the branch |1 - d| <= EPS of eigenvals (muscle_math_eigen) gives
+#   eigenvalues ~1e-12 relative off the closed form there (PROBLEMAS.md, plan R): kept so that the
+#   behaviour does not change without a decision.
+# - spectral_decomposition V (middle = mean, double exact): which of the equally valid eigenvectors an
+#   exact tie selects (>= vs > in the choice of the pair, the axis and the pivot component).
+# <key> | <n> | <IEEE-754 bits of each value, hex>
+input eigenvals middle near mean | case 1 | 6 | 4014000000000000 40080000000057F6 3FF0000000000000 0000000000000000 0000000000000000 0000000000000000
+eigenvals middle near mean | case 1 | 3 | 4014000000000EAA 4008000000001D53 3FF0000000003AA6
+input double exact | case 1 | 6 | 4000000000000000 4000000000000000 4008000000000000 3FF0000000000000 0000000000000000 0000000000000000
+spectral_decomposition V double exact | case 1 | 9 | 0000000000000000 0000000000000000 3FF0000000000000 BFE6A09E667F3BCD BFE6A09E667F3BCC 0000000000000000 3FE6A09E667F3BCC BFE6A09E667F3BCD 0000000000000000
+input middle = mean | case 1 | 6 | 0000000000000000 0000000000000000 0000000000000000 3FF0000000000000 0000000000000000 0000000000000000
+spectral_decomposition V middle = mean | case 1 | 9 | 3FE6A09E667F3BCC 3FE6A09E667F3BCC 0000000000000000 0000000000000000 0000000000000000 BFF0000000000000 BFE6A09E667F3BCC 3FE6A09E667F3BCC 0000000000000000

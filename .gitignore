@@ -1,6 +1,7 @@
 python/
 bin/
-build/
+build*/
+__pycache__/
 modFiles/
 output/
 doc/
@@ -15,5 +16,6 @@ all_fortran.txt
 
 .claude/
 CLAUDE.MD
+CLAUDE.md
 INDICE_FUNCIONES.md
 TODO.md

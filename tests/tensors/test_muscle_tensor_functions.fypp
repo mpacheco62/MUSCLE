@@ -1,0 +1,174 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! muscle_tensor_functions (D-011): the free generics of every family through one `use`, equal
+#! (tol = 0) to the type-bound API, and not leaked by muscle_tensors; to_matrix and from_upper (no type-bound
+#! counterpart) against the named accessors or the documented storage order, matmul/transpose of the matrix and
+#! their round trip.
+#! (family, functions compared with their type-bound counterpart)
+#:set CASES = muscle_meta.load_python_file('../gpu/target_cases.py', base=_THIS_FILE_).TENSOR_FUNCTIONS
+
+module test_functions_lib
+    use muscle_kinds, only: sp, dp
+    use muscle_tensors
+    use muscle_tensor_functions
+    use muscle_test_utils, only: check_true, check_approx
+    implicit none
+
+contains
+
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:for F, fns in CASES
+    #:set T = tname(d + F, k)
+    #:set lay = layout(F, d)
+    subroutine test_${d}$${F}$_${k}$(passed)
+        !! Free functions of `${T}$` == type-bound ones; is_approx and inverse free == operators.
+        logical, intent(inout) :: passed
+        type(${T}$) :: a, x1, x2
+        logical :: ok
+        integer :: i
+        character(len=*), parameter :: TN = ' [${T}$]'
+
+        ! Small distinct components (exact in sp and dp) plus 8 on the diagonal of the matrix
+        ! shown by Layout.matrix(): diagonally dominant, hence regular
+        a%vals = reshape([(0.125_${k}$*real(mod(7*i, 11) - 5, ${k}$), i = 1, size(a%vals))], shape(a%vals))
+        #:set rows = lay.matrix('a%vals')
+        #:for i in range(len(rows))
+        ${rows[i][i]}$ = ${rows[i][i]}$ + 8.0_${k}$
+        #:endfor
+        #:for fn in fns
+        #:if fn in ('norm', 'det')
+        call check_approx(passed, '${fn}$(a) == a%${fn}$()' // TN, ${fn}$(a), a%${fn}$(), tol=0.0_${k}$)
+        #:elif fn == 'is_identity'
+        call check_true(passed, 'is_identity(a) == a%is_identity()' // TN, is_identity(a) .eqv. a%is_identity())
+        ! Exact identity: 1 on the normal components, 0 elsewhere; any component one ulp away is not
+        x1%vals = 0.0_${k}$
+        #:for c in lay.comps
+        #:if c.idx[0] == c.idx[1]
+        x1%vals(${', '.join(map(str, c.pos))}$) = 1.0_${k}$
+        #:endif
+        #:endfor
+        call check_true(passed, 'is_identity(I) and I%is_identity()' // TN, is_identity(x1) .and. x1%is_identity())
+        call check_true(passed, 'not is_identity(a)' // TN, .not. is_identity(a))
+        #:for c in lay.comps
+        x2 = x1
+        x2%vals(${', '.join(map(str, c.pos))}$) = nearest(x1%vals(${', '.join(map(str, c.pos))}$), 1.0_${k}$)
+        call check_true(passed, 'not is_identity(I + 1 ulp in ${c.name}$)' // TN, .not. is_identity(x2))
+        #:endfor
+        #:elif fn == 'to_matrix'
+        block
+            real(${k}$) :: m(3, 3), mu(3, 3)
+            type(${T}$) :: r
+            m = to_matrix(a)
+            #:if F == '2Osym'
+            ! Each named accessor (row and column read from its name) at its entries of the matrix
+            #:for c in lay.comps
+            #:set i, j = ('xyz'.index(c.name[0]) + 1, 'xyz'.index(c.name[1]) + 1)
+            call check_true(passed, 'to_matrix(a)(${i}$, ${j}$) == a%${c.name}$()' // TN, m(${i}$, ${j}$) == a%${c.name}$())
+            #:if i != j
+            call check_true(passed, 'to_matrix(a)(${j}$, ${i}$) == a%${c.name}$()' // TN, m(${j}$, ${i}$) == a%${c.name}$())
+            #:endif
+            #:endfor
+            #:elif d == '3D'
+            ! Documented storage order, written by hand (no accessors in 2O): column-major
+            call check_true(passed, 'to_matrix(a) == reshape(a%vals, [3, 3])' // TN, all(m == reshape(a%vals, [3, 3])))
+            #:else
+            ! Documented storage order, written by hand (no accessors in 2O): (11, 21, 12, 22, 33)
+            call check_true(passed, 'to_matrix(a): storage order (11, 21, 12, 22, 33)' // TN, &
+                            m(1, 1) == a%vals(1) .and. m(2, 1) == a%vals(2) .and. m(1, 2) == a%vals(3) &
+                            .and. m(2, 2) == a%vals(4) .and. m(3, 3) == a%vals(5))
+            #:endif
+            #:if d == '2D'
+            call check_true(passed, 'to_matrix(a): out-of-plane couplings zero' // TN, &
+                            all(m(1:2, 3) == 0.0_${k}$) .and. all(m(3, 1:2) == 0.0_${k}$))
+            #:endif
+            ! Matrix algebra on the matrix = tensor algebra on the tensor
+            #:if F == '2Osym'
+            r = square(a)
+            mu = matmul(m, m)
+            #:else
+            r = transpose(a)
+            mu = transpose(m)
+            #:endif
+            call check_true(passed, 'to_matrix(${'square' if F == '2Osym' else 'transpose'}$(a))' // TN, &
+                            maxval(abs(to_matrix(r) - mu)) <= 8.0_${k}$*epsilon(1.0_${k}$)*maxval(abs(mu)))
+            #:if F == '2Osym' and d == '3D'
+            ! from_upper: inverse of to_matrix, reads only the upper triangle
+            r = from_upper(m)
+            call check_true(passed, 'from_upper(to_matrix(a)) == a' // TN, all(r%vals == a%vals))
+            mu = m
+            mu(2, 1) = 99.0_${k}$
+            mu(3, 1) = -99.0_${k}$
+            mu(3, 2) = 77.0_${k}$
+            r = from_upper(mu)
+            call check_true(passed, 'from_upper ignores the lower triangle' // TN, all(r%vals == a%vals))
+            mu = reshape([(real(i, ${k}$), i = 1, 9)], [3, 3])
+            r = from_upper(mu)
+            #:for c in lay.comps
+            #:set i, j = ('xyz'.index(c.name[0]) + 1, 'xyz'.index(c.name[1]) + 1)
+            call check_true(passed, 'from_upper(m)%${c.name}$() == m(${i}$, ${j}$)' // TN, r%${c.name}$() == mu(${i}$, ${j}$))
+            #:endfor
+            #:endif
+        end block
+        #:else
+        #:set RT = {'convert_3sym': tname(d + '4O3sym', k), 'convert_2sym': tname(d + '4O2sym', k)}.get(fn, T)
+        block
+            type(${RT}$) :: r_free, r_tbp
+            r_free = ${fn}$(a)
+            r_tbp = a%${fn}$()
+            call check_true(passed, '${fn}$(a) == a%${fn}$()' // TN, all(r_free%vals == r_tbp%vals))
+        end block
+        #:endif
+        #:endfor
+        call check_true(passed, 'is_approx(a, a)' // TN, is_approx(a, a))
+        x1 = a
+        x1%vals = 2.0_${k}$*a%vals
+        call check_true(passed, 'is_approx(a, 2a) == a .approx. 2a' // TN, &
+                        is_approx(a, x1) .eqv. (a .approx. x1))
+        call inverse(a, x1, ok)
+        x2 = .inv. a
+        call check_true(passed, 'inverse ok' // TN, ok)
+        call check_true(passed, 'inverse(a) == .inv. a' // TN, all(x1%vals == x2%vals))
+    end subroutine test_${d}$${F}$_${k}$
+
+    #:endfor
+    #:endfor
+    #:endfor
+    subroutine test_not_leaked(passed)
+        !! muscle_tensors does not export the free functions: a local `norm`/`det` compiles
+        !! next to `use muscle_tensors`, and renaming on import works.
+        use muscle_tensor_functions, only: tdet => det
+        logical, intent(inout) :: passed
+        call check_true(passed, 'local norm/det next to use muscle_tensors', local_names() == 3.0_dp)
+        call check_true(passed, 'renamed import tdet', &
+                        tdet(ten_3D2Osym_dp(vals=[2.0_dp, 3.0_dp, 4.0_dp, 0.0_dp, 0.0_dp, 0.0_dp])) == 24.0_dp)
+    end subroutine test_not_leaked
+
+    function local_names() result(r)
+        use muscle_tensors
+        real(dp) :: r
+        real(dp) :: norm, det
+        norm = 1.0_dp
+        det = 2.0_dp
+        r = norm + det
+    end function local_names
+end module test_functions_lib
+
+program test_muscle_tensor_functions
+    use test_functions_lib
+    implicit none
+    logical :: passed
+
+    passed = .true.
+    #:for k in REAL_KINDS
+    #:for d in DIMS
+    #:for F, fns in CASES
+    call test_${d}$${F}$_${k}$(passed)
+    #:endfor
+    #:endfor
+    #:endfor
+    call test_not_leaked(passed)
+    if (.not. passed) stop 1
+    print '(a)', 'All tests for muscle_tensor_functions passed successfully!'
+end program test_muscle_tensor_functions

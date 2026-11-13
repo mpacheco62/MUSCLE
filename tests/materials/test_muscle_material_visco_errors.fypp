@@ -1,0 +1,108 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+program test_mat_visco_errors
+    !! Declared materials with a frozen viscoelastic elasticity (Phase 7 step 6, D-017.13d), in every
+    !! kind: the error paths of the step coefficients (`mat_step`) and a model with fewer branches than
+    !! the history array of the material keeps.
+    !!
+    !! - `cp_maxwell_vm_bilinear` (2 branches in the history array) with a 3-branch Maxwell model:
+    !!   `STATUS_INVALID_PARAMETER`; with dt < 0: `STATUS_INVALID_TIME_STEP`.
+    !! - `cp_kelvin_hill48_swift` with dt = 0 (rigid Kelvin-Voigt solid): `STATUS_INVALID_TIME_STEP`.
+    !! - `cp_maxwell_vm_bilinear` with a 1-branch Maxwell model: a loading/unloading sequence through
+    !!   the FE history array (pack/unpack every step) gives the same bits as keeping the state, the
+    !!   unused history tensor stays zero in the array and the round trip of the array is exact.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER, STATUS_INVALID_TIME_STEP
+    use muscle_tensors, only : ${', '.join(tname('3D2Osym', k) + ', ' + tname('3D4O2sym', k) for k in REAL_KINDS)}$
+    use muscle_visco_laws, only : ${', '.join('visco_coefs_' + k for k in REAL_KINDS)}$
+    use muscle_visco_maxwell, only : visco_maxwell_init
+    use muscle_visco_kelvin, only : visco_kelvin_init
+    use muscle_mat_cp_maxwell_vm_bilinear, only : mat_update, mat_step, mat_pack_cp_maxwell_vm_bilinear, &
+        mat_unpack_cp_maxwell_vm_bilinear, MAT_CP_MAXWELL_VM_BILINEAR_NSTATE, &
+        ${', '.join('mat_cp_maxwell_vm_bilinear_' + k + ', mat_state_cp_maxwell_vm_bilinear_' + k for k in REAL_KINDS)}$
+    use muscle_mat_cp_kelvin_hill48_swift, only : mat_step, ${', '.join('mat_cp_kelvin_hill48_swift_' + k for k in REAL_KINDS)}$
+    use muscle_test_utils, only : check_true
+    implicit none
+
+    logical :: passed
+
+    passed = .true.
+    #:for k in REAL_KINDS
+    call run_${k}$()
+    #:endfor
+    if (.not. passed) then
+        print '(a)', ' FAIL: test_mat_visco_errors'
+        stop 1
+    end if
+    print '(a)', ' PASS: test_mat_visco_errors'
+
+contains
+    #:for k in REAL_KINDS
+
+    subroutine run_${k}$()
+        !! Every check in `real(${k}$)`.
+        integer, parameter :: NSTATE = MAT_CP_MAXWELL_VM_BILINEAR_NSTATE
+        real(${k}$), parameter :: DT = 0.1_${k}$
+        real(${k}$), parameter :: FACTORS(5) = [0.5_${k}$, 1.5_${k}$, 3.0_${k}$, 2.6_${k}$, 2.0_${k}$]
+            ! Strain sequence along D (multiples of about the yield strain): elastic, plastic, unloading
+        type(mat_cp_maxwell_vm_bilinear_${k}$) :: mat
+        type(mat_cp_kelvin_hill48_swift_${k}$) :: kv
+        type(visco_coefs_${k}$) :: coefs
+        type(mat_state_cp_maxwell_vm_bilinear_${k}$) :: sn_a, snp1_a, sn_b, snp1_b
+        type(${tname('3D2Osym', k)}$) :: strain, stress_a, stress_b
+        type(${tname('3D4O2sym', k)}$) :: tan_a, tan_b
+        real(${k}$) :: hsv(NSTATE), hsv2(NSTATE)
+        integer :: status, status_a, status_b, iters_a, iters_b, i
+
+        mat%hard%y0 = 200.0_${k}$
+        mat%hard%K = 1000.0_${k}$
+
+        ! More branches than the history array keeps
+        call visco_maxwell_init(mat%visco, bulk=20000.0_${k}$, shear_inf=1000.0_${k}$, &
+            shear=[2000.0_${k}$, 3000.0_${k}$, 500.0_${k}$], tau=[0.05_${k}$, 1.0_${k}$, 10.0_${k}$], status=status)
+        call check_true(passed, '3-branch Maxwell init (${k}$)', status == STATUS_OK)
+        call mat_step(mat, DT, coefs, status)
+        call check_true(passed, '3 branches > visco_branches: STATUS_INVALID_PARAMETER (${k}$)', &
+            status == STATUS_INVALID_PARAMETER)
+
+        ! Negative time step
+        call visco_maxwell_init(mat%visco, bulk=20000.0_${k}$, shear_inf=1000.0_${k}$, &
+            shear=[2000.0_${k}$, 3000.0_${k}$], tau=[0.05_${k}$, 1.0_${k}$], status=status)
+        call mat_step(mat, -DT, coefs, status)
+        call check_true(passed, 'Maxwell, dt < 0: STATUS_INVALID_TIME_STEP (${k}$)', status == STATUS_INVALID_TIME_STEP)
+
+        ! Kelvin-Voigt with dt = 0
+        call visco_kelvin_init(kv%visco, bulk=20000.0_${k}$, shear=5000.0_${k}$, bulk_viscosity=500.0_${k}$, &
+            shear_viscosity=200.0_${k}$, status=status)
+        call check_true(passed, 'Kelvin-Voigt init (${k}$)', status == STATUS_OK)
+        call mat_step(kv, 0.0_${k}$, coefs, status)
+        call check_true(passed, 'Kelvin-Voigt, dt = 0: STATUS_INVALID_TIME_STEP (${k}$)', &
+            status == STATUS_INVALID_TIME_STEP)
+
+        ! One branch, two in the history array: the state through the array (b) and kept (a)
+        call visco_maxwell_init(mat%visco, bulk=20000.0_${k}$, shear_inf=1000.0_${k}$, shear=[2000.0_${k}$], &
+            tau=[0.05_${k}$], status=status)
+        call mat_step(mat, DT, coefs, status)
+        call check_true(passed, '1-branch Maxwell step (${k}$)', status == STATUS_OK)
+        do i = 1, size(FACTORS)
+            strain%vals = 5.0e-2_${k}$*FACTORS(i)*[1.0_${k}$, -0.3_${k}$, -0.3_${k}$, 0.2_${k}$, 0.0_${k}$, 0.1_${k}$]
+            call mat_update(mat, strain, DT, coefs, sn_a, snp1_a, stress_a, tan_a, status_a, iters_a)
+            call mat_update(mat, strain, DT, coefs, sn_b, snp1_b, stress_b, tan_b, status_b, iters_b)
+            call check_true(passed, 'converged (${k}$)', status_a == STATUS_OK .and. status_b == STATUS_OK)
+            call check_true(passed, 'through the history array: same bits (${k}$)', &
+                all(stress_a%vals == stress_b%vals) .and. all(tan_a%vals == tan_b%vals) .and. iters_a == iters_b)
+            call mat_pack_cp_maxwell_vm_bilinear(snp1_b, hsv)
+            call check_true(passed, 'unused history tensor zero (${k}$)', all(hsv(20:25) == 0.0_${k}$))
+            call mat_unpack_cp_maxwell_vm_bilinear(hsv, sn_b)
+            call check_true(passed, 'state of the material: visco_branches tensors (${k}$)', size(sn_b%visco%h, 2) == 2)
+            call mat_pack_cp_maxwell_vm_bilinear(sn_b, hsv2)
+            call check_true(passed, 'history array round trip (${k}$)', all(hsv2 == hsv))
+            sn_a = snp1_a
+        end do
+        call check_true(passed, 'the sequence yields (${k}$)', sn_a%plastic%strain_pf > 0.0_${k}$)
+    end subroutine run_${k}$
+    #:endfor
+
+end program test_mat_visco_errors

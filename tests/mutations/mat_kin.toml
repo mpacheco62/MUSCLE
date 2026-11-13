@@ -1,0 +1,76 @@
+# Mutation check of the regression reference of the finite strain materials (tools/mutation_check.py mat_kin):
+# the kinematics and, by hand, the finite strain part of the material kernel (rotation of the plastic strain,
+# of the strain and of the stress to the frame of R, spin terms of the tangent). The sampled mutations of the
+# whole kernel file would rebuild every material for code that the finite strain materials do not run.
+sources = ["src/kinematics/muscle_kin_*.fypp"]
+# The reference (the dp regression reference of test_mat_kinematics, measured as a test that ran only its reference
+# part against one that ran only its physical oracles) was deleted (plan R): the unit tests detected all the 237
+# mutations it detected.
+reference = ""
+unit = "^kinematics-|^materials-mat_kinematics$"
+samples = 40
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "tangent%vals(:, c) = tangent%vals(:, c) - col%vals"
+new = "tangent%vals(:, c) = tangent%vals(:, c) + col%vals"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "tangent%vals(:, c) = tangent%vals(:, c) + col%vals"
+new = "tangent%vals(:, c) = tangent%vals(:, c) - col%vals"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "col%vals = sspin%vals(:, c) - col%vals"
+new = "col%vals = sspin%vals(:, c) + col%vals"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "state_rot%strain_p = (ks%R * transpose(ks_n%R)) .transform. state_n%strain_p"
+new = "state_rot%strain_p = (transpose(ks_n%R) * ks%R) .transform. state_n%strain_p"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "state_rot%strain_p = transpose(ks_n%R) .transform. state_n%strain_p"
+new = "state_rot%strain_p = ks_n%R .transform. state_n%strain_p"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "strain_rot = transpose(ks%R) .transform. ks%strain"
+new = "strain_rot = ks%R .transform. ks%strain"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "stress_c = ks%R .transform. stress_c"
+new = "stress_c = transpose(ks%R) .transform. stress_c"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "tangent_c = ks%R .transform. tangent_c"
+new = "tangent_c = transpose(ks%R) .transform. tangent_c"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "state_np1%strain_p = ks%R .transform. state_np1%strain_p"
+new = "state_np1%strain_p = transpose(ks%R) .transform. state_np1%strain_p"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "call kin_update(mat%kin, F_n, ks_n, status)"
+new = "call kin_update(mat%kin, F_np1, ks_n, status)"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "spin = kin_spin_tangent(ks, ks%strain)"
+new = "spin = kin_spin_tangent(ks, 2.0_${k}$*ks%strain)"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "sspin = kin_spin_tangent(ks, stress_c)"
+new = "sspin = kin_spin_tangent(ks, 2.0_${k}$*stress_c)"
+
+[[manual]]
+file = "src/materials/muscle_material_kernel.fypp"
+old = "spin = kin_spin_tangent(ks, state_rot%strain_p)"
+new = "spin = kin_spin_tangent(ks, 2.0_${k}$*state_rot%strain_p)"

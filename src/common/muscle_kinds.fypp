@@ -1,0 +1,113 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Default relative tolerance of `.approx.` per kind: dp keeps the historical 1e-12; sp is
+#! ~84 ulp (epsilon(1.0_sp) = 1.2e-7), see .claude/rules/testing.md and D-010.
+#:set TOL_APPROX = {'sp': '1.0e-5', 'dp': '1.0e-12'}
+#! Default of the 4O2sym family (D-010, user decision 2026-10-30): dp keeps the historical 1e-8 of
+#! ten_3D4O2sym/ten_2D4O2sym; sp is 10x the sp base tolerance.
+#:set TOL_APPROX_4O2SYM = {'sp': '1.0e-4', 'dp': '1.0e-8'}
+#! Tolerance of `.approx.` of the scaled identities (D-014): dp keeps the historical 1e-10, sp
+#! uses the general sp tolerance.
+#:set TOL_APPROX_IDEN = {'sp': '1.0e-5', 'dp': '1.0e-10'}
+#! Finite-difference steps. dp keeps the values of each
+#! historical finite-difference routine (the macros of tests/common/muscle_fd.fypp). sp: central first
+#! derivatives ~epsilon**(1/3) ~ 5e-3; central second derivatives ~epsilon**(1/4) ~ 2e-2. The
+#! steps are relative to the size of the argument
+#! with the historical absolute minimum, h = max(|x| rel, min), and h = rel at a zero argument
+#! (D-016.4). Minimum: dp 1e-40 (1e-35 in the jacobian), the historical values; sp 1e-30 (D-016.2).
+#:set FD_STEP_CEN = {'sp': '5.0e-3', 'dp': '1.0e-7'}
+#:set FD_STEP_CEN_2OSYM = {'sp': '5.0e-3', 'dp': '1.0e-6'}
+#:set FD_STEP_CEN_JAC = {'sp': '5.0e-3', 'dp': '1.0e-4'}
+#:set FD_STEP_CEN2 = {'sp': '2.0e-2', 'dp': '1.0e-4'}
+#:set FD_STEP_MIN = {'sp': '1.0e-30', 'dp': '1.0e-40'}
+#:set FD_STEP_MIN_JAC = {'sp': '1.0e-30', 'dp': '1.0e-35'}
+#! Default relative tolerance of the Newton iterations of the return mappings (D-018.3): the
+#! iteration stops when |f| < tol sigma_y (and the plastic strain residual is below tol). sp: 1e-5
+#! (~84 ulp); dp: 1e-10 (the historical absolute 1e-5 was ~3e-8 relative with sigma_y ~ 300 MPa).
+#:set NEWTON_TOL = {'sp': '1.0e-5', 'dp': '1.0e-10'}
+#! Elastic predictor threshold of the return mappings, f_trial/sigma_y <= tol: dp keeps the historical
+#! 1e-8; sp 1e-5 (as NEWTON_TOL_sp: below it a step on the yield surface would enter the Newton loop
+#! and converge at once, so iters = 0 would no longer mean an elastic step).
+#:set TOL_ELASTIC = {'sp': '1.0e-5', 'dp': '1.0e-8'}
+#! Lower bound of the flow stress sigma_y in the relative criteria of the return mappings (historical
+#! value of the elastic predictor, both kinds; D-018.11b)
+#:set SY_MIN = {'sp': '1.0e-10', 'dp': '1.0e-10'}
+
+module muscle_kinds
+    !! Real kinds of MUSCLE and the constants that depend on them.
+    !!
+    !! Every module uses `sp`/`dp` from here instead of `real32`/`real64` or literal kinds.
+    !! The constants exist for both kinds even when a build instantiates only `dp`
+    !! (`MUSCLE_REAL_KINDS`), so code can reference them unconditionally.
+    use, intrinsic :: iso_fortran_env, only: real32, real64
+    implicit none
+    private
+
+    integer, parameter, public :: sp = real32
+        !! Single precision.
+    integer, parameter, public :: dp = real64
+        !! Double precision (the kind of the historical, unsuffixed type names).
+
+    #:for k in ALL_KINDS
+    real(${k}$), parameter, public :: TOL_APPROX_${k}$ = ${TOL_APPROX[k]}$_${k}$
+        !! Default relative tolerance of `.approx.`/`is_approx` for `real(${k}$)` values (most
+        !! tensor types; `4O2sym` uses `TOL_APPROX_4O2SYM_${k}$`).
+    real(${k}$), parameter, public :: TOL_APPROX_4O2SYM_${k}$ = ${TOL_APPROX_4O2SYM[k]}$_${k}$
+        !! Default relative tolerance of `.approx.`/`is_approx` of the fourth-order tensors with
+        !! minor symmetries (`4O2sym`) in `real(${k}$)`: looser than `TOL_APPROX_${k}$` (historical
+        !! 1e-8 in dp, 1e-4 in sp). In sp it covers inverses with \(\kappa_\infty \lesssim
+        !! 10^3\) (measured); to compare inverses of worse-conditioned tensors pass an explicit
+        !! `tol` of about \(2\,\kappa_\infty\,\epsilon\).
+    real(${k}$), parameter, public :: TOL_APPROX_IDEN_${k}$ = ${TOL_APPROX_IDEN[k]}$_${k}$
+        !! Tolerance of `.approx.` of the scaled identities in `real(${k}$)`: \( |a - b| \le
+        !! tol \cdot \max(1, |a|, |b|) \) (absolute below 1, relative above); 1e-10 in dp (the
+        !! historical value, formerly a default-real literal) and 1e-5 in sp.
+    real(${k}$), parameter, public :: EPS_ABS_${k}$ = 1.0e-30_${k}$
+        !! Lower bound of the scale of relative comparisons in `real(${k}$)` (avoids a zero
+        !! threshold when both operands vanish; normal in both kinds).
+    real(${k}$), parameter, public :: FD_STEP_CEN_${k}$ = ${FD_STEP_CEN[k]}$_${k}$
+        !! Relative step of the central first derivatives of a scalar function of a scalar or of a
+        !! `2O` tensor (`FD_DERIV`, `FD_GRAD`) in `real(${k}$)`, \( \approx
+        !! \epsilon^{1/3} \) (1e-7 in dp, the historical value; 5e-3 in sp). Step \( h =
+        !! \max(|x|\,rel, min) \) (\( h = rel \) if \( |x| = 0 \)), \( |x| \) the absolute value or
+        !! the `norm` of the argument, `min` = `FD_STEP_MIN_${k}$`.
+    real(${k}$), parameter, public :: FD_STEP_CEN_2OSYM_${k}$ = ${FD_STEP_CEN_2OSYM[k]}$_${k}$
+        !! Relative step of the central gradient of a scalar function of a `2Osym` tensor
+        !! (`FD_GRAD`) in `real(${k}$)` (1e-6 in dp, the historical value; 5e-3 in sp).
+    real(${k}$), parameter, public :: FD_STEP_CEN_JAC_${k}$ = ${FD_STEP_CEN_JAC[k]}$_${k}$
+        !! Relative step of the central jacobian of a `2Osym`-valued function of a `2Osym` tensor
+        !! (`FD_JAC`) in `real(${k}$)` (1e-4 in dp, the historical value; 5e-3 in sp).
+    real(${k}$), parameter, public :: FD_STEP_CEN2_${k}$ = ${FD_STEP_CEN2[k]}$_${k}$
+        !! Relative step of the central second derivatives (`FD_HESS`) in
+        !! `real(${k}$)`, \( \approx \epsilon^{1/4} \) (1e-4 in dp, the historical value; 2e-2 in sp).
+    real(${k}$), parameter, public :: FD_STEP_ZERO_${k}$ = sqrt(epsilon(1.0_${k}$))
+        !! `real(${k}$)`: step of the first-derivative finite differences at an argument exactly
+        !! equal to zero (D-016.4): sqrt(eps) keeps the rounding error near sqrt(eps) even if
+        !! f(0) /= 0 and stays far below any physical scale of the argument (e.g. a yield strain).
+    real(${k}$), parameter, public :: FD_STEP_MIN_${k}$ = ${FD_STEP_MIN[k]}$_${k}$
+        !! Minimum step of the central finite differences at a non-zero argument in `real(${k}$)`
+        !! (1e-40 in dp, the historical value; 1e-30 in sp). A zero argument uses the relative
+        !! step itself.
+    real(${k}$), parameter, public :: FD_STEP_MIN_JAC_${k}$ = ${FD_STEP_MIN_JAC[k]}$_${k}$
+        !! Minimum step of the central jacobian (`FD_JAC`) at a non-zero argument in `real(${k}$)`
+        !! (1e-35 in dp, the historical value; 1e-30 in sp).
+    real(${k}$), parameter, public :: NEWTON_TOL_${k}$ = ${NEWTON_TOL[k]}$_${k}$
+        !! Default relative tolerance of the Newton iterations of the return mappings in
+        !! `real(${k}$)`: converged when \( |f| < tol\,\sigma_y \) (1e-10 in dp, 1e-5 in
+        !! sp, ~84 ulp); each material may set its own. The plastic strain residual (dimensionless)
+        !! is checked against the same tolerance.
+    real(${k}$), parameter, public :: TOL_ELASTIC_${k}$ = ${TOL_ELASTIC[k]}$_${k}$
+        !! Elastic predictor threshold of the return mappings in `real(${k}$)`: the step is elastic
+        !! when \( f_{trial}/\sigma_y \le tol \) (1e-8 in dp, the historical value; 1e-5 in sp).
+    real(${k}$), parameter, public :: SY_MIN_${k}$ = ${SY_MIN[k]}$_${k}$
+        !! Lower bound of the flow stress \( \sigma_y \) in the relative criteria of the return
+        !! mappings in `real(${k}$)` (`TOL_ELASTIC`, `NEWTON_TOL`: \( \max(\sigma_y, \) `SY_MIN`\( ) \)),
+        !! so that a flow stress of zero neither divides nor stalls the Newton loop (D-018.11b; 1e-10,
+        !! the historical value of the elastic predictor, in both kinds).
+    real(${k}$), parameter, public :: DGAMMA_MIN_${k}$ = 1.0e-12_${k}$
+        !! Threshold of the plastic multiplier increment \( \Delta\gamma \) below which the consistent
+        !! tangent of a closest point return mapping is the elastic one, `real(${k}$)` (the historical
+        !! value, in both kinds).
+    #:endfor
+end module muscle_kinds

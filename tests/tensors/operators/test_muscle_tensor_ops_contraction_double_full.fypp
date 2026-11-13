@@ -1,0 +1,7 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! `.ddot.` against the double contraction of the full tensors (D-015.8)
+#! (every entry of op_entries, every dimension and kind; see ops_full_common.fypp).
+#:set FULL_NAME = 'test_ops_ddot_full'
+#:set FULL_GENERICS = ['.ddot.']
+#:include "ops_full_common.fypp"

@@ -1,0 +1,568 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+
+module muscle_yield_yld2004
+    !! Yld2004-18p anisotropic yield criterion (Barlat et al., 2005).
+    !!
+    !! Two linear transformations of the deviator s, Sp = Cp:s and Spp = Cpp:s, with
+    !! principal values lamp_i and lampp_j, define
+    !! \[ \phi = \sum_i \sum_j |\lambda^\prime_i - \lambda^{\prime\prime}_j|^a = 4 \bar{\sigma}^a \]
+    !! (Barlat et al., 2005, Eq. 14) and the equivalent stress \( \bar{\sigma} = (\phi/4)^{1/a} \).
+    !! Cp and Cpp take the 9 coefficients each of Barlat et al. (2005, Eq. 15): c12, c13, c21, c23,
+    !! c31, c32 on the normal components and c44 (xy), c55 (yz), c66 (xz) on the shears, in the
+    !! library order; the paper orders the shears yz, zx, xy (Eq. A.15), so
+    !! (c44, c55, c66) here = (c66, c44, c55) in the paper. The analytical derivatives go through
+    !! the spectral decompositions of Sp and Spp (the cross term of the Hessian has no
+    !! eigenvector-rotation part); they need \( a \ge 2 \) (with a < 2 they are NaN where two
+    !! principal values coincide).
+    !!
+    !! Scaling (D-017.10c): the powers are evaluated on the principal values of Sp and Spp divided by
+    !! the power of two of their largest magnitude (exact in floating point), using the homogeneity
+    !! of degree 1 of \( \bar\sigma \), 0 of its gradient and -1 of its Hessian, so that no power
+    !! under- or overflows (in sp \( \phi \) was subnormal or zero for small stresses with a = 8).
+    !!
+    !! At a null equivalent stress (\( \phi = 0 \)) both derivatives are 0 (D-017.9; the original
+    !! code gave NaN). Known limits, kept with the same results as the original code: the
+    !! criterion is not exactly insensitive to the pressure (Lp and Lpp act on the three normal
+    !! stresses, so their zero row sums cancel a hydrostatic stress only up to rounding: e.g.
+    !! \( \bar\sigma \approx 7 \cdot 10^{-17} p \) with AA2090-T3; then \( \phi \ne 0 \) and the zero
+    !! derivatives above do not apply: the gradient is O(1) in an arbitrary direction, set by the rounding,
+    !! and the Hessian is finite). The eigenvalues of f and of its derivatives come from the same spectral
+    !! decompositions (`spectral_decomposition`, D-032), without an absolute threshold.
+    !!
+    !! Kernel API: parameter types `yield_yld2004_<k>` (built only with `yield_yld2004_init`, which
+    !! computes the private components Lp and Lpp), and `pure` functions
+    !! `yield_stress_eq_yld2004_3D_<k>(prm, sigma)`, `yield_dstress_eq_yld2004_3D_<k>(prm, sigma)`,
+    !! `yield_ddstress_eq_yld2004_3D_<k>(prm, sigma)` and its own joint evaluation
+    !! `yield_stress_eq_and_derivatives_yld2004_3D_<k>(prm, sigma, f, df[, ddf])` (one spectral
+    !! decomposition of Sp and one of Spp; the Hessian only if `ddf` is present; the same bits as the
+    !! three functions) for each real kind, also through the generics `yield_*` of
+    !! `muscle_yield_laws` (`yield_joint_evaluation` is true).
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
+    #:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
+    #:endfor
+    use muscle_tensors, only : operator(.tdotsym.), operator(*), operator(+), assignment(=)
+    use muscle_math_eigen, only : spectral_decomposition
+    use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian
+    use muscle_math_fp, only : fp_exponent, fp_scale
+    use muscle_yield_anisotropic, only : yield_lin_pull_back, yield_lin_pull_back_hessian
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: yield_yld2004_${k}$
+    public :: yield_stress_eq_yld2004_3D_${k}$, yield_dstress_eq_yld2004_3D_${k}$, yield_ddstress_eq_yld2004_3D_${k}$
+    public :: yield_stress_eq_and_derivatives_yld2004_3D_${k}$, yield_joint_evaluation_yld2004_${k}$
+    public :: yield_yld2004_init_${k}$
+    #:endfor
+    public :: yield_yld2004_init
+
+    #:for k in REAL_KINDS
+    type :: yield_yld2004_${k}$
+        !! Parameters of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)` (build it with `yield_yld2004_init`, which
+        !! computes the private derived components; do not change the inputs after `yield_yld2004_init`).
+        real(${k}$), private :: Lp(3,3)
+            !! Normal block of \( \mathbf{L}^\prime = \mathbf{C}^\prime \mathbb{P}_{dev} \), which maps (sxx, syy, szz) to (Spxx,
+            !! Spyy, Spzz).
+        real(${k}$) :: cp_shear(3)
+            !! Shear factors of \( \mathbf{C}^\prime \) on (xy, yz, xz): (cp44, cp55, cp66).
+        real(${k}$), private :: Lpp(3,3)
+            !! Normal block of \( \mathbf{L}^{\prime\prime} = \mathbf{C}^{\prime\prime} \mathbb{P}_{dev} \).
+        real(${k}$) :: cpp_shear(3)
+            !! Shear factors of \( \mathbf{C}^{\prime\prime} \) on (xy, yz, xz): (cpp44, cpp55, cpp66).
+        real(${k}$) :: a
+            !! Exponent \( a \ge 2 \) (the analytical derivatives need it).
+    end type yield_yld2004_${k}$
+    #:endfor
+
+    interface yield_yld2004_init
+        !! Parameters of the Yld2004-18p model from the coefficients of Cp and Cpp and a (computes Lp
+        !! and Lpp).
+        #:for k in REAL_KINDS
+        module procedure yield_yld2004_init_${k}$
+        #:endfor
+    end interface yield_yld2004_init
+
+contains
+    #:for k in REAL_KINDS
+
+    pure subroutine yield_yld2004_init_${k}$(prm, cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66, cpp12, cpp13, &
+            & cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66, a, status)
+        !! Parameters of the Yld2004-18p model in `real(${k}$)`: Lp = Cp P_dev and Lpp = Cpp P_dev
+        !! (Barlat et al., 2005, Eqs. 11 and 15), so that each call applies them to the stress
+        !! without forming the deviator. cpIJ = cp_IJ and cppIJ = cpp_IJ; the shears follow the
+        !! library order: 44 -> xy, 55 -> yz, 66 -> xz.
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(out) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: cp12
+            !! Coefficient \( C^\prime_{12} \).
+        real(${k}$), intent(in) :: cp13
+            !! Coefficient \( C^\prime_{13} \).
+        real(${k}$), intent(in) :: cp21
+            !! Coefficient \( C^\prime_{21} \).
+        real(${k}$), intent(in) :: cp23
+            !! Coefficient \( C^\prime_{23} \).
+        real(${k}$), intent(in) :: cp31
+            !! Coefficient \( C^\prime_{31} \).
+        real(${k}$), intent(in) :: cp32
+            !! Coefficient \( C^\prime_{32} \).
+        real(${k}$), intent(in) :: cp44
+            !! Coefficient \( C^\prime_{44} \) (shear xy).
+        real(${k}$), intent(in) :: cp55
+            !! Coefficient \( C^\prime_{55} \) (shear yz).
+        real(${k}$), intent(in) :: cp66
+            !! Coefficient \( C^\prime_{66} \) (shear xz).
+        real(${k}$), intent(in) :: cpp12
+            !! Coefficient \( C^{\prime\prime}_{12} \).
+        real(${k}$), intent(in) :: cpp13
+            !! Coefficient \( C^{\prime\prime}_{13} \).
+        real(${k}$), intent(in) :: cpp21
+            !! Coefficient \( C^{\prime\prime}_{21} \).
+        real(${k}$), intent(in) :: cpp23
+            !! Coefficient \( C^{\prime\prime}_{23} \).
+        real(${k}$), intent(in) :: cpp31
+            !! Coefficient \( C^{\prime\prime}_{31} \).
+        real(${k}$), intent(in) :: cpp32
+            !! Coefficient \( C^{\prime\prime}_{32} \).
+        real(${k}$), intent(in) :: cpp44
+            !! Coefficient \( C^{\prime\prime}_{44} \) (shear xy).
+        real(${k}$), intent(in) :: cpp55
+            !! Coefficient \( C^{\prime\prime}_{55} \) (shear yz).
+        real(${k}$), intent(in) :: cpp66
+            !! Coefficient \( C^{\prime\prime}_{66} \) (shear xz).
+        real(${k}$), intent(in) :: a
+            !! Exponent.
+        integer, intent(out) :: status
+            !! Always `STATUS_OK` (no input is validated): the argument exists so that every model
+            !! initializer is called the same way.
+
+        prm%Lp = yield_yld2004_deviatoric_block_${k}$(cp12, cp13, cp21, cp23, cp31, cp32)
+        prm%cp_shear(1) = cp44
+        prm%cp_shear(2) = cp55
+        prm%cp_shear(3) = cp66
+        prm%Lpp = yield_yld2004_deviatoric_block_${k}$(cpp12, cpp13, cpp21, cpp23, cpp31, cpp32)
+        prm%cpp_shear(1) = cpp44
+        prm%cpp_shear(2) = cpp55
+        prm%cpp_shear(3) = cpp66
+        prm%a = a
+        status = STATUS_OK
+    end subroutine yield_yld2004_init_${k}$
+
+    pure function yield_yld2004_deviatoric_block_${k}$(c12, c13, c21, c23, c31, c32) result(L)
+        !! Normal block of L = C P_dev in `real(${k}$)`, with C the normal block of Cp or Cpp
+        !! (Barlat et al., 2005, Eq. 15: zero diagonal, -cIJ off it): L_ij = C_ij - (1/3) sum_k C_ik.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: c12, c13, c21, c23, c31, c32
+            !! Coefficients of C.
+        real(${k}$) :: L(3,3)
+            !! Normal block of L.
+
+        L(1,1) = (c12 + c13)/3.0_${k}$
+        L(1,2) = (c13 - 2.0_${k}$*c12)/3.0_${k}$
+        L(1,3) = (c12 - 2.0_${k}$*c13)/3.0_${k}$
+        L(2,1) = (c23 - 2.0_${k}$*c21)/3.0_${k}$
+        L(2,2) = (c21 + c23)/3.0_${k}$
+        L(2,3) = (c21 - 2.0_${k}$*c23)/3.0_${k}$
+        L(3,1) = (c32 - 2.0_${k}$*c31)/3.0_${k}$
+        L(3,2) = (c31 - 2.0_${k}$*c32)/3.0_${k}$
+        L(3,3) = (c31 + c32)/3.0_${k}$
+    end function yield_yld2004_deviatoric_block_${k}$
+
+    pure subroutine yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
+        !! Principal values of Sp and Spp divided by the power of two of their largest magnitude,
+        !! x = lp/2**e and y = lpp/2**e (exact), in `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: lp(3)
+            !! lamp.
+        real(${k}$), intent(in) :: lpp(3)
+            !! lampp.
+        real(${k}$), intent(out) :: x(3)
+            !! Scaled lamp.
+        real(${k}$), intent(out) :: y(3)
+            !! Scaled lampp.
+        integer, intent(out) :: e
+            !! Exponent of the scale.
+
+        e = 0
+        if (max(maxval(abs(lp)), maxval(abs(lpp))) > 0.0_${k}$) e = fp_exponent(max(maxval(abs(lp)), maxval(abs(lpp))))
+        x = fp_scale(lp, -e)
+        y = fp_scale(lpp, -e)
+    end subroutine yield_yld2004_scaled_${k}$
+
+    pure function yield_yld2004_equivalent_${k}$(prm, x, y, e) result(res)
+        !! (phi/4)**(1/a) in `real(${k}$)` from the principal values of Sp and Spp (Barlat et al.,
+        !! 2005, Eq. 14), evaluated on the scaled values of `yield_yld2004_scaled` (homogeneity of
+        !! degree 1).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: x(3)
+            !! Scaled lamp.
+        real(${k}$), intent(in) :: y(3)
+            !! Scaled lampp.
+        integer, intent(in) :: e
+            !! Exponent of the scale.
+        real(${k}$) :: res
+            !! Equivalent stress.
+
+        res = (0.25_${k}$*(abs(x(1) - y(1))**prm%a + abs(x(1) - y(2))**prm%a &
+                         + abs(x(1) - y(3))**prm%a                         &
+                         + abs(x(2) - y(1))**prm%a + abs(x(2) - y(2))**prm%a &
+                         + abs(x(2) - y(3))**prm%a                         &
+                         + abs(x(3) - y(1))**prm%a + abs(x(3) - y(2))**prm%a &
+                         + abs(x(3) - y(3))**prm%a))**(1.0_${k}$/prm%a)
+        res = fp_scale(res, e)
+    end function yield_yld2004_equivalent_${k}$
+
+    pure subroutine yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp, d2fp, d2fpp, d2fx)
+        !! Derivatives in `real(${k}$)` of f = (phi/4)**(1/a) with respect to lamp_i and lampp_j
+        !! (Barlat et al., 2005, Eq. 14). With d_ij = lamp_i - lampp_j and h(d) = |d|**a:
+        !! df/dlamp_i = c sum_j dh(d_ij) and df/dlampp_j = -c sum_i dh(d_ij), c = f/(a phi).
+        !! |d_ij|**(a-2) is the only real power per pair: h = p d**2, dh = a p d.
+        !! Second derivatives, over x, y in (lp, lpp) (lam with one and two primes):
+        !! d2f/dx dy = c d2phi/dx dy + (1 - a) (df/dx) (df/dy)/f, with d2phi/dlp_i dlpp_j = -d2h(d_ij),
+        !! d2h = a (a-1) p the second derivative of h, and the sums of d2h on the diagonal blocks.
+        !! Evaluated on the scaled values of `yield_yld2004_scaled`: the first derivatives
+        !! (degree 0) are the same, the second ones (degree -1) are scaled back by 2**(-e); `phi` is
+        !! phi of the scaled values.
+        !! With phi = 0 (null equivalent stress) every derivative is 0.
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: x(3)
+            !! Scaled lamp.
+        real(${k}$), intent(in) :: y(3)
+            !! Scaled lampp.
+        integer, intent(in) :: e
+            !! Exponent of the scale.
+        real(${k}$), intent(out) :: phi
+            !! phi (of the scaled values).
+        real(${k}$), intent(out) :: dfp(3)
+            !! df/dlamp_i.
+        real(${k}$), intent(out) :: dfpp(3)
+            !! df/dlampp_j.
+        real(${k}$), intent(out), optional :: d2fp(3,3)
+            !! d2f/dlp_i dlp_k (the three optional outputs are requested together).
+        real(${k}$), intent(out), optional :: d2fpp(3,3)
+            !! d2f/dlpp_j dlpp_l.
+        real(${k}$), intent(out), optional :: d2fx(3,3)
+            !! d2f/dlp_i dlpp_j.
+        real(${k}$) :: d(3,3), p(3,3), dh(3,3), f, c, g, q
+
+        ! d_ij = lamp_i - lampp_j
+        d(1,1) = x(1) - y(1)
+        d(1,2) = x(1) - y(2)
+        d(1,3) = x(1) - y(3)
+        d(2,1) = x(2) - y(1)
+        d(2,2) = x(2) - y(2)
+        d(2,3) = x(2) - y(3)
+        d(3,1) = x(3) - y(1)
+        d(3,2) = x(3) - y(2)
+        d(3,3) = x(3) - y(3)
+        ! p_ij = |d_ij|**(a-2). Assumes a >= 2 (Barlat et al., 2005, use a = 6 or 8): with a < 2,
+        ! p is infinite at d_ij = 0 and dh = a p d gives NaN instead of 0.
+        p(1,1) = abs(d(1,1))**(prm%a - 2.0_${k}$)
+        p(1,2) = abs(d(1,2))**(prm%a - 2.0_${k}$)
+        p(1,3) = abs(d(1,3))**(prm%a - 2.0_${k}$)
+        p(2,1) = abs(d(2,1))**(prm%a - 2.0_${k}$)
+        p(2,2) = abs(d(2,2))**(prm%a - 2.0_${k}$)
+        p(2,3) = abs(d(2,3))**(prm%a - 2.0_${k}$)
+        p(3,1) = abs(d(3,1))**(prm%a - 2.0_${k}$)
+        p(3,2) = abs(d(3,2))**(prm%a - 2.0_${k}$)
+        p(3,3) = abs(d(3,3))**(prm%a - 2.0_${k}$)
+        phi = p(1,1)*d(1,1)**2 + p(2,1)*d(2,1)**2 + p(3,1)*d(3,1)**2 &
+              + p(1,2)*d(1,2)**2 + p(2,2)*d(2,2)**2 + p(3,2)*d(3,2)**2 &
+              + p(1,3)*d(1,3)**2 + p(2,3)*d(2,3)**2 + p(3,3)*d(3,3)**2
+        if (phi == 0.0_${k}$) then
+            dfp = 0.0_${k}$
+            dfpp = 0.0_${k}$
+            if (present(d2fp)) then
+                d2fp = 0.0_${k}$
+                d2fpp = 0.0_${k}$
+                d2fx = 0.0_${k}$
+            end if
+            return
+        end if
+        f = (0.25_${k}$*phi)**(1.0_${k}$/prm%a)      ! f, as in stress_eq (of the scaled values)
+        c = f/(prm%a*phi)
+        ! dh(d_ij) = a p_ij d_ij
+        dh(1,1) = prm%a*p(1,1)*d(1,1)
+        dh(1,2) = prm%a*p(1,2)*d(1,2)
+        dh(1,3) = prm%a*p(1,3)*d(1,3)
+        dh(2,1) = prm%a*p(2,1)*d(2,1)
+        dh(2,2) = prm%a*p(2,2)*d(2,2)
+        dh(2,3) = prm%a*p(2,3)*d(2,3)
+        dh(3,1) = prm%a*p(3,1)*d(3,1)
+        dh(3,2) = prm%a*p(3,2)*d(3,2)
+        dh(3,3) = prm%a*p(3,3)*d(3,3)
+        dfp(1) = c*(dh(1,1) + dh(1,2) + dh(1,3))
+        dfp(2) = c*(dh(2,1) + dh(2,2) + dh(2,3))
+        dfp(3) = c*(dh(3,1) + dh(3,2) + dh(3,3))
+        dfpp(1) = -c*(dh(1,1) + dh(2,1) + dh(3,1))
+        dfpp(2) = -c*(dh(1,2) + dh(2,2) + dh(3,2))
+        dfpp(3) = -c*(dh(1,3) + dh(2,3) + dh(3,3))
+        if (.not. present(d2fp)) return
+
+        ! c d2h(d_ij) = q p_ij, stored in p
+        q = c*prm%a*(prm%a - 1.0_${k}$)
+        p(1,1) = q*p(1,1)
+        p(1,2) = q*p(1,2)
+        p(1,3) = q*p(1,3)
+        p(2,1) = q*p(2,1)
+        p(2,2) = q*p(2,2)
+        p(2,3) = q*p(2,3)
+        p(3,1) = q*p(3,1)
+        p(3,2) = q*p(3,2)
+        p(3,3) = q*p(3,3)
+        g = (1.0_${k}$ - prm%a)/f
+        d2fp(1,1) = g*dfp(1)*dfp(1) + p(1,1) + p(1,2) + p(1,3)
+        d2fp(2,2) = g*dfp(2)*dfp(2) + p(2,1) + p(2,2) + p(2,3)
+        d2fp(3,3) = g*dfp(3)*dfp(3) + p(3,1) + p(3,2) + p(3,3)
+        d2fp(1,2) = g*dfp(1)*dfp(2)
+        d2fp(1,3) = g*dfp(1)*dfp(3)
+        d2fp(2,3) = g*dfp(2)*dfp(3)
+        d2fp(2,1) = d2fp(1,2)
+        d2fp(3,1) = d2fp(1,3)
+        d2fp(3,2) = d2fp(2,3)
+        d2fpp(1,1) = g*dfpp(1)*dfpp(1) + p(1,1) + p(2,1) + p(3,1)
+        d2fpp(2,2) = g*dfpp(2)*dfpp(2) + p(1,2) + p(2,2) + p(3,2)
+        d2fpp(3,3) = g*dfpp(3)*dfpp(3) + p(1,3) + p(2,3) + p(3,3)
+        d2fpp(1,2) = g*dfpp(1)*dfpp(2)
+        d2fpp(1,3) = g*dfpp(1)*dfpp(3)
+        d2fpp(2,3) = g*dfpp(2)*dfpp(3)
+        d2fpp(2,1) = d2fpp(1,2)
+        d2fpp(3,1) = d2fpp(1,3)
+        d2fpp(3,2) = d2fpp(2,3)
+        d2fx(1,1) = g*dfp(1)*dfpp(1) - p(1,1)
+        d2fx(1,2) = g*dfp(1)*dfpp(2) - p(1,2)
+        d2fx(1,3) = g*dfp(1)*dfpp(3) - p(1,3)
+        d2fx(2,1) = g*dfp(2)*dfpp(1) - p(2,1)
+        d2fx(2,2) = g*dfp(2)*dfpp(2) - p(2,2)
+        d2fx(2,3) = g*dfp(2)*dfpp(3) - p(2,3)
+        d2fx(3,1) = g*dfp(3)*dfpp(1) - p(3,1)
+        d2fx(3,2) = g*dfp(3)*dfpp(2) - p(3,2)
+        d2fx(3,3) = g*dfp(3)*dfpp(3) - p(3,3)
+        ! Back to the principal values: degree -1
+        d2fp = fp_scale(d2fp, -e)
+        d2fpp = fp_scale(d2fpp, -e)
+        d2fx = fp_scale(d2fx, -e)
+    end subroutine yield_yld2004_principal_${k}$
+
+    pure function yield_stress_eq_yld2004_3D_${k}$(prm, sigma) result(res)
+        !! Equivalent stress \( \sigma_{eq}(\boldsymbol\sigma) \) of the Yld2004-18p (Barlat et al. 2005) model in `real(${k}$)`
+        !! (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$) :: res
+            !! \( \sigma_{eq} \).
+        ! (phi/4)**(1/a) (Barlat et al., 2005, Eq. 14), with the eigenvalues of Sp and Spp
+        real(${k}$) :: lp(3), lpp(3), x(3), y(3), V(3,3)
+        integer :: e
+
+        ! Eigenvalues of Sp and Spp from the same spectral decomposition as the gradient and the Hessian (D-032)
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, sigma), lp, V)
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, sigma), lpp, V)
+        call yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
+        res = yield_yld2004_equivalent_${k}$(prm, x, y, e)
+    end function yield_stress_eq_yld2004_3D_${k}$
+
+    pure function yield_dstress_eq_yld2004_3D_${k}$(prm, sigma) result(res)
+        !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the Yld2004-18p (Barlat et al. 2005) model in
+        !! `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        ! df/dstress = Lp^T : Gp + Lpp^T : Gpp (Barlat et al., 2005, Eqs. 11 and 14), with
+        ! Gp = sum_i df/dlamp_i vp_i (x) vp_i from spectral_gradient, and the same for Gpp
+        real(${k}$) :: lp(3), lpp(3), Vp(3,3), Vpp(3,3), dfp(3), dfpp(3), phi, x(3), y(3)
+        integer :: e
+
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, sigma), lp, Vp)
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, sigma), lpp, Vpp)
+        call yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
+        call yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp)
+        if (phi == 0.0_${k}$) then
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
+            return
+        end if
+        res = yield_yld2004_gradient_3D_${k}$(prm, Vp, Vpp, dfp, dfpp)
+    end function yield_dstress_eq_yld2004_3D_${k}$
+
+    pure function yield_ddstress_eq_yld2004_3D_${k}$(prm, sigma) result(res)
+        !! Second derivative \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \) of the Yld2004-18p (Barlat et al. 2005) model
+        !! in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \).
+        ! Lp^T Hp Lp + Lpp^T Hpp Lpp + Lp^T M Lpp + (Lp^T M Lpp)^T (Barlat et al., 2005, Eqs. 11 and
+        ! 14), where the suffixes p and pp mark the single- and double-primed quantities. Hp and Hpp
+        ! come from spectral_hessian, each with the other tensor fixed. The cross term
+        ! M = sum_ij d2f/dlp_i dlpp_j Ep_i (x) Epp_j, with Ep_i = vp_i (x) vp_i, has no
+        ! eigenvector-rotation part: Ep_i does not depend on Spp.
+        real(${k}$) :: lp(3), lpp(3), Vp(3,3), Vpp(3,3), dfp(3), dfpp(3), phi, x(3), y(3)
+        integer :: e
+        real(${k}$) :: d2fp(3,3), d2fpp(3,3), d2fx(3,3)
+
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, sigma), lp, Vp)
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, sigma), lpp, Vpp)
+        call yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
+        call yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp, d2fp, d2fpp, d2fx)
+        if (phi == 0.0_${k}$) then
+            res%vals = 0.0_${k}$  ! null equivalent stress: zero derivative
+            return
+        end if
+        res = yield_yld2004_hessian_3D_${k}$(prm, lp, lpp, Vp, Vpp, dfp, dfpp, d2fp, d2fpp, d2fx)
+    end function yield_ddstress_eq_yld2004_3D_${k}$
+
+    pure function yield_joint_evaluation_yld2004_${k}$(prm) result(res)
+        !! Whether the criterion writes its own joint evaluation (cheaper than the three functions in turn): true for the
+        !! Yld2004-18p (Barlat et al. 2005) model (`real(${k}$)` parameters; a constant, resolved at compile time).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters (not used: only selects the model).
+        logical :: res
+            !! .true.
+
+        res = .true.
+    end function yield_joint_evaluation_yld2004_${k}$
+
+    pure subroutine yield_stress_eq_and_derivatives_yld2004_3D_${k}$(prm, sigma, f, df, ddf)
+        !! Equivalent stress and its first and second derivatives at the same stress of the Yld2004-18p (Barlat et al. 2005) model
+        !! in `real(${k}$)` (3D). One spectral decomposition of Sp and one of Spp (Barlat et al., 2005, Eqs. 11 and 14) instead of
+        !! the eigenvalues of both in stress_eq and their decompositions in each derivative; the same operations as the three
+        !! functions, so the same bits (stress_eq takes its eigenvalues from spectral_decomposition too, D-032).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$), intent(out) :: f
+            !! \( \sigma_{eq} \).
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$), intent(out), optional :: ddf
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \). Optional: not computed when absent.
+        real(${k}$) :: lp(3), lpp(3), Vp(3,3), Vpp(3,3), dfp(3), dfpp(3), phi, x(3), y(3)
+        integer :: e
+        real(${k}$) :: d2fp(3,3), d2fpp(3,3), d2fx(3,3)
+
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, sigma), lp, Vp)
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, sigma), lpp, Vpp)
+        ! One scaling of the principal values for the three
+        call yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
+        f = yield_yld2004_equivalent_${k}$(prm, x, y, e)
+        if (present(ddf)) then
+            call yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp, d2fp, d2fpp, d2fx)
+        else
+            call yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp)
+        end if
+        if (phi == 0.0_${k}$) then
+            df%vals = 0.0_${k}$  ! null equivalent stress: zero derivatives
+            if (present(ddf)) ddf%vals = 0.0_${k}$
+            return
+        end if
+        df = yield_yld2004_gradient_3D_${k}$(prm, Vp, Vpp, dfp, dfpp)
+        if (present(ddf)) ddf = yield_yld2004_hessian_3D_${k}$(prm, lp, lpp, Vp, Vpp, dfp, dfpp, d2fp, d2fpp, d2fx)
+    end subroutine yield_stress_eq_and_derivatives_yld2004_3D_${k}$
+
+    pure function yield_yld2004_linear_transform_3D_${k}$(L, c_shear, stress) result(res)
+        !! S = L : stress in `real(${k}$)` (3D) with L = C P_dev (Barlat et al., 2005, Eq. 11): Sp
+        !! from (Lp, cp_shear), Spp from (Lpp, cpp_shear). The 3x3 block acts on the three normal
+        !! components (not on their differences: the pressure cancels only up to rounding)
+        !! and each factor on its tensorial shear.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: L(3,3)
+            !! Normal block of L.
+        real(${k}$), intent(in) :: c_shear(3)
+            !! Shear factors (xy, yz, xz).
+        type(ten_3D2Osym_${k}$), intent(in) :: stress
+            !! Stress.
+        type(ten_3D2Osym_${k}$) :: res
+            !! S.
+
+        res%vals(1) = L(1,1)*stress%vals(1) + L(1,2)*stress%vals(2) + L(1,3)*stress%vals(3)
+        res%vals(2) = L(2,1)*stress%vals(1) + L(2,2)*stress%vals(2) + L(2,3)*stress%vals(3)
+        res%vals(3) = L(3,1)*stress%vals(1) + L(3,2)*stress%vals(2) + L(3,3)*stress%vals(3)
+        res%vals(4) = c_shear(1)*stress%vals(4)
+        res%vals(5) = c_shear(2)*stress%vals(5)
+        res%vals(6) = c_shear(3)*stress%vals(6)
+    end function yield_yld2004_linear_transform_3D_${k}$
+
+    pure function yield_yld2004_gradient_3D_${k}$(prm, Vp, Vpp, dfp, dfpp) result(res)
+        !! Lp^T : Gp + Lpp^T : Gpp in `real(${k}$)` (3D) from the eigenvectors and the principal
+        !! derivatives.
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: Vp(3,3), Vpp(3,3)
+            !! Eigenvectors of Sp and Spp.
+        real(${k}$), intent(in) :: dfp(3), dfpp(3)
+            !! df/dlamp and df/dlampp.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Gradient.
+
+        res = yield_lin_pull_back(prm%Lp, prm%cp_shear, spectral_gradient(Vp, dfp)) &
+              + yield_lin_pull_back(prm%Lpp, prm%cpp_shear, spectral_gradient(Vpp, dfpp))
+    end function yield_yld2004_gradient_3D_${k}$
+
+    pure function yield_yld2004_hessian_3D_${k}$(prm, lp, lpp, Vp, Vpp, dfp, dfpp, d2fp, d2fpp, d2fx) result(res)
+        !! Lp^T Hp Lp + Lpp^T Hpp Lpp + Lp^T M Lpp + (Lp^T M Lpp)^T in `real(${k}$)` (3D) from the
+        !! spectral data.
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: lp(3), lpp(3)
+            !! lamp and lampp.
+        real(${k}$), intent(in) :: Vp(3,3), Vpp(3,3)
+            !! Eigenvectors of Sp and Spp.
+        real(${k}$), intent(in) :: dfp(3), dfpp(3)
+            !! df/dlamp and df/dlampp.
+        real(${k}$), intent(in) :: d2fp(3,3), d2fpp(3,3), d2fx(3,3)
+            !! Second derivatives with respect to (lamp, lamp), (lampp, lampp) and (lamp, lampp).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! Hessian.
+        type(ten_3D2Osym_${k}$) :: a1, a2, a3, b1, b2, b3
+
+        ! Cross term: Lp^T M Lpp + (Lp^T M Lpp)^T = sum_i 2 sym(A_i (x) B_i), with
+        ! A_i = Lp^T : Ep_i and B_i = Lpp^T : sum_j d2f/dlp_i dlpp_j Epp_j
+        a1 = yield_lin_pull_back(prm%Lp, prm%cp_shear, spectral_gradient(Vp, [1.0_${k}$, 0.0_${k}$, 0.0_${k}$]))
+        a2 = yield_lin_pull_back(prm%Lp, prm%cp_shear, spectral_gradient(Vp, [0.0_${k}$, 1.0_${k}$, 0.0_${k}$]))
+        a3 = yield_lin_pull_back(prm%Lp, prm%cp_shear, spectral_gradient(Vp, [0.0_${k}$, 0.0_${k}$, 1.0_${k}$]))
+        b1 = yield_lin_pull_back(prm%Lpp, prm%cpp_shear, spectral_gradient(Vpp, [d2fx(1,1), d2fx(1,2), d2fx(1,3)]))
+        b2 = yield_lin_pull_back(prm%Lpp, prm%cpp_shear, spectral_gradient(Vpp, [d2fx(2,1), d2fx(2,2), d2fx(2,3)]))
+        b3 = yield_lin_pull_back(prm%Lpp, prm%cpp_shear, spectral_gradient(Vpp, [d2fx(3,1), d2fx(3,2), d2fx(3,3)]))
+        res = yield_lin_pull_back_hessian(prm%Lp, prm%cp_shear, spectral_hessian(lp, Vp, dfp, d2fp))     &
+              + yield_lin_pull_back_hessian(prm%Lpp, prm%cpp_shear, spectral_hessian(lpp, Vpp, dfpp, d2fpp)) &
+              + 2.0_${k}$*((a1 .tdotsym. b1) + (a2 .tdotsym. b2) + (a3 .tdotsym. b3))
+    end function yield_yld2004_hessian_3D_${k}$
+    #:endfor
+
+end module muscle_yield_yld2004

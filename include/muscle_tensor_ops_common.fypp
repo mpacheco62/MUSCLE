@@ -1,0 +1,70 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#!
+#! Pieces shared by the operator templates (src/tensors/operators/muscle_tensor_ops_<m>.fypp,
+#! one module per operation). The pairs of operands of each generic come from the table
+#! OP_TABLE of tools/fypp/muscle_meta.py, never from lists written in the templates:
+#! op_entries(generic, dim, kind) gives the specific procedures (OpEntry: name, concrete types and
+#! the table tags tag_a/tag_b/tag_res that select the body). Include after muscle_common.fypp:
+#!
+#!   #:include "muscle_common.fypp"
+#!   #:include "muscle_tensor_ops_common.fypp"
+#!
+#! Rules: .claude/rules/fypp-templates.md, .claude/rules/dims-2d-3d.md
+#:mute
+
+#! Table queries (see the docstrings in muscle_meta.py)
+    #:set OP_MODULES = muscle_meta.OP_MODULES
+    #:set op_entries = muscle_meta.op_entries
+    #:set op_interface = muscle_meta.op_interface
+    #:set op_iden = muscle_meta.op_iden
+    #:set op_layout = muscle_meta.op_layout
+    #:set op_uses = muscle_meta.op_uses
+    #:set op_congruence = muscle_meta.op_congruence
+    #:set op_voigt_transform = muscle_meta.op_voigt_transform
+    #:set iden_combination = muscle_meta.iden_combination
+
+#! `use` statements of the kinds and of every type taken or returned by the operators of
+#! `module` (key of OP_MODULES): family modules and muscle_tensor_iden.
+#:def OP_USES(module)
+    use muscle_kinds, only: ${', '.join(REAL_KINDS)}$
+    #:for mod, types in op_uses(module, REAL_KINDS)
+    use ${mod}$, only: ${', '.join(types)}$
+    #:endfor
+#:enddef
+
+#! Public generic interfaces of the operators of `module`, every dimension and kind.
+#:def OP_INTERFACES(module)
+    #:for g in OP_MODULES[module]
+    public :: ${op_interface(g)}$
+    interface ${op_interface(g)}$
+        #:for d in DIMS
+        #:for k in REAL_KINDS
+        #:for e in op_entries(g, d, k)
+        module procedure ${e.name}$
+        #:endfor
+        #:endfor
+        #:endfor
+    end interface
+
+    #:endfor
+#:enddef
+
+#! Generated documentation and names of the procedures (see the docstrings in muscle_meta.py)
+#:set op_args = muscle_meta.op_args
+#:set op_symbols = muscle_meta.op_symbols
+#:set op_doc = muscle_meta.op_doc
+#:set op_iden_term = muscle_meta.op_iden_term
+#:set op_mirror = muscle_meta.op_mirror
+#:set op_dot_terms = muscle_meta.op_dot_terms
+#:set op_voigt_congruence = muscle_meta.op_voigt_congruence
+#:set op_sym_sum = muscle_meta.op_sym_sum
+#:set op_weight = muscle_meta.op_weight
+#:set op_weighted = muscle_meta.op_weighted
+#:set op_ddot_voigt_terms = muscle_meta.op_ddot_voigt_terms
+#:set op_ddot_matrix_terms = muscle_meta.op_ddot_matrix_terms
+
+#! Declaration of the result `res` of the operator entry `e`: `real(k)` for a scalar, else `type(...)`.
+#:set op_res_decl = lambda e: e.res if e.res.startswith('real(') else 'type({})'.format(e.res)
+
+#:endmute

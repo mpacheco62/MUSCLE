@@ -1,0 +1,812 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#!
+#! Unit tests of the functions of muscle_kin_finite and of the corotational update in every kind, against an
+#! independent truth computed in quad precision (plan R: they replace the reference test of the kinematics):
+#! - deformation gradients built from their polar and spectral decomposition, F = R0 Q diag(s) Q^T (R0 and Q
+#!   rotations in quad precision): then J = s1 s2 s3, R = R0, C = Q diag(s^2) Q^T, b = R0 C R0^T, and the
+#!   Hencky strains are H = Q diag(ln s) Q^T and h = R0 H R0^T exactly. Cases: distinct stretches, two
+#!   eigenvalues of C within 1e-6 (pair 2-3 or pair 1-2: a closed form would lose the deviatoric part,
+#!   D-018.19a; `spectral_decomposition` does not, D-032), two eigenvalues within
+#!   9e-5 (the series of (ln a - ln b)/(a - b) in the tangents) and an eigenvalue of C (1e-14) below
+#!   KIN_EIG_MIN (dropped from the tangents);
+#! - strain measures (Green-Lagrange, Euler-Almansi, material and spatial Hencky), J and R of the state, the
+#!   strain of kin_update of each F-driven kinematics, J = exp(tr eps) of the corotational update;
+#! - the ten stress conversions against their matrix formulas (sigma = F S F^T / J, P = F S, ...), also the
+#!   documented upper triangle read of kin_pk1_to_pk2 and kin_pk1_to_cauchy for a PK1 stress that is not
+#!   F times a symmetric tensor;
+#! - the geometric terms of the spatial tangent of every kinematics (zero, Jaumann, volumetric, spin of the polar
+#!   rotation from its derivative in the eigenbasis of U, also checked against central differences of R);
+#! - the material parts of the spatial tangents (kin_log_tangent, kin_spatial_log_tangent,
+#!   kin_almansi_tangent): column c is the response A : (dE) to the symmetric unit perturbation of the
+#!   Voigt component c (1/2 on both off-diagonal entries of a shear component), with dE from the
+#!   Daleckii-Krein formula of the derivative of the logarithm in the known eigenbasis,
+#!   D ln(X)[Y] = V (theta_ab (V^T Y V)_ab) V^T, theta_ab = (ln l_a - ln l_b)/(l_a - l_b) (1/l_a if equal);
+#!   in dp the truth is also checked against central differences of the strain measures of the library.
+#! - push-forward and pull-back of a tangent against their index formulas (contracted with e_c, J /= 1) and
+#!   pull_back(push_forward(A)) = A; at F = I exactly the spin and material logarithmic geometric terms are
+#!   zero and the logarithmic tangents are the constitutive tangent (the C = I fast paths).
+#! Tolerance: 10 TOL_APPROX_<k> relative to the largest component of each result (as the objectivity test of
+#! test_kin_kinds); the spectral decomposition is accurate to ~eps/gap (D-032), the series of the divided
+#! difference truncates r^3/4 = 2e-13 at r = 9e-5.
+#! - Hencky strains near the identity, |F - I| ~ 1e-6 and 1e-11 in dp (1e-3, 1e-5 in sp), against a quad truth of
+#!   the rounded F, within 20 eps/delta (the limit of forming C; before D-032 the deviator was lost at 1e-11).
+
+module kin_unit_truth
+    !! Independent truth of the kinematics tests in quad precision (host only).
+    use, intrinsic :: iso_fortran_env, only : real128
+    implicit none
+    private
+
+    integer, parameter, public :: qp = real128
+        !! Quad precision.
+    integer, parameter, public :: NCASES = 5
+        !! Deformation gradients (the last one has an eigenvalue of C below KIN_EIG_MIN).
+    public :: kin_case, make_case, rot_q, deform, dk, unit_e, sym6, mat6, eye3, diag3
+
+    real(qp), parameter :: PI_Q = 3.14159265358979323846264338327950288_qp
+
+    type :: kin_case
+        !! F = R0 Q diag(s) Q^T.
+        character(len=56) :: name
+        real(qp) :: Q(3, 3)
+            !! Eigenvectors of C (columns).
+        real(qp) :: R0(3, 3)
+            !! Rotation of the polar decomposition.
+        real(qp) :: s(3)
+            !! Principal stretches (square roots of the eigenvalues of C).
+    end type kin_case
+
+contains
+
+    pure function rot_q(axis, deg) result(m)
+        !! Rotation of `deg` degrees about `axis` (Rodrigues), quad precision.
+        real(qp), intent(in) :: axis(3), deg
+        real(qp) :: m(3, 3)
+        real(qp) :: n(3), c, s, t
+        n = axis/sqrt(sum(axis**2))
+        c = cos(deg*PI_Q/180.0_qp)
+        s = sin(deg*PI_Q/180.0_qp)
+        t = 1.0_qp - c
+        m(1, :) = [t*n(1)*n(1) + c, t*n(1)*n(2) - s*n(3), t*n(1)*n(3) + s*n(2)]
+        m(2, :) = [t*n(1)*n(2) + s*n(3), t*n(2)*n(2) + c, t*n(2)*n(3) - s*n(1)]
+        m(3, :) = [t*n(1)*n(3) - s*n(2), t*n(2)*n(3) + s*n(1), t*n(3)*n(3) + c]
+    end function rot_q
+
+    pure function eye3() result(m)
+        real(qp) :: m(3, 3)
+        m = diag3([1.0_qp, 1.0_qp, 1.0_qp])
+    end function eye3
+
+    pure function diag3(d) result(m)
+        real(qp), intent(in) :: d(3)
+        real(qp) :: m(3, 3)
+        m = 0.0_qp
+        m(1, 1) = d(1)
+        m(2, 2) = d(2)
+        m(3, 3) = d(3)
+    end function diag3
+
+    function make_case(ic) result(cs)
+        !! Deformation gradient `ic`; general eigenvectors (every Jacobi pair rotates).
+        integer, intent(in) :: ic
+        type(kin_case) :: cs
+        select case (ic)
+        case (1)
+            cs%name = 'distinct stretches'
+            cs%s = [1.3_qp, 0.8_qp, 1.1_qp]
+            cs%Q = rot_q([1.0_qp, 2.0_qp, -0.5_qp], 37.0_qp)
+            cs%R0 = rot_q([-0.3_qp, 1.0_qp, 0.6_qp], 64.0_qp)
+        case (2)
+            cs%name = 'eigenvalues 2 and 3 of C within 1e-6'
+            cs%s = [1.25_qp, 1.0_qp + 5.0e-7_qp, 1.0_qp]
+            cs%Q = rot_q([0.4_qp, -1.0_qp, 0.7_qp], 113.0_qp)
+            cs%R0 = rot_q([1.0_qp, 0.2_qp, -0.9_qp], -48.0_qp)
+        case (3)
+            cs%name = 'eigenvalues 1 and 2 of C within 1e-6'
+            cs%s = [1.0_qp + 5.0e-7_qp, 1.0_qp, 0.75_qp]
+            cs%Q = rot_q([-0.8_qp, 0.5_qp, 1.0_qp], 71.0_qp)
+            cs%R0 = rot_q([0.1_qp, 0.9_qp, 0.3_qp], 152.0_qp)
+        case (4)
+            cs%name = 'eigenvalues 2 and 3 of C within 9e-5 (series)'
+            cs%s = [1.3_qp, 1.0_qp + 4.5e-5_qp, 1.0_qp]
+            cs%Q = rot_q([0.6_qp, 0.6_qp, -1.0_qp], -29.0_qp)
+            cs%R0 = rot_q([0.5_qp, -0.2_qp, 1.0_qp], 95.0_qp)
+        case default
+            cs%name = 'eigenvalue of C 1e-14 (below KIN_EIG_MIN)'
+            cs%s = [1.2_qp, 0.9_qp, 1.0e-7_qp]
+            cs%Q = rot_q([1.0_qp, -0.4_qp, 0.3_qp], 23.0_qp)
+            cs%R0 = rot_q([-0.7_qp, 0.2_qp, 1.0_qp], 58.0_qp)
+        end select
+    end function make_case
+
+    pure function deform(cs) result(F)
+        !! F = R0 Q diag(s) Q^T.
+        type(kin_case), intent(in) :: cs
+        real(qp) :: F(3, 3)
+        real(qp) :: qs(3, 3), qt(3, 3)
+        integer :: a
+
+        ! Q diag(s) Q^T through locals: the temporaries of nested matmul calls trip -Wuninitialized in gfortran
+        do a = 1, 3
+            qs(:, a) = cs%Q(:, a)*cs%s(a)
+        end do
+        qt = transpose(cs%Q)
+        F = matmul(cs%R0, matmul(qs, qt))
+    end function deform
+
+    pure function dk(V, lam, X, active) result(D)
+        !! Daleckii-Krein derivative of the matrix logarithm of V diag(lam) V^T in the direction X, restricted
+        !! to the pairs of active eigenvalues: V (theta_ab (V^T X V)_ab) V^T.
+        real(qp), intent(in) :: V(3, 3), lam(3), X(3, 3)
+        logical, intent(in) :: active(3)
+        real(qp) :: D(3, 3)
+        real(qp) :: Y(3, 3), theta
+        integer :: a, b
+        Y = matmul(transpose(V), matmul(X, V))
+        do b = 1, 3
+            do a = 1, 3
+                if (.not. (active(a) .and. active(b))) then
+                    theta = 0.0_qp
+                else if (lam(a) == lam(b)) then
+                    theta = 1.0_qp/lam(a)
+                else
+                    theta = (log(lam(a)) - log(lam(b)))/(lam(a) - lam(b))
+                end if
+                Y(a, b) = theta*Y(a, b)
+            end do
+        end do
+        D = matmul(V, matmul(Y, transpose(V)))
+    end function dk
+
+    pure function unit_e(c) result(m)
+        !! Symmetric unit perturbation of the Voigt component c (xx, yy, zz, xy, yz, xz): 1 on a diagonal
+        !! entry, 1/2 on both off-diagonal entries of a shear component.
+        integer, intent(in) :: c
+        real(qp) :: m(3, 3)
+        integer, parameter :: I_OF(6) = [1, 2, 3, 1, 2, 1], J_OF(6) = [1, 2, 3, 2, 3, 3]
+        m = 0.0_qp
+        if (c <= 3) then
+            m(c, c) = 1.0_qp
+        else
+            m(I_OF(c), J_OF(c)) = 0.5_qp
+            m(J_OF(c), I_OF(c)) = 0.5_qp
+        end if
+    end function unit_e
+
+    pure function sym6(m) result(v)
+        !! Voigt components (xx, yy, zz, xy, yz, xz) of a symmetric matrix (upper triangle).
+        real(qp), intent(in) :: m(3, 3)
+        real(qp) :: v(6)
+        v = [m(1, 1), m(2, 2), m(3, 3), m(1, 2), m(2, 3), m(1, 3)]
+    end function sym6
+
+    pure function mat6(v) result(m)
+        !! Symmetric matrix of Voigt components (xx, yy, zz, xy, yz, xz).
+        real(qp), intent(in) :: v(6)
+        real(qp) :: m(3, 3)
+        m(1, :) = [v(1), v(4), v(6)]
+        m(2, :) = [v(4), v(2), v(5)]
+        m(3, :) = [v(6), v(5), v(3)]
+    end function mat6
+
+end module kin_unit_truth
+
+
+module kin_unit_cases
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$, ${', '.join('TOL_APPROX_' + k for k in REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK
+    use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2O', '2Osym', '4O2sym') for k in REAL_KINDS)}$, &
+        operator(.ddot.)
+    use muscle_kin_laws, only : kin_update, kin_corot_update, kin_geometric_tangent, &
+        #:set kin_mods = ('small_strain', 'total_lagrangian', 'updated_lagrangian', 'material_logarithmic', 'spatial_logarithmic', &
+            & 'corotational')
+        ${', '.join('kin_{0}_{1}'.format(m, k) for m in kin_mods for k in REAL_KINDS)}$
+    use muscle_kin_finite, only : kin_finite_update, kin_green_lagrange, kin_euler_almansi, kin_material_log, &
+        kin_spatial_log, kin_pk2_to_cauchy, kin_cauchy_to_pk2, kin_pk2_to_kirchhoff, kin_kirchhoff_to_pk2, &
+        kin_cauchy_to_kirchhoff, kin_kirchhoff_to_cauchy, kin_pk2_to_pk1, kin_pk1_to_pk2, kin_cauchy_to_pk1, &
+        kin_pk1_to_cauchy, kin_log_tangent, kin_spatial_log_tangent, kin_almansi_tangent, kin_spin_tangent, &
+        kin_push_forward_tangent, kin_pull_back_tangent, &
+        ${', '.join('kin_state_' + k for k in REAL_KINDS)}$, ${', '.join('KIN_EIG_MIN_' + k for k in REAL_KINDS)}$
+    use muscle_test_utils, only : check_approx, check_true
+    use kin_unit_truth, only : qp, NCASES, kin_case, make_case, deform, dk, unit_e, sym6, mat6, eye3, diag3, rot_q
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: test_strains_${k}$, test_corotational_${k}$, test_conversions_${k}$, test_tangents_${k}$, &
+        test_geometric_${k}$, test_tangent_transport_${k}$, test_identity_${k}$, test_near_identity_${k}$
+    #:endfor
+    public :: test_truth_fd
+
+contains
+
+    #:for k in REAL_KINDS
+    subroutine test_near_identity_${k}$(passed)
+        !! Material and spatial Hencky strains of F = R0 Q diag(s) Q^T near the identity, s = 1 + delta (3, 2, 0),
+        !! `real(${k}$)` (D-032; the bug of D-018.19a: the closed form took the eigenvalues of C as repeated and
+        !! H lost its deviatoric part, error 0.67 at 1e-6; before D-032 it was lost again below a deviator of
+        !! 1e-10, error ~120%). H is computed from C = F^T F, whose rounding limits it to ~eps/delta relative:
+        !! the check is relative to max|H| within C_NEAR eps/delta (measured ~1).
+        logical, intent(inout) :: passed
+        real(qp), parameter :: DELTAS(2) = [${'1.0e-6_qp, 1.0e-11_qp' if k == 'dp' else '1.0e-3_qp, 1.0e-5_qp'}$]
+        real(qp), parameter :: C_NEAR = 20.0_qp
+        real(qp) :: q(3, 3), r0(3, 3), s(3), Fq(3, 3), H(6), hs(6), err, eps
+        type(kin_state_${k}$) :: st
+        type(${tname('3D2O', k)}$) :: F
+        type(${tname('3D2Osym', k)}$) :: t
+        integer :: id, a, status
+
+        eps = real(epsilon(1.0_${k}$), qp)
+        q = rot_q([0.7_qp, -0.4_qp, 1.0_qp], 53.0_qp)
+        r0 = rot_q([-0.2_qp, 1.0_qp, 0.5_qp], 121.0_qp)
+        do id = 1, size(DELTAS)
+            s = 1.0_qp + DELTAS(id)*[3.0_qp, 2.0_qp, 0.0_qp]
+            Fq = q
+            do a = 1, 3
+                Fq(:, a) = q(:, a)*s(a)
+            end do
+            Fq = matmul(r0, matmul(Fq, transpose(q)))
+            F%vals = real(reshape(Fq, [9]), ${k}$)
+            ! The truth of the rounded F, not of Fq: its C is what the library decomposes
+            Fq = reshape(real(F%vals, qp), [3, 3])
+            H = hencky(matmul(transpose(Fq), Fq))
+            hs = hencky(matmul(Fq, transpose(Fq)))
+            call kin_finite_update(F, st, status)
+            call check_true(passed, '${k}$ near the identity: status OK', status == STATUS_OK)
+            t = kin_material_log(st)
+            err = maxval(abs(real(t%vals, qp) - H))/maxval(abs(H))
+            call check_true(passed, '${k}$ near the identity: material Hencky within C eps/delta', &
+                            err <= C_NEAR*eps/DELTAS(id))
+            t = kin_spatial_log(st)
+            err = maxval(abs(real(t%vals, qp) - hs))/maxval(abs(hs))
+            call check_true(passed, '${k}$ near the identity: spatial Hencky within C eps/delta', &
+                            err <= C_NEAR*eps/DELTAS(id))
+        end do
+    contains
+        function hencky(c) result(v)
+            !! Voigt values of ln(c)/2 for a symmetric positive c (quad, by Jacobi on the quad matrix).
+            real(qp), intent(in) :: c(3, 3)
+            real(qp) :: v(6)
+            real(qp) :: m(3, 3), vv(3, 3), th, tt, cs, sn, g, h
+            integer :: sweep, p, qq, j
+            m = c
+            vv = eye3()
+            do sweep = 1, 30
+                do p = 1, 2
+                    do qq = p + 1, 3
+                        if (abs(m(p, qq)) < tiny(1.0_qp)) cycle
+                        th = (m(qq, qq) - m(p, p))/(2.0_qp*m(p, qq))
+                        tt = sign(1.0_qp, th)/(abs(th) + sqrt(th*th + 1.0_qp))
+                        cs = 1.0_qp/sqrt(tt*tt + 1.0_qp)
+                        sn = tt*cs
+                        do j = 1, 3
+                            g = m(j, p)
+                            h = m(j, qq)
+                            m(j, p) = cs*g - sn*h
+                            m(j, qq) = sn*g + cs*h
+                        end do
+                        do j = 1, 3
+                            g = m(p, j)
+                            h = m(qq, j)
+                            m(p, j) = cs*g - sn*h
+                            m(qq, j) = sn*g + cs*h
+                        end do
+                        do j = 1, 3
+                            g = vv(j, p)
+                            h = vv(j, qq)
+                            vv(j, p) = cs*g - sn*h
+                            vv(j, qq) = sn*g + cs*h
+                        end do
+                    end do
+                end do
+            end do
+            v = sym6(matmul(vv, matmul(diag3([log(m(1, 1)), log(m(2, 2)), log(m(3, 3))]/2.0_qp), transpose(vv))))
+        end function hencky
+    end subroutine test_near_identity_${k}$
+    #:endfor
+
+    pure function stress_S() result(m)
+        !! Second Piola-Kirchhoff stress (input, general).
+        real(qp) :: m(3, 3)
+        m = mat6([120.0_qp, -35.0_qp, 60.0_qp, 25.0_qp, -12.0_qp, 8.0_qp])
+    end function stress_S
+
+    pure function stress_P() result(m)
+        !! A first Piola-Kirchhoff stress that is not F times a symmetric tensor.
+        real(qp) :: m(3, 3)
+        m = reshape([90.0_qp, -14.0_qp, 22.0_qp, 31.0_qp, -48.0_qp, 6.0_qp, -17.0_qp, 9.0_qp, 55.0_qp], [3, 3])
+    end function stress_P
+
+    pure function tangent_A() result(v)
+        !! Constitutive tangent (6x6, minor symmetries, no major symmetry).
+        real(qp) :: v(6, 6)
+        integer :: i, j
+        do j = 1, 6
+            do i = 1, 6
+                v(i, j) = real(7*i - 3*j, qp) + 0.25_qp*real(i*j, qp)
+            end do
+            v(j, j) = v(j, j) + 1000.0_qp
+        end do
+    end function tangent_A
+
+    pure function upper6(m) result(v)
+        !! Voigt components of the upper triangle of a general matrix.
+        real(qp), intent(in) :: m(3, 3)
+        real(qp) :: v(6)
+        v = [m(1, 1), m(2, 2), m(3, 3), m(1, 2), m(2, 3), m(1, 3)]
+    end function upper6
+
+    pure function spin_q(cs, e) result(om)
+        !! Spin of the polar rotation, Omega = dR R^T, for dF = e F with F = R0 U, U = Q diag(s) Q^T:
+        !! R^T dF = x U (x = R0^T e R0) = W U + dU (W = R^T dR skew, dU symmetric) gives
+        !! x U - U x = W U + U W, so W_ab = x_ab (s_b - s_a)/(s_a + s_b) in the eigenbasis Q of U.
+        type(kin_case), intent(in) :: cs
+        real(qp), intent(in) :: e(3, 3)
+        real(qp) :: om(3, 3)
+        real(qp) :: x(3, 3)
+        integer :: a, b
+        x = matmul(transpose(cs%Q), matmul(transpose(cs%R0), matmul(e, matmul(cs%R0, cs%Q))))
+        do b = 1, 3
+            do a = 1, 3
+                x(a, b) = x(a, b)*(cs%s(b) - cs%s(a))/(cs%s(a) + cs%s(b))
+            end do
+        end do
+        om = matmul(cs%R0, matmul(cs%Q, matmul(x, matmul(transpose(cs%Q), transpose(cs%R0)))))
+    end function spin_q
+    #:for k in REAL_KINDS
+
+    subroutine test_strains_${k}$(passed)
+        !! State (J, R) and strain measures of F = R0 Q diag(s) Q^T, `real(${k}$)`: E = (C - I)/2,
+        !! e = (I - b^-1)/2, H = Q diag(ln s) Q^T, h = R0 H R0^T, also as the strain of kin_update.
+        logical, intent(inout) :: passed
+        real(${k}$), parameter :: TOL = 10.0_${k}$*TOL_APPROX_${k}$
+        type(kin_case) :: cs
+        type(kin_state_${k}$) :: st, st_m
+        type(${tname('3D2O', k)}$) :: F
+        type(${tname('3D2Osym', k)}$) :: t
+        type(kin_total_lagrangian_${k}$) :: k_tl
+        type(kin_updated_lagrangian_${k}$) :: k_ul
+        type(kin_material_logarithmic_${k}$) :: k_ml
+        type(kin_spatial_logarithmic_${k}$) :: k_sl
+        real(qp) :: Fq(3, 3), E(6), ea(6), H(6), hs(6), binv(3, 3)
+        integer :: ic, status
+
+        do ic = 1, NCASES - 1
+            cs = make_case(ic)
+            Fq = deform(cs)
+            F%vals = real(reshape(Fq, [9]), ${k}$)
+            E = sym6(0.5_qp*(matmul(transpose(Fq), Fq) - eye3()))
+            binv = matmul(cs%R0, matmul(cs%Q, matmul(diag3(cs%s**(-2)), matmul(transpose(cs%Q), transpose(cs%R0)))))
+            ea = sym6(0.5_qp*(eye3() - binv))
+            H = sym6(matmul(cs%Q, matmul(diag3(log(cs%s)), transpose(cs%Q))))
+            hs = sym6(matmul(cs%R0, matmul(mat6(H), transpose(cs%R0))))
+
+            call kin_finite_update(F, st, status)
+            call check_true(passed, '${k}$ status OK: ' // trim(cs%name), status == STATUS_OK)
+            call check_approx(passed, '${k}$ J = s1 s2 s3: ' // trim(cs%name), st%J, real(product(cs%s), ${k}$), TOL)
+            call check_approx(passed, '${k}$ R = R0: ' // trim(cs%name), st%R%vals, real(reshape(cs%R0, [9]), ${k}$), TOL)
+            t = kin_green_lagrange(st)
+            call check_approx(passed, '${k}$ Green-Lagrange: ' // trim(cs%name), t%vals, real(E, ${k}$), TOL)
+            t = kin_euler_almansi(st)
+            call check_approx(passed, '${k}$ Euler-Almansi: ' // trim(cs%name), t%vals, real(ea, ${k}$), TOL)
+            t = kin_material_log(st)
+            call check_approx(passed, '${k}$ material Hencky: ' // trim(cs%name), t%vals, real(H, ${k}$), TOL)
+            t = kin_spatial_log(st)
+            call check_approx(passed, '${k}$ spatial Hencky: ' // trim(cs%name), t%vals, real(hs, ${k}$), TOL)
+
+            call kin_update(k_tl, F, st_m, status)
+            call check_approx(passed, '${k}$ total Lagrangian strain: ' // trim(cs%name), st_m%strain%vals, &
+                              real(E, ${k}$), TOL)
+            call kin_update(k_ul, F, st_m, status)
+            call check_approx(passed, '${k}$ updated Lagrangian strain: ' // trim(cs%name), st_m%strain%vals, &
+                              real(ea, ${k}$), TOL)
+            call kin_update(k_ml, F, st_m, status)
+            call check_approx(passed, '${k}$ material logarithmic strain: ' // trim(cs%name), st_m%strain%vals, &
+                              real(H, ${k}$), TOL)
+            call check_approx(passed, '${k}$ material logarithmic R = R0: ' // trim(cs%name), st_m%R%vals, &
+                              real(reshape(cs%R0, [9]), ${k}$), TOL)
+            call kin_update(k_sl, F, st_m, status)
+            call check_approx(passed, '${k}$ spatial logarithmic strain: ' // trim(cs%name), st_m%strain%vals, &
+                              real(hs, ${k}$), TOL)
+        end do
+    end subroutine test_strains_${k}$
+
+    subroutine test_corotational_${k}$(passed)
+        !! Corotational update, `real(${k}$)`: the strain is kept, J = exp(eps_11 + eps_22 + eps_33) and R is the
+        !! given rotation.
+        logical, intent(inout) :: passed
+        real(${k}$), parameter :: TOL = 10.0_${k}$*TOL_APPROX_${k}$
+        type(kin_corotational_${k}$) :: kc
+        type(kin_case) :: cs
+        type(kin_state_${k}$) :: st
+        type(${tname('3D2Osym', k)}$) :: e
+        type(${tname('3D2O', k)}$) :: R
+        real(qp) :: ev(6)
+        integer :: i, status
+
+        cs = make_case(1)
+        R%vals = real(reshape(cs%R0, [9]), ${k}$)
+        do i = 1, 3
+            select case (i)
+            case (1); ev = [0.1_qp, -0.05_qp, 0.02_qp, 0.03_qp, 0.01_qp, -0.02_qp]
+            case (2); ev = [-0.3_qp, 0.2_qp, 0.45_qp, 0.0_qp, 0.0_qp, 0.0_qp]
+            case default; ev = [0.0_qp, 0.0_qp, -0.7_qp, 0.1_qp, 0.2_qp, 0.3_qp]
+            end select
+            e%vals = real(ev, ${k}$)
+            call kin_corot_update(kc, e, st, status, R)
+            call check_true(passed, '${k}$ corotational status OK', status == STATUS_OK)
+            call check_approx(passed, '${k}$ corotational J = exp(tr eps)', st%J, &
+                              real(exp(sum(real(e%vals(1:3), qp))), ${k}$), TOL)
+            call check_approx(passed, '${k}$ corotational strain kept', st%strain%vals, e%vals, 0.0_${k}$)
+            call check_approx(passed, '${k}$ corotational R', st%R%vals, R%vals, 0.0_${k}$)
+        end do
+    end subroutine test_corotational_${k}$
+
+    subroutine test_conversions_${k}$(passed)
+        !! The ten stress conversions against their matrix formulas, `real(${k}$)`, with the inputs rounded to
+        !! the kind: sigma = F S F^T / J, tau = F S F^T, P = F S = J sigma F^-T and back; the PK1 to symmetric
+        !! conversions of a P that is not F times a symmetric tensor read the upper triangle of F^-1 P and
+        !! P F^T / J.
+        logical, intent(inout) :: passed
+        real(${k}$), parameter :: TOL = 10.0_${k}$*TOL_APPROX_${k}$
+        type(kin_case) :: cs
+        type(kin_state_${k}$) :: st
+        type(${tname('3D2O', k)}$) :: F, P_in, P_out
+        type(${tname('3D2Osym', k)}$) :: S_in, sig_in, tau_in, t
+        real(qp) :: Fq(3, 3), Fi(3, 3), J, S(3, 3), sig(3, 3), tau(3, 3), P(3, 3), P0(3, 3)
+        integer :: ic, status
+
+        do ic = 1, 2
+            cs = make_case(ic)
+            Fq = deform(cs)
+            F%vals = real(reshape(Fq, [9]), ${k}$)
+            call kin_finite_update(F, st, status)
+            ! Exact F of the kind, its inverse from the construction (F^-1 = Q diag(1/s) Q^T R0^T, up to the
+            ! rounding of F to the kind)
+            Fq = reshape(real(F%vals, qp), [3, 3])
+            Fi = matmul(cs%Q, matmul(diag3(1.0_qp/cs%s), matmul(transpose(cs%Q), transpose(cs%R0))))
+            J = product(cs%s)
+            S_in%vals = real(sym6(stress_S()), ${k}$)
+            S = mat6(real(S_in%vals, qp))
+            tau = matmul(Fq, matmul(S, transpose(Fq)))
+            sig = tau/J
+            P = matmul(Fq, S)
+            sig_in%vals = real(sym6(sig), ${k}$)
+            tau_in%vals = real(sym6(tau), ${k}$)
+            P_in%vals = real(reshape(P, [9]), ${k}$)
+
+            t = kin_pk2_to_cauchy(st, S_in)
+            call check_approx(passed, '${k}$ PK2 to Cauchy: ' // trim(cs%name), t%vals, real(sym6(sig), ${k}$), TOL)
+            t = kin_pk2_to_kirchhoff(st, S_in)
+            call check_approx(passed, '${k}$ PK2 to Kirchhoff: ' // trim(cs%name), t%vals, real(sym6(tau), ${k}$), TOL)
+            P_out = kin_pk2_to_pk1(st, S_in)
+            call check_approx(passed, '${k}$ PK2 to PK1: ' // trim(cs%name), P_out%vals, real(reshape(P, [9]), ${k}$), TOL)
+            t = kin_cauchy_to_pk2(st, sig_in)
+            call check_approx(passed, '${k}$ Cauchy to PK2: ' // trim(cs%name), t%vals, S_in%vals, TOL)
+            t = kin_kirchhoff_to_pk2(st, tau_in)
+            call check_approx(passed, '${k}$ Kirchhoff to PK2: ' // trim(cs%name), t%vals, S_in%vals, TOL)
+            t = kin_cauchy_to_kirchhoff(st, sig_in)
+            call check_approx(passed, '${k}$ Cauchy to Kirchhoff: ' // trim(cs%name), t%vals, real(sym6(tau), ${k}$), TOL)
+            t = kin_kirchhoff_to_cauchy(st, tau_in)
+            call check_approx(passed, '${k}$ Kirchhoff to Cauchy: ' // trim(cs%name), t%vals, real(sym6(sig), ${k}$), TOL)
+            P_out = kin_cauchy_to_pk1(st, sig_in)
+            call check_approx(passed, '${k}$ Cauchy to PK1: ' // trim(cs%name), P_out%vals, &
+                              real(reshape(J*matmul(sig, transpose(Fi)), [9]), ${k}$), TOL)
+            t = kin_pk1_to_pk2(st, P_in)
+            call check_approx(passed, '${k}$ PK1 to PK2: ' // trim(cs%name), t%vals, S_in%vals, TOL)
+            t = kin_pk1_to_cauchy(st, P_in)
+            call check_approx(passed, '${k}$ PK1 to Cauchy: ' // trim(cs%name), t%vals, real(sym6(sig), ${k}$), TOL)
+
+            ! A PK1 stress that is not F S: the upper triangle of the general products
+            P_in%vals = real(reshape(stress_P(), [9]), ${k}$)
+            P0 = reshape(real(P_in%vals, qp), [3, 3])
+            t = kin_pk1_to_pk2(st, P_in)
+            call check_approx(passed, '${k}$ PK1 to PK2, upper triangle: ' // trim(cs%name), t%vals, &
+                              real(upper6(matmul(Fi, P0)), ${k}$), TOL)
+            t = kin_pk1_to_cauchy(st, P_in)
+            call check_approx(passed, '${k}$ PK1 to Cauchy, upper triangle: ' // trim(cs%name), t%vals, &
+                              real(upper6(matmul(P0, transpose(Fq))/J), ${k}$), TOL)
+        end do
+    end subroutine test_conversions_${k}$
+
+    subroutine test_tangents_${k}$(passed)
+        !! Material parts of the spatial tangents, `real(${k}$)`, column c for the unit perturbation e_c:
+        !! kin_log_tangent = R0 (A : dH) R0^T with dH = D ln C [F^T e_c F] (Daleckii-Krein in the
+        !! eigenbasis Q of C), kin_spatial_log_tangent = A : dh with dh = D ln b [(e_c b + b e_c)/2] (eigenbasis
+        !! R0 Q of b), kin_almansi_tangent = A : (e_c b^-1 + b^-1 e_c)/2. With an eigenvalue below KIN_EIG_MIN
+        !! the pairs with it are dropped (spatial logarithmic tangent).
+        logical, intent(inout) :: passed
+        real(${k}$), parameter :: TOL = 10.0_${k}$*TOL_APPROX_${k}$
+        type(kin_case) :: cs
+        type(kin_state_${k}$) :: st
+        type(${tname('3D2O', k)}$) :: F
+        type(${tname('3D4O2sym', k)}$) :: A, res
+        type(${tname('3D2Osym', k)}$) :: dsym, ds
+        real(qp) :: Fq(3, 3), b(3, 3), binv(3, 3), Vb(3, 3), e(3, 3), lam(3), dH(3, 3)
+        real(${k}$) :: ex_log(6, 6), ex_slog(6, 6), ex_alm(6, 6)
+        logical :: active(3)
+        integer :: ic, c, status
+
+        A%vals = real(tangent_A(), ${k}$)
+        do ic = 1, NCASES
+            cs = make_case(ic)
+            Fq = deform(cs)
+            F%vals = real(reshape(Fq, [9]), ${k}$)
+            call kin_finite_update(F, st, status)
+            lam = cs%s**2
+            active = lam > real(KIN_EIG_MIN_${k}$, qp)
+            Vb = matmul(cs%R0, cs%Q)
+            b = matmul(Vb, matmul(diag3(lam), transpose(Vb)))
+            binv = matmul(Vb, matmul(diag3(1.0_qp/lam), transpose(Vb)))
+            do c = 1, 6
+                e = unit_e(c)
+                ! Material Hencky strain, rotated with R0
+                dH = dk(cs%Q, lam, matmul(transpose(Fq), matmul(e, Fq)), active)
+                dsym%vals = real(sym6(dH), ${k}$)
+                ds = A .ddot. dsym
+                ex_log(:, c) = real(sym6(matmul(cs%R0, matmul(mat6(real(ds%vals, qp)), transpose(cs%R0)))), ${k}$)
+                ! Spatial Hencky strain
+                dH = dk(Vb, lam, 0.5_qp*(matmul(e, b) + matmul(b, e)), active)
+                dsym%vals = real(sym6(dH), ${k}$)
+                ds = A .ddot. dsym
+                ex_slog(:, c) = ds%vals
+                ! Euler-Almansi strain
+                dsym%vals = real(sym6(0.5_qp*(matmul(e, binv) + matmul(binv, e))), ${k}$)
+                ds = A .ddot. dsym
+                ex_alm(:, c) = ds%vals
+            end do
+            res = kin_spatial_log_tangent(st, A)
+            call check_approx(passed, '${k}$ spatial logarithmic tangent: ' // trim(cs%name), res%vals, ex_slog, TOL)
+            if (ic == NCASES) cycle  ! R is not a rotation and b^-1 is not computable with an inactive eigenvalue
+            res = kin_log_tangent(st, A)
+            call check_approx(passed, '${k}$ material logarithmic tangent: ' // trim(cs%name), res%vals, ex_log, TOL)
+            res = kin_almansi_tangent(st, A)
+            call check_approx(passed, '${k}$ Euler-Almansi tangent: ' // trim(cs%name), res%vals, ex_alm, TOL)
+        end do
+    end subroutine test_tangents_${k}$
+
+    subroutine test_geometric_${k}$(passed)
+        !! Geometric terms of the spatial tangent of every kinematics (kin_geometric_tangent), `real(${k}$)`, column c
+        !! for the unit perturbation e_c and a Cauchy stress sigma: zero for the small strain and the spatial
+        !! logarithmic kinematics; e_c sigma + sigma e_c (Jaumann, total Lagrangian); tr(e_c) sigma
+        !! (volumetric, updated Lagrangian and corotational); Omega sigma - sigma Omega with the spin of the
+        !! polar rotation Omega (spin_q) for the material logarithmic one (also kin_spin_tangent).
+        logical, intent(inout) :: passed
+        real(${k}$), parameter :: TOL = 10.0_${k}$*TOL_APPROX_${k}$
+        type(kin_case) :: cs
+        type(kin_state_${k}$) :: st
+        type(${tname('3D2O', k)}$) :: F
+        type(${tname('3D2Osym', k)}$) :: sig, e6
+        type(${tname('3D4O2sym', k)}$) :: res
+        type(kin_small_strain_${k}$) :: k_ss
+        type(kin_total_lagrangian_${k}$) :: k_tl
+        type(kin_updated_lagrangian_${k}$) :: k_ul
+        type(kin_material_logarithmic_${k}$) :: k_ml
+        type(kin_spatial_logarithmic_${k}$) :: k_sl
+        type(kin_corotational_${k}$) :: k_cr
+        real(qp) :: Fq(3, 3), sq(3, 3), e(3, 3), om(3, 3)
+        real(${k}$) :: ex_jau(6, 6), ex_vol(6, 6), ex_spin(6, 6)
+        integer :: ic, c, status
+
+        sig%vals = real(sym6(stress_S()), ${k}$)
+        sq = mat6(real(sig%vals, qp))
+        do ic = 1, 2
+            cs = make_case(ic)
+            Fq = deform(cs)
+            F%vals = real(reshape(Fq, [9]), ${k}$)
+            ex_vol = 0.0_${k}$
+            do c = 1, 6
+                e = unit_e(c)
+                ex_jau(:, c) = real(sym6(matmul(e, sq) + matmul(sq, e)), ${k}$)
+                if (c <= 3) ex_vol(:, c) = sig%vals
+                om = spin_q(cs, e)
+                ex_spin(:, c) = real(sym6(matmul(om, sq) - matmul(sq, om)), ${k}$)
+            end do
+
+            call kin_update(k_ss, F, st, status)
+            res = kin_geometric_tangent(k_ss, st, sig)
+            call check_true(passed, '${k}$ small strain geometric tangent zero: ' // trim(cs%name), all(res%vals == 0.0_${k}$))
+            call kin_update(k_sl, F, st, status)
+            res = kin_geometric_tangent(k_sl, st, sig)
+            call check_true(passed, '${k}$ spatial logarithmic geometric tangent zero: ' // trim(cs%name), &
+                            all(res%vals == 0.0_${k}$))
+            call kin_update(k_tl, F, st, status)
+            res = kin_geometric_tangent(k_tl, st, sig)
+            call check_approx(passed, '${k}$ total Lagrangian geometric tangent (Jaumann): ' // trim(cs%name), &
+                              res%vals, ex_jau, TOL)
+            call kin_update(k_ul, F, st, status)
+            res = kin_geometric_tangent(k_ul, st, sig)
+            call check_approx(passed, '${k}$ updated Lagrangian geometric tangent (volumetric): ' // trim(cs%name), &
+                              res%vals, ex_vol, TOL)
+            e6%vals = real([0.1_qp, -0.05_qp, 0.02_qp, 0.03_qp, 0.01_qp, -0.02_qp], ${k}$)
+            call kin_corot_update(k_cr, e6, st, status)
+            res = kin_geometric_tangent(k_cr, st, sig)
+            call check_approx(passed, '${k}$ corotational geometric tangent (volumetric): ' // trim(cs%name), &
+                              res%vals, ex_vol, TOL)
+            call kin_update(k_ml, F, st, status)
+            res = kin_geometric_tangent(k_ml, st, sig)
+            call check_approx(passed, '${k}$ material logarithmic geometric tangent (spin): ' // trim(cs%name), &
+                              res%vals, ex_spin, TOL)
+            res = kin_spin_tangent(st, sig)
+            call check_approx(passed, '${k}$ spin tangent: ' // trim(cs%name), res%vals, ex_spin, TOL)
+        end do
+    end subroutine test_geometric_${k}$
+
+    subroutine test_tangent_transport_${k}$(passed)
+        !! Push-forward and pull-back of a tangent, `real(${k}$)`, on F with J /= 1, through their action on a
+        !! symmetric tensor (the index formulas contracted with the unit perturbation e_c of column c):
+        !! c_ijkl = F_iI F_jJ F_kK F_lL C_IJKL / J gives c : e = F (C : (F^T e F)) F^T / J, and
+        !! C_IJKL = J F^-1_Ii F^-1_Jj F^-1_Kk F^-1_Ll c_ijkl gives C : E = J F^-1 (c : (F^-T E F^-1)) F^-T, with
+        !! F^-1 = Q diag(1/s) Q^T R0^T and J = s1 s2 s3 from the construction; also pull_back(push_forward(A)) = A.
+        logical, intent(inout) :: passed
+        real(${k}$), parameter :: TOL = 10.0_${k}$*TOL_APPROX_${k}$
+        type(kin_case) :: cs
+        type(kin_state_${k}$) :: st
+        type(${tname('3D2O', k)}$) :: F
+        type(${tname('3D4O2sym', k)}$) :: A, res, back
+        type(${tname('3D2Osym', k)}$) :: dsym, ds
+        real(qp) :: Fq(3, 3), Fi(3, 3), J, e(3, 3)
+        real(${k}$) :: ex_push(6, 6), ex_pull(6, 6)
+        integer :: ic, c, status
+
+        A%vals = real(tangent_A(), ${k}$)
+        do ic = 1, 2
+            cs = make_case(ic)
+            Fq = deform(cs)
+            F%vals = real(reshape(Fq, [9]), ${k}$)
+            call kin_finite_update(F, st, status)
+            Fq = reshape(real(F%vals, qp), [3, 3])
+            Fi = matmul(cs%Q, matmul(diag3(1.0_qp/cs%s), matmul(transpose(cs%Q), transpose(cs%R0))))
+            J = product(cs%s)
+            call check_true(passed, '${k}$ transport: J /= 1: ' // trim(cs%name), abs(J - 1.0_qp) > 0.1_qp)
+            do c = 1, 6
+                e = unit_e(c)
+                dsym%vals = real(sym6(matmul(transpose(Fq), matmul(e, Fq))), ${k}$)
+                ds = A .ddot. dsym
+                ex_push(:, c) = real(sym6(matmul(Fq, matmul(mat6(real(ds%vals, qp)), transpose(Fq)))/J), ${k}$)
+                dsym%vals = real(sym6(matmul(transpose(Fi), matmul(e, Fi))), ${k}$)
+                ds = A .ddot. dsym
+                ex_pull(:, c) = real(sym6(J*matmul(Fi, matmul(mat6(real(ds%vals, qp)), transpose(Fi)))), ${k}$)
+            end do
+            res = kin_push_forward_tangent(st, A)
+            call check_approx(passed, '${k}$ push-forward tangent: ' // trim(cs%name), res%vals, ex_push, TOL)
+            res = kin_pull_back_tangent(st, A)
+            call check_approx(passed, '${k}$ pull-back tangent: ' // trim(cs%name), res%vals, ex_pull, TOL)
+            back = kin_pull_back_tangent(st, kin_push_forward_tangent(st, A))
+            call check_approx(passed, '${k}$ pull-back of the push-forward: ' // trim(cs%name), back%vals, A%vals, TOL)
+        end do
+    end subroutine test_tangent_transport_${k}$
+
+    subroutine test_identity_${k}$(passed)
+        !! F = I exactly (C = b = I, R = I), `real(${k}$)`: the spin of the polar rotation vanishes, so
+        !! kin_spin_tangent and the geometric tangent of the material logarithmic kinematics are exactly zero
+        !! (also every column, not only those the eigenbasis loop would write); the material parts of the
+        !! logarithmic tangents are the constitutive tangent itself (d ln C = 2 dE at C = I, R = I), exactly
+        !! (the identity fast path), and the Euler-Almansi one A : e_c (b^-1 = I) within TOL.
+        logical, intent(inout) :: passed
+        real(${k}$), parameter :: TOL = 10.0_${k}$*TOL_APPROX_${k}$
+        type(kin_state_${k}$) :: st
+        type(${tname('3D2O', k)}$) :: F
+        type(${tname('3D2Osym', k)}$) :: sig
+        type(${tname('3D4O2sym', k)}$) :: A, res
+        type(kin_material_logarithmic_${k}$) :: k_ml
+        integer :: status
+
+        F%vals = 0.0_${k}$
+        F%vals([1, 5, 9]) = 1.0_${k}$
+        sig%vals = real(sym6(stress_S()), ${k}$)
+        A%vals = real(tangent_A(), ${k}$)
+        call kin_finite_update(F, st, status)
+        call check_true(passed, '${k}$ F = I: status OK', status == STATUS_OK)
+        res = kin_spin_tangent(st, sig)
+        call check_true(passed, '${k}$ F = I: spin tangent zero', all(res%vals == 0.0_${k}$))
+        call kin_update(k_ml, F, st, status)
+        res = kin_geometric_tangent(k_ml, st, sig)
+        call check_true(passed, '${k}$ F = I: material logarithmic geometric tangent zero', all(res%vals == 0.0_${k}$))
+        res = kin_log_tangent(st, A)
+        call check_true(passed, '${k}$ F = I: material logarithmic tangent = A', all(res%vals == A%vals))
+        res = kin_spatial_log_tangent(st, A)
+        call check_true(passed, '${k}$ F = I: spatial logarithmic tangent = A', all(res%vals == A%vals))
+        res = kin_almansi_tangent(st, A)
+        call check_approx(passed, '${k}$ F = I: Euler-Almansi tangent = A', res%vals, A%vals, TOL)
+    end subroutine test_identity_${k}$
+    #:endfor
+
+    subroutine test_truth_fd(passed)
+        !! The truth of test_tangents (Daleckii-Krein derivative of the Hencky strains, derivative of the
+        !! Euler-Almansi strain) against central differences of the strain measures of the library, dp,
+        !! F -> F + h e_c F (dF = e_c F), on the distinct and the nearly repeated stretches. Tolerance 1e-7
+        !! relative: truncation ~h^2 and rounding ~eps/h with h = 1e-5.
+        logical, intent(inout) :: passed
+        real(dp), parameter :: H_FD = 1.0e-5_dp, TOL = 1.0e-7_dp
+        type(kin_case) :: cs
+        type(kin_state_dp) :: sp_st, sm_st
+        type(ten_3D2O_dp) :: Fp, Fm
+        type(ten_3D2Osym_dp) :: tp, tm
+        real(qp) :: Fq(3, 3), Vb(3, 3), b(3, 3), binv(3, 3), e(3, 3), lam(3)
+        real(dp) :: fd(6, 3), ex(6, 3), om_fd(3, 3)
+        logical, parameter :: ALL3(3) = [.true., .true., .true.]
+        integer :: ic, c, status
+        character(len=1) :: tag
+
+        do ic = 1, 2
+            cs = make_case(ic)
+            Fq = deform(cs)
+            lam = cs%s**2
+            Vb = matmul(cs%R0, cs%Q)
+            b = matmul(Vb, matmul(diag3(lam), transpose(Vb)))
+            binv = matmul(Vb, matmul(diag3(1.0_qp/lam), transpose(Vb)))
+            do c = 1, 6
+                write(tag, '(i1)') c
+                e = unit_e(c)
+                Fp%vals = real(reshape(Fq + H_FD*matmul(e, Fq), [9]), dp)
+                Fm%vals = real(reshape(Fq - H_FD*matmul(e, Fq), [9]), dp)
+                call kin_finite_update(Fp, sp_st, status)
+                call kin_finite_update(Fm, sm_st, status)
+                tp = kin_material_log(sp_st)
+                tm = kin_material_log(sm_st)
+                fd(:, 1) = (tp%vals - tm%vals)/(2.0_dp*H_FD)
+                tp = kin_spatial_log(sp_st)
+                tm = kin_spatial_log(sm_st)
+                fd(:, 2) = (tp%vals - tm%vals)/(2.0_dp*H_FD)
+                tp = kin_euler_almansi(sp_st)
+                tm = kin_euler_almansi(sm_st)
+                fd(:, 3) = (tp%vals - tm%vals)/(2.0_dp*H_FD)
+                ex(:, 1) = real(sym6(dk(cs%Q, lam, matmul(transpose(Fq), matmul(e, Fq)), ALL3)), dp)
+                ex(:, 2) = real(sym6(dk(Vb, lam, 0.5_qp*(matmul(e, b) + matmul(b, e)), ALL3)), dp)
+                ex(:, 3) = real(sym6(0.5_qp*(matmul(e, binv) + matmul(binv, e))), dp)
+                call check_approx(passed, 'truth vs FD, Hencky and Almansi derivatives, column ' // tag // ': ' &
+                                  // trim(cs%name), fd, ex, TOL)
+                ! Spin of the polar rotation: (R(F + h e F) - R(F - h e F))/(2 h) R^T
+                om_fd = matmul(reshape(sp_st%R%vals - sm_st%R%vals, [3, 3])/(2.0_dp*H_FD), &
+                               transpose(real(cs%R0, dp)))
+                call check_approx(passed, 'truth vs FD, spin of the polar rotation, column ' // tag // ': ' &
+                                  // trim(cs%name), om_fd, real(spin_q(cs, e), dp), TOL)
+            end do
+        end do
+    end subroutine test_truth_fd
+
+end module kin_unit_cases
+
+
+program test_kin_finite
+    use muscle_test_helpers, only : record
+    use kin_unit_cases
+    implicit none
+    logical :: passed
+    integer :: code
+
+    code = 0
+    #:for i, k in enumerate(REAL_KINDS)
+    passed = .true.
+    call test_strains_${k}$(passed)
+    call record(passed, ${2 + 4*i}$, 'strain measures ${k}$', code)
+    passed = .true.
+    call test_corotational_${k}$(passed)
+    call record(passed, ${3 + 4*i}$, 'corotational ${k}$', code)
+    passed = .true.
+    call test_conversions_${k}$(passed)
+    call record(passed, ${4 + 4*i}$, 'stress conversions ${k}$', code)
+    passed = .true.
+    call test_tangents_${k}$(passed)
+    call record(passed, ${5 + 4*i}$, 'tangents ${k}$', code)
+    passed = .true.
+    call test_geometric_${k}$(passed)
+    call record(passed, ${10 + i}$, 'geometric tangents ${k}$', code)
+    passed = .true.
+    call test_tangent_transport_${k}$(passed)
+    call record(passed, ${12 + i}$, 'tangent push-forward and pull-back ${k}$', code)
+    passed = .true.
+    call test_identity_${k}$(passed)
+    call record(passed, ${14 + i}$, 'F = I tangents ${k}$', code)
+    passed = .true.
+    call test_near_identity_${k}$(passed)
+    call record(passed, ${16 + i}$, 'Hencky strains near the identity ${k}$', code)
+    #:endfor
+    passed = .true.
+    call test_truth_fd(passed)
+    call record(passed, 20, 'truth vs finite differences', code)
+    if (code /= 0) stop code
+end program test_kin_finite

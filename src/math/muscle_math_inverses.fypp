@@ -1,0 +1,310 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_math_lu_bodies.fypp"
+
+module muscle_math_inverses
+    !! Small dense matrix inverses used by the tensor engine.
+    !!
+    !! Algorithm by size:
+    !!
+    !! - 3x3 (`M33INV`) and 4x4 (`M44INV`): closed-form adjugate (cofactors / determinant),
+    !!   with an LU fallback when the condition number
+    !!   \( \kappa_\infty \) exceeds `ADJ_KAPPA_MAX` (the adjugate loses accuracy much faster than
+    !!   LU as the matrix becomes ill-conditioned).
+    !! - 5x5, 6x6 and 9x9 (`M55INV`, `M66INV`, `M99INV`): LU with partial pivoting in plain
+    !!   Fortran; the optional `KAPPA` is \( \kappa_\infty \) computed afterwards with `COND_INF`.
+    !! - `NORM_INF`: \( \|A\|_\infty \) (maximum absolute row sum) with explicit loops, the norm of
+    !!   `COND_INF` and of the adjugate switch.
+    !!
+    !! A singular matrix (exactly zero determinant or pivot) gives `OK_FLAG = .false.` and a zero
+    !! inverse.
+    !!
+    !! Every routine exists for each real kind (`M33INV_sp`, `M33INV_dp`, ...) under a generic
+    !! name (`M33INV`, ...).
+    use muscle_kinds, only: sp, dp
+    implicit none
+    private
+
+    public :: M33INV, M44INV, M55INV, M66INV, M99INV, COND_INF, NORM_INF, ADJ_KAPPA_MAX
+    #:for k in REAL_KINDS
+    public :: M33INV_${k}$, M44INV_${k}$, M55INV_${k}$, M66INV_${k}$, M99INV_${k}$
+    public :: COND_INF_${k}$, NORM_INF_${k}$, ADJ_KAPPA_MAX_${k}$
+    #:endfor
+
+    #:for name in ['M33INV', 'M44INV', 'M55INV', 'M66INV', 'M99INV', 'COND_INF', 'NORM_INF']
+    interface ${name}$
+        module procedure ${', '.join(name + '_' + k for k in REAL_KINDS)}$
+    end interface ${name}$
+
+    #:endfor
+
+#! Adjugate/LU switch per kind. dp: 1e3, the result is as accurate as LU for every condition
+#! number. sp: 1e2 (D-013): measured with random 3x3/4x4 matrices, above kappa ~ 1e2 the sp adjugate
+#! is 2-8 times less accurate than LU (p99 errors), below it they match.
+    #:set ADJ_KAPPA_MAX = {'sp': '1.0e2', 'dp': '1.0e3'}
+    #:for k in REAL_KINDS
+    real(${k}$), parameter :: ADJ_KAPPA_MAX_${k}$ = ${ADJ_KAPPA_MAX[k]}$_${k}$
+        !! Largest \( \kappa_\infty \) accepted for the `real(${k}$)` adjugate inverses (`M33INV`,
+        !! `M44INV`); above it they are recomputed by LU, which is more accurate for ill-conditioned
+        !! matrices, while well-conditioned ones keep the fast adjugate path.
+    #:endfor
+    real(dp), parameter :: ADJ_KAPPA_MAX = ADJ_KAPPA_MAX_dp
+        !! Historical name of `ADJ_KAPPA_MAX_dp`.
+
+    contains
+
+    #:for k in REAL_KINDS
+    pure subroutine M66INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+        !! Inverse of a general 6x6 matrix by LU with partial pivoting in plain Fortran,
+        !! see `muscle_math_lu_bodies.fypp`. Used by `ten_3D4O3sym` and
+        !! `ten_3D4O2sym`.
+        !!
+        implicit none
+        @:DEVICE()
+        integer, parameter :: N = 6
+        real(${k}$), intent(in)  :: A(N,N)
+            !! Matrix to be inverted.
+        real(${k}$), intent(out) :: AINV(N,N)
+            !! Inverse of `A`; zero when `A` is singular.
+        logical, intent(out)      :: OK_FLAG
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+        real(${k}$), intent(out), optional :: KAPPA
+            !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
+            !! inverse); `huge(1.0_${k}$)` when `A` is singular.
+        $:lu_inverse_body(k, kappa=True)
+    end subroutine M66INV_${k}$
+
+    pure subroutine M99INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+        !! Inverse of a general 9x9 matrix by LU with partial pivoting in plain Fortran (algorithm of
+        !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_bodies.fypp`). Used by `ten_3D4O`.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: N = 9
+        real(${k}$), intent(in)  :: A(N,N)
+            !! Matrix to be inverted.
+        real(${k}$), intent(out) :: AINV(N,N)
+            !! Inverse of `A`; zero when `A` is singular.
+        logical, intent(out)      :: OK_FLAG
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+        real(${k}$), intent(out), optional :: KAPPA
+            !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
+            !! inverse); `huge(1.0_${k}$)` when `A` is singular.
+        $:lu_inverse_body(k, kappa=True)
+    end subroutine M99INV_${k}$
+
+    pure function COND_INF_${k}$(A, AINV) result(KAPPA)
+        !! Condition number in the infinity norm,
+        !! \( \kappa_\infty = \|A\|_\infty \|A^{-1}\|_\infty \) (maximum absolute row sums), from a
+        !! matrix and its computed inverse. Costs \( 2n^2 \) operations.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: A(:,:)
+            !! Matrix.
+        real(${k}$), intent(in) :: AINV(:,:)
+            !! Its (computed) inverse, same shape as `A`.
+        real(${k}$) :: KAPPA
+            !! \( \kappa_\infty(A) \).
+        KAPPA = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
+    end function COND_INF_${k}$
+
+    pure function NORM_INF_${k}$(A) result(nrm)
+        !! Infinity norm \( \|A\|_\infty = \max_i \sum_j |a_{ij}| \) (maximum absolute row sum) of a
+        !! `real(${k}$)` matrix,
+        !! with explicit loops: each row is summed left to right (the order of `sum(abs(A), dim=2)`),
+        !! without temporary arrays. In device code the temporary of `maxval(sum(abs(A), dim=2))`
+        !! on an assumed-shape `A` has a run-time size, which IGC cannot bound: it reserved too
+        !! little private memory and the kernel overflowed it (PROBLEMAS.md). NaN if a row sum is NaN
+        !! (then `kap <= ADJ_KAPPA_MAX` is false and the inverses fall back to LU).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: A(:,:)
+            !! Matrix.
+        real(${k}$) :: nrm
+            !! \( \|A\|_\infty \) (0 for a matrix without rows).
+        real(${k}$) :: s
+        integer :: i, j
+        nrm = 0.0_${k}$
+        do i = 1, size(A, 1)
+            s = 0.0_${k}$
+            do j = 1, size(A, 2)
+                s = s + abs(A(i, j))
+            end do
+            ! A NaN row sum enters (the comparison is false) and is the result
+            if (.not. (s <= nrm)) nrm = s
+            if (nrm /= nrm) return
+        end do
+    end function NORM_INF_${k}$
+
+    pure subroutine M33INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+        !! Inverse of a general 3x3 matrix: closed-form adjugate with an LU fallback.
+        !!
+        !! \( A^{-1} = \mathrm{adj}(A)/\det(A) \). The condition number
+        !! \( \kappa_\infty = \|A\|_\infty \|A^{-1}\|_\infty \) is computed from the result (18 extra
+        !! operations). If \( \kappa_\infty > \) `ADJ_KAPPA_MAX_${k}$`, or the determinant is zero or not a
+        !! finite number (e.g. a well-conditioned but extremely scaled matrix), the inverse is
+        !! recomputed by LU with partial pivoting.
+        !!
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in)  :: A(3,3)
+            !! Matrix to be inverted.
+        real(${k}$), intent(out) :: AINV(3,3)
+            !! Inverse of `A`; zero when `A` is singular.
+        logical, intent(out)      :: OK_FLAG
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+        real(${k}$), intent(out), optional :: KAPPA
+            !! Condition number \( \kappa_\infty(A) \) of `A`; `huge(1.0_${k}$)` when `A` is singular.
+        real(${k}$) :: c11, c12, c13, c21, c22, c23, c31, c32, c33, det, r, kap
+
+        ! Cofactors (AINV = transpose of the cofactor matrix / det)
+        c11 = A(2,2)*A(3,3) - A(2,3)*A(3,2)
+        c12 = A(1,3)*A(3,2) - A(1,2)*A(3,3)
+        c13 = A(1,2)*A(2,3) - A(1,3)*A(2,2)
+        c21 = A(2,3)*A(3,1) - A(2,1)*A(3,3)
+        c22 = A(1,1)*A(3,3) - A(1,3)*A(3,1)
+        c23 = A(1,3)*A(2,1) - A(1,1)*A(2,3)
+        c31 = A(2,1)*A(3,2) - A(2,2)*A(3,1)
+        c32 = A(1,2)*A(3,1) - A(1,1)*A(3,2)
+        c33 = A(1,1)*A(2,2) - A(1,2)*A(2,1)
+        det = A(1,1)*c11 + A(1,2)*c21 + A(1,3)*c31
+
+        if (abs(det) > 0.0_${k}$ .and. abs(det) <= huge(det)) then
+            r = 1.0_${k}$ / det
+            AINV(1,1) = c11*r; AINV(1,2) = c12*r; AINV(1,3) = c13*r
+            AINV(2,1) = c21*r; AINV(2,2) = c22*r; AINV(2,3) = c23*r
+            AINV(3,1) = c31*r; AINV(3,2) = c32*r; AINV(3,3) = c33*r
+            kap = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
+            if (kap <= ADJ_KAPPA_MAX_${k}$) then      ! also .false. for NaN
+                OK_FLAG = .true.
+                if (present(KAPPA)) KAPPA = kap
+                return
+            end if
+        end if
+
+        call lu_inv3_${k}$(A, AINV, OK_FLAG)
+        if (present(KAPPA)) then
+            if (OK_FLAG) then
+                KAPPA = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
+            else
+                KAPPA = huge(1.0_${k}$)
+            end if
+        end if
+    end subroutine M33INV_${k}$
+
+    pure subroutine M44INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+        !! Inverse of a general 4x4 matrix: closed-form adjugate (via 2x2 sub-determinants) with an
+        !! LU fallback, same rule as `M33INV`. Used by the 2D tensor engine (4x4 Voigt matrices of
+        !! `ten_2D4O3sym` / `ten_2D4O2sym`).
+        !!
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in)  :: A(4,4)
+            !! Matrix to be inverted.
+        real(${k}$), intent(out) :: AINV(4,4)
+            !! Inverse of `A`; zero when `A` is singular.
+        logical, intent(out)      :: OK_FLAG
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+        real(${k}$), intent(out), optional :: KAPPA
+            !! Condition number \( \kappa_\infty(A) \) of `A`; `huge(1.0_${k}$)` when `A` is singular.
+        real(${k}$) :: s0, s1, s2, s3, s4, s5, c0, c1, c2, c3, c4, c5, det, r, kap
+
+        ! 2x2 sub-determinants of rows (1,2) and of rows (3,4)
+        s0 = A(1,1)*A(2,2) - A(2,1)*A(1,2)
+        s1 = A(1,1)*A(2,3) - A(2,1)*A(1,3)
+        s2 = A(1,1)*A(2,4) - A(2,1)*A(1,4)
+        s3 = A(1,2)*A(2,3) - A(2,2)*A(1,3)
+        s4 = A(1,2)*A(2,4) - A(2,2)*A(1,4)
+        s5 = A(1,3)*A(2,4) - A(2,3)*A(1,4)
+        c5 = A(3,3)*A(4,4) - A(4,3)*A(3,4)
+        c4 = A(3,2)*A(4,4) - A(4,2)*A(3,4)
+        c3 = A(3,2)*A(4,3) - A(4,2)*A(3,3)
+        c2 = A(3,1)*A(4,4) - A(4,1)*A(3,4)
+        c1 = A(3,1)*A(4,3) - A(4,1)*A(3,3)
+        c0 = A(3,1)*A(4,2) - A(4,1)*A(3,2)
+        det = s0*c5 - s1*c4 + s2*c3 + s3*c2 - s4*c1 + s5*c0
+
+        if (abs(det) > 0.0_${k}$ .and. abs(det) <= huge(det)) then
+            r = 1.0_${k}$ / det
+            AINV(1,1) = ( A(2,2)*c5 - A(2,3)*c4 + A(2,4)*c3) * r
+            AINV(1,2) = (-A(1,2)*c5 + A(1,3)*c4 - A(1,4)*c3) * r
+            AINV(1,3) = ( A(4,2)*s5 - A(4,3)*s4 + A(4,4)*s3) * r
+            AINV(1,4) = (-A(3,2)*s5 + A(3,3)*s4 - A(3,4)*s3) * r
+            AINV(2,1) = (-A(2,1)*c5 + A(2,3)*c2 - A(2,4)*c1) * r
+            AINV(2,2) = ( A(1,1)*c5 - A(1,3)*c2 + A(1,4)*c1) * r
+            AINV(2,3) = (-A(4,1)*s5 + A(4,3)*s2 - A(4,4)*s1) * r
+            AINV(2,4) = ( A(3,1)*s5 - A(3,3)*s2 + A(3,4)*s1) * r
+            AINV(3,1) = ( A(2,1)*c4 - A(2,2)*c2 + A(2,4)*c0) * r
+            AINV(3,2) = (-A(1,1)*c4 + A(1,2)*c2 - A(1,4)*c0) * r
+            AINV(3,3) = ( A(4,1)*s4 - A(4,2)*s2 + A(4,4)*s0) * r
+            AINV(3,4) = (-A(3,1)*s4 + A(3,2)*s2 - A(3,4)*s0) * r
+            AINV(4,1) = (-A(2,1)*c3 + A(2,2)*c1 - A(2,3)*c0) * r
+            AINV(4,2) = ( A(1,1)*c3 - A(1,2)*c1 + A(1,3)*c0) * r
+            AINV(4,3) = (-A(4,1)*s3 + A(4,2)*s1 - A(4,3)*s0) * r
+            AINV(4,4) = ( A(3,1)*s3 - A(3,2)*s1 + A(3,3)*s0) * r
+            kap = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
+            if (kap <= ADJ_KAPPA_MAX_${k}$) then      ! also .false. for NaN
+                OK_FLAG = .true.
+                if (present(KAPPA)) KAPPA = kap
+                return
+            end if
+        end if
+
+        call lu_inv4_${k}$(A, AINV, OK_FLAG)
+        if (present(KAPPA)) then
+            if (OK_FLAG) then
+                KAPPA = NORM_INF_${k}$(A) * NORM_INF_${k}$(AINV)
+            else
+                KAPPA = huge(1.0_${k}$)
+            end if
+        end if
+    end subroutine M44INV_${k}$
+
+    pure subroutine lu_inv3_${k}$(A, AINV, OK_FLAG)
+        !! 3x3 LU inverse (fallback of `M33INV`), see `muscle_math_lu_bodies.fypp`.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: N = 3
+        real(${k}$), intent(in)  :: A(N,N)
+            !! Matrix to be inverted.
+        real(${k}$), intent(out) :: AINV(N,N)
+            !! Inverse of `A`; zero when `A` is singular.
+        logical, intent(out)      :: OK_FLAG
+            !! `.TRUE.` if the inversion succeeded.
+        $:lu_inverse_body(k)
+    end subroutine lu_inv3_${k}$
+
+    pure subroutine lu_inv4_${k}$(A, AINV, OK_FLAG)
+        !! 4x4 LU inverse (fallback of `M44INV`), see `muscle_math_lu_bodies.fypp`.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: N = 4
+        real(${k}$), intent(in)  :: A(N,N)
+            !! Matrix to be inverted.
+        real(${k}$), intent(out) :: AINV(N,N)
+            !! Inverse of `A`; zero when `A` is singular.
+        logical, intent(out)      :: OK_FLAG
+            !! `.TRUE.` if the inversion succeeded.
+        $:lu_inverse_body(k)
+    end subroutine lu_inv4_${k}$
+
+    pure subroutine M55INV_${k}$(A, AINV, OK_FLAG, KAPPA)
+        !! Inverse of a general 5x5 matrix by LU with partial pivoting in plain Fortran (algorithm of
+        !! LAPACK `DGETRF` + `DGETRI`, see `muscle_math_lu_bodies.fypp`). Used by `ten_2D4O`.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: N = 5
+        real(${k}$), intent(in)  :: A(N,N)
+            !! Matrix to be inverted.
+        real(${k}$), intent(out) :: AINV(N,N)
+            !! Inverse of `A`; zero when `A` is singular.
+        logical, intent(out)      :: OK_FLAG
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+        real(${k}$), intent(out), optional :: KAPPA
+            !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
+            !! inverse); `huge(1.0_${k}$)` when `A` is singular.
+        $:lu_inverse_body(k, kappa=True)
+    end subroutine M55INV_${k}$
+
+    #:endfor
+end module

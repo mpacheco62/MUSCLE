@@ -1,0 +1,430 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#!
+#! Physical checks of the generalized Maxwell model through the kernel API (dp): the step calls of a
+#! material point (visco_test_steps) and the frozen elasticity through the elas_* generics.
+
+program test_muscle_visco_maxwell
+    implicit none
+    logical :: passed
+
+    call test_relaxation(passed)
+    if (.not. passed) STOP 1
+
+    call test_constant_rate(passed)
+    if (.not. passed) STOP 2
+
+    call test_time_step_limits(passed)
+    if (.not. passed) STOP 3
+
+    call test_freeze_update_consistency(passed)
+    if (.not. passed) STOP 4
+
+    call test_maxwell_frozen_tangents_2d_and_dev(passed)
+    if (.not. passed) STOP 8
+
+    call test_maxwell_gamma_series_small_x(passed)
+    if (.not. passed) STOP 9
+
+    call test_maxwell_init_history_strain_e(passed)
+    if (.not. passed) STOP 10
+
+    print*, "Passed!", passed
+end program test_muscle_visco_maxwell
+
+subroutine test_relaxation(passed)
+    !! Step strain and hold: sigma(t) = K tr(eps) I + 2 G(t) dev(eps), exact for any dt
+    !! (only the first step, which applies the strain, has to be short).
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_elas_laws, only : elas_stress
+    use muscle_visco_laws, only : visco_maxwell_dp, visco_state_dp, elas_frozen_dp
+    use muscle_visco_maxwell, only : visco_maxwell_init, visco_maxwell_shear_instantaneous, &
+        visco_maxwell_relaxation_shear
+    use visco_test_steps, only : step_coefs, new_state, freeze_dt, advance
+    implicit none
+    logical, intent(out) :: passed
+
+    type(visco_maxwell_dp) :: model
+    type(visco_state_dp) :: state
+    type(elas_frozen_dp) :: elas
+    type(ten_3D2Osym) :: strain, stress, expected, vol
+    real(dp), parameter :: K = 2000.0_dp, DT1 = 1.0e-12_dp
+    real(dp), parameter :: DTS(5) = [0.05_dp, 0.3_dp, 0.7_dp, 2.0_dp, 5.0_dp]
+    real(dp) :: t, tr
+    integer :: i, status
+    character(len=40) :: label
+
+    passed = .true.
+    call visco_maxwell_init(model, bulk=K, shear_inf=100.0_dp, shear=[200.0_dp, 300.0_dp], tau=[0.1_dp, 1.0_dp], &
+        status=status)
+    call new_state(model, state)
+
+    call strain%init(xx=1.0e-3_dp, yy=-2.0e-4_dp, zz=3.0e-4_dp, xy=5.0e-4_dp, yz=-1.0e-4_dp, xz=2.0e-4_dp)
+    tr = strain%xx() + strain%yy() + strain%zz()
+    call vol%init(xx=K*tr, yy=K*tr, zz=K*tr, xy=0.0_dp, yz=0.0_dp, xz=0.0_dp)
+
+    ! Apply the strain in a very short step
+    t = DT1
+    elas = freeze_dt(model, DT1, state)
+    stress = elas_stress(elas, strain)
+    call advance(model, step_coefs(model, DT1), strain, state)
+    expected = vol + 2.0_dp*visco_maxwell_shear_instantaneous(model)*(.dev. strain)
+    call check_approx(passed, "relaxation: instantaneous response", stress, expected, tol=1.0e-9_dp)
+
+    ! Hold the strain with coarse steps
+    do i = 1, size(DTS)
+        t = t + DTS(i)
+        elas = freeze_dt(model, DTS(i), state)
+        stress = elas_stress(elas, strain)
+        call advance(model, step_coefs(model, DTS(i)), strain, state)
+        expected = vol + 2.0_dp*visco_maxwell_relaxation_shear(model, t)*(.dev. strain)
+        write(label, "(A, ES9.2)") "relaxation: stress at t =", t
+        call check_approx(passed, trim(label), stress, expected, tol=1.0e-9_dp)
+    end do
+end subroutine test_relaxation
+
+subroutine test_constant_rate(passed)
+    !! Constant strain rate D: the update is exact for any dt,
+    !! sigma(t) = K tr(D) t I + 2 dev(D) [G_inf t + sum G_k tau_k (1 - exp(-t/tau_k))].
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_elas_laws, only : elas_stress
+    use muscle_visco_laws, only : visco_freeze, visco_maxwell_dp, visco_state_dp, visco_coefs_dp, elas_frozen_dp
+    use muscle_visco_maxwell, only : visco_maxwell_init
+    use visco_test_steps, only : step_coefs, new_state, advance
+    implicit none
+    logical, intent(out) :: passed
+
+    type(visco_maxwell_dp) :: model
+    type(visco_state_dp) :: state
+    type(elas_frozen_dp) :: elas
+    type(visco_coefs_dp) :: coefs
+    type(ten_3D2Osym) :: rate, strain, stress, expected, vol
+    real(dp), parameter :: K = 2000.0_dp, G_INF = 100.0_dp
+    real(dp), parameter :: G(2) = [200.0_dp, 300.0_dp], TAU(2) = [0.1_dp, 1.0_dp]
+    real(dp), parameter :: DTS(5) = [0.03_dp, 0.2_dp, 0.5_dp, 1.5_dp, 3.0_dp]
+    real(dp) :: t, tr, gt
+    integer :: i, status
+    character(len=40) :: label
+
+    passed = .true.
+    call visco_maxwell_init(model, bulk=K, shear_inf=G_INF, shear=G, tau=TAU, status=status)
+    call new_state(model, state)
+
+    call rate%init(xx=2.0e-3_dp, yy=-1.0e-3_dp, zz=5.0e-4_dp, xy=1.0e-3_dp, yz=3.0e-4_dp, xz=-2.0e-4_dp)
+    tr = rate%xx() + rate%yy() + rate%zz()
+
+    t = 0.0_dp
+    do i = 1, size(DTS)
+        t = t + DTS(i)
+        strain = t*rate
+        coefs = step_coefs(model, DTS(i))
+        elas = visco_freeze(model, coefs, state)
+        stress = elas_stress(elas, strain)
+        call advance(model, coefs, strain, state)
+
+        gt = G_INF*t + sum(G*TAU*(1.0_dp - exp(-t/TAU)))
+        call vol%init(xx=K*tr*t, yy=K*tr*t, zz=K*tr*t, xy=0.0_dp, yz=0.0_dp, xz=0.0_dp)
+        expected = vol + 2.0_dp*gt*(.dev. rate)
+        write(label, "(A, ES9.2)") "constant rate: stress at t =", t
+        call check_approx(passed, trim(label), stress, expected, tol=1.0e-10_dp)
+    end do
+end subroutine test_constant_rate
+
+subroutine test_time_step_limits(passed)
+    !! dt -> 0 gives the instantaneous (linear elastic) response, dt -> inf the long-term one.
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain, elas_linear_dp
+    use muscle_elas_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
+    use muscle_visco_laws, only : visco_freeze, visco_maxwell_dp, visco_state_dp, visco_coefs_dp, elas_frozen_dp
+    use muscle_visco_maxwell, only : visco_maxwell_init_normalized, visco_maxwell_shear_instantaneous, &
+        visco_maxwell_relaxation_shear
+    use visco_test_steps, only : step_coefs, new_state
+    implicit none
+    logical, intent(out) :: passed
+
+    type(visco_maxwell_dp) :: model
+    type(visco_state_dp) :: state
+    type(elas_frozen_dp) :: elas
+    type(elas_linear_dp) :: lin
+    type(visco_coefs_dp) :: coefs
+    type(ten_3D2Osym) :: strain
+    type(ten_3D4O3sym) :: tan_frozen, tan_lin
+    real(dp), parameter :: E = 1000.0_dp, NU = 0.3_dp
+    real(dp) :: g0
+    integer :: status
+
+    passed = .true.
+    call visco_maxwell_init_normalized(model, young=E, poisson=NU, g=[0.2_dp, 0.3_dp], tau=[0.1_dp, 1.0_dp], &
+        status=status)
+    call new_state(model, state)
+    call elas_linear_init(lin, young=E, poisson=NU, status=status)
+    call check_true(passed, "linear elastic reference: init status", status == STATUS_OK)
+    g0 = 0.5_dp*E/(1.0_dp + NU)
+
+    call check_approx(passed, "normalized: G_0", visco_maxwell_shear_instantaneous(model), g0, tol=1.0e-12_dp)
+    call check_approx(passed, "normalized: G(inf)", visco_maxwell_relaxation_shear(model, 1.0e12_dp), 0.5_dp*g0, &
+                      tol=1.0e-12_dp)
+
+    coefs = step_coefs(model, 0.0_dp)
+    call check_approx(passed, "dt = 0: G_alg = G_0", coefs%g_alg, g0, tol=1.0e-12_dp)
+    call check_approx(passed, "dt = 0: K_alg", coefs%k_alg, E/(3.0_dp*(1.0_dp - 2.0_dp*NU)), tol=1.0e-12_dp)
+
+    ! dt = 0 without history must be exactly the linear elastic law
+    call strain%init(xx=1.0e-3_dp, yy=-2.0e-4_dp, zz=3.0e-4_dp, xy=5.0e-4_dp, yz=-1.0e-4_dp, xz=2.0e-4_dp)
+    elas = visco_freeze(model, coefs, state)
+    call check_approx(passed, "dt = 0: stress = linear elastic", elas_stress(elas, strain), &
+                      elas_stress(lin, strain), tol=1.0e-12_dp)
+    tan_frozen = elas_dstress_dstrain(elas, strain)
+    tan_lin = elas_dstress_dstrain(lin, strain)
+    call check_approx(passed, "dt = 0: tangent = linear elastic", tan_frozen, tan_lin, tol=1.0e-12_dp)
+
+    coefs = step_coefs(model, 1.0e12_dp)
+    call check_approx(passed, "dt -> inf: G_alg = G_inf", coefs%g_alg, 0.5_dp*g0, tol=1.0e-9_dp)
+end subroutine test_time_step_limits
+
+subroutine test_freeze_update_consistency(passed)
+    !! The frozen stress at eps_e_n+1 equals K tr(eps) I + 2 G_inf dev(eps) + sum s_k^(n+1)
+    !! after the update. Also: analytical vs numerical tangent, deviatoric part and plane strain.
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_elas_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain
+    use muscle_visco_laws, only : visco_freeze, visco_update, visco_n_branches, visco_maxwell_dp, visco_state_dp, &
+        visco_coefs_dp, elas_frozen_dp
+    use muscle_visco_maxwell, only : visco_maxwell_init
+    use visco_test_steps, only : step_coefs, new_state, advance
+    implicit none
+    logical, intent(out) :: passed
+
+    type(visco_maxwell_dp) :: model
+    type(visco_state_dp) :: state, state_np1
+    type(elas_frozen_dp) :: elas
+    type(visco_coefs_dp) :: coefs
+    type(ten_3D2Osym) :: strain, branches, expected, vol
+    type(ten_2D2Osym) :: strain_2d, stress_2d, expected_2d
+    type(ten_3D4O2sym) :: tan_num, tan_an
+    real(dp), parameter :: K = 2000.0_dp, G_INF = 100.0_dp
+    real(dp) :: tr
+    integer :: i, status
+
+    passed = .true.
+    call visco_maxwell_init(model, bulk=K, shear_inf=G_INF, shear=[200.0_dp, 300.0_dp, 50.0_dp], &
+                            tau=[0.1_dp, 1.0_dp, 10.0_dp], status=status)
+    call new_state(model, state)
+
+    ! Build a non-trivial (plane strain) history
+    call strain%init(xx=1.0e-3_dp, yy=-4.0e-4_dp, zz=0.0_dp, xy=6.0e-4_dp, yz=0.0_dp, xz=0.0_dp)
+    call advance(model, step_coefs(model, 0.2_dp), strain, state)
+    call strain%init(xx=4.0e-4_dp, yy=2.0e-4_dp, zz=0.0_dp, xy=-3.0e-4_dp, yz=0.0_dp, xz=0.0_dp)
+    call advance(model, step_coefs(model, 0.5_dp), strain, state)
+
+    call strain%init(xx=7.0e-4_dp, yy=-1.0e-4_dp, zz=0.0_dp, xy=2.0e-4_dp, yz=0.0_dp, xz=0.0_dp)
+    coefs = step_coefs(model, 0.3_dp)
+    elas = visco_freeze(model, coefs, state)
+    call visco_update(model, coefs, state, strain, state_np1)
+
+    branches%vals = 0.0_dp
+    do i = 1, visco_n_branches(model)
+        branches%vals = branches%vals + state_np1%h(:, i)
+    end do
+    tr = strain%xx() + strain%yy() + strain%zz()
+    call vol%init(xx=K*tr, yy=K*tr, zz=K*tr, xy=0.0_dp, yz=0.0_dp, xz=0.0_dp)
+    expected = vol + 2.0_dp*G_INF*(.dev. strain) + branches
+    call check_approx(passed, "freeze(eps_n+1) = K tr I + 2 G_inf e + sum s_k^(n+1)", &
+                      elas_stress(elas, strain), expected, tol=1.0e-12_dp)
+
+    call check_approx(passed, "stress_dev = dev(stress)", elas_stress_dev(elas, strain), &
+                      .dev. elas_stress(elas, strain), tol=1.0e-12_dp)
+
+    tan_an = elas_dstress_dstrain(elas, strain)
+    @:FD_JAC(tan_num, elas_stress(elas, {x}), strain, dp, indent=4)
+    call check_approx(passed, "frozen tangent: analytical vs numerical", tan_an, tan_num, tol=1.0e-7_dp)
+
+    call strain_2d%init(xx=strain%xx(), yy=strain%yy(), zz=strain%zz(), xy=strain%xy())
+    stress_2d = elas_stress(elas, strain_2d)
+    call expected_2d%init(xx=expected%xx(), yy=expected%yy(), zz=expected%zz(), xy=expected%xy())
+    call check_approx(passed, "plane strain stress = 3D components", stress_2d, expected_2d, tol=1.0e-12_dp)
+end subroutine test_freeze_update_consistency
+
+subroutine test_maxwell_frozen_tangents_2d_and_dev(passed)
+    !! The moduli, the plane-strain tangent and the deviatoric tangent of the frozen elasticity,
+    !! against the linear elasticity with the same pair (K_alg, G_alg), in a state with normals and
+    !! shears coupled and a non-zero history stress.
+    !! Hard case: the frozen tangent is not the plain elastic one, and the 2-D and deviatoric
+    !! forms are not covered by the 3-D tangent check.
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_elas_laws, only : elas_stress, elas_stress_dev, elas_dstress_dstrain, elas_dstress_dstrain_dev, &
+        elas_linear_dp
+    use muscle_elas_linear, only : elas_linear_init
+    use muscle_status, only : STATUS_OK
+    use muscle_visco_laws, only : visco_freeze, visco_maxwell_dp, visco_state_dp, visco_coefs_dp, elas_frozen_dp
+    use muscle_visco_maxwell, only : visco_maxwell_init
+    use visco_test_steps, only : step_coefs, new_state, advance
+    implicit none
+    logical, intent(out) :: passed
+
+    type(visco_maxwell_dp) :: model
+    type(visco_state_dp) :: state
+    type(elas_frozen_dp) :: elas
+    type(elas_linear_dp) :: lin
+    type(visco_coefs_dp) :: coefs
+    type(ten_3D2Osym) :: strain
+    type(ten_2D2Osym) :: strain_2d
+    real(dp), parameter :: K = 2000.0_dp, G_INF = 100.0_dp
+    real(dp) :: e_alg, nu_alg, sum_kg
+    integer :: status
+
+    passed = .true.
+    call visco_maxwell_init(model, bulk=K, shear_inf=G_INF, shear=[200.0_dp, 300.0_dp], tau=[0.1_dp, 1.0_dp], &
+        status=status)
+    call new_state(model, state)
+
+    ! A previous step leaves a non-zero history stress, so the frozen moduli are (K, G_alg)
+    call strain%init(xx=1.0e-3_dp, yy=-4.0e-4_dp, zz=0.0_dp, xy=6.0e-4_dp, yz=0.0_dp, xz=0.0_dp)
+    call advance(model, step_coefs(model, 0.2_dp), strain, state)
+    call strain%init(xx=7.0e-4_dp, yy=-1.0e-4_dp, zz=2.0e-4_dp, xy=2.0e-4_dp, yz=-3.0e-4_dp, xz=5.0e-4_dp)
+    coefs = step_coefs(model, 0.3_dp)
+    elas = visco_freeze(model, coefs, state)
+
+    ! Measured: 0 (the frozen elasticity stores the coefficients it was given).
+    call check_approx(passed, "frozen k_alg = K_alg", elas%k_alg, coefs%k_alg, tol=0.0_dp)
+    call check_approx(passed, "frozen g_alg = G_alg", elas%g_alg, coefs%g_alg, tol=0.0_dp)
+
+    ! Reference: the linear elasticity of the library with the same pair of moduli
+    sum_kg = 3.0_dp*coefs%k_alg + coefs%g_alg
+    e_alg  = 9.0_dp*coefs%k_alg*coefs%g_alg/sum_kg
+    nu_alg = (3.0_dp*coefs%k_alg - 2.0_dp*coefs%g_alg)/(2.0_dp*sum_kg)
+    call elas_linear_init(lin, young=e_alg, poisson=nu_alg, status=status)
+    call check_true(passed, "linear elastic reference: init status", status == STATUS_OK)
+
+    ! The reference is checked before being used: C : strain returns its own stress
+    ! Measured: 0 and 1.3e-16 or less.
+    call strain_2d%init(xx=strain%xx(), yy=strain%yy(), zz=strain%zz(), xy=strain%xy())
+    call check_approx(passed, "reference: 2-D tangent .ddot. strain = 2-D stress", &
+                      elas_dstress_dstrain(lin, strain_2d) .ddot. strain_2d, &
+                      elas_stress(lin, strain_2d), tol=1.0e-14_dp)
+    call check_approx(passed, "reference: deviatoric tangent .ddot. strain = deviatoric stress", &
+                      elas_dstress_dstrain_dev(lin, strain) .ddot. strain, &
+                      elas_stress_dev(lin, strain), tol=1.0e-14_dp)
+
+    ! Measured: 5.3e-16 and 2.0e-16 relative (K_alg, G_alg -> E_alg, nu_alg round trip).
+    call check_approx(passed, "frozen 2-D tangent = linear elastic 2-D tangent", &
+                      elas_dstress_dstrain(elas, strain_2d), elas_dstress_dstrain(lin, strain_2d), &
+                      tol=1.0e-14_dp)
+    call check_approx(passed, "frozen deviatoric tangent = linear elastic deviatoric tangent", &
+                      elas_dstress_dstrain_dev(elas, strain), elas_dstress_dstrain_dev(lin, strain), &
+                      tol=1.0e-14_dp)
+end subroutine test_maxwell_frozen_tangents_2d_and_dev
+
+subroutine test_maxwell_gamma_series_small_x(passed)
+    !! One step of constant deviatoric strain rate with x = dt/tau = 1e-6, where the model uses
+    !! the three-term series of gamma, against the closed form
+    !! sigma(t) = 2 dev(D) G_1 tau (1 - exp(-x)) of a single Maxwell element (G_inf = 0).
+    !! A second probe at x = 9.9e-5, just below the series threshold 1e-4 of dp, checks the quadratic
+    !! term of the series (x^2/6 = 1.6e-9 there, x^3/24 = 4e-14), and a third one at x = 9.9e-4 is the
+    !! worst case for a wider threshold: the truncated series loses x^3/24 there.
+    !! Hard case: no case of this file reaches the series branch (the smallest x of
+    !! test_constant_rate is 0.03), so a wrong series is invisible until x is small; the sign of
+    !! the linear term and the position of the threshold show up at x ~ 1e-6 and x ~ 1e-3.
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_elas_laws, only : elas_stress
+    use muscle_visco_laws, only : visco_maxwell_dp, visco_state_dp, elas_frozen_dp
+    use muscle_visco_maxwell, only : visco_maxwell_init
+    use visco_test_steps, only : new_state, freeze_dt
+    implicit none
+    logical, intent(out) :: passed
+
+    type(visco_maxwell_dp) :: model
+    type(visco_state_dp) :: state
+    type(elas_frozen_dp) :: elas
+    type(ten_3D2Osym) :: rate, strain, stress, expected
+    real(dp), parameter :: K = 2000.0_dp, G_1 = 100.0_dp, TAU = 1.0e4_dp
+    real(dp), parameter :: DTS(3) = [1.0e-2_dp, 0.99_dp, 9.9_dp]     ! x = 1e-6, 9.9e-5 and 9.9e-4
+    real(dp) :: x
+    integer :: i, status
+    character(len=40) :: label
+
+    passed = .true.
+    ! Single Maxwell element and a purely deviatoric rate: the whole stress comes from the
+    ! branch, so the relative error of gamma is the relative error of the stress.
+    call visco_maxwell_init(model, bulk=K, shear_inf=0.0_dp, shear=[G_1], tau=[TAU], status=status)
+    call rate%init(xx=2.0e-4_dp, yy=-1.0e-4_dp, zz=-1.0e-4_dp, xy=1.0e-4_dp, yz=3.0e-5_dp, xz=-2.0e-5_dp)
+
+    do i = 1, size(DTS)
+        x = DTS(i)/TAU
+        strain = DTS(i)*rate
+        call new_state(model, state)       ! virgin state: the step starts from zero strain
+        elas = freeze_dt(model, DTS(i), state)
+        stress = elas_stress(elas, strain)
+        ! 1 - exp(-x) = 2 exp(-x/2) sinh(x/2): no cancellation for small x
+        expected = 2.0_dp*G_1*TAU*(2.0_dp*exp(-x/2.0_dp)*sinh(x/2.0_dp))*(.dev. rate)
+        write(label, "(A, ES9.2)") "gamma series: stress at x =", x
+        ! Covers the series branch (x = 1e-6 and 9.9e-5) and the exact branch next to the threshold
+        ! (x = 9.9e-4). Measured: 1.1e-19 and 4.3e-15 (2.7e-16 and 1.1e-14 relative).
+        call check_approx(passed, trim(label), stress, expected, tol=1.0e-12_dp)
+    end do
+end subroutine test_maxwell_gamma_series_small_x
+
+subroutine test_maxwell_init_history_strain_e(passed)
+    !! A state initialised with the initial elastic strain: it stores it, the frozen stress at
+    !! that strain is the fully relaxed one (the branches carry no stress, so only G_inf
+    !! responds) and a step that keeps the strain does not create branch history.
+    !! Hard case: with the initial strain dropped the same sequence looks like a step from zero
+    !! strain and returns the instantaneous response instead of the relaxed one.
+    use muscle_kinds, only : dp
+    use muscle_tensors
+    use muscle_test_utils
+    use muscle_elas_laws, only : elas_stress
+    use muscle_visco_laws, only : visco_freeze, visco_maxwell_dp, visco_state_dp, visco_coefs_dp, elas_frozen_dp
+    use muscle_visco_maxwell, only : visco_maxwell_init
+    use visco_test_steps, only : step_coefs, new_state, advance
+    implicit none
+    logical, intent(out) :: passed
+
+    type(visco_maxwell_dp) :: model
+    type(visco_state_dp) :: state
+    type(elas_frozen_dp) :: elas
+    type(visco_coefs_dp) :: coefs
+    type(ten_3D2Osym) :: strain, expected, vol
+    real(dp), parameter :: K = 2000.0_dp, G_INF = 100.0_dp
+    real(dp) :: tr
+    integer :: status
+
+    passed = .true.
+    call visco_maxwell_init(model, bulk=K, shear_inf=G_INF, shear=[200.0_dp, 300.0_dp], tau=[0.1_dp, 1.0_dp], &
+        status=status)
+    call strain%init(xx=1.0e-3_dp, yy=-4.0e-4_dp, zz=2.0e-4_dp, xy=6.0e-4_dp, yz=-2.0e-4_dp, xz=1.0e-4_dp)
+    call new_state(model, state, strain_e=strain)   ! elastic strain, no branch stress
+
+    ! Measured: 0 (bit to bit).
+    call check_approx(passed, "initial state: initial elastic strain stored", state%strain_e, strain, tol=0.0_dp)
+
+    tr = strain%xx() + strain%yy() + strain%zz()
+    call vol%init(xx=K*tr, yy=K*tr, zz=K*tr, xy=0.0_dp, yz=0.0_dp, xz=0.0_dp)
+    expected = vol + 2.0_dp*G_INF*(.dev. strain)   ! relaxed state: only K and G_inf respond
+
+    coefs = step_coefs(model, 0.5_dp)
+    elas = visco_freeze(model, coefs, state)
+    ! Measured: 2.2e-16 (1.3e-16 relative); G_alg and sum G_k gamma_k cancel to G_inf.
+    call check_approx(passed, "initial state: stress at the initial strain is the relaxed one", &
+                      elas_stress(elas, strain), expected, tol=1.0e-12_dp)
+
+    ! The increment of the next step is measured from the initial elastic strain
+    call advance(model, coefs, strain, state)
+    elas = visco_freeze(model, coefs, state)
+    call check_approx(passed, "initial state: a step at constant strain adds no branch stress", &
+                      elas_stress(elas, strain), expected, tol=1.0e-12_dp)
+end subroutine test_maxwell_init_history_strain_e

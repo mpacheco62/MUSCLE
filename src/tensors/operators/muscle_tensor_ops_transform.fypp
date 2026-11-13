@@ -1,0 +1,158 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_tensor_ops_common.fypp"
+#! Congruence transformation `.transform.`: the pairs come from OP_TABLE (muscle_meta) and
+#! the bodies are written once, in index notation, from the layouts (the structural zeros of 2D
+#! drop out, which gives the sparse 2D kernels of the original code):
+#! - 2Osym: T = F S, R = T F^T (op_congruence);
+#! - 4O2sym / 4O3sym: R = T C T^T on the Voigt matrices (op_voigt_congruence). 4O2sym with a
+#!   dense T (3D): T(n,n) and whole-column products (W(:,j), R(:,j)), as the original 3D code;
+#!   with a sparse T (2D): its non-zero entries as scalars, W by rows and R by columns, as the
+#!   original 2D code. 4O3sym: scalar entries of T and only the entries of W needed by the upper
+#!   triangle of R, read from the symmetric storage (the original 3D expanded C to 6x6, called the
+#!   4O2sym kernel and packed R back: same bits, more work). Every entry keeps the order of the
+#!   sums of the original (W_IK = T_IL C_LK, R_IJ = W_IK T_JK with L, K ascending).
+#:set MODULE = 'transform'
+
+module muscle_tensor_ops_${MODULE}$
+    !! Module muscle_tensor_ops_transform
+    !! ==================================
+    !!
+    !! This module defines the overloaded congruence transformation operator `.transform.`
+    !! for the tensor engine, in 3D and 2D, single and double precision (both operands of the
+    !! same kind).
+    !!
+    !! Mathematically, the congruence transformation of a symmetric tensor \(\mathbf{S}\)
+    !! by a general tensor \(\mathbf{F}\) (such as the deformation gradient) is defined as:
+    !! \[ \boldsymbol{\sigma} = \mathbf{F} \cdot \mathbf{S} \cdot \mathbf{F}^T \]
+    !! \[ \sigma_{ij} = F_{iK} S_{KL} F_{jL} \]
+    !! and that of a fourth-order tensor as
+    !! \( res_{ijkl} = A_{iI} A_{jJ} A_{kK} A_{lL} C_{IJKL} \).
+    !!
+    !! This operation is the fundamental algebraic building block for physical pull-back
+    !! and push-forward operations in finite strain continuum mechanics (e.g., transforming
+    !! 2nd Piola-Kirchhoff stress to Cauchy stress).
+    !!
+    !! Design Rationale
+    !! ----------------
+    !! This operator isolates the pure algebraic projection from any physical meaning
+    !! (like the Jacobian determinant \(J\)). By keeping this inside the tensor engine,
+    !! the loops are unrolled to operate directly on the column-major (`2O`) and Voigt
+    !! storage formats, without temporary 9-component tensors.
+    !!
+    !! Fourth-order tensors: because of the minor symmetries, the contraction over each index
+    !! pair is written on the Voigt matrices (tensorial components, `2Osym` order) as
+    !! \[ \mathbf{R} = \mathbf{T}\,\mathbf{C}\,\mathbf{T}^T, \qquad
+    !!    T_{(ij),(ab)} = A_{ia} A_{jb} + [a \neq b]\, A_{ib} A_{ja}, \]
+    !! where the second term accounts for the symmetric partner \(C_{..ba} = C_{..ab}\) of each
+    !! off-diagonal Voigt column: two 6x6 products (3D) instead of the \(3^8\)-term index
+    !! contraction, with the same result up to round-off. In 2D \(\mathbf{T}\) is sparse
+    !! (\(A_{13} = A_{23} = A_{31} = A_{32} = 0\)) and only its non-zero entries are used.
+    !! \( \mathbf{C} = \mathbf{C}^T \) implies \( \mathbf{R} = \mathbf{R}^T \): the major symmetry
+    !! is preserved for any \(\mathbf{A}\), and for a fully symmetric tensor only the upper
+    !! triangle of \(\mathbf{R}\) is evaluated.
+$:OP_USES(MODULE)
+    implicit none
+    private
+
+$:OP_INTERFACES(MODULE)
+contains
+
+    #:for d in DIMS
+    #:for k in REAL_KINDS
+    #:for e in op_entries('.transform.', d, k)
+    #:set F = e.tag_b[2:]
+    #:if F == '2Osym'
+    #:set tmp, rcomp = op_congruence(d, 'F%vals', 'S%vals')
+    #:set doc = 'Congruence transformation &
+        & \\(\\mathbf{res} = \\mathbf{F} \\cdot \\mathbf{S} \\cdot \\mathbf{F}^T\\)'
+    #:set x, y = 'F', 'S'
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
+        real(${k}$) :: ${', '.join('T{}{}'.format(*iL) for iL, _ in tmp)}$
+            !! Entries of \(\mathbf{T} = \mathbf{F} \cdot \mathbf{S}\) that are used.
+
+        #:for iL, expr in tmp
+        T${iL[0]}$${iL[1]}$ = ${expr}$
+        #:endfor
+        #:for c in op_layout(e.tag_res).comps
+        res%vals(${c.pos[0]}$) = ${rcomp[c.idx]}$ ! ${c.name}$
+        #:endfor
+    end function ${e.name}$
+
+    #:else
+    #:set lc = op_layout(e.tag_b)
+    #:set V = op_voigt_congruence(lc, 'A%vals', 'C_in%vals', k)
+    #:set n = V.n
+    #:set doc = 'Fourth-order transformation &
+        & \\( res_{ijkl} = A_{iI} A_{jJ} A_{kK} A_{lL} C_{IJKL} \\)'
+    #:set x, y = 'A', 'C_in'
+    pure function ${e.name}$(${x}$, ${y}$) result(res)
+        !! ${op_doc(e, doc)}$
+        implicit none
+        @:DEVICE()
+        type(${e.a}$), intent(in) :: ${x}$
+        type(${e.b}$), intent(in) :: ${y}$
+        ${op_res_decl(e)}$ :: res
+        #:if F == '4O2sym' and len(V.T) == n * n
+#! Dense T (3D): whole-column products, W = T C then R = W T^T
+        real(${k}$) :: T(${n}$,${n}$), W(${n}$,${n}$)
+            !! Voigt transformation matrix and \(\mathbf{W} = \mathbf{T}\mathbf{C}\).
+        integer :: j
+
+        #:for IJ, expr in V.T.items()
+        T(${IJ[0]}$,${IJ[1]}$) = ${expr}$
+        #:endfor
+        do j = 1, ${n}$
+            ${assign_terms('W(:,j)', ['T(:,{0})*C_in%vals({0},j)'.format(L) for L in range(1, n + 1)], 12)}$
+        end do
+        do j = 1, ${n}$
+            ${assign_terms('res%vals(:,j)', ['W(:,{0})*T(j,{0})'.format(K) for K in range(1, n + 1)], 12)}$
+        end do
+        #:else
+#! Otherwise the non-zero entries of T as scalars T<I><J> (sparse in 2D)
+        #:for I in range(1, n + 1)
+        real(${k}$) :: ${', '.join('T{}{}'.format(I, K) for K in V.rows[I])}$
+        #:endfor
+        #:if F == '4O2sym'
+        real(${k}$) :: W(${n}$,${n}$)
+            !! \(\mathbf{W} = \mathbf{T}\mathbf{C}\).
+        #:else
+#! Fully symmetric: only the entries W<I><K> used by the upper triangle R(I,J), I <= J
+        #:for I in range(1, n + 1)
+        real(${k}$) :: ${', '.join('W{}{}'.format(*IK) for IK, _ in V.w if IK[0] == I)}$
+        #:endfor
+        #:endif
+
+        #:for IJ, expr in V.T.items()
+        T${IJ[0]}$${IJ[1]}$ = ${expr}$
+        #:endfor
+        #:if F == '4O2sym'
+        #:for I in range(1, n + 1)
+        ${assign_terms('W({},:)'.format(I), ['T{}{}*C_in%vals({},:)'.format(I, L, L) for L in V.rows[I]], 8)}$
+        #:endfor
+        #:for J in range(1, n + 1)
+        ${assign_terms('res%vals(:,{})'.format(J), ['W(:,{})*T{}{}'.format(K, J, K) for K in V.rows[J]], 8)}$
+        #:endfor
+        #:else
+        #:for IK, terms in V.w
+        ${assign_terms('W{}{}'.format(*IK), terms, 8)}$
+        #:endfor
+        #:for pos, terms in V.res
+        ${assign_terms('res%vals({})'.format(pos), terms, 8)}$
+        #:endfor
+        #:endif
+        #:endif
+    end function ${e.name}$
+
+    #:endif
+    #:endfor
+    #:endfor
+    #:endfor
+end module muscle_tensor_ops_${MODULE}$

@@ -1,0 +1,1072 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Threshold of the eigenvalues of C (D-017.14a): dp keeps the historical 1e-12 (same bits); sp
+#! takes the same multiple of the machine epsilon (1e-12/eps_dp = 4.5e3 -> 5.4e-4 in sp), rounded
+#! down to a power of ten (1e-4). The eigenvalues of C (`eigenprojections`) have an absolute error ~ eps |C|,
+#! so at the threshold (|C| ~ 1) their relative error is ~ eps/threshold: ~2e-4 in dp, ~1e-3 in sp
+#! (1.2e-7/1e-4); below it the smallest eigenvalue, and lambda^(-1/2) in R and ln(lambda) in the
+#! Hencky strains, are not reliable.
+#:set EIG_MIN = {'sp': '1.0e-4', 'dp': '1.0e-12'}
+#! A per-kind literal (data, not code): it stays as a dictionary so that the threshold of each kind is written
+#! once, next to its derivation, and the kernels below read as Fortran.
+
+module muscle_kin_finite
+    !! Module muscle_kin_finite
+    !! ========================
+    !! Finite strain kinematics for kernels, in every real kind, 3D only (as the
+    !! historical kinematics): the explicit state of a material point and the functions of it that
+    !! do not depend on the kinematics (the strain measures, the stress conversions, the push-forward
+    !! and pull-back of tangents and the corotational rotations). The kinematics themselves
+    !! (`kin_update` or `kin_corot_update`, `kin_to_cauchy`, `kin_to_spatial_tangent`,
+    !! `kin_is_finite_strain`) are in the model modules `muscle_kin_<name>` and the family module
+    !! muscle_kin_laws, which re-exports
+    !! this one.
+    !!
+    !! - `kin_state_<k>`: fixed size state (no allocatable components): the deformation gradient
+    !!   \( \mathbf{F} \), its inverse, the rotation \( \mathbf{R} \) of the polar decomposition
+    !!   \( \mathbf{F} = \mathbf{R}\mathbf{U} \), \( J = \det\mathbf{F} \),
+    !!   \( \mathbf{C} = \mathbf{F}^T\mathbf{F} \), \( \mathbf{b} = \mathbf{F}\mathbf{F}^T \),
+    !!   \( \mathbf{b}^{-1} \) and the strain measure of the kinematics. The default value is the
+    !!   reference configuration (\( \mathbf{F} = \mathbf{I} \), zero strain), which a small strain
+    !!   kinematics keeps (only its strain changes), so that every function of this module is the
+    !!   identity on a small strain state.
+    !! - `call kin_finite_update(F, state, status [, eig_c, proj_c])`: every component but the
+    !!   strain (the common part of `kin_update`). \( \mathbf{R} = \mathbf{F}\mathbf{U}^{-1} \) with
+    !!   \( \mathbf{U}^{-1} = \sum_a \lambda_a^{-1/2}\mathbf{P}_a \) from the eigenvalues
+    !!   \( \lambda_a \) of \( \mathbf{C} \) and their eigenprojections (`eigenprojections`); the eigenvalues
+    !!   at or below `KIN_EIG_MIN_<k>` are dropped.
+    !! - `kin_log_measure(eig, proj)`: the Hencky strain \( \sum_a \tfrac{1}{2}\ln\lambda_a\mathbf{P}_a \)
+    !!   from the spectral decomposition returned by `kin_finite_update` (a logarithmic kinematics
+    !!   reuses the one of the rotation).
+    !! - Spatial tangent pieces, the parts of \( J^{-1}\partial\boldsymbol\tau/\partial\boldsymbol\varepsilon \)
+    !!   for a symmetric spatial perturbation \( \delta\mathbf{F} = \delta\boldsymbol\varepsilon\,\mathbf{F} \)
+    !!   (Jaumann rate of the Kirchhoff stress, the tangent of Abaqus UMAT and ANSYS USERMAT): the
+    !!   geometric terms at a fixed constitutive stress `kin_jaumann_tangent(sigma)`,
+    !!   `kin_volumetric_tangent(sigma)` and `kin_spin_tangent(st, sigma)` (Cauchy stress), and the
+    !!   material parts of a constitutive tangent \( \mathbb{A} \) through the derivative of the
+    !!   strain measure, `kin_log_tangent(st, A)` (material Hencky strain, rotated with R),
+    !!   `kin_spatial_log_tangent(st, A)` and `kin_almansi_tangent(st, A)`. The spectral ones use the
+    !!   eigenvalues of C (or b) above `KIN_EIG_MIN_<k>` (the terms of the others are dropped) and,
+    !!   with C (or b) exactly the identity, return the limit directly (the tangent rotated with R, or
+    !!   unchanged; no spin), with the same bits as before these pieces existed.
+    !!
+    !! Status: `STATUS_INVALID_DEFORMATION` (muscle_status) when det F <= 0 (or NaN),
+    !! when `inverse` fails for F, or when an eigenvalue of C is at or below `KIN_EIG_MIN_<k>`
+    !! (1e-12 in dp as the historical code, 1e-4 in sp: the same multiple of the machine
+    !! epsilon). The state is still computed with the same formulas (the historical OO kinematics
+    !! call these procedures and ignore the status: same bits), but it is not valid.
+    !!
+    !! Spectral decompositions (`eigenprojections` of muscle_math_eigen, on `spectral_decomposition`, D-032):
+    !! accurate to a few eps for every eigenvalue gap, also near \( \mathbf{C} = \mathbf{I} \) (before, the
+    !! closed form with a band of Jacobi rotations lost the deviatoric part of the logarithmic strains there).
+    !! The tangents use the eigenvalues and eigenprojections of the same decomposition. In sp R is the
+    !! scaled Newton iteration of the polar decomposition
+    !! (`polar_rotation` of muscle_math_matrix_functions); in dp \( \mathbf{R} = \mathbf{F}\mathbf{U}^{-1} \).
+    !!
+    !! Known limits, only documented (D-017.14b): the tangent
+    !! transformations have no geometric (stress) term (now `kin_geometric_tangent` of each
+    !! kinematics);
+    !! `kin_pk1_to_pk2` and `kin_pk1_to_cauchy` read the symmetric result
+    !! from the upper triangle of the general product (no symmetrization).
+    !!
+    !! ```fortran
+    !! type(kin_state_dp) :: st
+    !! call kin_finite_update(F, st, status)
+    !! sig = kin_pk2_to_cauchy(st, S)
+    !! ```
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK, STATUS_INVALID_DEFORMATION
+    #:for k in REAL_KINDS
+    use muscle_kinds, only : EPS_ABS_${k}$
+    use muscle_tensor_2o, only : ten_3D2O_${k}$
+    use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O2sym_${k}$
+    #:endfor
+    use muscle_tensor_2o, only : det, transpose, inverse, to_matrix
+    use muscle_tensor_2osym, only : is_identity, to_matrix, from_upper
+    use muscle_tensors, only : operator(+), operator(*), operator(/), operator(.transform.), operator(.ddot.), &
+        & assignment(=)
+    use muscle_math_matrix_functions, only : polar_rotation, log_divided_difference
+    use muscle_math_eigen, only : eigenprojections, eigenvals_refined
+    implicit none
+    private
+
+    public :: kin_finite_update, kin_finite_update_norot, kin_log_measure, kin_green_lagrange, &
+        & kin_euler_almansi, kin_material_log, kin_spatial_log, kin_pk2_to_cauchy, kin_cauchy_to_pk2, &
+        & kin_pk2_to_kirchhoff, kin_kirchhoff_to_pk2, kin_cauchy_to_kirchhoff, kin_kirchhoff_to_cauchy, &
+        & kin_pk2_to_pk1, kin_pk1_to_pk2, kin_cauchy_to_pk1, kin_pk1_to_cauchy, kin_push_forward_tangent, &
+        & kin_pull_back_tangent, kin_rotate_to_corotational, kin_rotate_from_corotational, kin_jaumann_tangent, &
+        & kin_volumetric_tangent, kin_spin_tangent, kin_log_tangent, kin_spatial_log_tangent, &
+        & kin_almansi_tangent
+    #:for k in REAL_KINDS
+    public :: kin_state_${k}$, KIN_EIG_MIN_${k}$
+    public :: kin_finite_update_${k}$, kin_finite_update_norot_${k}$, kin_log_measure_${k}$, &
+        & kin_green_lagrange_${k}$, kin_euler_almansi_${k}$, kin_material_log_${k}$, kin_spatial_log_${k}$, &
+        & kin_pk2_to_cauchy_${k}$, kin_cauchy_to_pk2_${k}$, kin_pk2_to_kirchhoff_${k}$, &
+        & kin_kirchhoff_to_pk2_${k}$, kin_cauchy_to_kirchhoff_${k}$, kin_kirchhoff_to_cauchy_${k}$, &
+        & kin_pk2_to_pk1_${k}$, kin_pk1_to_pk2_${k}$, kin_cauchy_to_pk1_${k}$, kin_pk1_to_cauchy_${k}$, &
+        & kin_push_forward_tangent_${k}$, kin_pull_back_tangent_${k}$, kin_rotate_to_corotational_${k}$, &
+        & kin_rotate_from_corotational_${k}$, kin_jaumann_tangent_${k}$, kin_volumetric_tangent_${k}$, &
+        & kin_spin_tangent_${k}$, kin_log_tangent_${k}$, kin_spatial_log_tangent_${k}$, &
+        & kin_almansi_tangent_${k}$, kin_rotate_to_corotational_tangent_${k}$, &
+        & kin_rotate_from_corotational_tangent_${k}$
+    #:endfor
+
+    #:for k in REAL_KINDS
+
+    real(${k}$), parameter :: KIN_EIG_MIN_${k}$ = ${EIG_MIN[k]}$_${k}$
+        !! Smallest admissible eigenvalue of \( \mathbf{C} \) in `real(${k}$)`: the smaller
+        !! ones are dropped from \( \mathbf{U}^{-1} \) and the logarithmic strains and give
+        !! `STATUS_INVALID_DEFORMATION`.
+
+    type :: kin_state_${k}$
+        !! Kinematic state of a material point in `real(${k}$)` (3D). Default: the reference
+        !! configuration. A corotational state (`kin_corot_update`) keeps F = I and the other F-based
+        !! components at the reference configuration but has its own J and R: the F-based functions
+        !! of this module (conversions, push-forward/pull-back, strain measures) are not consistent
+        !! with it (e.g. `kin_pk2_to_cauchy` divides by its J with F = I).
+        type(ten_3D2O_${k}$) :: F = ten_3D2O_${k}$([1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, &
+            0.0_${k}$, 0.0_${k}$, 1.0_${k}$])
+            !! Deformation gradient \( \mathbf{F} \).
+        type(ten_3D2O_${k}$) :: F_inv = ten_3D2O_${k}$([1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, &
+            0.0_${k}$, 0.0_${k}$, 1.0_${k}$])
+            !! Inverse deformation gradient \( \mathbf{F}^{-1} \).
+        type(ten_3D2O_${k}$) :: R = ten_3D2O_${k}$([1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, &
+            0.0_${k}$, 0.0_${k}$, 1.0_${k}$])
+            !! Rotation \( \mathbf{R} \) of the polar decomposition \( \mathbf{F} = \mathbf{R}\mathbf{U} \).
+        real(${k}$) :: J = 1.0_${k}$
+            !! Jacobian \( J = \det\mathbf{F} \); in a corotational state
+            !! \( J = \exp(\operatorname{tr}\boldsymbol\varepsilon) \) with F = I.
+        type(ten_3D2Osym_${k}$) :: C = ten_3D2Osym_${k}$([1.0_${k}$, 1.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Right Cauchy-Green tensor \( \mathbf{C} = \mathbf{F}^T\mathbf{F} \).
+        type(ten_3D2Osym_${k}$) :: b = ten_3D2Osym_${k}$([1.0_${k}$, 1.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Left Cauchy-Green tensor \( \mathbf{b} = \mathbf{F}\mathbf{F}^T \).
+        type(ten_3D2Osym_${k}$) :: b_inv = ten_3D2Osym_${k}$([1.0_${k}$, 1.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Inverse left Cauchy-Green tensor \( \mathbf{b}^{-1} = \mathbf{F}^{-T}\mathbf{F}^{-1} \).
+        type(ten_3D2Osym_${k}$) :: strain = ten_3D2Osym_${k}$([0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$])
+            !! Strain measure of the kinematics (written by `kin_update`; zero after `kin_finite_update`).
+    end type kin_state_${k}$
+    #:endfor
+
+    interface kin_finite_update
+        !! Kinematic state of a deformation gradient, except the strain (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_finite_update_${k}$
+        #:endfor
+    end interface kin_finite_update
+
+    interface kin_finite_update_norot
+        !! Kinematic state of a deformation gradient, except the strain and the rotation (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_finite_update_norot_${k}$
+        #:endfor
+    end interface kin_finite_update_norot
+
+    interface kin_log_measure
+        !! Hencky strain from the eigenvalues and eigenprojections of C or b (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_log_measure_${k}$
+        #:endfor
+    end interface kin_log_measure
+
+    interface kin_green_lagrange
+        !! Green-Lagrange strain \( \mathbf{E} = \tfrac{1}{2}(\mathbf{C} - \mathbf{I}) \) of a kinematic state
+        !! (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_green_lagrange_${k}$
+        #:endfor
+    end interface kin_green_lagrange
+
+    interface kin_euler_almansi
+        !! Euler-Almansi strain \( \mathbf{e} = \tfrac{1}{2}(\mathbf{I} - \mathbf{b}^{-1}) \) of a kinematic
+        !! state (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_euler_almansi_${k}$
+        #:endfor
+    end interface kin_euler_almansi
+
+    interface kin_material_log
+        !! Material Hencky strain \( \mathbf{H} = \tfrac{1}{2}\ln\mathbf{C} = \ln\mathbf{U} \) of a kinematic
+        !! state (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_material_log_${k}$
+        #:endfor
+    end interface kin_material_log
+
+    interface kin_spatial_log
+        !! Spatial Hencky strain \( \mathbf{h} = \tfrac{1}{2}\ln\mathbf{b} = \ln\mathbf{V} \) of a kinematic
+        !! state (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_spatial_log_${k}$
+        #:endfor
+    end interface kin_spatial_log
+
+    interface kin_pk2_to_cauchy
+        !! Stress conversion \( \boldsymbol\sigma = J^{-1}\mathbf{F}\mathbf{S}\mathbf{F}^T \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_pk2_to_cauchy_${k}$
+        #:endfor
+    end interface kin_pk2_to_cauchy
+
+    interface kin_cauchy_to_pk2
+        !! Stress conversion \( \mathbf{S} = J\mathbf{F}^{-1}\boldsymbol\sigma\mathbf{F}^{-T} \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_cauchy_to_pk2_${k}$
+        #:endfor
+    end interface kin_cauchy_to_pk2
+
+    interface kin_pk2_to_kirchhoff
+        !! Stress conversion \( \boldsymbol\tau = \mathbf{F}\mathbf{S}\mathbf{F}^T \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_pk2_to_kirchhoff_${k}$
+        #:endfor
+    end interface kin_pk2_to_kirchhoff
+
+    interface kin_kirchhoff_to_pk2
+        !! Stress conversion \( \mathbf{S} = \mathbf{F}^{-1}\boldsymbol\tau\mathbf{F}^{-T} \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_kirchhoff_to_pk2_${k}$
+        #:endfor
+    end interface kin_kirchhoff_to_pk2
+
+    interface kin_cauchy_to_kirchhoff
+        !! Stress conversion \( \boldsymbol\tau = J\boldsymbol\sigma \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_cauchy_to_kirchhoff_${k}$
+        #:endfor
+    end interface kin_cauchy_to_kirchhoff
+
+    interface kin_kirchhoff_to_cauchy
+        !! Stress conversion \( \boldsymbol\sigma = J^{-1}\boldsymbol\tau \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_kirchhoff_to_cauchy_${k}$
+        #:endfor
+    end interface kin_kirchhoff_to_cauchy
+
+    interface kin_pk2_to_pk1
+        !! Stress conversion \( \mathbf{P} = \mathbf{F}\mathbf{S} \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_pk2_to_pk1_${k}$
+        #:endfor
+    end interface kin_pk2_to_pk1
+
+    interface kin_pk1_to_pk2
+        !! Stress conversion \( \mathbf{S} = \mathbf{F}^{-1}\mathbf{P} \) (symmetric part read from the upper
+        !! triangle) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_pk1_to_pk2_${k}$
+        #:endfor
+    end interface kin_pk1_to_pk2
+
+    interface kin_cauchy_to_pk1
+        !! Stress conversion \( \mathbf{P} = J\boldsymbol\sigma\mathbf{F}^{-T} \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_cauchy_to_pk1_${k}$
+        #:endfor
+    end interface kin_cauchy_to_pk1
+
+    interface kin_pk1_to_cauchy
+        !! Stress conversion \( \boldsymbol\sigma = J^{-1}\mathbf{P}\mathbf{F}^T \) (symmetric part read from
+        !! the upper triangle) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_pk1_to_cauchy_${k}$
+        #:endfor
+    end interface kin_pk1_to_cauchy
+
+    interface kin_push_forward_tangent
+        !! Push-forward of a tangent, \( c_{ijkl} = J^{-1} F_{iI} F_{jJ} F_{kK} F_{lL} C_{IJKL} \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_push_forward_tangent_${k}$
+        #:endfor
+    end interface kin_push_forward_tangent
+
+    interface kin_pull_back_tangent
+        !! Pull-back of a tangent, \( C_{IJKL} = J F^{-1}_{Ii} F^{-1}_{Jj} F^{-1}_{Kk} F^{-1}_{Ll} c_{ijkl} \)
+        !! (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_pull_back_tangent_${k}$
+        #:endfor
+    end interface kin_pull_back_tangent
+
+    interface kin_jaumann_tangent
+        !! Geometric term of a Kirchhoff stress pushed forward with F, \( G_{ijkl} =
+        !! \tfrac{1}{2}(\delta_{ik}\sigma_{jl} + \delta_{il}\sigma_{jk} + \sigma_{ik}\delta_{jl} +
+        !! \sigma_{il}\delta_{jk}) \) (\( \delta\boldsymbol\varepsilon\,\boldsymbol\sigma +
+        !! \boldsymbol\sigma\,\delta\boldsymbol\varepsilon \)) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_jaumann_tangent_${k}$
+        #:endfor
+    end interface kin_jaumann_tangent
+
+    interface kin_volumetric_tangent
+        !! Geometric term of the volume change, \( \boldsymbol\sigma\otimes\mathbf{I} \) (\(
+        !! \operatorname{tr}(\delta\boldsymbol\varepsilon)\,\boldsymbol\sigma \)) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_volumetric_tangent_${k}$
+        #:endfor
+    end interface kin_volumetric_tangent
+
+    interface kin_spin_tangent
+        !! Geometric term of the rotation of the polar decomposition, \( \boldsymbol\Omega\boldsymbol\sigma -
+        !! \boldsymbol\sigma\boldsymbol\Omega \), \( \boldsymbol\Omega = \delta\mathbf{R}\,\mathbf{R}^T \)
+        !! (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_spin_tangent_${k}$
+        #:endfor
+    end interface kin_spin_tangent
+
+    interface kin_log_tangent
+        !! Material part of a stress in the material Hencky strain rotated with R, \( \mathbf{R}(\mathbb{A} :
+        !! \delta\mathbf{H})\mathbf{R}^T \), \( \delta\mathbf{H} = \tfrac{1}{2}\,d\ln\mathbf{C}/d\mathbf{C} :
+        !! 2\mathbf{F}^T\delta\boldsymbol\varepsilon\mathbf{F} \) (no division by J) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_log_tangent_${k}$
+        #:endfor
+    end interface kin_log_tangent
+
+    interface kin_spatial_log_tangent
+        !! Material part of a stress in the spatial Hencky strain, \( \mathbb{A} : \delta\mathbf{h} \), \(
+        !! \delta\mathbf{h} = \tfrac{1}{2}\,d\ln\mathbf{b}/d\mathbf{b} :
+        !! (\delta\boldsymbol\varepsilon\mathbf{b} + \mathbf{b}\delta\boldsymbol\varepsilon) \) (no division
+        !! by J) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_spatial_log_tangent_${k}$
+        #:endfor
+    end interface kin_spatial_log_tangent
+
+    interface kin_almansi_tangent
+        !! Material part of a stress in the Euler-Almansi strain, \( \mathbb{A} : \delta\mathbf{e} \), \(
+        !! \delta\mathbf{e} = \tfrac{1}{2}(\delta\boldsymbol\varepsilon\mathbf{b}^{-1} +
+        !! \mathbf{b}^{-1}\delta\boldsymbol\varepsilon) \) (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_almansi_tangent_${k}$
+        #:endfor
+    end interface kin_almansi_tangent
+
+    interface kin_rotate_to_corotational
+        !! Rotation to the corotational frame, \( \mathbf{R}^T\mathbf{T}\mathbf{R} \), of a symmetric second
+        !! order tensor or of a tangent (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_rotate_to_corotational_${k}$, kin_rotate_to_corotational_tangent_${k}$
+        #:endfor
+    end interface kin_rotate_to_corotational
+
+    interface kin_rotate_from_corotational
+        !! Rotation from the corotational frame, \( \mathbf{R}\mathbf{T}\mathbf{R}^T \), of a symmetric second
+        !! order tensor or of a tangent (every kind).
+        #:for k in REAL_KINDS
+        module procedure kin_rotate_from_corotational_${k}$, kin_rotate_from_corotational_tangent_${k}$
+        #:endfor
+    end interface kin_rotate_from_corotational
+
+contains
+    #:for k in REAL_KINDS
+
+    pure subroutine kin_finite_update_${k}$(F, state, status, eig_c, proj_c)
+        !! Kinematic state of the deformation gradient `F` in `real(${k}$)`, except the strain (zero):
+        !! \( \mathbf{F}^{-1} \) (`inverse`: adjugate, LU when ill conditioned), \( J \),
+        !! \( \mathbf{C} \), \( \mathbf{b} \), \( \mathbf{b}^{-1} \) and
+        !! \( \mathbf{R} = \mathbf{F}\sum_a \lambda_a^{-1/2}\mathbf{P}_a \) over the eigenvalues of
+        !! \( \mathbf{C} \) above `KIN_EIG_MIN_${k}$`. Optionally returns those eigenvalues and
+        !! eigenprojections (for a logarithmic strain without a second decomposition).
+        implicit none
+        @:DEVICE()
+        type(ten_3D2O_${k}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state (strain zero; not valid unless `status` is `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (det F <= 0 or NaN, singular F, or an
+            !! eigenvalue of C at or below `KIN_EIG_MIN_${k}$`).
+        real(${k}$), intent(out), optional :: eig_c(3)
+            !! Eigenvalues of \( \mathbf{C} \) (descending).
+        type(ten_3D2Osym_${k}$), intent(out), optional :: proj_c(3)
+            !! Eigenprojections of \( \mathbf{C} \) (`eigenprojections`).
+        real(${k}$) :: eig(3)
+        type(ten_3D2Osym_${k}$) :: proj(3), U_inv
+        integer :: a
+        logical :: ok
+
+        call finite_base_${k}$(F, state, ok)
+
+        ! R = F U^-1, U^-1 from the spectral decomposition of C
+        call eigenprojections(state%C, eig, proj)
+        U_inv = 0.0_${k}$
+        do a = 1, 3
+            if (eig(a) > KIN_EIG_MIN_${k}$) then
+                U_inv = U_inv + (1.0_${k}$ / sqrt(eig(a))) * proj(a)
+            end if
+        end do
+        state%R = F * U_inv
+
+        status = finite_status_${k}$(ok, state%J, eig)
+        #:if k == 'sp'
+        ! sp: the rotation of the scaled Newton iteration of the polar decomposition (D-018.15f)
+        if (status == STATUS_OK) state%R = polar_rotation(F)
+        #:endif
+        if (present(eig_c)) eig_c = eig
+        if (present(proj_c)) proj_c = proj
+    end subroutine kin_finite_update_${k}$
+
+    pure subroutine kin_finite_update_norot_${k}$(F, state, status)
+        !! `kin_finite_update` without the polar decomposition, `real(${k}$)`: R is the identity
+        !! (for a caller that does not read it); every other component and `status` are the same bits
+        !! (the same eigenvalues of C, without the eigenprojections).
+        implicit none
+        @:DEVICE()
+        type(ten_3D2O_${k}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(out) :: state
+            !! Kinematic state (strain zero, R the identity; not valid unless `status` is `STATUS_OK`).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION` (as `kin_finite_update`).
+        real(${k}$) :: eig(3)
+        logical :: ok
+
+        call finite_base_${k}$(F, state, ok)
+        call eigenvals_refined(state%C, eig)
+        status = finite_status_${k}$(ok, state%J, eig)
+    end subroutine kin_finite_update_norot_${k}$
+
+    pure subroutine finite_base_${k}$(F, state, ok)
+        !! The components of a kinematic state that do not need a spectral decomposition, `real(${k}$)`:
+        !! F, J, \( \mathbf{F}^{-1} \) (`ok`: `inverse` succeeded), C, b and \( \mathbf{b}^{-1} \).
+        implicit none
+        @:DEVICE()
+        type(ten_3D2O_${k}$), intent(in) :: F
+            !! Deformation gradient \( \mathbf{F} \).
+        type(kin_state_${k}$), intent(inout) :: state
+            !! Kinematic state (the other components are not touched).
+        logical, intent(out) :: ok
+            !! `inverse` of F succeeded.
+        real(${k}$) :: F11, F21, F31, F12, F22, F32, F13, F23, F33
+        real(${k}$) :: G11, G21, G31, G12, G22, G32, G13, G23, G33
+
+        state%F = F
+        state%J = det(F)
+
+        F11 = F%vals(1); F21 = F%vals(2); F31 = F%vals(3)
+        F12 = F%vals(4); F22 = F%vals(5); F32 = F%vals(6)
+        F13 = F%vals(7); F23 = F%vals(8); F33 = F%vals(9)
+
+        ! Adjugate + condition number, LU fallback for an ill-conditioned F (M33INV); NaN if singular
+        call inverse(F, state%F_inv, ok)
+        G11 = state%F_inv%vals(1); G21 = state%F_inv%vals(2); G31 = state%F_inv%vals(3)
+        G12 = state%F_inv%vals(4); G22 = state%F_inv%vals(5); G32 = state%F_inv%vals(6)
+        G13 = state%F_inv%vals(7); G23 = state%F_inv%vals(8); G33 = state%F_inv%vals(9)
+
+        ! C = F^T F, b = F F^T, b^-1 = F^-T F^-1 (Voigt order xx, yy, zz, xy, yz, xz)
+        state%C%vals = [F11*F11 + F21*F21 + F31*F31, F12*F12 + F22*F22 + F32*F32, F13*F13 + F23*F23 + F33*F33, &
+                        F11*F12 + F21*F22 + F31*F32, F12*F13 + F22*F23 + F32*F33, F11*F13 + F21*F23 + F31*F33]
+        state%b%vals = [F11*F11 + F12*F12 + F13*F13, F21*F21 + F22*F22 + F23*F23, F31*F31 + F32*F32 + F33*F33, &
+                        F11*F21 + F12*F22 + F13*F23, F21*F31 + F22*F32 + F23*F33, F11*F31 + F12*F32 + F13*F33]
+        state%b_inv%vals = [G11*G11 + G21*G21 + G31*G31, G12*G12 + G22*G22 + G32*G32, G13*G13 + G23*G23 + G33*G33, &
+                            G11*G12 + G21*G22 + G31*G32, G12*G13 + G22*G23 + G32*G33, G11*G13 + G21*G23 + G31*G33]
+    end subroutine finite_base_${k}$
+
+    pure function finite_status_${k}$(ok, J, eig) result(status)
+        !! Status of a kinematic state, `real(${k}$)`; NaN fails every test.
+        implicit none
+        @:DEVICE()
+        logical, intent(in) :: ok
+            !! `inverse` of F succeeded.
+        real(${k}$), intent(in) :: J
+            !! \( \det\mathbf{F} \).
+        real(${k}$), intent(in) :: eig(3)
+            !! Eigenvalues of C.
+        integer :: status
+            !! `STATUS_OK` or `STATUS_INVALID_DEFORMATION`.
+
+        if (ok .and. J > 0.0_${k}$ .and. all(eig > KIN_EIG_MIN_${k}$)) then
+            status = STATUS_OK
+        else
+            status = STATUS_INVALID_DEFORMATION
+        end if
+    end function finite_status_${k}$
+
+    pure function kin_log_measure_${k}$(eig, proj) result(res)
+        !! \( \sum_a \tfrac{1}{2}\ln\lambda_a\,\mathbf{P}_a \) over the eigenvalues above
+        !! `KIN_EIG_MIN_${k}$` (`real(${k}$)`): the Hencky strain of C or b.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: eig(3)
+            !! Eigenvalues.
+        type(ten_3D2Osym_${k}$), intent(in) :: proj(3)
+            !! Eigenprojections.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Hencky strain.
+        integer :: a
+
+        res = 0.0_${k}$
+        do a = 1, 3
+            if (eig(a) > KIN_EIG_MIN_${k}$) then
+                res = res + (0.5_${k}$ * log(eig(a))) * proj(a)
+            end if
+        end do
+    end function kin_log_measure_${k}$
+
+    pure function kin_green_lagrange_${k}$(st) result(res)
+        !! Green-Lagrange strain \( \mathbf{E} = \tfrac{1}{2}(\mathbf{C} - \mathbf{I}) \) of a
+        !! `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \mathbf{E} \).
+
+        res%vals = [0.5_${k}$ * (st%C%vals(1) - 1.0_${k}$), 0.5_${k}$ * (st%C%vals(2) - 1.0_${k}$), &
+                    0.5_${k}$ * (st%C%vals(3) - 1.0_${k}$), 0.5_${k}$ * st%C%vals(4), 0.5_${k}$ * st%C%vals(5), &
+                    0.5_${k}$ * st%C%vals(6)]
+    end function kin_green_lagrange_${k}$
+
+    pure function kin_euler_almansi_${k}$(st) result(res)
+        !! Euler-Almansi strain \( \mathbf{e} = \tfrac{1}{2}(\mathbf{I} - \mathbf{b}^{-1}) \) of a
+        !! `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \mathbf{e} \).
+
+        res%vals = [0.5_${k}$ * (1.0_${k}$ - st%b_inv%vals(1)), 0.5_${k}$ * (1.0_${k}$ - st%b_inv%vals(2)), &
+                    0.5_${k}$ * (1.0_${k}$ - st%b_inv%vals(3)), -0.5_${k}$ * st%b_inv%vals(4), &
+                    -0.5_${k}$ * st%b_inv%vals(5), -0.5_${k}$ * st%b_inv%vals(6)]
+    end function kin_euler_almansi_${k}$
+
+    pure function kin_material_log_${k}$(st) result(res)
+        !! Material Hencky strain \( \mathbf{H} = \tfrac{1}{2}\ln\mathbf{C} = \ln\mathbf{U} \) of a
+        !! `real(${k}$)` kinematic state, from the
+        !! eigenvalues of \( \mathbf{C} \) above `KIN_EIG_MIN_${k}$`.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Hencky strain.
+        real(${k}$) :: eig(3)
+        type(ten_3D2Osym_${k}$) :: proj(3)
+
+        call eigenprojections(st%C, eig, proj)
+        res = kin_log_measure_${k}$(eig, proj)
+    end function kin_material_log_${k}$
+
+    pure function kin_spatial_log_${k}$(st) result(res)
+        !! Spatial Hencky strain \( \mathbf{h} = \tfrac{1}{2}\ln\mathbf{b} = \ln\mathbf{V} \) of a
+        !! `real(${k}$)` kinematic state, from the
+        !! eigenvalues of \( \mathbf{b} \) above `KIN_EIG_MIN_${k}$`.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Hencky strain.
+        real(${k}$) :: eig(3)
+        type(ten_3D2Osym_${k}$) :: proj(3)
+
+        call eigenprojections(st%b, eig, proj)
+        res = kin_log_measure_${k}$(eig, proj)
+    end function kin_spatial_log_${k}$
+
+    pure function kin_pk2_to_cauchy_${k}$(st, x) result(res)
+        !! Stress conversion \( \boldsymbol\sigma = J^{-1}\mathbf{F}\mathbf{S}\mathbf{F}^T \) with a
+        !! `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Converted stress.
+
+        res = (st%F .transform. x) / st%J
+    end function kin_pk2_to_cauchy_${k}$
+
+    pure function kin_cauchy_to_pk2_${k}$(st, x) result(res)
+        !! Stress conversion \( \mathbf{S} = J\mathbf{F}^{-1}\boldsymbol\sigma\mathbf{F}^{-T} \) with a
+        !! `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Converted stress.
+
+        res = (st%F_inv .transform. x) * st%J
+    end function kin_cauchy_to_pk2_${k}$
+
+    pure function kin_pk2_to_kirchhoff_${k}$(st, x) result(res)
+        !! Stress conversion \( \boldsymbol\tau = \mathbf{F}\mathbf{S}\mathbf{F}^T \) with a `real(${k}$)`
+        !! kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Converted stress.
+
+        res = st%F .transform. x
+    end function kin_pk2_to_kirchhoff_${k}$
+
+    pure function kin_kirchhoff_to_pk2_${k}$(st, x) result(res)
+        !! Stress conversion \( \mathbf{S} = \mathbf{F}^{-1}\boldsymbol\tau\mathbf{F}^{-T} \) with a
+        !! `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Converted stress.
+
+        res = st%F_inv .transform. x
+    end function kin_kirchhoff_to_pk2_${k}$
+
+    pure function kin_cauchy_to_kirchhoff_${k}$(st, x) result(res)
+        !! Stress conversion \( \boldsymbol\tau = J\boldsymbol\sigma \) with a `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Converted stress.
+
+        res = x * st%J
+    end function kin_cauchy_to_kirchhoff_${k}$
+
+    pure function kin_kirchhoff_to_cauchy_${k}$(st, x) result(res)
+        !! Stress conversion \( \boldsymbol\sigma = J^{-1}\boldsymbol\tau \) with a `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Converted stress.
+
+        res = x / st%J
+    end function kin_kirchhoff_to_cauchy_${k}$
+
+    pure function kin_pk2_to_pk1_${k}$(st, x) result(res)
+        !! Stress conversion \( \mathbf{P} = \mathbf{F}\mathbf{S} \) with a `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2O_${k}$) :: res
+            !! Converted stress.
+
+        res = st%F * x
+    end function kin_pk2_to_pk1_${k}$
+
+    pure function kin_pk1_to_pk2_${k}$(st, x) result(res)
+        !! Stress conversion \( \mathbf{S} = \mathbf{F}^{-1}\mathbf{P} \) (symmetric part read from the upper
+        !! triangle) with a `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2O_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Converted stress.
+        type(ten_3D2O_${k}$) :: g
+
+        g = st%F_inv * x
+        res = from_upper(to_matrix(g))
+    end function kin_pk1_to_pk2_${k}$
+
+    pure function kin_cauchy_to_pk1_${k}$(st, x) result(res)
+        !! Stress conversion \( \mathbf{P} = J\boldsymbol\sigma\mathbf{F}^{-T} \) with a `real(${k}$)`
+        !! kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2O_${k}$) :: res
+            !! Converted stress.
+
+        res = (x * transpose(st%F_inv)) * st%J
+    end function kin_cauchy_to_pk1_${k}$
+
+    pure function kin_pk1_to_cauchy_${k}$(st, x) result(res)
+        !! Stress conversion \( \boldsymbol\sigma = J^{-1}\mathbf{P}\mathbf{F}^T \) (symmetric part read from
+        !! the upper triangle) with a `real(${k}$)` kinematic state.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D2O_${k}$), intent(in) :: x
+            !! Stress to convert.
+        type(ten_3D2Osym_${k}$) :: res
+            !! Converted stress.
+        type(ten_3D2O_${k}$) :: g
+
+        g = (x * transpose(st%F)) / st%J
+        res = from_upper(to_matrix(g))
+    end function kin_pk1_to_cauchy_${k}$
+
+    pure function kin_push_forward_tangent_${k}$(st, x) result(res)
+        !! Push-forward of a tangent, \( c_{ijkl} = J^{-1} F_{iI} F_{jJ} F_{kK} F_{lL} C_{IJKL} \), with a
+        !! `real(${k}$)` kinematic state (no geometric term, D-017.14b).
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D4O2sym_${k}$), intent(in) :: x
+            !! Tangent to transform.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Transformed tangent.
+
+        res = (st%F .transform. x) / st%J
+    end function kin_push_forward_tangent_${k}$
+
+    pure function kin_pull_back_tangent_${k}$(st, x) result(res)
+        !! Pull-back of a tangent, \( C_{IJKL} = J F^{-1}_{Ii} F^{-1}_{Jj} F^{-1}_{Kk} F^{-1}_{Ll} c_{ijkl}
+        !! \), with a `real(${k}$)` kinematic state (no geometric term, D-017.14b).
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state.
+        type(ten_3D4O2sym_${k}$), intent(in) :: x
+            !! Tangent to transform.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Transformed tangent.
+
+        res = (st%F_inv .transform. x) * st%J
+    end function kin_pull_back_tangent_${k}$
+
+    pure function kin_rotate_to_corotational_${k}$(T, R) result(res)
+        !! Rotation to the corotational frame, \( \mathbf{R}^T\mathbf{T}\mathbf{R} \) (`real(${k}$)`).
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: T
+            !! Symmetric tensor.
+        type(ten_3D2O_${k}$), intent(in) :: R
+            !! Rotation \( \mathbf{R} \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! Rotated tensor.
+
+        res = transpose(R) .transform. T
+    end function kin_rotate_to_corotational_${k}$
+
+    pure function kin_rotate_to_corotational_tangent_${k}$(T, R) result(res)
+        !! Rotation to the corotational frame, \( \mathbf{R}^T\mathbf{T}\mathbf{R} \) (`real(${k}$)`, tangent:
+        !! every index rotated).
+        implicit none
+        @:DEVICE()
+        type(ten_3D4O2sym_${k}$), intent(in) :: T
+            !! Tangent (fourth order, minor symmetries).
+        type(ten_3D2O_${k}$), intent(in) :: R
+            !! Rotation \( \mathbf{R} \).
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Rotated tensor.
+
+        res = transpose(R) .transform. T
+    end function kin_rotate_to_corotational_tangent_${k}$
+
+    pure function kin_rotate_from_corotational_${k}$(T, R) result(res)
+        !! Rotation from the corotational frame, \( \mathbf{R}\mathbf{T}\mathbf{R}^T \) (`real(${k}$)`).
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: T
+            !! Symmetric tensor.
+        type(ten_3D2O_${k}$), intent(in) :: R
+            !! Rotation \( \mathbf{R} \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! Rotated tensor.
+
+        res = R .transform. T
+    end function kin_rotate_from_corotational_${k}$
+
+    pure function kin_rotate_from_corotational_tangent_${k}$(T, R) result(res)
+        !! Rotation from the corotational frame, \( \mathbf{R}\mathbf{T}\mathbf{R}^T \) (`real(${k}$)`,
+        !! tangent: every index rotated).
+        implicit none
+        @:DEVICE()
+        type(ten_3D4O2sym_${k}$), intent(in) :: T
+            !! Tangent (fourth order, minor symmetries).
+        type(ten_3D2O_${k}$), intent(in) :: R
+            !! Rotation \( \mathbf{R} \).
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Rotated tensor.
+
+        res = R .transform. T
+    end function kin_rotate_from_corotational_tangent_${k}$
+
+    pure function unit_strain_${k}$(c) result(m)
+        !! Symmetric unit perturbation of the Voigt component `c` of a strain, `real(${k}$)`: the
+        !! perturbation whose spatial tangent column is column `c` of a `ten_3D4O2sym_${k}$` (1/2 on both
+        !! off-diagonal entries of a shear component).
+        implicit none
+        @:DEVICE()
+        integer, intent(in) :: c
+            !! Voigt component (1 .. 6).
+        real(${k}$) :: m(3, 3)
+            !! Perturbation.
+        integer, parameter :: I_OF(6) = [1, 2, 3, 1, 2, 1], J_OF(6) = [1, 2, 3, 2, 3, 3]
+
+        m = 0.0_${k}$
+        if (c <= 3) then
+            m(c, c) = 1.0_${k}$
+        else
+            m(I_OF(c), J_OF(c)) = 0.5_${k}$
+            m(J_OF(c), I_OF(c)) = 0.5_${k}$
+        end if
+    end function unit_strain_${k}$
+
+    pure subroutine spectral_${k}$(s, lam, proj, active)
+        !! Eigenvalues and eigenprojections (3x3 matrices) of a symmetric positive tensor (C or b),
+        !! `real(${k}$)`; `active`: the eigenvalue is above `KIN_EIG_MIN_${k}$` (the others are dropped).
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: s
+            !! Tensor.
+        real(${k}$), intent(out) :: lam(3)
+            !! Eigenvalues (`eigenprojections`).
+        real(${k}$), intent(out) :: proj(3, 3, 3)
+            !! Eigenprojections `proj(:, :, a)` (`eigenprojections`).
+        logical, intent(out) :: active(3)
+            !! Eigenvalue above `KIN_EIG_MIN_${k}$`.
+        type(ten_3D2Osym_${k}$) :: p(3)
+        integer :: a
+
+        call eigenprojections(s, lam, p)
+        do a = 1, 3
+            proj(:, :, a) = to_matrix(p(a))
+        end do
+        active = lam > KIN_EIG_MIN_${k}$
+    end subroutine spectral_${k}$
+
+    pure function kin_jaumann_tangent_${k}$(sigma) result(res)
+        !! Geometric term of a Kirchhoff stress pushed forward with F, \( G_{ijkl} =
+        !! \tfrac{1}{2}(\delta_{ik}\sigma_{jl} + \delta_{il}\sigma_{jk} + \sigma_{ik}\delta_{jl} +
+        !! \sigma_{il}\delta_{jk}) \) (\( \delta\boldsymbol\varepsilon\,\boldsymbol\sigma +
+        !! \boldsymbol\sigma\,\delta\boldsymbol\varepsilon \)), `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Cauchy stress.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Geometric term.
+        real(${k}$) :: s(3, 3), e(3, 3)
+        type(ten_3D2Osym_${k}$) :: col
+        integer :: c
+
+        s = to_matrix(sigma)
+        do c = 1, 6
+            e = unit_strain_${k}$(c)
+            col = from_upper(matmul(e, s) + matmul(s, e))
+            res%vals(:, c) = col%vals
+        end do
+    end function kin_jaumann_tangent_${k}$
+
+    pure function kin_volumetric_tangent_${k}$(sigma) result(res)
+        !! Geometric term of the volume change, \( \boldsymbol\sigma\otimes\mathbf{I} \) (\(
+        !! \operatorname{tr}(\delta\boldsymbol\varepsilon)\,\boldsymbol\sigma \)), `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Cauchy stress.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Geometric term.
+        integer :: c
+
+        res%vals = 0.0_${k}$
+        do c = 1, 3
+            res%vals(:, c) = sigma%vals
+        end do
+    end function kin_volumetric_tangent_${k}$
+
+    pure function kin_spin_tangent_${k}$(st, sigma) result(res)
+        !! Geometric term of the rotation of the polar decomposition, \( \boldsymbol\Omega\boldsymbol\sigma -
+        !! \boldsymbol\sigma\boldsymbol\Omega \), \( \boldsymbol\Omega = \delta\mathbf{R}\,\mathbf{R}^T \),
+        !! `real(${k}$)`:
+        !! \( \mathbf{R}^T\boldsymbol\Omega\mathbf{R} = \sum_{ab} \frac{u_b - u_a}{u_a + u_b}\mathbf{P}_a
+        !! (\mathbf{R}^T\delta\boldsymbol\varepsilon\mathbf{R})\mathbf{P}_b \) over the eigenvalues
+        !! \( u_a^2 \) and eigenprojections of C (zero with C = I).
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state (F-based).
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Cauchy stress.
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Geometric term.
+        real(${k}$) :: lam(3), u(3), proj(3, 3, 3), r(3, 3), s(3, 3), x(3, 3), om(3, 3), w, t(3, 3)
+        logical :: active(3)
+        type(ten_3D2Osym_${k}$) :: col
+        integer :: a, b, c
+
+        res%vals = 0.0_${k}$
+        if (is_identity(st%C)) return
+        call spectral_${k}$(st%C, lam, proj, active)
+        u = sqrt(merge(lam, 0.0_${k}$, active))
+        r = to_matrix(st%R)
+        ! Material frame: R^T (Omega sigma - sigma Omega) R = om s - s om, s = R^T sigma R
+        ! Function results and inner products into locals: as matmul arguments they are heap
+        ! temporaries in device code (malloc, tools/audit_kernels.sh); same operations
+        x = to_matrix(sigma)
+        t = matmul(x, r)
+        s = matmul(transpose(r), t)
+        do c = 1, 6
+            x = unit_strain_${k}$(c)
+            t = matmul(x, r)
+            x = matmul(transpose(r), t)
+            om = 0.0_${k}$
+            do a = 1, 3
+                do b = 1, 3
+                    if (a == b .or. .not. (active(a) .and. active(b))) cycle
+                    w = (u(b) - u(a))/(u(a) + u(b))
+                    om = om + w*matmul(proj(:, :, a), matmul(x, proj(:, :, b)))
+                end do
+            end do
+            t = matmul(matmul(om, s) - matmul(s, om), transpose(r))
+            x = matmul(r, t)
+            col = from_upper(x)
+            res%vals(:, c) = col%vals
+        end do
+    end function kin_spin_tangent_${k}$
+
+    pure function kin_log_tangent_${k}$(st, tangent) result(res)
+        !! Material part of a stress in the material Hencky strain rotated with R, \( \mathbf{R}(\mathbb{A} :
+        !! \delta\mathbf{H})\mathbf{R}^T \), \( \delta\mathbf{H} = \tfrac{1}{2}\,d\ln\mathbf{C}/d\mathbf{C} :
+        !! 2\mathbf{F}^T\delta\boldsymbol\varepsilon\mathbf{F} \) (no division by J), `real(${k}$)`:
+        !! \( \delta\mathbf{H} = \sum_{ab} \theta_{ab}\,u_a
+        !! u_b\,\mathbf{P}_a(\mathbf{R}^T\delta\boldsymbol\varepsilon\mathbf{R})\mathbf{P}_b \),
+        !! \( \theta_{ab} = (\ln u_a^2 - \ln u_b^2)/(u_a^2 - u_b^2) \) (`log_divided_difference`). With C = I:
+        !! `R .transform. tangent`.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state (F-based).
+        type(ten_3D4O2sym_${k}$), intent(in) :: tangent
+            !! Constitutive tangent \( d\boldsymbol\tau_R/d\mathbf{H} \).
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Material part of the spatial tangent (times J).
+        real(${k}$) :: lam(3), proj(3, 3, 3), r(3, 3), x(3, 3), dh(3, 3), w(3, 3), t(3, 3)
+        logical :: active(3)
+        type(ten_3D2Osym_${k}$) :: ds, dsym, col
+        integer :: a, b, c
+
+        if (is_identity(st%C)) then
+            res = st%R .transform. tangent
+            return
+        end if
+        call spectral_${k}$(st%C, lam, proj, active)
+        do a = 1, 3
+            do b = 1, 3
+                w(a, b) = 0.0_${k}$
+                if (active(a) .and. active(b)) w(a, b) = log_divided_difference(lam(a), lam(b))*sqrt(lam(a)*lam(b))
+            end do
+        end do
+        r = to_matrix(st%R)
+        do c = 1, 6
+            ! Function results and inner products into locals (heap temporaries in device code, as in
+            ! kin_spin_tangent)
+            x = unit_strain_${k}$(c)
+            t = matmul(x, r)
+            x = matmul(transpose(r), t)
+            dh = 0.0_${k}$
+            do a = 1, 3
+                do b = 1, 3
+                    dh = dh + w(a, b)*matmul(proj(:, :, a), matmul(x, proj(:, :, b)))
+                end do
+            end do
+            dsym = from_upper(dh)
+            ds = tangent .ddot. dsym
+            x = to_matrix(ds)
+            t = matmul(x, transpose(r))
+            x = matmul(r, t)
+            col = from_upper(x)
+            res%vals(:, c) = col%vals
+        end do
+    end function kin_log_tangent_${k}$
+
+    pure function kin_spatial_log_tangent_${k}$(st, tangent) result(res)
+        !! Material part of a stress in the spatial Hencky strain, \( \mathbb{A} : \delta\mathbf{h} \), \(
+        !! \delta\mathbf{h} = \tfrac{1}{2}\,d\ln\mathbf{b}/d\mathbf{b} :
+        !! (\delta\boldsymbol\varepsilon\mathbf{b} + \mathbf{b}\delta\boldsymbol\varepsilon) \) (no division
+        !! by J), `real(${k}$)`:
+        !! \( \delta\mathbf{h} = \sum_{ab} \tfrac{1}{2}\theta_{ab}(\lambda_a +
+        !! \lambda_b)\,\mathbf{p}_a\delta\boldsymbol\varepsilon\,\mathbf{p}_b \)
+        !! over the eigenvalues and eigenprojections of b (`log_divided_difference`). With b = I: `tangent`.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state (F-based).
+        type(ten_3D4O2sym_${k}$), intent(in) :: tangent
+            !! Constitutive tangent \( d\boldsymbol\tau/d\mathbf{h} \).
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Material part of the spatial tangent (times J).
+        real(${k}$) :: lam(3), proj(3, 3, 3), dh(3, 3), e(3, 3), w(3, 3)
+        logical :: active(3)
+        type(ten_3D2Osym_${k}$) :: ds, dsym
+        integer :: a, b, c
+
+        if (is_identity(st%b)) then
+            res = tangent
+            return
+        end if
+        call spectral_${k}$(st%b, lam, proj, active)
+        do a = 1, 3
+            do b = 1, 3
+                w(a, b) = 0.0_${k}$
+                if (active(a) .and. active(b)) w(a, b) = 0.5_${k}$*log_divided_difference(lam(a), lam(b))*(lam(a) + lam(b))
+            end do
+        end do
+        do c = 1, 6
+            e = unit_strain_${k}$(c)
+            dh = 0.0_${k}$
+            do a = 1, 3
+                do b = 1, 3
+                    dh = dh + w(a, b)*matmul(proj(:, :, a), matmul(e, proj(:, :, b)))
+                end do
+            end do
+            dsym = from_upper(dh)
+            ds = tangent .ddot. dsym
+            res%vals(:, c) = ds%vals
+        end do
+    end function kin_spatial_log_tangent_${k}$
+
+    pure function kin_almansi_tangent_${k}$(st, tangent) result(res)
+        !! Material part of a stress in the Euler-Almansi strain, \( \mathbb{A} : \delta\mathbf{e} \), \(
+        !! \delta\mathbf{e} = \tfrac{1}{2}(\delta\boldsymbol\varepsilon\mathbf{b}^{-1} +
+        !! \mathbf{b}^{-1}\delta\boldsymbol\varepsilon) \), `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        type(kin_state_${k}$), intent(in) :: st
+            !! Kinematic state (F-based).
+        type(ten_3D4O2sym_${k}$), intent(in) :: tangent
+            !! Constitutive tangent \( d\boldsymbol\sigma/d\mathbf{e} \).
+        type(ten_3D4O2sym_${k}$) :: res
+            !! Material part of the spatial tangent.
+        real(${k}$) :: binv(3, 3), e(3, 3)
+        type(ten_3D2Osym_${k}$) :: ds, dsym
+        integer :: c
+
+        binv = to_matrix(st%b_inv)
+        do c = 1, 6
+            e = unit_strain_${k}$(c)
+            dsym = from_upper(0.5_${k}$*(matmul(e, binv) + matmul(binv, e)))
+            ds = tangent .ddot. dsym
+            res%vals(:, c) = ds%vals
+        end do
+    end function kin_almansi_tangent_${k}$
+    #:endfor
+
+end module muscle_kin_finite
