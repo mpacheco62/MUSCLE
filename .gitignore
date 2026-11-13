@@ -14,7 +14,9 @@ Theory/**
 *.mod
 all_fortran.txt
 
-.claude/
+# Claude Code: local settings, rules and agents stay out; the project skills are versioned
+.claude/*
+!.claude/skills/
 CLAUDE.MD
 CLAUDE.md
 INDICE_FUNCIONES.md

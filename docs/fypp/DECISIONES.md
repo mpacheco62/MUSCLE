@@ -1537,3 +1537,17 @@ midieron aparte; los tests de cinemática y de materiales pasan con sus toleranc
 antigua franja desaparece: el test de autoproyecciones (verdad en cuádruple) cubre brechas a ambos lados (2e-2 y
 1e-11, 1e-13 en dp) y casi identidad, y falla con la franja; test nuevo `test_near_identity` de la deformación de
 Hencky en `kinematics-kin_finite` (falla con la franja en dp).
+
+## D-033 — Skills de Claude Code versionadas en el repo; `check.sh --doc` (2026-11-13)
+
+**Contexto:** la skill `muscle-nuevo-modulo` vivía en un repo aparte y quedó desactualizada con la migración y con
+D-030 a D-032; el usuario pidió además skills para revisar algoritmos y documentación. `tools/check.sh` sólo buscaba
+FORD en el `PATH` y nunca generaba la documentación donde FORD está en el entorno conda de `environment.yml`.
+**Decisión del usuario:**
+- Las skills del proyecto se versionan en `.claude/skills/` (`.gitignore`: `.claude/*` y `!.claude/skills/`); el
+  resto de `.claude/` (settings, reglas, agentes) y `CLAUDE.md` siguen locales. Un cambio del proyecto que altere una
+  regla, una ruta o una decisión que una skill cita actualiza la skill en el mismo PR (`pages/contributing.md`).
+- Skills: `muscle-nuevo-modulo` (crear un módulo), `muscle-revisar-algoritmo` (revisar precisión, tests, costo CPU/GPU
+  y kernel de un algoritmo) y `muscle-revisar-documentacion` (documentación al día con el código).
+- `tools/check.sh` busca FORD en el `PATH`, en el entorno conda `ford` y en `build-check/.ford-venv`; modo nuevo
+  `--doc` (lint + FORD + `doc_drift.py`, ~2 min) antes de un PR que toque documentación o API pública.
