@@ -308,9 +308,15 @@ Compiler errors and coverage already point to the lines of the templates (`#line
 `.claude/skills/` holds the project skills of [Claude Code](https://claude.com/claude-code), versioned with the
 code they describe (the rest of `.claude/` is local and not versioned). `muscle-nuevo-modulo` walks through
 adding a model, a solver, a family or a support module with the rules of this guide: tests with an independent
-truth first, the device rules, the mutation check and `scripts/check_new_module.py`, which flags code that
+truth first, the device rules, the mutation check and
+`.claude/skills/muscle-nuevo-modulo/scripts/check_new_module.py`, which flags code that
 rewrites what already exists or lives in the wrong module. `muscle-revisar-algoritmo` reviews a numerical
 algorithm: accuracy against an independent high-precision truth, its tests and mutations, its cost on the CPU and
-on the GPU, the size and the known risks of its device kernels (`scripts/igc_kernel_report.sh`), and alternatives,
-ending in a report with what is worth improving. When a change to the project alters a rule, a path or a
+on the GPU, the size and the known risks of its device kernels
+(`.claude/skills/muscle-revisar-algoritmo/scripts/igc_kernel_report.sh`), and alternatives,
+ending in a report with what is worth improving. `muscle-revisar-documentacion` keeps the documentation in step
+with the code: it finds FORD (and installs it, with permission), builds and validates the FORD pages, runs
+`.claude/skills/muscle-revisar-documentacion/scripts/doc_drift.py` (names, paths, links and decisions cited that no
+longer exist, public entities without `!!`, models that no page mentions) and reviews by hand what changed, with
+a map from each kind of change to the documents to check. When a change to the project alters a rule, a path or a
 decision a skill cites, update the skill in the same pull request.
