@@ -12,7 +12,7 @@
 # The build runs from the repository root (my_project.md preprocesses the templates with fypp). It must end without
 # errors; with --warn FORD also lists undocumented entities: the summary groups them and leaves out the known noise
 # (local variables, the `module procedure` entries of a generic, the `public` of re-exported names).
-# Prints the PATH prefix that makes tools/check.sh build the documentation too.
+# tools/check.sh looks FORD up in the same places.
 set -u
 repo=$(readlink -f "$1"); shift
 install=0; warn=0; out=""
@@ -65,5 +65,4 @@ if (( warn )); then
     grep -E '^Warning' "$log" | grep -vE "Undocumented (variable|moduleprocedure)|Unknown entity '[^']*' with attribute 'public'" \
         | sed -E "s/'[^']*'/'...'/; s/ in file .*//; s/ in module .*//" | sort | uniq -c | sort -rn | head -20
 fi
-echo "for tools/check.sh: PATH=\"$bin:\$PATH\" tools/check.sh"
 exit $rc

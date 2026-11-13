@@ -2,15 +2,21 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #
-# Verification gate of the FYPP migration (docs/fypp/PLAN.md).
+# Verification gate of MUSCLE (pages/contributing.md, Development cycle).
 #
-#   tools/check.sh [--lint-only | --quick] [--gpu-full] [BUILD_DIR]
+#   tools/check.sh [--lint-only | --doc | --quick] [--gpu-full] [BUILD_DIR]
+#
+# Modes: --lint-only (stage 1, seconds, while editing); --doc (stage 1, the FORD documentation and the drift between
+# the documentation and the code, ~2 min, before a pull request that touches documentation or a public API);
+# --quick (stages 1-2 without UDTIO and FORD, ~1-2 min, before every commit); none (every stage, ~25 min, to close a
+# stage or before a large pull request).
 #
 # 1. Lint: mechanical rules from .claude/rules/ on the migrated sources (*.fypp) and tab
 #    checks on every Fortran source.
 # 2. Configure BUILD_DIR (default: build-check) as Debug with every real kind, build
 #    `build_all_tests`, check the operator signatures (tools/fypp/ops_signatures.py) and run
-#    ctest; build the FORD documentation if FORD is installed. Skipped with --lint-only.
+#    ctest; build the FORD documentation if FORD is found (PATH, conda environment ford or
+#    build-check/.ford-venv). Skipped with --lint-only and --doc.
 #    With --quick, stop after ctest: no UDTIO build, no FORD and none of the GPU stages below
 #    (the everyday check; run the full gate before closing a stage).
 # 3. GPU builds (D-019.3, D-019.4b), library and target tests (GPU_TARGET_TESTS): BUILD_DIR-nvptx and
@@ -33,14 +39,16 @@ set -u
 cd "$(dirname "$0")/.."
 
 lint_only=0
+doc_only=0
 quick=0
 gpu_full=0
 while [[ "${1:-}" == --* ]]; do
     case "$1" in
         --lint-only) lint_only=1 ;;
+        --doc) doc_only=1 ;;
         --quick) quick=1 ;;
         --gpu-full) gpu_full=1 ;;
-        *) echo "usage: $0 [--lint-only | --quick] [--gpu-full] [BUILD_DIR]" >&2; exit 2 ;;
+        *) echo "usage: $0 [--lint-only | --doc | --quick] [--gpu-full] [BUILD_DIR]" >&2; exit 2 ;;
     esac
     shift
 done
@@ -213,6 +221,49 @@ fi
 echo "== lint: OK"
 (( lint_only )) && exit 0
 
+# build_doc <required>: the FORD documentation in ${build_dir}/doc. FORD preprocesses the templates with fypp
+# (my_project.md) and must run without errors (warnings are listed in ${build_dir}/ford.log). FORD is looked
+# up in the PATH, then in the conda environment `ford` that environment.yml creates, then in the venv
+# build-check/.ford-venv (.claude/skills/muscle-revisar-documentacion/scripts/ford_build.sh --install creates
+# either); its directory goes first in the PATH, so that FORD runs the fypp of the same environment. Without
+# FORD: skipped, or a failure if <required> is 1.
+build_doc() {
+    local required="$1" ford_bin="" conda_cmd ford_env
+    if command -v ford > /dev/null; then
+        ford_bin=$(dirname "$(command -v ford)")
+    else
+        for conda_cmd in conda mamba "$HOME/miniforge3/condabin/conda" "$HOME/miniconda3/condabin/conda" \
+                         "$HOME/anaconda3/condabin/conda"; do
+            command -v "$conda_cmd" > /dev/null 2>&1 || continue
+            ford_env=$("$conda_cmd" env list 2>/dev/null | awk '$1 == "ford" {print $NF}')
+            if [[ -n "$ford_env" && -x "$ford_env/bin/ford" ]]; then ford_bin="$ford_env/bin"; break; fi
+        done
+        [[ -z "$ford_bin" && -x build-check/.ford-venv/bin/ford ]] && ford_bin="$PWD/build-check/.ford-venv/bin"
+    fi
+    if [[ -z "$ford_bin" ]]; then
+        echo "== doc: FORD not found (PATH, conda environment ford, build-check/.ford-venv)$( (( required )) \
+            && echo '; install it with .claude/skills/muscle-revisar-documentacion/scripts/ford_build.sh . --install' \
+            || echo ', skipped')"
+        return "$required"
+    fi
+    mkdir -p "$build_dir"
+    echo "== doc: FORD from $ford_bin (${build_dir}/doc)"
+    PATH="$ford_bin:$PATH" PYTHONDONTWRITEBYTECODE=1 ford --quiet --output_dir "${build_dir}/doc" my_project.md \
+        > "${build_dir}/ford.log" 2>&1 || {
+        echo "== FORD failed (see ${build_dir}/ford.log)"; tail -20 "${build_dir}/ford.log"; return 1; }
+}
+
+if (( doc_only )); then
+    build_doc 1 || exit 1
+    echo "== doc: drift between the documentation and the code (doc_drift.py)"
+    drift=$(python3 .claude/skills/muscle-revisar-documentacion/scripts/doc_drift.py .)
+    drift_status=$?
+    echo "$drift" | grep -v ': 0 finding(s)$'
+    (( drift_status == 0 )) || { echo "== check --doc: documentation drift found"; exit 1; }
+    echo "== check --doc: OK"
+    exit 0
+fi
+
 # Module files of deleted or renamed modules stay in an incremental build directory and would let
 # a stale `use` compile: remove every library .mod whose module no source defines any more.
 prune_stale_modules() {
@@ -302,16 +353,7 @@ ctest --test-dir "${build_dir}-udtio" -R 'tensors-types-.*_kinds' --output-on-fa
     > "${build_dir}-udtio/ctest-udtio.log" || {
     echo "== UDTIO tensor tests failed (see ${build_dir}-udtio/ctest-udtio.log)"; exit 1; }
 
-# Documentation: FORD preprocesses the templates with fypp (my_project.md). Optional: skipped if
-# FORD is not installed; it must run without errors (warnings are listed in the log).
-if command -v ford > /dev/null; then
-    echo "== doc: FORD (${build_dir}/doc)"
-    PYTHONDONTWRITEBYTECODE=1 ford --quiet --output_dir "${build_dir}/doc" my_project.md \
-        > "${build_dir}/ford.log" 2>&1 || {
-        echo "== FORD failed (see ${build_dir}/ford.log)"; tail -20 "${build_dir}/ford.log"; exit 1; }
-else
-    echo "== doc: FORD not installed, skipped"
-fi
+build_doc 0 || exit 1
 fi
 
 ctest --test-dir "$build_dir" --output-on-failure -j "$(nproc)" || failures=$((failures + 1))

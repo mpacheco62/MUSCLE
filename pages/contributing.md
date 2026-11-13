@@ -265,7 +265,8 @@ Typical costs on a machine with 8 or more cores (gfortran, Ninja, `sp;dp`; order
 | Every test | `ctest --test-dir build -j8` | ~10 s |
 | A new or changed file | `tools/mutation_check.py <area> --samples all --only <ids>` | ~2 s per mutation, about a minute for a file (a whole area: 30–45 min) |
 | Before every commit | `tools/check.sh --quick` | ~1–1.5 min |
-| To close a piece of work | `tools/check.sh` | ~15 min, mostly the three GPU builds and the target tests on the Intel GPU |
+| Before a pull request that touches documentation or a public API | `tools/check.sh --doc`: lint, the FORD pages (FORD from the `PATH`, the conda environment `ford` of `environment.yml` or `build-check/.ford-venv`) and the drift between the documentation and the code | ~2 min |
+| To close a piece of work | `tools/check.sh` | ~25 min, mostly the three GPU builds and the target tests on the Intel GPU; it builds the FORD pages too |
 
 The full check needs the offload toolchains (gfortran with NVPTX and AMDGCN offload, ifx) and an Intel GPU; without
 them, `--quick` is the gate.

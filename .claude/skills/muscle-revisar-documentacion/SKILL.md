@@ -31,8 +31,9 @@ desde la raíz (`my_project.md` preprocesa las plantillas con fypp) y resume los
 - Con `--warn`: hoy quedan ~91 interfaces genéricas, ~42 procedimientos ligados a tipo (`*_tbp` de la API
   histórica) y ~6 procedimientos sin `!!` (línea base 2026-11-13). Lo **nuevo** de tu cambio no debe sumar
   avisos: documenta lo público que agregaste (interfaz genérica incluida).
-- El script imprime el `PATH` con el que `tools/check.sh` también genera la documentación (si FORD no está en el
-  `PATH`, `check.sh` la salta y dice «FORD not installed»).
+- `tools/check.sh --doc` hace en un solo comando lint + FORD + `doc_drift.py` (~2 min) y falla si FORD falla, si
+  no lo encuentra o si hay deriva: es la verificación de esta skill antes de un PR. El `check.sh` completo también
+  genera la documentación (y la salta si no encuentra FORD).
 - Abre unas páginas de `<OUTPUT_DIR>/index.html` (la del módulo cambiado, `page/`): fórmulas `\( \)` que no se
   renderizan, listas rotas, tablas, enlaces.
 
@@ -71,7 +72,7 @@ Para cada cosa que cambió, el mapa dice qué documentos revisar. Lee lo que dic
 
 - Corrige la documentación en el mismo PR que el cambio de código (regla de `pages/contributing.md`). Si el
   cambio de código ya está hecho, un commit `docs(...)` aparte.
-- Verifica: `doc_drift.py` en 0, `ford_build.sh` con código 0, y `tools/check.sh --lint-only` (líneas ≤ 132
+- Verifica con `tools/check.sh --doc` (lint, FORD y `doc_drift.py` en 0; líneas ≤ 132
   columnas en las fuentes, SPDX).
 - Informe breve: hallazgos de cada chequeo (corregidos o justificados), avisos de FORD frente a la línea base,
   lo revisado a mano y lo que queda para el usuario (p. ej. documentación que exige decidir algo del código).
