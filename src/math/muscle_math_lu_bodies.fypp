@@ -3,42 +3,52 @@
 #!
 #! Fixed-size LU bodies shared by the small dense inverses (muscle_math_inverses: M55INV, M66INV,
 #! M99INV and the private LU fallbacks lu_inv3, lu_inv4 of M33INV, M44INV) and the small linear
-#! solvers (muscle_math_lu_solve: LU<n>SOLVE).
+#! solvers (muscle_math_lu_solve: LU<n>SOLVE). Two implementations with the same contract (D-034),
+#! chosen by size with LU_UNROLL_MAX:
+#!   N <= LU_UNROLL_MAX  fully unrolled bodies (lu_*_body_unrolled, section 2);
+#!   N >  LU_UNROLL_MAX  loop-based bodies (lu_*_body_loops, section 1).
+#! `$:lu_inverse_body(rk, N[, kappa=True])` and `$:lu_solve_body(rk, N)` dispatch on N.
+#! Why: unrolled with literal subscripts keeps the work matrix in registers (0 bytes of private
+#! memory on the Intel GPU, ~6x faster for 6x6; D-035, benchmarks/math/bench_linalg.fypp and
+#! benchmarks/gpu/bench_linalg_gpu.fypp)
+#! but costs ~N^3 statements of code. The limit 7 covers the sizes the kernels use (M33INV/M44INV
+#! fallbacks, M66INV, LU2..LU7SOLVE); M99INV, LU8SOLVE, LU9SOLVE are not used by any kernel and
+#! keep loops, since huge kernels are dropped by IGC in Release (D-019.8).
 #!
 #! Every body expands at the end of the specification part of a subroutine that declares
 #!   integer, parameter :: N            -- matrix size (compile-time constant)
 #!   real(rk), intent(in)  :: A(N,N)    -- matrix
 #!   logical, intent(out)  :: OK_FLAG
-#! A compile-time N lets the compiler unroll the loops: measured ~20 % faster than a single
-#! routine with N as an argument for the 6x6 case.
-#!
-#! Building blocks (algorithms of LAPACK, unblocked, no external calls):
-#!   lu_factor(rk, LU)    P A = L U in place in LU (which holds A on entry) with partial pivoting,
-#!                        column-oriented like DGETF2; the pivots go to ipiv(N). OK_FLAG = .false.
-#!                        (and the factorization stops) on an exactly zero, NaN or Inf pivot
-#!                        (any non-finite entry of A ends in such a pivot, D-034).
-#!                        Needs the locals: integer :: ipiv(N), i, j, k, p; real(rk) :: r, tmp.
-#!   lu_subst(rk, LU, v)  v <- inv(A) v from the factors of lu_factor, like DGETRS: row
-#!                        interchanges, L y = P v (unit lower), U v = y.
-#!                        Needs the locals: integer :: ipiv(N), i, j, k, p; real(rk) :: tmp.
-#!
-#! `$:lu_inverse_body(rk)` (needs real(rk), intent(out) :: AINV(N,N)), DGETRF + DGETRI:
-#!   1. lu_factor in AINV;
-#!   2. inv(U) in place (like DTRTI2, upper, non-unit);
-#!   3. solve inv(A) L = inv(U) (like DGETRI);
-#!   4. undo the row interchanges as column interchanges, in reverse order.
-#! Singular A (exactly zero pivot) or A with a NaN/Inf entry: OK_FLAG = .false. and AINV = 0.
-#! `$:lu_inverse_body(rk, kappa=True)` also sets the optional dummy
-#!   real(rk), intent(out), optional :: KAPPA
-#! when present: \kappa_\infty(A) = COND_INF_<rk>(A, AINV) after the inversion, huge(1.0_<rk>) if
-#! A is singular. It does not change AINV or OK_FLAG.
-#!
-#! `$:lu_solve_body(rk)` (needs real(rk), intent(in) :: b(N); real(rk), intent(out) :: x(N);
-#! real(rk), intent(out), optional :: KAPPA), DGETRF + DGETRS without forming the inverse:
-#! x = inv(A) b. Singular A (exactly zero pivot) or A with a NaN/Inf entry: OK_FLAG = .false., x = 0 and KAPPA =
-#! huge(1.0_<rk>). When KAPPA is present it is \kappa_\infty(A) = |A|_inf |inv(A)|_inf, with
-#! inv(A) obtained column by column from the factors (N more substitutions: the cost of the
-#! inversion, only paid when KAPPA is requested); it does not change x or OK_FLAG.
+#! Both variants: singular A (exactly zero pivot) or A with a NaN/Inf entry: OK_FLAG = .false.,
+#! AINV = 0 (x = 0 and KAPPA = huge(1.0_<rk>) for the solver). With kappa=True the inverse also
+#! sets the optional dummy real(rk), intent(out), optional :: KAPPA when present:
+#! \kappa_\infty(A) = COND_INF_<rk>(A, AINV), huge(1.0_<rk>) if A is singular. The solver (needs
+#! real(rk), intent(in) :: b(N); real(rk), intent(out) :: x(N); real(rk), intent(out), optional ::
+#! KAPPA) gives x = inv(A) b and, when KAPPA is present, |A|_inf |inv(A)|_inf from the loop LU
+#! (both variants). KAPPA does not change x or OK_FLAG.
+#:set LU_UNROLL_MAX = 7
+
+#:def lu_inverse_body(rk, N, kappa=False)
+        #:if N <= LU_UNROLL_MAX
+        $:lu_inverse_body_unrolled(rk, N, kappa)
+        #:else
+        $:lu_inverse_body_loops(rk, kappa)
+        #:endif
+#:enddef
+
+#:def lu_solve_body(rk, N)
+        #:if N <= LU_UNROLL_MAX
+        $:lu_solve_body_unrolled(rk, N)
+        #:else
+        $:lu_solve_body_loops(rk)
+        #:endif
+#:enddef
+
+#! ===== 1. Loop-based bodies (LAPACK DGETRF/DGETRI/DGETRS, unblocked) =====
+#! Building blocks: lu_factor(rk, LU) (P A = L U in place, DGETF2-like, pivots in ipiv(N); needs
+#! locals integer :: ipiv(N), i, j, k, p; real(rk) :: r, tmp) and lu_subst(rk, LU, v)
+#! (v <- inv(A) v, like DGETRS). Inverse: factor, inv(U) in place (DTRTI2), solve inv(A) L =
+#! inv(U) (DGETRI), undo the row interchanges as column interchanges.
 #:def lu_factor(rk, LU)
         OK_FLAG = .true.
         do k = 1, N
@@ -90,7 +100,7 @@
         end do
 #:enddef
 
-#:def lu_inverse_body(rk, kappa=False)
+#:def lu_inverse_body_loops(rk, kappa=False)
         integer :: ipiv(N), i, j, k, p
         real(${rk}$) :: r, tmp, ajj, s, work(N)
 
@@ -145,9 +155,24 @@
         #:endif
 #:enddef
 
-#:def lu_solve_body(rk)
+#! KAPPA = |A|_inf |inv(A)|_inf from the factors in lu (after lu_factor), with the columns inv(A) e_c
+#! (N more substitutions). Needs the locals of lu_factor plus integer :: c; real(rk) :: wc(N), rowsum(N).
+#:def lu_kappa_cols(rk)
+        rowsum = 0.0_${rk}$
+        do c = 1, N
+            wc = 0.0_${rk}$
+            wc(c) = 1.0_${rk}$
+            $:lu_subst(rk, 'lu', 'wc')
+            do i = 1, N
+                rowsum(i) = rowsum(i) + abs(wc(i))
+            end do
+        end do
+        KAPPA = NORM_INF_${rk}$(A) * maxval(rowsum)
+#:enddef
+
+#:def lu_solve_body_loops(rk)
         integer :: ipiv(N), i, j, k, p, c
-        real(${rk}$) :: r, tmp, lu(N,N), w(N), rowsum(N)
+        real(${rk}$) :: r, tmp, lu(N,N), wc(N), rowsum(N)
 
         lu = A
         $:lu_factor(rk, 'lu')
@@ -159,16 +184,120 @@
         x = b
         $:lu_subst(rk, 'lu', 'x')
         if (present(KAPPA)) then
-            ! |inv(A)|_inf from the columns inv(A) e_c
-            rowsum = 0.0_${rk}$
-            do c = 1, N
-                w = 0.0_${rk}$
-                w(c) = 1.0_${rk}$
-                $:lu_subst(rk, 'lu', 'w')
-                do i = 1, N
-                    rowsum(i) = rowsum(i) + abs(w(i))
-                end do
-            end do
-            KAPPA = NORM_INF_${rk}$(A) * maxval(rowsum)
+            $:lu_kappa_cols(rk)
+        end if
+#:enddef
+
+#! ===== 2. Unrolled bodies =====
+#! Gauss elimination with partial pivoting on W = [A | rhs] written with FYPP #:for loops (only
+#! literal subscripts). Pivoting by compare-and-swap with `merge` (no branch; same tie rule as
+#! DGETF2); pivot check without early exit (ok = ok .and. 0 < |piv| <= huge, the reciprocal uses
+#! merge(piv, 1, ok)). Blocks: lu_eliminate(rk, N, W, ncol) (needs W(N,ncol), rd(N), t, f, piv,
+#! logical sw; OK_FLAG .true. on entry) and lu_backsub(N, W, c0, c1).
+#:def lu_eliminate(rk, N, W, ncol)
+        #:for kk in range(1, N)
+        #:for i in range(kk + 1, N + 1)
+        sw = abs(${W}$(${i}$,${kk}$)) > abs(${W}$(${kk}$,${kk}$))
+        #:for j in range(kk, ncol + 1)
+        t = ${W}$(${kk}$,${j}$)
+        ${W}$(${kk}$,${j}$) = merge(${W}$(${i}$,${j}$), t, sw)
+        ${W}$(${i}$,${j}$) = merge(t, ${W}$(${i}$,${j}$), sw)
+        #:endfor
+        #:endfor
+        piv = ${W}$(${kk}$,${kk}$)
+        OK_FLAG = OK_FLAG .and. (abs(piv) > 0.0_${rk}$ .and. abs(piv) <= huge(1.0_${rk}$))
+        rd(${kk}$) = 1.0_${rk}$ / merge(piv, 1.0_${rk}$, OK_FLAG)
+        #:for i in range(kk + 1, N + 1)
+        f = ${W}$(${i}$,${kk}$) * rd(${kk}$)
+        #:for j in range(kk + 1, ncol + 1)
+        ${W}$(${i}$,${j}$) = ${W}$(${i}$,${j}$) - f * ${W}$(${kk}$,${j}$)
+        #:endfor
+        #:endfor
+        #:endfor
+        piv = ${W}$(${N}$,${N}$)
+        OK_FLAG = OK_FLAG .and. (abs(piv) > 0.0_${rk}$ .and. abs(piv) <= huge(1.0_${rk}$))
+        rd(${N}$) = 1.0_${rk}$ / merge(piv, 1.0_${rk}$, OK_FLAG)
+#:enddef
+
+#:def lu_backsub(N, W, c0, c1)
+        #:for i in range(N, 0, -1)
+        #:for j in range(c0, c1 + 1)
+        #:for m in range(i + 1, N + 1)
+        ${W}$(${i}$,${j}$) = ${W}$(${i}$,${j}$) - ${W}$(${i}$,${m}$) * ${W}$(${m}$,${j}$)
+        #:endfor
+        ${W}$(${i}$,${j}$) = ${W}$(${i}$,${j}$) * rd(${i}$)
+        #:endfor
+        #:endfor
+#:enddef
+
+#:def lu_inverse_body_unrolled(rk, N, kappa=False)
+        real(${rk}$) :: W(N,${2*N}$), rd(N), t, f, piv
+        logical :: sw
+
+        #:for i in range(1, N + 1)
+        #:for j in range(1, N + 1)
+        W(${i}$,${j}$) = A(${i}$,${j}$)
+        W(${i}$,${N + j}$) = ${'1.0' if i == j else '0.0'}$_${rk}$
+        #:endfor
+        #:endfor
+        OK_FLAG = .true.
+        $:lu_eliminate(rk, N, 'W', 2*N)
+        $:lu_backsub(N, 'W', N + 1, 2*N)
+        #:for i in range(1, N + 1)
+        #:for j in range(1, N + 1)
+        AINV(${i}$,${j}$) = W(${i}$,${N + j}$)
+        #:endfor
+        #:endfor
+        if (.not. OK_FLAG) AINV = 0.0_${rk}$
+        #:if kappa
+        if (present(KAPPA)) then
+            if (OK_FLAG) then
+                KAPPA = COND_INF_${rk}$(A, AINV)
+            else
+                KAPPA = huge(1.0_${rk}$)
+            end if
+        end if
+        #:endif
+#:enddef
+
+#:def lu_solve_body_unrolled(rk, N)
+        real(${rk}$) :: W(N,${N + 1}$), rd(N), t, f, piv
+        logical :: sw
+
+        #:for i in range(1, N + 1)
+        #:for j in range(1, N + 1)
+        W(${i}$,${j}$) = A(${i}$,${j}$)
+        #:endfor
+        W(${i}$,${N + 1}$) = b(${i}$)
+        #:endfor
+        OK_FLAG = .true.
+        $:lu_eliminate(rk, N, 'W', N + 1)
+        $:lu_backsub(N, 'W', N + 1, N + 1)
+        if (.not. OK_FLAG) then
+            x = 0.0_${rk}$
+            if (present(KAPPA)) KAPPA = huge(1.0_${rk}$)
+            return
+        end if
+        #:for i in range(1, N + 1)
+        x(${i}$) = W(${i}$,${N + 1}$)
+        #:endfor
+        if (present(KAPPA)) then
+            ! kappa through the loop-based path (no second unrolled elimination: code size):
+            ! refactor A with the loop LU and take |inv(A)|_inf from the columns inv(A) e_c
+            block
+                integer :: ipiv(N), i, j, k, p, c
+                real(${rk}$) :: r, tmp, lu(N,N), wc(N), rowsum(N)
+                lu = A
+                $:lu_factor(rk, 'lu')
+                if (OK_FLAG) then
+                    $:lu_kappa_cols(rk)
+                else
+                    ! Unreachable in practice: the loop LU picks the same pivots as the unrolled one,
+                    ! which succeeded (only a tie or another FMA contraction could differ). Defensive:
+                    ! KAPPA must not change x or OK_FLAG.
+                    KAPPA = huge(1.0_${rk}$)
+                    OK_FLAG = .true.
+                end if
+            end block
         end if
 #:enddef

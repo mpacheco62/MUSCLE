@@ -60,4 +60,6 @@ Cayley-Hamilton derivatives of `muscle_math_spectral_derivs` remain public routi
 
 `muscle_math_lu_bodies.fypp` is an include, not a module: the FYPP macros with the LU factorization and the
 inverse and solve bodies shared by `muscle_math_inverses` and `muscle_math_lu_solve`, instantiated with a
-compile-time size so the loops unroll.
+compile-time size. Up to 7x7 the LU with partial pivoting is fully unrolled (every subscript a literal, rows
+swapped by compare-and-swap): on a GPU the matrix then stays in registers instead of private memory (D-035);
+8x8 and 9x9 use loops.

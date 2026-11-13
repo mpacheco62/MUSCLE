@@ -75,7 +75,7 @@ contains
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) = \|A\|_\infty \|A^{-1}\|_\infty \);
             !! `huge(1.0_${k}$)` when `A` is singular.
-        $:lu_solve_body(k)
+        $:lu_solve_body(k, n)
     end subroutine LU${n}$SOLVE_${k}$
 
     #:endfor

@@ -72,7 +72,7 @@ module muscle_math_inverses
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
             !! inverse); `huge(1.0_${k}$)` when `A` is singular.
-        $:lu_inverse_body(k, kappa=True)
+        $:lu_inverse_body(k, 6, kappa=True)
     end subroutine M66INV_${k}$
 
     pure subroutine M99INV_${k}$(A, AINV, OK_FLAG, KAPPA)
@@ -90,7 +90,7 @@ module muscle_math_inverses
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
             !! inverse); `huge(1.0_${k}$)` when `A` is singular.
-        $:lu_inverse_body(k, kappa=True)
+        $:lu_inverse_body(k, 9, kappa=True)
     end subroutine M99INV_${k}$
 
     pure function COND_INF_${k}$(A, AINV) result(KAPPA)
@@ -271,7 +271,7 @@ module muscle_math_inverses
             !! Inverse of `A`; zero when `A` is singular.
         logical, intent(out)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded.
-        $:lu_inverse_body(k)
+        $:lu_inverse_body(k, 3)
     end subroutine lu_inv3_${k}$
 
     pure subroutine lu_inv4_${k}$(A, AINV, OK_FLAG)
@@ -285,7 +285,7 @@ module muscle_math_inverses
             !! Inverse of `A`; zero when `A` is singular.
         logical, intent(out)      :: OK_FLAG
             !! `.TRUE.` if the inversion succeeded.
-        $:lu_inverse_body(k)
+        $:lu_inverse_body(k, 4)
     end subroutine lu_inv4_${k}$
 
     pure subroutine M55INV_${k}$(A, AINV, OK_FLAG, KAPPA)
@@ -303,7 +303,7 @@ module muscle_math_inverses
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
             !! inverse); `huge(1.0_${k}$)` when `A` is singular.
-        $:lu_inverse_body(k, kappa=True)
+        $:lu_inverse_body(k, 5, kappa=True)
     end subroutine M55INV_${k}$
 
     #:endfor
