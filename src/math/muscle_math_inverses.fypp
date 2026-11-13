@@ -17,8 +17,8 @@ module muscle_math_inverses
     !! - `NORM_INF`: \( \|A\|_\infty \) (maximum absolute row sum) with explicit loops, the norm of
     !!   `COND_INF` and of the adjugate switch.
     !!
-    !! A singular matrix (exactly zero determinant or pivot) gives `OK_FLAG = .false.` and a zero
-    !! inverse.
+    !! A singular matrix (exactly zero determinant or pivot) or one with a NaN/Inf entry (D-034) gives
+    !! `OK_FLAG = .false.`, a zero inverse and `KAPPA = huge`.
     !!
     !! Every routine exists for each real kind (`M33INV_sp`, `M33INV_dp`, ...) under a generic
     !! name (`M33INV`, ...).
@@ -68,7 +68,7 @@ module muscle_math_inverses
         real(${k}$), intent(out) :: AINV(N,N)
             !! Inverse of `A`; zero when `A` is singular.
         logical, intent(out)      :: OK_FLAG
-            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular or has a NaN/Inf entry.
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
             !! inverse); `huge(1.0_${k}$)` when `A` is singular.
@@ -86,7 +86,7 @@ module muscle_math_inverses
         real(${k}$), intent(out) :: AINV(N,N)
             !! Inverse of `A`; zero when `A` is singular.
         logical, intent(out)      :: OK_FLAG
-            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular or has a NaN/Inf entry.
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
             !! inverse); `huge(1.0_${k}$)` when `A` is singular.
@@ -152,7 +152,7 @@ module muscle_math_inverses
         real(${k}$), intent(out) :: AINV(3,3)
             !! Inverse of `A`; zero when `A` is singular.
         logical, intent(out)      :: OK_FLAG
-            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular or has a NaN/Inf entry.
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A`; `huge(1.0_${k}$)` when `A` is singular.
         real(${k}$) :: c11, c12, c13, c21, c22, c23, c31, c32, c33, det, r, kap
@@ -204,7 +204,7 @@ module muscle_math_inverses
         real(${k}$), intent(out) :: AINV(4,4)
             !! Inverse of `A`; zero when `A` is singular.
         logical, intent(out)      :: OK_FLAG
-            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular or has a NaN/Inf entry.
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A`; `huge(1.0_${k}$)` when `A` is singular.
         real(${k}$) :: s0, s1, s2, s3, s4, s5, c0, c1, c2, c3, c4, c5, det, r, kap
@@ -299,7 +299,7 @@ module muscle_math_inverses
         real(${k}$), intent(out) :: AINV(N,N)
             !! Inverse of `A`; zero when `A` is singular.
         logical, intent(out)      :: OK_FLAG
-            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular.
+            !! `.TRUE.` if the inversion succeeded, `.FALSE.` if `A` is singular or has a NaN/Inf entry.
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) \) of `A` (`COND_INF` of `A` and the computed
             !! inverse); `huge(1.0_${k}$)` when `A` is singular.

@@ -39,6 +39,7 @@ Estados:
 | Macros FD vs API host: los últimos bits cambian si el compilador integra la función (≈4e-11 con -O3) | `include/muscle_fd.fypp` | Documentado (comparar con tolerancia en la Fase 6) | D-016.9 |
 | Golden de `mklsolve` depende de la LAPACK enlazada | `tests/reference/math` | Documentado (la cabecera anota la librería) | — |
 | `M33INV`/`M44INV` aceptaban la inversa adjunta con un NaN: `maxval(sum(abs(.), dim=2))` de gfortran salta las filas NaN, así que \(\kappa_\infty\) salía finito (p. ej. A = [2b b 0; b b 0; 0 0 1/b] con b² desbordado: el cofactor c33 = Inf − Inf es NaN y det(A) es finito) y no se recurría a LU | `muscle_math_inverses` | Corregido: `NORM_INF` devuelve NaN con una fila NaN y el adjunto se rechaza; test `test_adjugate_nan` (encontrado por el revisor de D-030) | D-030 |
+| `M<n><n>INV` y `lu_solve` devolvían `OK_FLAG = .true.` con una entrada ±Inf: la LU sólo rechazaba un pivote nulo o NaN (`abs(p) > 0` es verdadero para Inf); la salida era NaN (Inf en (n,n) de 3x3 y 6x6) o finita sin sentido (Inf en (1,1)). Un Inf por desborde aguas arriba pasaba como iteración válida de un Newton | `muscle_math_lu_bodies`, `muscle_math_lu_solve` (n = 1) | Corregido: el pivote debe ser además finito; tests con ±Inf en cada posición, n = 1..9 y 3..9 (encontrado por el banco de nivel 0 de la campaña de verificación) | D-034 |
 
 ## Endurecimiento (Fase 6)
 

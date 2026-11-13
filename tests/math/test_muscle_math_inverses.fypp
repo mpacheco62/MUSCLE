@@ -332,8 +332,9 @@ end subroutine test_general_${k}$
 
 subroutine test_singular_nan_${k}$(passed)
     !! A singular `real(${k}$)` matrix (rank 1, all entries equal) and a matrix containing a NaN
-    !! must give ok = .false. and a zero inverse (kappa = huge for 3x3/4x4).
-    use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan
+    !! must give ok = .false. and a zero inverse (kappa = huge for 3x3/4x4); so must +-Inf at every
+    !! position (D-034).
+    use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan, ieee_positive_inf
     use muscle_kinds, only : ${k}$
     use muscle_test_utils
     use test_inverses_helpers
@@ -341,9 +342,10 @@ subroutine test_singular_nan_${k}$(passed)
     logical, intent(out) :: passed
     real(${k}$), allocatable :: a(:,:), x(:,:), zero(:,:)
     real(${k}$) :: kap
-    integer :: s, n
+    integer :: s, n, c, i
     logical :: ok
     character(len=32) :: tag
+    character(len=96) :: lab
 
     passed = .true.
     do s = 1, size(SIZES)
@@ -363,6 +365,21 @@ subroutine test_singular_nan_${k}$(passed)
         a(1,1) = ieee_value(1.0_${k}$, ieee_quiet_nan)
         call invert(n, a, x, ok, kap)
         call check_true(passed, trim(tag) // " NaN input: ok = .false.", .not. ok)
+
+        ! +Inf and -Inf at every position of a well-conditioned matrix (D-034): not invertible,
+        ! ok = .false. and zero inverse (kappa = huge for 3x3/4x4), through the adjugate and the LU paths
+        do c = 1, 2*n*n
+            a = 1.0_${k}$
+            do i = 1, n
+                a(i,i) = real(n + 1, ${k}$)
+            end do
+            a(mod(c - 1, n) + 1, mod((c - 1) / n, n) + 1) = merge(1.0_${k}$, -1.0_${k}$, c <= n*n) &
+                                                          * ieee_value(1.0_${k}$, ieee_positive_inf)
+            call invert(n, a, x, ok, kap)
+            write(lab, '(a, " Inf at ", i0, ": ok = .false., inverse = 0, kappa = huge")') trim(tag), c
+            call check_true(passed, trim(lab), .not. ok .and. all(x == 0.0_${k}$) &
+                            .and. (kap == huge(1.0_${k}$) .or. n > 4))      ! invert asks KAPPA only for n <= 4
+        end do
 
         deallocate(a, x, zero)
     end do

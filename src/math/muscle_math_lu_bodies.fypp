@@ -15,7 +15,8 @@
 #! Building blocks (algorithms of LAPACK, unblocked, no external calls):
 #!   lu_factor(rk, LU)    P A = L U in place in LU (which holds A on entry) with partial pivoting,
 #!                        column-oriented like DGETF2; the pivots go to ipiv(N). OK_FLAG = .false.
-#!                        (and the factorization stops) on an exactly zero (or NaN) pivot.
+#!                        (and the factorization stops) on an exactly zero, NaN or Inf pivot
+#!                        (any non-finite entry of A ends in such a pivot, D-034).
 #!                        Needs the locals: integer :: ipiv(N), i, j, k, p; real(rk) :: r, tmp.
 #!   lu_subst(rk, LU, v)  v <- inv(A) v from the factors of lu_factor, like DGETRS: row
 #!                        interchanges, L y = P v (unit lower), U v = y.
@@ -26,7 +27,7 @@
 #!   2. inv(U) in place (like DTRTI2, upper, non-unit);
 #!   3. solve inv(A) L = inv(U) (like DGETRI);
 #!   4. undo the row interchanges as column interchanges, in reverse order.
-#! Singular A (exactly zero pivot): OK_FLAG = .false. and AINV = 0.
+#! Singular A (exactly zero pivot) or A with a NaN/Inf entry: OK_FLAG = .false. and AINV = 0.
 #! `$:lu_inverse_body(rk, kappa=True)` also sets the optional dummy
 #!   real(rk), intent(out), optional :: KAPPA
 #! when present: \kappa_\infty(A) = COND_INF_<rk>(A, AINV) after the inversion, huge(1.0_<rk>) if
@@ -34,7 +35,7 @@
 #!
 #! `$:lu_solve_body(rk)` (needs real(rk), intent(in) :: b(N); real(rk), intent(out) :: x(N);
 #! real(rk), intent(out), optional :: KAPPA), DGETRF + DGETRS without forming the inverse:
-#! x = inv(A) b. Singular A (exactly zero pivot): OK_FLAG = .false., x = 0 and KAPPA =
+#! x = inv(A) b. Singular A (exactly zero pivot) or A with a NaN/Inf entry: OK_FLAG = .false., x = 0 and KAPPA =
 #! huge(1.0_<rk>). When KAPPA is present it is \kappa_\infty(A) = |A|_inf |inv(A)|_inf, with
 #! inv(A) obtained column by column from the factors (N more substitutions: the cost of the
 #! inversion, only paid when KAPPA is requested); it does not change x or OK_FLAG.
@@ -46,7 +47,9 @@
                 if (abs(${LU}$(i,k)) > abs(${LU}$(p,k))) p = i
             end do
             ipiv(k) = p
-            if (.not. (abs(${LU}$(p,k)) > 0.0_${rk}$)) then     ! zero (or NaN) pivot: singular
+            ! zero, NaN or Inf pivot: singular or not finite (an Inf anywhere in A reaches a pivot as Inf
+            ! or NaN through the elimination, D-034)
+            if (.not. (abs(${LU}$(p,k)) > 0.0_${rk}$ .and. abs(${LU}$(p,k)) <= huge(1.0_${rk}$))) then
                 OK_FLAG = .false.
                 exit
             end if

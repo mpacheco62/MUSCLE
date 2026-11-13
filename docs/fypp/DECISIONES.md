@@ -1551,3 +1551,22 @@ FORD en el `PATH` y nunca generaba la documentación donde FORD está en el ento
   y kernel de un algoritmo) y `muscle-revisar-documentacion` (documentación al día con el código).
 - `tools/check.sh` busca FORD en el `PATH`, en el entorno conda `ford` y en `build-check/.ford-venv`; modo nuevo
   `--doc` (lint + FORD + `doc_drift.py`, ~2 min) antes de un PR que toque documentación o API pública.
+
+## D-034 — Matrices con entradas no finitas: `OK_FLAG = .false.` en las inversas y `lu_solve` (2026-11-13)
+
+**Contexto:** el banco de precisión del nivel 0 de la campaña de verificación (`benchmarks/math/bench_linalg.fypp`,
+verdad en cuádruple) mostró que las inversas y `lu_solve` son estables hacia atrás (error ≤ 0.45 κ ε, `KAPPA` dentro
+del 6 %, sin fallos en escalas 1e±30), pero que una entrada ±Inf daba `OK_FLAG = .true.`: la LU sólo rechazaba un
+pivote exactamente nulo o NaN (`abs(p) > 0` es verdadero para Inf). La salida era NaN o finita sin sentido. En un
+Newton, un Inf por desborde aguas arriba pasaba como iteración válida.
+**Decisión del usuario:** el contrato de `M33INV`…`M99INV`, `LU<n>SOLVE` y `lu_solve` pasa a ser «`OK_FLAG = .false.`,
+salida 0 y `KAPPA = huge` si `A` es singular (pivote exactamente nulo) **o tiene alguna entrada NaN/Inf**».
+- `lu_factor` (`muscle_math_lu_bodies`) exige un pivote finito además de no nulo: con pivoteo parcial, un Inf en
+  cualquier posición llega a un pivote como Inf o NaN (al eliminar contamina las filas de abajo de su columna: Inf,
+  Inf − Inf o 0·Inf), así que basta comprobar el pivote: O(n), sin `ieee_arithmetic` (GPU). `lu_solve` con n = 1
+  aplica la misma condición. La adjunta de 3x3/4x4 ya rechazaba un determinante o un κ no finitos y cae a la LU.
+- No se comprueba que la **salida** sea finita (entrada finita cuya inversa desborda, p. ej. un pivote subnormal):
+  no apareció en el banco y costaría n² comparaciones; queda como posible ampliación.
+- Tests: ±Inf en cada posición en `test_muscle_math_lu_solve` (n = 1..9) y `test_muscle_math_inverses` (3, 4, 5, 6,
+  9), sp y dp; antes del cambio fallaban 714 de 1140 y 320 de 668 comprobaciones. Más un caso de cobertura (lo pasa
+  también el código anterior): identidad con ±Inf fuera de la diagonal, multiplicadores exactamente 0 (0·Inf = NaN).

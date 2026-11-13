@@ -416,9 +416,10 @@ contains
     end function test_near_singular_${k}$
 
     logical function test_singular_${k}$() result(passed)
-        !! `real(${k}$)` singular systems (zero matrix, zero column at every position, NaN at every
+        !! `real(${k}$)` singular systems (zero matrix, zero column at every position, NaN and +-Inf at every
         !! position, duplicated integer row) give OK_FLAG = .false., x = 0 and KAPPA = huge, n = 1..9; unsupported sizes
         !! and inconsistent shapes of `lu_solve` give the same.
+        use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_positive_inf
         use muscle_kinds, only : ${k}$
         use muscle_test_helpers, only : park_miller, rnd
         use muscle_test_utils, only : check_true
@@ -428,7 +429,7 @@ contains
         real(${k}$), allocatable :: a(:,:), b(:), x(:)
         real(${k}$) :: kappa
         logical :: ok
-        integer :: n, c, i, j
+        integer :: n, c, i, j, r
         character(len=64) :: label
 
         passed = .true.
@@ -471,6 +472,40 @@ contains
                 x = -1.0_${k}$
                 call lu_solve(a, b, x, ok, kappa)
                 write(label, '(a, i0, a, i0)') 'NaN at ', c, ', n = ', n
+                call check_true(passed, trim(label), .not. ok .and. all(x == 0.0_${k}$) &
+                                .and. kappa == huge(1.0_${k}$))
+            end do
+            ! +Inf and -Inf at every position (D-034): an infinite entry reaches a pivot as Inf or NaN
+            ! (Inf - Inf, 0 * Inf), so the system is reported invalid like a singular one.
+            do c = 1, 2*n*n
+                do j = 1, n
+                    do i = 1, n
+                        a(i,j) = real(rnd(rng), ${k}$) + merge(real(n, ${k}$), 0.0_${k}$, i == j)
+                    end do
+                end do
+                a(mod(c - 1, n) + 1, mod((c - 1) / n, n) + 1) = merge(1.0_${k}$, -1.0_${k}$, c <= n*n) &
+                                                              * ieee_value(1.0_${k}$, ieee_positive_inf)
+                x = -1.0_${k}$
+                call lu_solve(a, b, x, ok, kappa)
+                write(label, '(a, i0, a, i0)') 'Inf at ', c, ', n = ', n
+                call check_true(passed, trim(label), .not. ok .and. all(x == 0.0_${k}$) &
+                                .and. kappa == huge(1.0_${k}$))
+            end do
+            ! Identity with +-Inf off the diagonal (coverage of exactly zero multipliers; the code before D-034
+            ! passes it too): above the diagonal the Inf reaches a pivot as 0 * Inf = NaN, below it the Inf is a
+            ! pivot and leaves an exactly zero one
+            do c = 1, 2*n*n
+                i = mod(c - 1, n) + 1
+                j = mod((c - 1) / n, n) + 1
+                if (i == j) cycle
+                a = 0.0_${k}$
+                do r = 1, n
+                    a(r,r) = 1.0_${k}$
+                end do
+                a(i,j) = merge(1.0_${k}$, -1.0_${k}$, c <= n*n) * ieee_value(1.0_${k}$, ieee_positive_inf)
+                x = -1.0_${k}$
+                call lu_solve(a, b, x, ok, kappa)
+                write(label, '(a, i0, a, i0, a, i0)') 'identity with Inf at ', i, ',', j, ', n = ', n
                 call check_true(passed, trim(label), .not. ok .and. all(x == 0.0_${k}$) &
                                 .and. kappa == huge(1.0_${k}$))
             end do
