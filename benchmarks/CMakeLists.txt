@@ -47,6 +47,12 @@ if(NOT MUSCLE_MATERIALS)
     _muscle_fypp_command("${_kin_abs}" "${_kin_out}" "FYPP ${_kin_rel}")
     add_muscle_benchmark(kin_kernel "${_kin_out}")
 
+    # Accuracy against a quad-precision truth and cost of the small dense inverses and lu_solve
+    _muscle_fypp_source("${CMAKE_CURRENT_SOURCE_DIR}/math/bench_linalg.fypp" _linalg_abs _linalg_rel)
+    set(_linalg_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/math/bench_linalg.f90")
+    _muscle_fypp_command("${_linalg_abs}" "${_linalg_out}" "FYPP ${_linalg_rel}")
+    add_muscle_benchmark(linalg "${_linalg_out}")
+
     # Batch API GPU vs CPU (Phase 8, D-019): one executable bench_batch_gpu_<material>_<kind> per case of
     # gpu/bench_cases.py, so that each device image stays small. The template takes the sample inputs of
     # tests/materials/props_samples.py and the device tolerance of muscle_test_utils. They are programs

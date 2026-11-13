@@ -1,0 +1,545 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+! lint: host-only
+#:include "muscle_common.fypp"
+#! Accuracy, stability and cost of the small dense linear algebra primitives: the inverses M33INV..M99INV
+#! (muscle_math_inverses) and lu_solve (muscle_math_lu_solve), in every kind.
+#!
+#! Truth: A = U diag(sigma) V^T built in quad precision (U, V random orthogonal: product of n Householder
+#! reflectors of Park-Miller vectors; sigma_i geometric from 1 to 1/kappa_target; times a scale s), rounded to
+#! the kind (Ak). The truth is the inverse of the rounded matrix by Gauss-Jordan with partial pivoting in quad
+#! precision (Xq), kappa_true = |Ak|_inf |Xq|_inf, so the errors are those of the algorithm and not of the
+#! rounding of A.
+#! Families: inverses n = 3, 4, 5, 6, 9; lu_solve n = 2 ... 9; kappa_target 1e1 ... 1e15 (dp) or 1e1 ... 1e6
+#! (sp); scales 1, 1e-30, 1e30 (dp) or 1, 1e-18, 1e18 (sp); 200 matrices per family. Maxima over the matrices
+#! (eps = epsilon(1.0_k), norms are infinity norms, computed in quad precision from the outputs of the kind):
+#! - inverses: e_fwd = |X - Xq| / (|Xq| eps); e_fwd_k = e_fwd / kappa_true (O(1..n) is as good as a backward
+#!   stable method); e_res = |I - Ak X| / (|Ak| |X| eps);
+#! - lu_solve (b random in [-1,1]^n of the kind; xq = Xq b): e_bwd = |b - Ak x| / ((|Ak| |x| + |b|) eps);
+#!   e_fwd_k = |x - xq| / (|xq| eps kappa_true);
+#! - both: kap_lo, kap_hi = min and max of KAPPA / kappa_true; n_fail = OK_FLAG false; n_nonfinite = outputs
+#!   with some NaN or Inf (the matrices not solved or not finite are left out of the maxima).
+#! Special inputs: zero matrix, rank n-1 (two equal rows), NaN at (1,1), +Inf at (1,1), +Inf at (n,n):
+#! OK_FLAG, output all zeros, KAPPA == huge, output with NaN/Inf.
+#! Solver-shaped case (closest point Newton): Y = (C^-1 + g H)^-1 with C = 2G Pdev + 3K Pvol (Mandel 6x6,
+#! E = 2e5, several nu), H = (Pdev - nn nn^T) h, h = 1.5, nn a random unit deviatoric vector. Route A: two
+#! M66INV (today); route B: solve (I + g C H) Y = C by columns with lu_solve. Error |Y - Yq| / (|Yq| eps),
+#! Yq in quad precision from the rounded C and H; maximum over 20 nn.
+#! Cost: ns per call over 1000 distinct matrices (kappa 1e2, s = 1) cycled, about 0.2 s per routine; the wrapper
+#! copies the arguments to fixed-size arrays (as lu_solve does); without KAPPA and with KAPPA.
+#:set KAPPAS = {'sp': ['1.0e1', '1.0e2', '1.0e3', '1.0e4', '1.0e6'], &
+  'dp': ['1.0e1', '1.0e2', '1.0e3', '1.0e4', '1.0e6', '1.0e8', '1.0e12', '1.0e15']}
+#:set SCALES = {'sp': ['1.0', '1.0e-18', '1.0e18'], 'dp': ['1.0', '1.0e-30', '1.0e30']}
+
+module bench_linalg_truth
+    !! Quad precision helpers: random generator, test matrices, Gauss-Jordan inverse.
+    use, intrinsic :: iso_fortran_env, only : real128, int64
+    implicit none
+    private
+    integer, parameter, public :: qp = real128
+    integer(int64), save :: rng_state = 123456789_int64
+    public :: rng_seed, rng_uni, gen_matrix_q, inv_q, norm_inf_q, norm_inf_vec_q
+
+contains
+
+    subroutine rng_seed(s)
+        integer, intent(in) :: s
+        rng_state = int(s, int64)
+    end subroutine rng_seed
+
+    function rng_uni() result(u)
+        !! Park-Miller minimal standard generator, uniform in [-1, 1].
+        real(qp) :: u
+        rng_state = mod(16807_int64*rng_state, 2147483647_int64)
+        u = 2.0_qp*real(rng_state, qp)/2147483647.0_qp - 1.0_qp
+    end function rng_uni
+
+    pure function norm_inf_q(A) result(r)
+        real(qp), intent(in) :: A(:, :)
+        real(qp) :: r
+        integer :: i
+        r = 0.0_qp
+        do i = 1, size(A, 1)
+            r = max(r, sum(abs(A(i, :))))
+        end do
+    end function norm_inf_q
+
+    pure function norm_inf_vec_q(v) result(r)
+        real(qp), intent(in) :: v(:)
+        real(qp) :: r
+        r = maxval(abs(v))
+    end function norm_inf_vec_q
+
+    subroutine rand_orth_q(n, Q)
+        !! Product of n Householder reflectors of random vectors.
+        integer, intent(in) :: n
+        real(qp), intent(out) :: Q(n, n)
+        real(qp) :: v(n), H(n, n)
+        integer :: r, i
+        Q = 0.0_qp
+        do i = 1, n
+            Q(i, i) = 1.0_qp
+        end do
+        do r = 1, n
+            do i = 1, n
+                v(i) = rng_uni()
+            end do
+            v = v/sqrt(sum(v*v))
+            H = -2.0_qp*spread(v, 2, n)*spread(v, 1, n)
+            do i = 1, n
+                H(i, i) = H(i, i) + 1.0_qp
+            end do
+            Q = matmul(H, Q)
+        end do
+    end subroutine rand_orth_q
+
+    subroutine gen_matrix_q(n, kappa, s, A)
+        !! A = s U diag(sigma) V^T, sigma from 1 to 1/kappa (geometric).
+        integer, intent(in) :: n
+        real(qp), intent(in) :: kappa, s
+        real(qp), intent(out) :: A(n, n)
+        real(qp) :: U(n, n), V(n, n), sig(n)
+        integer :: i
+        call rand_orth_q(n, U)
+        call rand_orth_q(n, V)
+        do i = 1, n
+            sig(i) = exp(-real(i - 1, qp)/real(n - 1, qp)*log(kappa))
+        end do
+        A = s*matmul(U*spread(sig, 1, n), transpose(V))
+    end subroutine gen_matrix_q
+
+    subroutine inv_q(A, X, ok)
+        !! Gauss-Jordan with partial pivoting.
+        real(qp), intent(in) :: A(:, :)
+        real(qp), intent(out) :: X(:, :)
+        logical, intent(out) :: ok
+        real(qp) :: W(size(A, 1), 2*size(A, 1)), tmp(2*size(A, 1)), f
+        integer :: n, i, j, p
+        n = size(A, 1)
+        W(:, 1:n) = A
+        W(:, n + 1:2*n) = 0.0_qp
+        do i = 1, n
+            W(i, n + i) = 1.0_qp
+        end do
+        ok = .true.
+        do j = 1, n
+            p = j - 1 + maxloc(abs(W(j:n, j)), 1)
+            if (W(p, j) == 0.0_qp) then
+                ok = .false.
+                X = 0.0_qp
+                return
+            end if
+            if (p /= j) then
+                tmp = W(p, :)
+                W(p, :) = W(j, :)
+                W(j, :) = tmp
+            end if
+            W(j, :) = W(j, :)/W(j, j)
+            do i = 1, n
+                if (i == j) cycle
+                f = W(i, j)
+                W(i, :) = W(i, :) - f*W(j, :)
+            end do
+        end do
+        X = W(:, n + 1:2*n)
+    end subroutine inv_q
+
+end module bench_linalg_truth
+
+module bench_linalg_run
+    use, intrinsic :: ieee_arithmetic, only : ieee_is_finite, ieee_value, ieee_quiet_nan, ieee_positive_inf
+    use, intrinsic :: iso_fortran_env, only : int64
+    use muscle_kinds, only : sp, dp
+    use muscle_math_inverses
+    use muscle_math_lu_solve
+    use bench_linalg_truth
+    implicit none
+    private
+    #:for k in REAL_KINDS
+    public :: run_all_${k}$
+    #:endfor
+
+contains
+
+    function inv_name(n) result(s)
+        integer, intent(in) :: n
+        character(len=8) :: s
+        write (s, '(a,i0,a)') 'M', 11*n, 'INV'
+        if (n >= 10) s = 'M??INV'
+    end function inv_name
+
+    #:for k in REAL_KINDS
+    subroutine inv_call_${k}$(n, A, X, ok, kap)
+        !! Selects the M<n><n>INV routine of size n (copies to fixed-size arrays).
+        integer, intent(in) :: n
+        real(${k}$), intent(in) :: A(n, n)
+        real(${k}$), intent(out) :: X(n, n)
+        logical, intent(out) :: ok
+        real(${k}$), intent(out), optional :: kap
+        real(${k}$) :: a3(3, 3), x3(3, 3), a4(4, 4), x4(4, 4), a5(5, 5), x5(5, 5)
+        real(${k}$) :: a6(6, 6), x6(6, 6), a9(9, 9), x9(9, 9)
+        select case (n)
+        case (3)
+            a3 = A
+            call M33INV_${k}$(a3, x3, ok, kap)
+            X = x3
+        case (4)
+            a4 = A
+            call M44INV_${k}$(a4, x4, ok, kap)
+            X = x4
+        case (5)
+            a5 = A
+            call M55INV_${k}$(a5, x5, ok, kap)
+            X = x5
+        case (6)
+            a6 = A
+            call M66INV_${k}$(a6, x6, ok, kap)
+            X = x6
+        case (9)
+            a9 = A
+            call M99INV_${k}$(a9, x9, ok, kap)
+            X = x9
+        case default
+            X = 0.0_${k}$
+            ok = .false.
+            if (present(kap)) kap = huge(1.0_${k}$)
+        end select
+    end subroutine inv_call_${k}$
+
+    subroutine run_family_${k}$(is_solve, n, kt, s, nmat)
+        !! One family: nmat random matrices of size n, condition kt and scale s; prints one line.
+        logical, intent(in) :: is_solve
+        integer, intent(in) :: n, nmat
+        real(qp), intent(in) :: kt, s
+        real(qp) :: Aq(n, n), Akq(n, n), Xq(n, n), Xr(n, n), Rq(n, n), bq(n), xqs(n), xr1(n)
+        real(qp) :: eps, nA, kappa_true, efwd, efwd_k, eres, ebwd, ratio
+        real(qp) :: m_fwd, m_fwd_k, m_res, m_bwd, kap_lo, kap_hi
+        real(${k}$) :: Ak(n, n), X(n, n), b(n), xs(n), kap
+        logical :: ok, okq, have
+        integer :: im, i, nfail, nnonfin
+        character(len=8) :: name
+        eps = real(epsilon(1.0_${k}$), qp)
+        m_fwd = 0.0_qp; m_fwd_k = 0.0_qp; m_res = 0.0_qp; m_bwd = 0.0_qp
+        kap_lo = 0.0_qp; kap_hi = 0.0_qp
+        have = .false.
+        nfail = 0
+        nnonfin = 0
+        do im = 1, nmat
+            call gen_matrix_q(n, kt, s, Aq)
+            Ak = real(Aq, ${k}$)
+            Akq = real(Ak, qp)
+            call inv_q(Akq, Xq, okq)
+            nA = norm_inf_q(Akq)
+            kappa_true = nA*norm_inf_q(Xq)
+            if (is_solve) then
+                do i = 1, n
+                    b(i) = real(rng_uni(), ${k}$)
+                end do
+                call lu_solve_${k}$(Ak, b, xs, ok, kap)
+                if (.not. ok) then
+                    nfail = nfail + 1
+                    cycle
+                end if
+                if (.not. all(ieee_is_finite(xs))) then
+                    nnonfin = nnonfin + 1
+                    cycle
+                end if
+                bq = real(b, qp)
+                xqs = matmul(Xq, bq)
+                xr1 = real(xs, qp)
+                ebwd = norm_inf_vec_q(bq - matmul(Akq, xr1))/((nA*norm_inf_vec_q(xr1) + norm_inf_vec_q(bq))*eps)
+                efwd_k = norm_inf_vec_q(xr1 - xqs)/(norm_inf_vec_q(xqs)*eps*kappa_true)
+                m_bwd = max(m_bwd, ebwd)
+                m_fwd_k = max(m_fwd_k, efwd_k)
+            else
+                call inv_call_${k}$(n, Ak, X, ok, kap)
+                if (.not. ok) then
+                    nfail = nfail + 1
+                    cycle
+                end if
+                if (.not. all(ieee_is_finite(X))) then
+                    nnonfin = nnonfin + 1
+                    cycle
+                end if
+                Xr = real(X, qp)
+                efwd = norm_inf_q(Xr - Xq)/(norm_inf_q(Xq)*eps)
+                Rq = -matmul(Akq, Xr)
+                do i = 1, n
+                    Rq(i, i) = Rq(i, i) + 1.0_qp
+                end do
+                eres = norm_inf_q(Rq)/(nA*norm_inf_q(Xr)*eps)
+                m_fwd = max(m_fwd, efwd)
+                m_fwd_k = max(m_fwd_k, efwd/kappa_true)
+                m_res = max(m_res, eres)
+            end if
+            ratio = real(kap, qp)/kappa_true
+            if (have) then
+                kap_lo = min(kap_lo, ratio)
+                kap_hi = max(kap_hi, ratio)
+            else
+                kap_lo = ratio
+                kap_hi = ratio
+                have = .true.
+            end if
+        end do
+        if (is_solve) then
+            name = 'lu_solve'
+            write (*, '(a8,1x,i2,6(1x,es10.2),2(1x,i8))') name, n, real(kt, dp), real(s, dp), real(m_bwd, dp), &
+                real(m_fwd_k, dp), real(kap_lo, dp), real(kap_hi, dp), nfail, nnonfin
+        else
+            name = inv_name(n)
+            write (*, '(a8,1x,i2,7(1x,es10.2),2(1x,i8))') name, n, real(kt, dp), real(s, dp), real(m_fwd, dp), &
+                real(m_fwd_k, dp), real(m_res, dp), real(kap_lo, dp), real(kap_hi, dp), nfail, nnonfin
+        end if
+    end subroutine run_family_${k}$
+
+    subroutine run_special_${k}$(is_solve, n)
+        logical, intent(in) :: is_solve
+        integer, intent(in) :: n
+        character(len=10), parameter :: CASES(5) = [character(len=10) :: 'zero', 'rank n-1', 'NaN(1,1)', &
+            '+Inf(1,1)', '+Inf(n,n)']
+        real(qp) :: Aq(n, n)
+        real(${k}$) :: A(n, n), X(n, n), b(n), xs(n), kap
+        logical :: ok, allzero, kaphuge, nonfin
+        integer :: ic, i
+        character(len=8) :: name
+        do ic = 1, 5
+            call gen_matrix_q(n, 1.0e1_qp, 1.0_qp, Aq)
+            A = real(Aq, ${k}$)
+            select case (ic)
+            case (1)
+                A = 0.0_${k}$
+            case (2)
+                A(2, :) = A(1, :)
+            case (3)
+                A(1, 1) = ieee_value(1.0_${k}$, ieee_quiet_nan)
+            case (4)
+                A(1, 1) = ieee_value(1.0_${k}$, ieee_positive_inf)
+            case (5)
+                A(n, n) = ieee_value(1.0_${k}$, ieee_positive_inf)
+            end select
+            if (is_solve) then
+                do i = 1, n
+                    b(i) = real(rng_uni(), ${k}$)
+                end do
+                call lu_solve_${k}$(A, b, xs, ok, kap)
+                allzero = all(xs == 0.0_${k}$)
+                nonfin = .not. all(ieee_is_finite(xs))
+                name = 'lu_solve'
+            else
+                call inv_call_${k}$(n, A, X, ok, kap)
+                allzero = all(X == 0.0_${k}$)
+                nonfin = .not. all(ieee_is_finite(X))
+                name = inv_name(n)
+            end if
+            kaphuge = (kap == huge(1.0_${k}$))
+            write (*, '(a8,1x,i2,1x,a10,4(1x,l5))') name, n, CASES(ic), ok, allzero, kaphuge, nonfin
+        end do
+    end subroutine run_special_${k}$
+
+    subroutine run_double_${k}$()
+        !! hess = inv(inv(C) + g H): route A (two M66INV) against route B (lu_solve of (I + g C H) Y = C).
+        integer, parameter :: NNN = 20
+        real(qp), parameter :: NUS(5) = [0.3_qp, 0.49_qp, 0.499_qp, 0.4999_qp, 0.49999_qp]
+        real(qp), parameter :: GS(5) = [0.0_qp, 1.0e-6_qp, 1.0e-3_qp, 1.0_qp, 1.0e3_qp]
+        real(qp), parameter :: E = 2.0e5_qp, HH = 1.5_qp
+        real(qp) :: nn(6, NNN), Pvol(6, 6), Pdev(6, 6), Cq(6, 6), Hq(6, 6), X1q(6, 6), Yq(6, 6), Idq(6, 6)
+        real(qp) :: G, K, eps, gq, eA, eB, mA, mB, v(6)
+        real(${k}$) :: Ck(6, 6), Hk(6, 6), X1(6, 6), M(6, 6), YA(6, 6), YB(6, 6), gk
+        logical :: ok, okq, okj
+        integer :: inu, ig, in, i, j, nfA, nfB
+        eps = real(epsilon(1.0_${k}$), qp)
+        Idq = 0.0_qp
+        Pvol = 0.0_qp
+        do i = 1, 6
+            Idq(i, i) = 1.0_qp
+        end do
+        Pvol(1:3, 1:3) = 1.0_qp/3.0_qp
+        Pdev = Idq - Pvol
+        do in = 1, NNN
+            do i = 1, 6
+                v(i) = rng_uni()
+            end do
+            v(1:3) = v(1:3) - sum(v(1:3))/3.0_qp
+            nn(:, in) = v/sqrt(sum(v*v))
+        end do
+        do inu = 1, 5
+            G = E/(2.0_qp*(1.0_qp + NUS(inu)))
+            K = E/(3.0_qp*(1.0_qp - 2.0_qp*NUS(inu)))
+            Cq = 2.0_qp*G*Pdev + 3.0_qp*K*Pvol
+            Ck = real(Cq, ${k}$)
+            do ig = 1, 5
+                gk = real(GS(ig), ${k}$)
+                gq = real(gk, qp)
+                mA = 0.0_qp; mB = 0.0_qp; nfA = 0; nfB = 0
+                do in = 1, NNN
+                    Hq = (Pdev - spread(nn(:, in), 2, 6)*spread(nn(:, in), 1, 6))*HH
+                    Hk = real(Hq, ${k}$)
+                    ! truth from the rounded C and H
+                    call inv_q(real(Ck, qp), X1q, okq)
+                    call inv_q(X1q + gq*real(Hk, qp), Yq, okq)
+                    ! route A
+                    call M66INV_${k}$(Ck, X1, ok)
+                    call M66INV_${k}$(X1 + gk*Hk, YA, ok)
+                    if (ok) then
+                        eA = norm_inf_q(real(YA, qp) - Yq)/(norm_inf_q(Yq)*eps)
+                        mA = max(mA, eA)
+                    else
+                        nfA = nfA + 1
+                    end if
+                    ! route B
+                    M = gk*matmul(Ck, Hk)
+                    do i = 1, 6
+                        M(i, i) = M(i, i) + 1.0_${k}$
+                    end do
+                    ok = .true.
+                    do j = 1, 6
+                        call lu_solve_${k}$(M, Ck(:, j), YB(:, j), okj)
+                        ok = ok .and. okj
+                    end do
+                    if (ok) then
+                        eB = norm_inf_q(real(YB, qp) - Yq)/(norm_inf_q(Yq)*eps)
+                        mB = max(mB, eB)
+                    else
+                        nfB = nfB + 1
+                    end if
+                end do
+                write (*, '(4(1x,es10.2),2(1x,i4))') real(NUS(inu), dp), real(GS(ig), dp), &
+                    real(mA, dp), real(mB, dp), nfA, nfB
+            end do
+        end do
+    end subroutine run_double_${k}$
+
+    subroutine one_pass_${k}$(n, solve, with_kappa, A, B, nmat, acc)
+        integer, intent(in) :: n, nmat
+        logical, intent(in) :: solve, with_kappa
+        real(${k}$), intent(in) :: A(n, n, nmat), B(n, nmat)
+        real(${k}$), intent(inout) :: acc
+        real(${k}$) :: X(n, n), xs(n), kap
+        logical :: ok
+        integer :: i
+        do i = 1, nmat
+            if (solve) then
+                if (with_kappa) then
+                    call lu_solve_${k}$(A(:, :, i), B(:, i), xs, ok, kap)
+                    acc = acc + kap
+                else
+                    call lu_solve_${k}$(A(:, :, i), B(:, i), xs, ok)
+                end if
+                acc = acc + sum(xs)
+            else
+                if (with_kappa) then
+                    call inv_call_${k}$(n, A(:, :, i), X, ok, kap)
+                    acc = acc + kap
+                else
+                    call inv_call_${k}$(n, A(:, :, i), X, ok)
+                end if
+                acc = acc + sum(X)
+            end if
+            if (ok) acc = acc + 1.0_${k}$
+        end do
+    end subroutine one_pass_${k}$
+
+    subroutine time_routine_${k}$(n, solve, with_kappa, ns, chk)
+        integer, intent(in) :: n
+        logical, intent(in) :: solve, with_kappa
+        real(dp), intent(out) :: ns, chk
+        integer, parameter :: NMAT = 1000
+        real(${k}$), allocatable :: A(:, :, :), B(:, :)
+        real(${k}$) :: acc
+        real(qp) :: Aq(n, n)
+        integer(int64) :: c0, c1, rate
+        integer :: i, j, reps, r
+        real(dp) :: dt
+        allocate (A(n, n, NMAT), B(n, NMAT))
+        do i = 1, NMAT
+            call gen_matrix_q(n, 1.0e2_qp, 1.0_qp, Aq)
+            A(:, :, i) = real(Aq, ${k}$)
+            do j = 1, n
+                B(j, i) = real(rng_uni(), ${k}$)
+            end do
+        end do
+        acc = 0.0_${k}$
+        call system_clock(c0, rate)
+        do r = 1, 10
+            call one_pass_${k}$(n, solve, with_kappa, A, B, NMAT, acc)
+        end do
+        call system_clock(c1)
+        dt = max(real(c1 - c0, dp)/real(rate, dp), 1.0e-6_dp)/10.0_dp
+        reps = max(1, int(0.2_dp/dt))
+        acc = 0.0_${k}$
+        call system_clock(c0, rate)
+        do r = 1, reps
+            call one_pass_${k}$(n, solve, with_kappa, A, B, NMAT, acc)
+        end do
+        call system_clock(c1)
+        dt = real(c1 - c0, dp)/real(rate, dp)
+        ns = dt*1.0e9_dp/(real(reps, dp)*real(NMAT, dp))
+        chk = real(acc, dp)
+    end subroutine time_routine_${k}$
+
+    subroutine run_all_${k}$()
+        real(qp), parameter :: KTS(${len(KAPPAS[k])}$) = [${', '.join(t + '_qp' for t in KAPPAS[k])}$]
+        real(qp), parameter :: SCS(3) = [${', '.join(t + '_qp' for t in SCALES[k])}$]
+        integer, parameter :: NMAT = 200
+        integer, parameter :: INV_N(5) = [3, 4, 5, 6, 9], SPEC_INV(4) = [3, 4, 6, 9], SPEC_LU(3) = [3, 6, 7]
+        integer :: i, ik, is, n
+        real(dp) :: ns, nsk, chk, chk2
+        character(len=8) :: name
+
+        call rng_seed(20261113)
+        write (*, '(a)') '################################################################'
+        write (*, '(a,i0,a,es10.2)') 'KIND ${k}$: precision ', precision(1.0_${k}$), ' digits, eps = ', &
+            real(epsilon(1.0_${k}$), dp)
+        write (*, '(a)') '# inverses: routine n kappa_t scale e_fwd e_fwd_k e_res kap_lo kap_hi n_fail n_nonfinite'
+        do i = 1, size(INV_N)
+            do ik = 1, size(KTS)
+                do is = 1, size(SCS)
+                    call run_family_${k}$(.false., INV_N(i), KTS(ik), SCS(is), NMAT)
+                end do
+            end do
+        end do
+        write (*, '(a)') '# lu_solve: routine n kappa_t scale e_bwd e_fwd_k kap_lo kap_hi n_fail n_nonfinite'
+        do n = 2, 9
+            do ik = 1, size(KTS)
+                do is = 1, size(SCS)
+                    call run_family_${k}$(.true., n, KTS(ik), SCS(is), NMAT)
+                end do
+            end do
+        end do
+        write (*, '(a)') '# special inverses: routine n case OK_FLAG all_zero kappa_is_huge nonfinite_out'
+        do i = 1, size(SPEC_INV)
+            call run_special_${k}$(.false., SPEC_INV(i))
+        end do
+        write (*, '(a)') '# special lu_solve: routine n case OK_FLAG all_zero kappa_is_huge nonfinite_out'
+        do i = 1, size(SPEC_LU)
+            call run_special_${k}$(.true., SPEC_LU(i))
+        end do
+        write (*, '(a)') '# double inverse (6x6, max over 20 nn): nu g err_routeA err_routeB n_fail_A n_fail_B'
+        call run_double_${k}$()
+        write (*, '(a)') '# cost: routine n ns_per_call ns_per_call_with_KAPPA checksum checksum_with_KAPPA'
+        do i = 1, size(INV_N)
+            call time_routine_${k}$(INV_N(i), .false., .false., ns, chk)
+            call time_routine_${k}$(INV_N(i), .false., .true., nsk, chk2)
+            name = inv_name(INV_N(i))
+            write (*, '(a8,1x,i2,4(1x,es10.2))') name, INV_N(i), ns, nsk, chk, chk2
+        end do
+        do n = 2, 9
+            call time_routine_${k}$(n, .true., .false., ns, chk)
+            call time_routine_${k}$(n, .true., .true., nsk, chk2)
+            write (*, '(a8,1x,i2,4(1x,es10.2))') 'lu_solve', n, ns, nsk, chk, chk2
+        end do
+    end subroutine run_all_${k}$
+
+    #:endfor
+end module bench_linalg_run
+
+program bench_linalg
+    use, intrinsic :: iso_fortran_env, only : compiler_version
+    use bench_linalg_run
+    implicit none
+    write (*, '(2a)') 'compiler: ', compiler_version()
+    #:for k in REAL_KINDS
+    call run_all_${k}$()
+    #:endfor
+end program bench_linalg
