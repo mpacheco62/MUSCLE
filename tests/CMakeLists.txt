@@ -140,6 +140,8 @@ endfunction()
 
 
 function(muscle_target_test_options TARGET)
+    # HOST_OFFLOAD: the test calls omp_target_* (batch API on device memory); see the end of the function.
+    cmake_parse_arguments(PARSE_ARGV 1 opt "HOST_OFFLOAD" "" "")
     # Options of a test that runs kernels in an OpenMP target region and compares them with the CPU
     # (testing.md, GPU). Without MUSCLE_GPU the library has no `declare target`: an offload-enabled
     # gfortran (e.g. Ubuntu's, offload-defaulted to nvptx/amdgcn) would fail to link the device image
@@ -156,6 +158,15 @@ function(muscle_target_test_options TARGET)
     endif()
     get_target_property(test_name ${TARGET} MUSCLE_TEST_NAME)
     set_tests_properties(${test_name} PROPERTIES LABELS target)
+    if (opt_HOST_OFFLOAD AND WIN32 AND CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM" AND NOT MUSCLE_GPU_ENABLED)
+        # ifx on Windows: omp_target_alloc/memcpy/free only work in a program compiled with offload (a host-only
+        # program links them with omptarget.lib but crashes in omptarget.dll). The test is built for spir64 and
+        # run with the offload disabled, so the host is the only device and the memory is the host's (D-039).
+        # Without the environment variable the test would use the GPU of the machine, if any.
+        target_compile_options(${TARGET} PRIVATE -Qopenmp-targets:spir64)
+        target_link_options(${TARGET} PRIVATE -Qopenmp-targets:spir64)
+        set_tests_properties(${test_name} PROPERTIES ENVIRONMENT "OMP_TARGET_OFFLOAD=DISABLED")
+    endif()
     add_dependencies(build_target_tests ${TARGET})
 endfunction()
 
@@ -187,7 +198,11 @@ function(add_muscle_fypp_target_tests NAME SOURCE GROUP)
         add_muscle_test(${NAME}_${case} "${output}")
         set_target_properties(test_${NAME}_${case} PROPERTIES
                               Fortran_MODULE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/modules_${NAME}_${case}")
-        muscle_target_test_options(test_${NAME}_${case})
+        if(GROUP STREQUAL "batch_dev")
+            muscle_target_test_options(test_${NAME}_${case} HOST_OFFLOAD)
+        else()
+            muscle_target_test_options(test_${NAME}_${case})
+        endif()
     endforeach()
 endfunction()
 

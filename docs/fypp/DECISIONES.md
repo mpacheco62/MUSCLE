@@ -1654,7 +1654,8 @@ y `plasticity-yield_criteria-{cpb06,druckerprager,cpb06ex2,yld2004}_private_para
 por su texto de error. Ahora también con ifx en Windows, que los reconoce por el número de error de ifx 2026.2
 (`#8289` en cuatro, `#6053` en `cpb06`; no por «private», que está en el nombre del archivo) y los hace fallar con `#7002`
 (módulo no encontrado) o `catastrophic error`. Medido: pasan con la violación real; fallan con un fuente sin violación y
-con un módulo inexistente. Con ifx: 125/125 en CPU (los 8 `mat_batch_dev_*` siguen sin registrarse); gfortran 133/133.
+con un módulo inexistente. Con ifx: 125/125 en CPU (los 8 `mat_batch_dev_*` aún sin registrar; D-039 los hace correr);
+gfortran 133/133.
 
 ## D-038 — `write(formatted)` ligado a cada tipo; `muscle_tensor_io` sin dependencia de los tipos (2026-11-14)
 
@@ -1683,3 +1684,21 @@ al tipo.
 modificaron y comprueban el texto de la salida. Con gfortran < 16.3 y OpenMP el UDTIO sigue sin ser thread-safe (el
 diseño no lo cambia). Sin verificar: los builds de GPU (`MUSCLE_GPU`) con los tipos que ahora llevan un enlace
 `write(formatted)`; Linux.
+
+## D-039 — `mat_batch_dev_*` en CPU con ifx: compilar con offload y ejecutar con el offload desactivado (2026-11-14)
+
+**Contexto:** D-037 dejó de registrar los 8 `mat_batch_dev_*` con ifx en Windows sin `MUSCLE_GPU`, con la hipótesis de que
+`omp_target_alloc`/`memcpy`/`free` necesitan un dispositivo. A pregunta del usuario («¿se pueden hacer correr en CPU de alguna
+forma?») se midió que no hace falta GPU: el fallo era compilar el programa sin offload.
+**Medido (ifx 2026.2.0, Windows):** un programa mínimo que reserva y libera memoria del dispositivo inicial (`omp_get_initial_device()`)
+no enlaza sin offload, se cae en `omptarget.dll` si se enlaza con `omptarget.lib`, y funciona (también una región `target`) si se
+compila con `-Qiopenmp -Qopenmp-targets:spir64`, con `OMP_TARGET_OFFLOAD=DISABLED` o sin él. El test real
+(`mat_batch_dev_cut_vm_bilinear_dp`) compila y enlaza así, con la biblioteca sin `declare target`, y pasa con el offload desactivado.
+**Propuesta aplicada (a raíz de esa pregunta; pendiente de la aprobación del usuario al revisar el commit):**
+- `muscle_target_test_options` tiene una opción `HOST_OFFLOAD`, que sólo usa el grupo `batch_dev`: con ifx en Windows y sin
+  `MUSCLE_GPU` compila y enlaza el test con `-Qopenmp-targets:spir64` y fija `OMP_TARGET_OFFLOAD=DISABLED` en el entorno de
+  `ctest`, así que el host es el único dispositivo y la memoria es la del host. Los demás tests `target` no cambian.
+- Se retira la exclusión de D-037 (los 8 tests se registran otra vez).
+- Un `.exe` ejecutado a mano sin esa variable usaría la GPU de la máquina, si hay una.
+**Resultado (Windows, Debug):** ifx 133/133 y gfortran 133/133, con el mismo conjunto de tests en los dos. Sin verificar: ifx
+en Linux (la opción sólo se activa en Windows), `MUSCLE_GPU=SPIR64` (no cambia).
