@@ -1,0 +1,259 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:set NS = [3, 4, 6, 9]
+#:set VARIANTS = ['A', 'A_spd', 'B', 'C', 'E', 'G', 'H', 'D']
+#:set LIBNAME = {3: 'M33INV', 4: 'M44INV', 6: 'M66INV', 9: 'M99INV'}
+#! Call of the routine of variant v (N x N, kind k): A, A_spd = library (muscle_math_inverses), B gj_inv, C chol_inv,
+#! E qr_inv, G lubf_inv, H luu_inv, D lunp_inv (linalg_candidates.fypp)
+#:def callv(v, N, k, a_in, a_out, ok)
+#:if v in ('A', 'A_spd')
+call ${LIBNAME[N]}$_${k}$(${a_in}$, ${a_out}$, ${ok}$)
+#:else
+#:set RNAME = {'B': 'gj_inv', 'C': 'chol_inv', 'E': 'qr_inv', 'G': 'lubf_inv', 'H': 'luu_inv', 'D': 'lunp_inv'}
+call ${RNAME[v]}$_${N}$_${k}$(${a_in}$, ${a_out}$, ${ok}$)
+#:endif
+#:enddef
+
+#! Timing, check and report of one kernel of the driver run_<N>_<k> (variant v on the set `src`)
+#:def run_variant(v, N, k, src)
+        if (index(',' // trim(skip) // ',', ',${v}$_${N}$_${k}$,') > 0) then
+            write(*, '(a, 1x, a, 1x, i0, 1x, a)') 'SKIP', '${v}$', ${N}$, '${k}$'
+        else
+        t = huge(1.0_dp)
+        call kern_${v}$_${N}$_${k}$(np, ${src}$, ainv, okf)
+        do r = 1, n_repeat
+            t0 = real(omp_get_wtime(), dp)
+            call kern_${v}$_${N}$_${k}$(np, ${src}$, ainv, okf)
+            t = min(t, real(omp_get_wtime(), dp) - t0)
+        end do
+        !$omp target update from(ainv, okf)
+        fails = 0
+        do j = 1, ns
+            i = 1 + int(int(j - 1, int64)*(np - 1)/max(ns - 1, 1))
+            aa = ${src}$(:, :, i)
+            $:callv(v, N, k, 'aa', 'bb', 'ok')
+            cmax = max(maxval(abs(bb)), tiny(1.0_${k}$))
+            if ((ok .neqv. okf(i)) .or. .not. (maxval(abs(ainv(:, :, i) - bb)) <= TOL_${k}$*cmax)) fails = fails + 1
+        end do
+        write(*, '(a, 1x, a, 1x, i0, 1x, a, 1x, i0, 1x, es12.5, 1x, es12.5)') 'TIME', '${v}$', ${N}$, '${k}$', np, t, &
+            t*1.0e9_dp/real(np, dp)
+        write(*, '(a, 1x, a, 1x, i0, 1x, a, 1x, i0)') 'CHECK', '${v}$', ${N}$, '${k}$', fails
+        end if
+        flush(output_unit)
+#:enddef
+
+program bench_linalg_gpu
+    !! Batch of small dense inverses on the device: the library (`M33INV`..`M99INV`, variant A, on a general and an
+    !! SPD set) against the candidates of `math/linalg_candidates.fypp` (B Gauss-Jordan, C Cholesky on the SPD set,
+    !! E Householder QR, G LU without data-dependent branches,
+    !! H fully unrolled LU, D LU without pivoting), N = 3, 4, 6, 9, `sp` and `dp`.
+    !!
+    !! One `target teams distribute parallel do` over the points per variant, N and kind (`kern_<v>_<N>_<k>`), on
+    !! arrays mapped once with `target enter data`; the time excludes the transfers (one warm-up call, then
+    !! `--repeat` calls, minimum). 1000 sample points are checked against the same routine on the host (relative
+    !! difference above `TOL_<k>` or a different status). Lines starting with `TIME` and `CHECK` are for scripts.
+    !!
+    !! Not a test (not in CTest): `-DMUSCLE_BUILD_BENCHMARKS=ON -DMUSCLE_GPU=...`, Release build.
+    use, intrinsic :: iso_fortran_env, only : output_unit, int64
+    use omp_lib, only : omp_get_wtime
+    use muscle_kinds, only : sp, dp
+    use muscle_math_inverses, only : M33INV_sp, M44INV_sp, M66INV_sp, M99INV_sp, &
+        M33INV_dp, M44INV_dp, M66INV_dp, M99INV_dp
+    use bench_linalg_candidates
+    implicit none
+
+    integer, parameter :: MAX_LIST = 16
+        !! Maximum number of entries of the list of points.
+    real(sp), parameter :: TOL_sp = 1.0e-4_sp
+        !! Tolerance of the check (sp).
+    real(dp), parameter :: TOL_dp = 1.0e-12_dp
+        !! Tolerance of the check (dp).
+    integer :: points(MAX_LIST) = 0
+        !! Numbers of points.
+    integer :: n_sizes = 0
+        !! Entries of `points`.
+    integer :: n_repeat = 5
+    character(len=256) :: skip = ''
+        !! Kernels not run, `<v>_<N>_<k>` comma-separated (kernels missing from the image, D-019.8).
+        !! Repetitions of each kernel.
+    integer :: n_sample = 1000
+        !! Points checked against the host.
+    integer(int64) :: rng_state = 12345_int64
+        !! State of the Park-Miller generator.
+    integer :: j
+
+    call parse_arguments()
+    print '(a)', ' MUSCLE benchmark: batch of small dense inverses on the device'
+    write(*, '(a, i0, a, i0)') '  repetitions (minimum time): ', n_repeat, ', checked points: ', n_sample
+    do j = 1, n_sizes
+        #:for k in REAL_KINDS
+        #:for N in NS
+        call run_${N}$_${k}$(points(j))
+        #:endfor
+        #:endfor
+    end do
+
+contains
+
+    function rng_uni() result(u)
+        !! Park-Miller minimal standard generator, uniform in [-1, 1].
+        real(dp) :: u
+        rng_state = mod(16807_int64*rng_state, 2147483647_int64)
+        u = 2.0_dp*real(rng_state, dp)/2147483647.0_dp - 1.0_dp
+    end function rng_uni
+
+    #:for k in REAL_KINDS
+    #:for N in NS
+    subroutine gen_${N}$_${k}$(np, a, asp)
+        !! General set (random entries in [-1, 1] plus ${N}$ on the diagonal) and SPD set (M M^T + 0.1 ${N}$ I) of `np`
+        !! ${N}$x${N}$ `real(${k}$)` matrices.
+        integer, intent(in) :: np
+            !! Number of matrices.
+        real(${k}$), intent(out) :: a(${N}$, ${N}$, np), asp(${N}$, ${N}$, np)
+            !! General and SPD matrices.
+        real(${k}$) :: m(${N}$, ${N}$)
+        integer :: ip, i, l
+
+        do ip = 1, np
+            do l = 1, ${N}$
+                do i = 1, ${N}$
+                    a(i, l, ip) = real(rng_uni(), ${k}$)
+                    m(i, l) = real(rng_uni(), ${k}$)
+                end do
+                a(l, l, ip) = a(l, l, ip) + real(${N}$, ${k}$)
+            end do
+            asp(:, :, ip) = matmul(m, transpose(m))
+            do l = 1, ${N}$
+                asp(l, l, ip) = asp(l, l, ip) + 0.1_${k}$*real(${N}$, ${k}$)
+            end do
+        end do
+    end subroutine gen_${N}$_${k}$
+
+    subroutine run_${N}$_${k}$(np)
+        !! Every variant for `np` matrices ${N}$x${N}$ `real(${k}$)`.
+        integer, intent(in) :: np
+            !! Number of matrices.
+        real(${k}$), allocatable :: a(:, :, :), asp(:, :, :), ainv(:, :, :)
+        logical, allocatable :: okf(:)
+        real(${k}$) :: aa(${N}$, ${N}$), bb(${N}$, ${N}$), cmax
+        real(dp) :: t, t0
+        logical :: ok
+        integer :: ns, fails, i, j, r
+
+        allocate(a(${N}$, ${N}$, np), asp(${N}$, ${N}$, np), ainv(${N}$, ${N}$, np), okf(np))
+        call gen_${N}$_${k}$(np, a, asp)
+        ainv = 0.0_${k}$
+        okf = .false.
+        ns = min(n_sample, np)
+        !$omp target enter data map(to: a, asp) map(alloc: ainv, okf)
+        #:for v in VARIANTS
+        $:run_variant(v, N, k, 'asp' if v in ('A_spd', 'C') else 'a')
+        #:endfor
+        !$omp target exit data map(delete: a, asp, ainv, okf)
+        deallocate(a, asp, ainv, okf)
+    end subroutine run_${N}$_${k}$
+
+    #:for v in VARIANTS
+    subroutine kern_${v}$_${N}$_${k}$(np, a, ainv, okf)
+        !! Variant ${v}$ on `np` matrices ${N}$x${N}$ `real(${k}$)` already present on the device (one thread per matrix).
+        integer, intent(in) :: np
+            !! Number of matrices.
+        real(${k}$), intent(in) :: a(${N}$, ${N}$, np)
+            !! Matrices.
+        real(${k}$), intent(inout) :: ainv(${N}$, ${N}$, np)
+            !! Inverses.
+        logical, intent(inout) :: okf(np)
+            !! Status flags.
+        real(${k}$) :: aa(${N}$, ${N}$), bb(${N}$, ${N}$)
+        logical :: ok
+        integer :: ip
+
+        !$omp target teams distribute parallel do map(present, alloc: a, ainv, okf) private(aa, bb, ok)
+        do ip = 1, np
+            aa = a(:, :, ip)
+            $:callv(v, N, k, 'aa', 'bb', 'ok')
+            ainv(:, :, ip) = bb
+            okf(ip) = ok
+        end do
+    end subroutine kern_${v}$_${N}$_${k}$
+
+    #:endfor
+    #:endfor
+    #:endfor
+    subroutine parse_arguments()
+        !! Command-line options (see `print_usage`).
+        character(len=256) :: arg, val
+        integer :: n_args, i, ios
+
+        n_args = command_argument_count()
+        i = 1
+        do while (i <= n_args)
+            call get_command_argument(i, arg)
+            if (trim(arg) == '-h' .or. trim(arg) == '--help') then
+                call print_usage()
+                stop 0
+            end if
+            if (i == n_args) call usage_error('missing value of ' // trim(arg))
+            call get_command_argument(i + 1, val)
+            select case (trim(arg))
+            case ('--points')
+                call parse_list(val, points, n_sizes)
+            case ('--skip')
+                skip = val
+            case ('--repeat')
+                read(val, *, iostat=ios) n_repeat
+                if (ios /= 0 .or. n_repeat < 1) call usage_error('invalid --repeat: ' // trim(val))
+            case default
+                call usage_error('unknown option: ' // trim(arg))
+            end select
+            i = i + 2
+        end do
+        if (n_sizes == 0) then
+            n_sizes = 2
+            points(1:2) = [100000, 1000000]
+        end if
+    end subroutine parse_arguments
+
+    subroutine parse_list(text, list, n)
+        !! Comma-separated list of positive integers.
+        character(len=*), intent(in) :: text
+            !! List, e.g. `1000,100000`.
+        integer, intent(out) :: list(:)
+            !! Values.
+        integer, intent(out) :: n
+            !! Number of values.
+        integer :: p0, p1, ios
+
+        n = 0
+        p0 = 1
+        do while (p0 <= len_trim(text))
+            p1 = index(text(p0:), ',')
+            p1 = merge(len_trim(text) + 1, p0 + p1 - 1, p1 == 0)
+            if (n == size(list)) call usage_error('too many values: ' // trim(text))
+            n = n + 1
+            read(text(p0:p1 - 1), *, iostat=ios) list(n)
+            if (ios /= 0 .or. list(n) < 1) call usage_error('invalid list: ' // trim(text))
+            p0 = p1 + 1
+        end do
+    end subroutine parse_list
+
+    subroutine print_usage()
+        !! Command-line help.
+        print '(a)', 'Usage: bench_linalg_gpu [options]'
+        print '(a)', '  --points a,b,...    numbers of matrices (default 100000,1000000)'
+        print '(a)', '  --repeat R          repetitions, minimum time reported (default 5)'
+        print '(a)', '  --skip v_N_k,...    kernels not run (e.g. A_9_sp, missing from the image)'
+        print '(a)', '  -h, --help          this help'
+    end subroutine print_usage
+
+    subroutine usage_error(msg)
+        !! Error, help and exit code 2.
+        character(len=*), intent(in) :: msg
+            !! Message.
+        print '(a)', 'ERROR: ' // msg
+        call print_usage()
+        stop 2
+    end subroutine usage_error
+
+end program bench_linalg_gpu

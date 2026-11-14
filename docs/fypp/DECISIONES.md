@@ -1551,3 +1551,47 @@ FORD en el `PATH` y nunca generaba la documentación donde FORD está en el ento
   y kernel de un algoritmo) y `muscle-revisar-documentacion` (documentación al día con el código).
 - `tools/check.sh` busca FORD en el `PATH`, en el entorno conda `ford` y en `build-check/.ford-venv`; modo nuevo
   `--doc` (lint + FORD + `doc_drift.py`, ~2 min) antes de un PR que toque documentación o API pública.
+
+## D-034 — Matrices con entradas no finitas: `OK_FLAG = .false.` en las inversas y `lu_solve` (2026-11-13)
+
+**Contexto:** el banco de precisión del nivel 0 de la campaña de verificación (`benchmarks/math/bench_linalg.fypp`,
+verdad en cuádruple) mostró que las inversas y `lu_solve` son estables hacia atrás (error ≤ 0.45 κ ε, `KAPPA` dentro
+del 6 %, sin fallos en escalas 1e±30), pero que una entrada ±Inf daba `OK_FLAG = .true.`: la LU sólo rechazaba un
+pivote exactamente nulo o NaN (`abs(p) > 0` es verdadero para Inf). La salida era NaN o finita sin sentido. En un
+Newton, un Inf por desborde aguas arriba pasaba como iteración válida.
+**Decisión del usuario:** el contrato de `M33INV`…`M99INV`, `LU<n>SOLVE` y `lu_solve` pasa a ser «`OK_FLAG = .false.`,
+salida 0 y `KAPPA = huge` si `A` es singular (pivote exactamente nulo) **o tiene alguna entrada NaN/Inf**».
+- `lu_factor` (`muscle_math_lu_bodies`) exige un pivote finito además de no nulo: con pivoteo parcial, un Inf en
+  cualquier posición llega a un pivote como Inf o NaN (al eliminar contamina las filas de abajo de su columna: Inf,
+  Inf − Inf o 0·Inf), así que basta comprobar el pivote: O(n), sin `ieee_arithmetic` (GPU). `lu_solve` con n = 1
+  aplica la misma condición. La adjunta de 3x3/4x4 ya rechazaba un determinante o un κ no finitos y cae a la LU.
+- No se comprueba que la **salida** sea finita (entrada finita cuya inversa desborda, p. ej. un pivote subnormal):
+  no apareció en el banco y costaría n² comparaciones; queda como posible ampliación.
+- Tests: ±Inf en cada posición en `test_muscle_math_lu_solve` (n = 1..9) y `test_muscle_math_inverses` (3, 4, 5, 6,
+  9), sp y dp; antes del cambio fallaban 714 de 1140 y 320 de 668 comprobaciones. Más un caso de cobertura (lo pasa
+  también el código anterior): identidad con ±Inf fuera de la diagonal, multiplicadores exactamente 0 (0·Inf = NaN).
+
+## D-035 — LU desenrollada hasta 7x7 en las inversas y `LU<n>SOLVE` (2026-11-13)
+
+**Contexto:** campaña de verificación, nivel 0 (álgebra lineal pequeña). Se compararon 8 algoritmos de inversa
+(`benchmarks/math/bench_linalg.fypp` con `linalg_candidates.fypp`, verdad en cuádruple;
+`benchmarks/gpu/bench_linalg_gpu.fypp`): la LU de hoy, Gauss-Jordan, Cholesky, LU sin pivoteo, QR de Householder, inversa por
+bloques (inestable, descartada), LU sin ramas y LU con pivoteo **desenrollada** (todo subíndice literal; pivoteo
+parcial por compare-and-swap con `merge`, el mismo desempate). En la GPU Intel (sp) la LU de bucles lleva la matriz
+a memoria privada (el pivote es un índice de ejecución) y el 6x6 tarda 144 ns; la desenrollada queda en registros
+(memoria privada 0) y tarda 23.6 ns (3x3: 5.3 → 3.9; 4x4: 15.8 → 11.8), con la misma precisión (≤ 0.24 κε). La
+LU sin pivoteo con bucles también va a memoria privada: lo caro es el índice de ejecución, no el pivoteo.
+**Decisión del usuario:**
+- `muscle_math_lu_bodies` tiene dos cuerpos: desenrollado para N ≤ `LU_UNROLL_MAX` = 7 (respaldos LU de
+  `M33INV`/`M44INV`, `M55INV`, `M66INV`, `LU2SOLVE`…`LU7SOLVE`) y de bucles para N ≥ 8 (`M99INV`, `LU8SOLVE`,
+  `LU9SOLVE`, que ningún kernel de modelo usa). El límite acota el código generado (inversas + `lu_solve`: 3.3 mil →
+  18 mil líneas; desenrollar todo daba 71 mil) e IGC descarta kernels muy grandes en Release (D-019.8).
+- `KAPPA` de `LU<n>SOLVE` (sólo si se pide; ningún kernel lo pide) se calcula con la LU de bucles.
+- Mismo contrato (D-034). Efecto medido en los materiales (CPU, un hilo, ABBA): 0.95–0.98 en los que invierten 6x6,
+  control 0.98–0.99; en GPU aparecen los kernels sp de `tm_jc_cpb06_ludwik`, que faltaban en Release (D-019.8,
+  parcial).
+- Otro orden de redondeo: el material frágil `jcfull + vocemod` de `closest_point_time` pasa de 26 a 28 iteraciones
+  (resultados iguales a 1e-13); se reemplazan sus 8 registros de referencia que salían de la tolerancia (D-023,
+  aprobado), con la nota en la cabecera del archivo.
+- Pendiente: Cholesky (más rápido aún para el Newton simétrico definido positivo) y por qué los lotes de Perzyna
+  siguen sin kernel en Release.

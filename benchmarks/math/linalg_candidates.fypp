@@ -1,0 +1,629 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Candidate algorithms for the small dense inverses, to compare with M33INV..M99INV (LU with partial pivoting):
+#! - gj_inv_<N>_<k>    B: Gauss-Jordan with partial pivoting, in place (column permutation undone at the end);
+#! - chol_inv_<N>_<k>  C: Cholesky (symmetric positive definite A, lower triangle read), inv(L)^T inv(L);
+#!   chol_solve_<N>_<k>(A, b, x, OK): forward and back substitution with the Cholesky factor;
+#! - lunp_inv_<N>_<k>  D: LU without pivoting (Doolittle), reference only;
+#! - qr_inv_<N>_<k>    E: Householder QR, inv(R) Q^T, reference only;
+#! - blk_inv_<N>_<k>   F: 2x2 blocks (N = 4) or 3x3 blocks (N = 6), Schur complement, closed-form block inverses;
+#! - lubf_inv_<N>_<k>  G: LU with partial pivoting without data-dependent branches (merge, no exit).
+#! - luu_inv_<N>_<k>  H: fully unrolled LU (Gauss elimination on [A | I]) with partial pivoting by compare-and-swap of rows
+#!   (merge), every subscript a literal constant (no run-time indices: the matrix can stay in registers), back substitution;
+#! All: explicit-shape A(N,N), AINV(N,N), OK = .false. and AINV = 0 for a zero, NaN or Inf pivot (diagonal, block
+#! determinant). Kernel style (pure, @:DEVICE(), plain loops, compile-time N).
+#:set NS = [3, 4, 6, 9]
+#:set NBLK = [4, 6]
+#! Z = X Y for m x m blocks (needs the integers ii, jj, ll and the real tmp)
+#:def MMUL(Z, X, Y)
+        do jj = 1, m
+            do ii = 1, m
+                tmp = 0.0_${k}$
+                do ll = 1, m
+                    tmp = tmp + ${X}$(ii, ll)*${Y}$(ll, jj)
+                end do
+                ${Z}$(ii, jj) = tmp
+            end do
+        end do
+#:enddef
+
+module bench_linalg_candidates
+    !! Candidate small dense inverses (see `linalg_candidates.fypp`), compiled as a module of their own.
+    use muscle_kinds, only : sp, dp
+    implicit none
+    private
+    #:for k in REAL_KINDS
+    #:for N in NS
+    public :: gj_inv_${N}$_${k}$, chol_inv_${N}$_${k}$, chol_solve_${N}$_${k}$, lunp_inv_${N}$_${k}$
+    public :: qr_inv_${N}$_${k}$, lubf_inv_${N}$_${k}$, luu_inv_${N}$_${k}$
+    #:endfor
+    #:for N in NBLK
+    public :: blk_inv_${N}$_${k}$
+    #:endfor
+    #:endfor
+
+contains
+
+    #:for k in REAL_KINDS
+    pure function pok_${k}$(p) result(r)
+        !! True for a finite, non-zero pivot, `real(${k}$)`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: p
+        logical :: r
+        r = abs(p) > 0.0_${k}$ .and. abs(p) <= huge(1.0_${k}$)
+    end function pok_${k}$
+
+    pure subroutine inv2_${k}$(P, Pi, ok)
+        !! Adjugate inverse of a 2x2 matrix, `real(${k}$)`; ok = .false. and Pi = 0 for a zero or non-finite determinant.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: P(2, 2)
+        real(${k}$), intent(out) :: Pi(2, 2)
+        logical, intent(out) :: ok
+        real(${k}$) :: det, r
+        det = P(1, 1)*P(2, 2) - P(1, 2)*P(2, 1)
+        ok = pok_${k}$(det)
+        if (.not. ok) then
+            Pi = 0.0_${k}$
+            return
+        end if
+        r = 1.0_${k}$/det
+        Pi(1, 1) = P(2, 2)*r
+        Pi(1, 2) = -P(1, 2)*r
+        Pi(2, 1) = -P(2, 1)*r
+        Pi(2, 2) = P(1, 1)*r
+    end subroutine inv2_${k}$
+
+    pure subroutine inv3_${k}$(P, Pi, ok)
+        !! Adjugate/cofactor inverse of a 3x3 matrix, `real(${k}$)`; ok = .false. and Pi = 0 for a zero or non-finite
+        !! determinant.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: P(3, 3)
+        real(${k}$), intent(out) :: Pi(3, 3)
+        logical, intent(out) :: ok
+        real(${k}$) :: c11, c12, c13, c21, c22, c23, c31, c32, c33, det, r
+        c11 = P(2, 2)*P(3, 3) - P(2, 3)*P(3, 2)
+        c12 = P(2, 3)*P(3, 1) - P(2, 1)*P(3, 3)
+        c13 = P(2, 1)*P(3, 2) - P(2, 2)*P(3, 1)
+        c21 = P(1, 3)*P(3, 2) - P(1, 2)*P(3, 3)
+        c22 = P(1, 1)*P(3, 3) - P(1, 3)*P(3, 1)
+        c23 = P(1, 2)*P(3, 1) - P(1, 1)*P(3, 2)
+        c31 = P(1, 2)*P(2, 3) - P(1, 3)*P(2, 2)
+        c32 = P(1, 3)*P(2, 1) - P(1, 1)*P(2, 3)
+        c33 = P(1, 1)*P(2, 2) - P(1, 2)*P(2, 1)
+        det = P(1, 1)*c11 + P(1, 2)*c12 + P(1, 3)*c13
+        ok = pok_${k}$(det)
+        if (.not. ok) then
+            Pi = 0.0_${k}$
+            return
+        end if
+        r = 1.0_${k}$/det
+        Pi(1, 1) = c11*r
+        Pi(1, 2) = c21*r
+        Pi(1, 3) = c31*r
+        Pi(2, 1) = c12*r
+        Pi(2, 2) = c22*r
+        Pi(2, 3) = c32*r
+        Pi(3, 1) = c13*r
+        Pi(3, 2) = c23*r
+        Pi(3, 3) = c33*r
+    end subroutine inv3_${k}$
+
+    #:for N in NS
+    pure subroutine gj_inv_${N}$_${k}$(A, AINV, OK)
+        !! B: in-place Gauss-Jordan with partial pivoting, ${N}$x${N}$ `real(${k}$)`. OK = .false. and AINV = 0 for a zero,
+        !! NaN or Inf pivot.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: n = ${N}$
+        real(${k}$), intent(in) :: A(n, n)
+        real(${k}$), intent(out) :: AINV(n, n)
+        logical, intent(out) :: OK
+        real(${k}$) :: W(n, n), r, f, tmp
+        integer :: ipiv(n), i, j, kk, p
+
+        W = A
+        OK = .true.
+        do kk = 1, n
+            p = kk
+            do i = kk + 1, n
+                if (abs(W(i, kk)) > abs(W(p, kk))) p = i
+            end do
+            ipiv(kk) = p
+            if (.not. pok_${k}$(W(p, kk))) then
+                OK = .false.
+                AINV = 0.0_${k}$
+                return
+            end if
+            if (p /= kk) then
+                do j = 1, n
+                    tmp = W(kk, j); W(kk, j) = W(p, j); W(p, j) = tmp
+                end do
+            end if
+            r = 1.0_${k}$/W(kk, kk)
+            W(kk, kk) = 1.0_${k}$
+            do j = 1, n
+                W(kk, j) = W(kk, j)*r
+            end do
+            do i = 1, n
+                if (i == kk) cycle
+                f = W(i, kk)
+                W(i, kk) = 0.0_${k}$
+                do j = 1, n
+                    W(i, j) = W(i, j) - f*W(kk, j)
+                end do
+            end do
+        end do
+        do kk = n, 1, -1
+            p = ipiv(kk)
+            if (p /= kk) then
+                do i = 1, n
+                    tmp = W(i, kk); W(i, kk) = W(i, p); W(i, p) = tmp
+                end do
+            end if
+        end do
+        AINV = W
+    end subroutine gj_inv_${N}$_${k}$
+
+    pure subroutine chol_inv_${N}$_${k}$(A, AINV, OK)
+        !! C: Cholesky A = L L^T (lower triangle of A), AINV = inv(L)^T inv(L), ${N}$x${N}$ `real(${k}$)`. The reciprocals
+        !! of the diagonal of L are computed once, inv(L) is formed in place and only i <= j of AINV is computed (the
+        !! rest mirrored). OK = .false. and AINV = 0 when a diagonal before the square root is not > 0 or not finite.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: n = ${N}$
+        real(${k}$), intent(in) :: A(n, n)
+        real(${k}$), intent(out) :: AINV(n, n)
+        logical, intent(out) :: OK
+        real(${k}$) :: W(n, n), d(n), s
+        integer :: i, j, m
+
+        W = A
+        do j = 1, n
+            s = W(j, j)
+            do m = 1, j - 1
+                s = s - W(j, m)*W(j, m)
+            end do
+            if (.not. (s > 0.0_${k}$ .and. s <= huge(1.0_${k}$))) then
+                OK = .false.
+                AINV = 0.0_${k}$
+                return
+            end if
+            s = sqrt(s)
+            d(j) = 1.0_${k}$/s
+            W(j, j) = s
+            do i = j + 1, n
+                s = W(i, j)
+                do m = 1, j - 1
+                    s = s - W(i, m)*W(j, m)
+                end do
+                W(i, j) = s*d(j)
+            end do
+        end do
+        OK = .true.
+        ! inv(L) in place (lower, non-unit); column j only reads the columns > j of L and its own entries
+        do j = 1, n
+            do i = j + 1, n
+                s = W(i, j)*d(j)
+                do m = j + 1, i - 1
+                    s = s + W(i, m)*W(m, j)
+                end do
+                W(i, j) = -s*d(i)
+            end do
+            W(j, j) = d(j)
+        end do
+        ! AINV = inv(L)^T inv(L), i <= j
+        do j = 1, n
+            do i = 1, j
+                s = 0.0_${k}$
+                do m = j, n
+                    s = s + W(m, i)*W(m, j)
+                end do
+                AINV(i, j) = s
+                AINV(j, i) = s
+            end do
+        end do
+    end subroutine chol_inv_${N}$_${k}$
+
+    pure subroutine chol_solve_${N}$_${k}$(A, b, x, OK)
+        !! C: solves A x = b with the Cholesky factor of A (lower triangle), ${N}$x${N}$ `real(${k}$)`, with the
+        !! reciprocals of the diagonal of L. OK = .false. and x = 0 when a diagonal before the square root is not > 0 or
+        !! not finite.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: n = ${N}$
+        real(${k}$), intent(in) :: A(n, n), b(n)
+        real(${k}$), intent(out) :: x(n)
+        logical, intent(out) :: OK
+        real(${k}$) :: W(n, n), d(n), s
+        integer :: i, j, m
+
+        W = A
+        do j = 1, n
+            s = W(j, j)
+            do m = 1, j - 1
+                s = s - W(j, m)*W(j, m)
+            end do
+            if (.not. (s > 0.0_${k}$ .and. s <= huge(1.0_${k}$))) then
+                OK = .false.
+                x = 0.0_${k}$
+                return
+            end if
+            s = sqrt(s)
+            d(j) = 1.0_${k}$/s
+            W(j, j) = s
+            do i = j + 1, n
+                s = W(i, j)
+                do m = 1, j - 1
+                    s = s - W(i, m)*W(j, m)
+                end do
+                W(i, j) = s*d(j)
+            end do
+        end do
+        OK = .true.
+        do i = 1, n
+            s = b(i)
+            do m = 1, i - 1
+                s = s - W(i, m)*x(m)
+            end do
+            x(i) = s*d(i)
+        end do
+        do i = n, 1, -1
+            s = x(i)
+            do m = i + 1, n
+                s = s - W(m, i)*x(m)
+            end do
+            x(i) = s*d(i)
+        end do
+    end subroutine chol_solve_${N}$_${k}$
+
+    pure subroutine lunp_inv_${N}$_${k}$(A, AINV, OK)
+        !! D: LU without pivoting (Doolittle), then inv(U) in place and inv(A) L = inv(U) as in the library LU (without
+        !! the interchanges), ${N}$x${N}$ `real(${k}$)`. OK = .false. and AINV = 0 for a zero, NaN or Inf pivot.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: n = ${N}$
+        real(${k}$), intent(in) :: A(n, n)
+        real(${k}$), intent(out) :: AINV(n, n)
+        logical, intent(out) :: OK
+        real(${k}$) :: W(n, n), d(n), wv(n), r, s
+        integer :: i, j, kk, m
+
+        W = A
+        do kk = 1, n
+            if (.not. pok_${k}$(W(kk, kk))) then
+                OK = .false.
+                AINV = 0.0_${k}$
+                return
+            end if
+            r = 1.0_${k}$/W(kk, kk)
+            d(kk) = r
+            do i = kk + 1, n
+                W(i, kk) = W(i, kk)*r
+            end do
+            do j = kk + 1, n
+                do i = kk + 1, n
+                    W(i, j) = W(i, j) - W(i, kk)*W(kk, j)
+                end do
+            end do
+        end do
+        OK = .true.
+        ! inv(U) in place (upper, non-unit)
+        do j = 1, n
+            W(j, j) = d(j)
+            r = -d(j)
+            do i = 1, j - 1
+                s = 0.0_${k}$
+                do m = i, j - 1
+                    s = s + W(i, m)*W(m, j)
+                end do
+                W(i, j) = s*r
+            end do
+        end do
+        ! inv(A) L = inv(U)
+        do j = n - 1, 1, -1
+            do i = j + 1, n
+                wv(i) = W(i, j)
+                W(i, j) = 0.0_${k}$
+            end do
+            do m = j + 1, n
+                do i = 1, n
+                    W(i, j) = W(i, j) - W(i, m)*wv(m)
+                end do
+            end do
+        end do
+        AINV = W
+    end subroutine lunp_inv_${N}$_${k}$
+
+    pure subroutine qr_inv_${N}$_${k}$(A, AINV, OK)
+        !! E: Householder QR with scaled reflectors (the column part is divided by its largest absolute value: no
+        !! under/overflow of the squares), AINV = inv(R) H_{n-1} ... H_1 (inv(R) in place, the reflectors applied to
+        !! the rows, no explicit Q), ${N}$x${N}$ `real(${k}$)`. OK = .false. and AINV = 0 for a zero or non-finite
+        !! column norm or diagonal of R.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: n = ${N}$
+        real(${k}$), intent(in) :: A(n, n)
+        real(${k}$), intent(out) :: AINV(n, n)
+        logical, intent(out) :: OK
+        real(${k}$) :: R(n, n), V(n, n), beta(n), d(n), sc, rs, nrm, alpha, vv, s
+        integer :: i, j, kk, m
+
+        R = A
+        V = 0.0_${k}$
+        do kk = 1, n - 1
+            sc = 0.0_${k}$
+            do i = kk, n
+                sc = max(sc, abs(R(i, kk)))
+            end do
+            if (.not. pok_${k}$(sc)) then
+                OK = .false.
+                AINV = 0.0_${k}$
+                return
+            end if
+            rs = 1.0_${k}$/sc
+            nrm = 0.0_${k}$
+            do i = kk, n
+                V(i, kk) = R(i, kk)*rs
+                nrm = nrm + V(i, kk)*V(i, kk)
+            end do
+            nrm = sqrt(nrm)
+            if (.not. pok_${k}$(nrm)) then
+                OK = .false.
+                AINV = 0.0_${k}$
+                return
+            end if
+            alpha = -sign(nrm, V(kk, kk))
+            V(kk, kk) = V(kk, kk) - alpha
+            vv = 0.0_${k}$
+            do i = kk, n
+                vv = vv + V(i, kk)*V(i, kk)
+            end do
+            beta(kk) = 2.0_${k}$/vv
+            do j = kk + 1, n
+                s = 0.0_${k}$
+                do i = kk, n
+                    s = s + V(i, kk)*R(i, j)
+                end do
+                s = s*beta(kk)
+                do i = kk, n
+                    R(i, j) = R(i, j) - s*V(i, kk)
+                end do
+            end do
+            R(kk, kk) = alpha*sc
+            do i = kk + 1, n
+                R(i, kk) = 0.0_${k}$
+            end do
+        end do
+        do kk = 1, n
+            if (.not. pok_${k}$(R(kk, kk))) then
+                OK = .false.
+                AINV = 0.0_${k}$
+                return
+            end if
+            d(kk) = 1.0_${k}$/R(kk, kk)
+        end do
+        OK = .true.
+        ! inv(R) in place (upper, non-unit), zero below the diagonal
+        AINV = R
+        do j = 1, n
+            AINV(j, j) = d(j)
+            s = -d(j)
+            do i = 1, j - 1
+                vv = 0.0_${k}$
+                do m = i, j - 1
+                    vv = vv + AINV(i, m)*AINV(m, j)
+                end do
+                AINV(i, j) = vv*s
+            end do
+            do i = j + 1, n
+                AINV(i, j) = 0.0_${k}$
+            end do
+        end do
+        ! AINV = inv(R) H_{n-1} ... H_1: reflectors applied to the rows, last first
+        do kk = n - 1, 1, -1
+            do i = 1, n
+                s = 0.0_${k}$
+                do m = kk, n
+                    s = s + AINV(i, m)*V(m, kk)
+                end do
+                s = s*beta(kk)
+                do m = kk, n
+                    AINV(i, m) = AINV(i, m) - s*V(m, kk)
+                end do
+            end do
+        end do
+    end subroutine qr_inv_${N}$_${k}$
+
+    pure subroutine lubf_inv_${N}$_${k}$(A, AINV, OK)
+        !! G: LU with partial pivoting without data-dependent branches (merge for the pivot row and the swaps, no early
+        !! exit: the flag accumulates and a failed pivot continues with 1), then the inverse as in the library LU,
+        !! ${N}$x${N}$ `real(${k}$)`. OK = .false. and AINV = 0 for a zero, NaN or Inf pivot.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: n = ${N}$
+        real(${k}$), intent(in) :: A(n, n)
+        real(${k}$), intent(out) :: AINV(n, n)
+        logical, intent(out) :: OK
+        real(${k}$) :: W(n, n), wv(n), r, d, a1, b1, s
+        integer :: ipiv(n), i, j, kk, m, p
+        logical :: okk, sw
+
+        W = A
+        OK = .true.
+        do kk = 1, n
+            p = kk
+            do i = kk + 1, n
+                p = merge(i, p, abs(W(i, kk)) > abs(W(p, kk)))
+            end do
+            ipiv(kk) = p
+            okk = pok_${k}$(W(p, kk))
+            OK = OK .and. okk
+            sw = p /= kk
+            do j = 1, n
+                a1 = W(kk, j)
+                b1 = W(p, j)
+                W(kk, j) = merge(b1, a1, sw)
+                W(p, j) = merge(a1, b1, sw)
+            end do
+            d = merge(W(kk, kk), 1.0_${k}$, okk)
+            r = 1.0_${k}$/d
+            do i = kk + 1, n
+                W(i, kk) = W(i, kk)*r
+            end do
+            do j = kk + 1, n
+                do i = kk + 1, n
+                    W(i, j) = W(i, j) - W(i, kk)*W(kk, j)
+                end do
+            end do
+        end do
+        ! inv(U) in place (upper, non-unit)
+        do j = 1, n
+            W(j, j) = 1.0_${k}$/merge(W(j, j), 1.0_${k}$, pok_${k}$(W(j, j)))
+            r = -W(j, j)
+            do i = 1, j - 1
+                s = 0.0_${k}$
+                do m = i, j - 1
+                    s = s + W(i, m)*W(m, j)
+                end do
+                W(i, j) = s*r
+            end do
+        end do
+        ! inv(A) L = inv(U)
+        do j = n - 1, 1, -1
+            do i = j + 1, n
+                wv(i) = W(i, j)
+                W(i, j) = 0.0_${k}$
+            end do
+            do i = 1, n
+                s = 0.0_${k}$
+                do m = j + 1, n
+                    s = s + W(i, m)*wv(m)
+                end do
+                W(i, j) = W(i, j) - s
+            end do
+        end do
+        ! undo the row interchanges as column interchanges, in reverse order
+        do j = n - 1, 1, -1
+            p = ipiv(j)
+            sw = p /= j
+            do i = 1, n
+                a1 = W(i, j)
+                b1 = W(i, p)
+                W(i, j) = merge(b1, a1, sw)
+                W(i, p) = merge(a1, b1, sw)
+            end do
+        end do
+        AINV = merge(W, 0.0_${k}$, OK)
+    end subroutine lubf_inv_${N}$_${k}$
+
+    pure subroutine luu_inv_${N}$_${k}$(A, AINV, OK)
+        !! H: fully unrolled LU with partial pivoting (sequential compare-and-swap of rows with merge), on W = [A | I],
+        !! literal subscripts only, ${N}$x${N}$ `real(${k}$)`. OK = .false. and AINV = 0 for a zero, NaN or Inf pivot.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: A(${N}$, ${N}$)
+        real(${k}$), intent(out) :: AINV(${N}$, ${N}$)
+        logical, intent(out) :: OK
+        real(${k}$) :: W(${N}$, ${2*N}$), rd(${N}$), t, f, piv
+        logical :: sw
+
+        #:for i in range(1, N + 1)
+        #:for j in range(1, N + 1)
+        W(${i}$, ${j}$) = A(${i}$, ${j}$)
+        W(${i}$, ${N + j}$) = ${'1.0' if i == j else '0.0'}$_${k}$
+        #:endfor
+        #:endfor
+        OK = .true.
+        #:for kk in range(1, N)
+        #:for i in range(kk + 1, N + 1)
+        sw = abs(W(${i}$, ${kk}$)) > abs(W(${kk}$, ${kk}$))
+        #:for j in range(kk, 2*N + 1)
+        t = W(${kk}$, ${j}$)
+        W(${kk}$, ${j}$) = merge(W(${i}$, ${j}$), t, sw)
+        W(${i}$, ${j}$) = merge(t, W(${i}$, ${j}$), sw)
+        #:endfor
+        #:endfor
+        piv = W(${kk}$, ${kk}$)
+        OK = OK .and. (abs(piv) > 0.0_${k}$ .and. abs(piv) <= huge(1.0_${k}$))
+        rd(${kk}$) = 1.0_${k}$/merge(piv, 1.0_${k}$, OK)
+        #:for i in range(kk + 1, N + 1)
+        f = W(${i}$, ${kk}$)*rd(${kk}$)
+        #:for j in range(kk + 1, 2*N + 1)
+        W(${i}$, ${j}$) = W(${i}$, ${j}$) - f*W(${kk}$, ${j}$)
+        #:endfor
+        #:endfor
+        #:endfor
+        piv = W(${N}$, ${N}$)
+        OK = OK .and. (abs(piv) > 0.0_${k}$ .and. abs(piv) <= huge(1.0_${k}$))
+        rd(${N}$) = 1.0_${k}$/merge(piv, 1.0_${k}$, OK)
+        ! back substitution U X = C on the N right-hand columns, in place
+        #:for i in range(N, 0, -1)
+        #:for j in range(N + 1, 2*N + 1)
+        #:for m in range(i + 1, N + 1)
+        W(${i}$, ${j}$) = W(${i}$, ${j}$) - W(${i}$, ${m}$)*W(${m}$, ${j}$)
+        #:endfor
+        W(${i}$, ${j}$) = W(${i}$, ${j}$)*rd(${i}$)
+        #:endfor
+        #:endfor
+        #:for i in range(1, N + 1)
+        #:for j in range(1, N + 1)
+        AINV(${i}$, ${j}$) = W(${i}$, ${N + j}$)
+        #:endfor
+        #:endfor
+        if (.not. OK) AINV = 0.0_${k}$
+    end subroutine luu_inv_${N}$_${k}$
+
+    #:endfor
+    #:for N in NBLK
+    pure subroutine blk_inv_${N}$_${k}$(A, AINV, OK)
+        !! F: block inverse with the Schur complement of the (1,1) block, ${N // 2}$x${N // 2}$ blocks with closed-form
+        !! inverses, ${N}$x${N}$ `real(${k}$)`. No pivoting. OK = .false. and AINV = 0 for a zero or non-finite block
+        !! determinant.
+        implicit none
+        @:DEVICE()
+        integer, parameter :: n = ${N}$, m = ${N // 2}$
+        real(${k}$), intent(in) :: A(n, n)
+        real(${k}$), intent(out) :: AINV(n, n)
+        logical, intent(out) :: OK
+        real(${k}$) :: P(m, m), Q(m, m), R(m, m), S(m, m), Pi(m, m), Sc(m, m), Sci(m, m)
+        real(${k}$) :: T1(m, m), T2(m, m), T3(m, m), T4(m, m), T5(m, m), tmp
+        integer :: ii, jj, ll
+        logical :: ok1, ok2
+
+        P = A(1:m, 1:m)
+        Q = A(1:m, m + 1:n)
+        R = A(m + 1:n, 1:m)
+        S = A(m + 1:n, m + 1:n)
+        call inv${N // 2}$_${k}$(P, Pi, ok1)
+        if (.not. ok1) then
+            OK = .false.
+            AINV = 0.0_${k}$
+            return
+        end if
+        @:MMUL(T1, Pi, Q)
+        @:MMUL(T2, R, Pi)
+        @:MMUL(T5, R, T1)
+        Sc = S - T5
+        call inv${N // 2}$_${k}$(Sc, Sci, ok2)
+        if (.not. ok2) then
+            OK = .false.
+            AINV = 0.0_${k}$
+            return
+        end if
+        OK = .true.
+        @:MMUL(T3, Sci, T2)
+        @:MMUL(T4, T1, Sci)
+        @:MMUL(T5, T1, T3)
+        AINV(1:m, 1:m) = Pi + T5
+        AINV(1:m, m + 1:n) = -T4
+        AINV(m + 1:n, 1:m) = -T3
+        AINV(m + 1:n, m + 1:n) = Sci
+    end subroutine blk_inv_${N}$_${k}$
+
+    #:endfor
+    #:endfor
+end module bench_linalg_candidates

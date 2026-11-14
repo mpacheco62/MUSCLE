@@ -22,7 +22,7 @@ module muscle_math_lu_solve
     !!   code and tests: on a device every thread would reserve the registers of the largest
     !!   (9x9) branch (D-006), so kernels should not use it.
     !!
-    !! Contract: a singular `A` (exactly zero pivot, or NaN) gives `OK_FLAG = .false.`, `x = 0`
+    !! Contract: a singular `A` (exactly zero pivot) or one with a NaN/Inf entry (D-034) gives `OK_FLAG = .false.`, `x = 0`
     !! (no NaN/Inf) and `KAPPA = huge`. A nearly singular `A` is solved (`OK_FLAG = .true.`); ask
     !! for `KAPPA` (\( \kappa_\infty \), costs as much as the inversion) to judge the accuracy.
     !! `lu_solve` reports a size outside 1..`LU_SOLVE_MAX_N` or inconsistent shapes in the same
@@ -71,11 +71,11 @@ contains
         real(${k}$), intent(out) :: x(N)
             !! Solution; zero when `A` is singular.
         logical, intent(out) :: OK_FLAG
-            !! `.true.` if solved, `.false.` if `A` is singular (exactly zero pivot).
+            !! `.true.` if solved, `.false.` if `A` is singular (exactly zero pivot) or has a NaN/Inf entry.
         real(${k}$), intent(out), optional :: KAPPA
             !! Condition number \( \kappa_\infty(A) = \|A\|_\infty \|A^{-1}\|_\infty \);
             !! `huge(1.0_${k}$)` when `A` is singular.
-        $:lu_solve_body(k)
+        $:lu_solve_body(k, n)
     end subroutine LU${n}$SOLVE_${k}$
 
     #:endfor
@@ -115,7 +115,7 @@ contains
             end block
         #:endfor
         case (1)
-            if (abs(A(1,1)) > 0.0_${k}$) then      ! also .false. for NaN
+            if (abs(A(1,1)) > 0.0_${k}$ .and. abs(A(1,1)) <= huge(1.0_${k}$)) then      ! .false. for 0, NaN, Inf
                 x(1) = b(1) / A(1,1)
                 OK_FLAG = .true.
                 if (present(KAPPA)) KAPPA = 1.0_${k}$

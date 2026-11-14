@@ -47,6 +47,35 @@ if(NOT MUSCLE_MATERIALS)
     _muscle_fypp_command("${_kin_abs}" "${_kin_out}" "FYPP ${_kin_rel}")
     add_muscle_benchmark(kin_kernel "${_kin_out}")
 
+    # Accuracy against a quad-precision truth and cost of the small dense inverses and lu_solve
+    # (with the candidate algorithms of math/linalg_candidates.fypp, a module of its own)
+    set(_bench_linalg)
+    foreach(_src linalg_candidates bench_linalg)
+        _muscle_fypp_source("${CMAKE_CURRENT_SOURCE_DIR}/math/${_src}.fypp" _src_abs _src_rel)
+        set(_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/math/${_src}.f90")
+        _muscle_fypp_command("${_src_abs}" "${_out}" "FYPP ${_src_rel}"
+                             DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/math/linalg_candidates.fypp")
+        list(APPEND _bench_linalg "${_out}")
+    endforeach()
+    add_muscle_benchmark(linalg ${_bench_linalg})
+    set_source_files_properties(${_bench_linalg} PROPERTIES Fortran_PREPROCESS ON)
+
+    # Batch of small dense inverses on the device (library vs the candidates of math/linalg_candidates.fypp), only
+    # with an offload target (MUSCLE_GPU)
+    if(MUSCLE_GPU_ENABLED)
+        set(_bench_linalg_gpu)
+        foreach(_src math/linalg_candidates gpu/bench_linalg_gpu)
+            _muscle_fypp_source("${CMAKE_CURRENT_SOURCE_DIR}/${_src}.fypp" _src_abs _src_rel)
+            get_filename_component(_name "${_src}" NAME)
+            set(_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/gpu_linalg/${_name}.f90")
+            _muscle_fypp_command("${_src_abs}" "${_out}" "FYPP ${_src_rel}"
+                                 DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/math/linalg_candidates.fypp")
+            list(APPEND _bench_linalg_gpu "${_out}")
+        endforeach()
+        set_source_files_properties(${_bench_linalg_gpu} PROPERTIES Fortran_PREPROCESS ON)
+        add_muscle_benchmark(linalg_gpu ${_bench_linalg_gpu})
+    endif()
+
     # Batch API GPU vs CPU (Phase 8, D-019): one executable bench_batch_gpu_<material>_<kind> per case of
     # gpu/bench_cases.py, so that each device image stays small. The template takes the sample inputs of
     # tests/materials/props_samples.py and the device tolerance of muscle_test_utils. They are programs
