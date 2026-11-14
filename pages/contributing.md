@@ -264,9 +264,9 @@ Typical costs on a machine with 8 or more cores (gfortran, Ninja, `sp;dp`; order
 | After touching `tools/fypp/muscle_meta.py`, `include/muscle_common.fypp` or `muscle_kinds` | the same | a full rebuild, ~1 min (a new model always touches `muscle_meta.py`) |
 | Every test | `ctest --test-dir build -j8` | ~10 s |
 | A new or changed file | `tools/mutation_check.py <area> --samples all --only <ids>` | ~2 s per mutation, about a minute for a file (a whole area: 30–45 min) |
-| Before every commit | `tools/check.sh --quick` | ~1–2 min |
+| Before every commit | `tools/check.sh --quick` (`--quick --ifx` also builds and tests with ifx on the CPU, in `build-check-ifx`) | ~1–2 min (without `--ifx`) |
 | Before a pull request that touches documentation or a public API | `tools/check.sh --doc`: lint, the FORD pages (FORD from the `PATH`, the conda environment `ford` of `environment.yml` or `build-check/.ford-venv`) and the drift between the documentation and the code | ~2 min |
-| To close a piece of work | `tools/check.sh` | ~25 min, mostly the three GPU builds and the target tests on the Intel GPU; it builds the FORD pages too |
+| To close a piece of work | `tools/check.sh` | ~25 min, mostly the three GPU builds and the target tests on the Intel GPU; it builds the FORD pages too and, when ifx is found, builds and tests with ifx on the CPU (`build-check-ifx`) |
 
 The full check needs the offload toolchains (gfortran with NVPTX and AMDGCN offload, ifx) and an Intel GPU; without
 them, `--quick` is the gate.
@@ -278,8 +278,10 @@ kernels, SPDX) and builds and tests `sp;dp` in Debug: run it while developing. T
 warnings** (library and tests, `-Wall -Wextra`; unused dummy arguments are not reported, since a family keeps a
 uniform interface, but unused local variables are): `check.sh` fails on any warning and prints its template line
 (with `--quick`, of the files it recompiled; the full check rebuilds from scratch). `tools/check.sh` without
-`--quick` also builds the formatted-output (UDTIO) path, the FORD documentation and the three GPU targets,
-runs the target tests on an Intel GPU and audits the device images: run it before closing a piece of work. See also the [migration guide](migration.html) for the mapping from the
+`--quick` also builds the formatted-output (UDTIO) path, the FORD documentation, the same build with ifx on the CPU (when ifx
+is found; the ifx warnings are shown, not counted) and the three GPU targets, runs the target tests on an Intel GPU and
+audits the device images: run it before closing a piece of work. The flags that depend on the compiler (gfortran, ifx on
+Windows, ifx on Linux) are all in `cmake/MuscleCompiler.cmake` (D-040). See also the [migration guide](migration.html) for the mapping from the
 former object-oriented API.
 
 ## Editor support
