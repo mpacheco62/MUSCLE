@@ -1649,6 +1649,12 @@ aprobación del usuario al revisar el commit):
 **Resultado final (Windows, Debug, con D-038):** gfortran 133/133; ifx 120/120 registrados (los 8 `mat_batch_dev_*` de
 arriba no se registran con ifx sin `MUSCLE_GPU`). Antes de D-038 fallaban con ifx los 6 `tensors-types-*_kinds` e
 `iden_kinds`, por la salida formateada UDTIO (D-038) y, en los cinco `*_kinds`, por el signo del cero (arriba).
+**Tests de compilación fallida con ifx (2026-11-14, después):** los 5 `*_private_params` (`elasticity-linear_private_params`
+y `plasticity-yield_criteria-{cpb06,druckerprager,cpb06ex2,yld2004}_private_params`) sólo se registraban con gfortran,
+por su texto de error. Ahora también con ifx en Windows, que los reconoce por el número de error de ifx 2026.2
+(`#8289` en cuatro, `#6053` en `cpb06`; no por «private», que está en el nombre del archivo) y los hace fallar con `#7002`
+(módulo no encontrado) o `catastrophic error`. Medido: pasan con la violación real; fallan con un fuente sin violación y
+con un módulo inexistente. Con ifx: 125/125 en CPU (los 8 `mat_batch_dev_*` siguen sin registrarse); gfortran 133/133.
 
 ## D-038 — `write(formatted)` ligado a cada tipo; `muscle_tensor_io` sin dependencia de los tipos (2026-11-14)
 

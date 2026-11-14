@@ -10,16 +10,28 @@ add_muscle_fypp_test(yield_kinds test_muscle_yield_laws_kinds.fypp)
 # Drucker-Prager: f_factor, I1_factor; CPB06ex2: L, Lp, B; Yld2004: Lp, Lpp) have them private, so
 # they cannot be set outside the model module (only by yield_<m>_init). Each test passes when the
 # compiler rejects <m>_private_params.f90 with its "PRIVATE component" error; any other error (a
-# missing module, a fatal error) fails it. Only with gfortran (the message of other compilers is
-# not known here; the file name itself contains "private", so a loose pattern would always pass).
+# missing module, a fatal error) fails it. Only with gfortran and with ifx on Windows (the message of
+# other compilers is not known here; the file name itself contains "private", so a loose pattern would
+# always pass: ifx is matched by its error numbers, #8289 and #6053, measured with ifx 2026.2 on Windows).
 if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+    set(_muscle_syntax_only -fsyntax-only)
+    set(_muscle_include_flag -I)
+    set(_muscle_pass_regex "PRIVATE component")
+    set(_muscle_fail_regex "Cannot open module|Fatal Error")
+elseif(WIN32 AND CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
+    set(_muscle_syntax_only /nologo /syntax-only)
+    set(_muscle_include_flag /I)
+    set(_muscle_pass_regex "error #(8289|6053)")
+    set(_muscle_fail_regex "error #7002|catastrophic error")
+endif()
+if(_muscle_syntax_only)
     foreach(_muscle_model cpb06 druckerprager cpb06ex2 yld2004)
         add_test(NAME plasticity-yield_criteria-${_muscle_model}_private_params
-                 COMMAND ${CMAKE_Fortran_COMPILER} -fsyntax-only
-                         -I$<TARGET_PROPERTY:muscle,Fortran_MODULE_DIRECTORY>
+                 COMMAND ${CMAKE_Fortran_COMPILER} ${_muscle_syntax_only}
+                         ${_muscle_include_flag}$<TARGET_PROPERTY:muscle,Fortran_MODULE_DIRECTORY>
                          ${CMAKE_CURRENT_SOURCE_DIR}/${_muscle_model}_private_params.f90)
         set_tests_properties(plasticity-yield_criteria-${_muscle_model}_private_params PROPERTIES
-                             PASS_REGULAR_EXPRESSION "PRIVATE component"
-                             FAIL_REGULAR_EXPRESSION "Cannot open module|Fatal Error")
+                             PASS_REGULAR_EXPRESSION "${_muscle_pass_regex}"
+                             FAIL_REGULAR_EXPRESSION "${_muscle_fail_regex}")
     endforeach()
 endif()
