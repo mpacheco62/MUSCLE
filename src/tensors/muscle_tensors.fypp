@@ -161,14 +161,14 @@ module muscle_tensors
     !! ```
 
     use, intrinsic :: iso_fortran_env
-    ! Types of every kind and the historical names, which are the double precision ones
+    ! Types of every kind. The historical names (the double precision ones) come from muscle_tensor_aliases:
+    ! this module must not import a type under two names (ifx 2026.2 internal error in `p%init`, D-036)
     #:for F in FAMILIES
-    use muscle_tensor_${F.lower()}$, only: ${', '.join(tname(d + F, k) for d in DIMS for k in REAL_KINDS)}$, &
-        & ${', '.join('{0} => {1}'.format(tname(d + F, 'dp')[:-3], tname(d + F, 'dp')) for d in DIMS)}$
+    use muscle_tensor_${F.lower()}$, only: ${', '.join(tname(d + F, k) for d in DIMS for k in REAL_KINDS)}$
     #:endfor
     use muscle_tensor_iden, only: ${', '.join(iname(X) for X in IDENTITIES)}$, &
-        & ${', '.join(iname(X + 'S', k) for X in IDENTITIES for k in REAL_KINDS)}$, &
-        & ${', '.join('{0} => {1}'.format(iname(X + 'S', 'dp')[:-3], iname(X + 'S', 'dp')) for X in IDENTITIES)}$
+        & ${', '.join(iname(X + 'S', k) for X in IDENTITIES for k in REAL_KINDS)}$
+    use muscle_tensor_aliases
     ! Operations defined with each family (the generics merge across modules)
     use muscle_tensor_2osym, only: operator(.approx.), operator(+), operator(*), &
         & operator(/), operator(.dev.), operator(.ddot.), operator(.inv.), assignment(=), inverse

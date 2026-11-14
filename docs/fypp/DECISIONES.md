@@ -1595,3 +1595,26 @@ LU sin pivoteo con bucles también va a memoria privada: lo caro es el índice d
   aprobado), con la nota en la cabecera del archivo.
 - Pendiente: Cholesky (más rápido aún para el Newton simétrico definido positivo) y por qué los lotes de Perzyna
   siguen sin kernel en Release.
+
+## D-036 — Alias históricos de tipos en `muscle_tensor_aliases` (rodeo del error interno de ifx en `p%init`) (2026-11-14)
+
+**Contexto:** D-019.4f dejó abierto un error interno de ifx 2026.2 (`#5623`) en 5 tests `tensors-types-*_kinds`.
+Se aisló en Windows con reproductores mínimos (ifx 2026.2.0 build 20261001, `-O0` a `-O3`): cualquier `%init(...)`
+(arreglo, variable, escalares o palabra clave) sobre un tipo con sufijo (`ten_3D2O_dp`) importado de `muscle_tensors`
+falla; con el tipo importado de su módulo de familia, o con el nombre histórico, compila. La causa es que la fachada
+importaba cada tipo dp con dos nombres locales (`ten_3D2O_dp` y `ten_3D2O => ten_3D2O_dp`): en un módulo mínimo
+basta el renombre en el mismo módulo, aunque ese alias no se exporte (en la fachada sí se exportaban). Con los dos
+nombres repartidos en módulos distintos compila. Los reproductores (~5 líneas, contra los módulos de la biblioteca)
+no están versionados.
+**Decisión del usuario (2026-11-14: «partamos con 2», corregir en `src/` y no sólo en los tests):**
+- Nuevo módulo `muscle_tensor_aliases` con los renombres históricos (`ten_3D2O => ten_3D2O_dp`, ..., `iden_2OS => ...`);
+  `muscle_tensors` importa sólo los nombres con kind de los módulos de familia y toma los históricos de ese módulo.
+  Mismo precedente que `muscle_tensor_minus`.
+- Los nombres públicos, los tipos y el orden de almacenamiento no cambian (`same_type_as` entre histórico y `_dp`
+  sigue siendo verdadero); sin cambio numérico.
+**Verificación (Windows, Debug):** gfortran 16.2 `sp;dp` (la línea base de WSL es gfortran 15.2, 133/133): 132/133
+antes y después del cambio, el único fallo es la pila de Windows en `mat_batch_openmp`; con ifx desaparecen los 5
+errores internos y los tests ya compilan. Con ifx esos tests siguen
+fallando por motivos distintos que el error interno ocultaba: con `/fp:precise` quedan 747 comprobaciones de UDTIO
+(salida formateada: registros, lista, matriz, lectura de vuelta) y 2 de `0 .ddot. (-1) = -0` (signo del cero). Sin
+investigar.

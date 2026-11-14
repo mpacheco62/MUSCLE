@@ -150,7 +150,11 @@ se conservan como historia.
 |---|---|---|---|
 | ifx 2026.2: código de dispositivo roto (LLVM «Instruction does not dominate all uses») para `matmul` vector×matriz en `declare target` | `muscle_tensor_ops_contraction_double.fypp:108` | Corregido: sumas explícitas en todos los builds | D-019.4c |
 | ifx rechaza `#line` entre las mitades de un literal partido por fypp | plantillas | Corregido: `--line-numbering-mode=nocontlines` | D-019.4d |
-| ifx 2026.2: error interno en `call p%init(...)` si el tipo llega por `muscle_tensors` con dos nombres (`ten_3D2Osym` y `ten_3D2Osym_dp`) | 5 tests `tensors-types-*_kinds` | Pendiente (reproductor para Intel) | D-019.4f |
+| ifx 2026.2: error interno en `call p%init(...)` si el tipo llega por `muscle_tensors` con dos nombres (`ten_3D2Osym` y `ten_3D2Osym_dp`) | 5 tests `tensors-types-*_kinds` | Corregido (2026-11-14): los alias históricos viven en `muscle_tensor_aliases`; la causa es importar un tipo con dos nombres en un mismo módulo (se aisló con reproductores mínimos de ~5 líneas contra los módulos de la biblioteca, que no están versionados; pendiente de reportar a Intel) | D-019.4f, D-036 |
+| ifx 2026.2 (Windows, CPU): los tests con igualdad bit a bit fallan con el modelo de punto flotante por defecto (`math_inverses`, `math_fd_macros`, `tensors-functions`, `visco_kinds`, `vp_laws_kinds`, `math_kernels_target`) | build con ifx | Con `-DCMAKE_Fortran_FLAGS=/fp:precise` pasan; falta decidir si el build con ifx lo pone por defecto | — |
+| ifx 2026.2 (Windows, CPU): `error #8212` «Omitted component is not initialized [VISCO]» al llamar `mat_state_*()` sin argumentos | `tests/materials` (`mat_closest_point*`, `mat_solver_checks`); gfortran lo acepta | Pendiente: el constructor omite un componente sin valor por defecto; posible incumplimiento del estándar que gfortran tolera | — |
+| ifx 2026.2 (Windows, CPU, con `/fp:precise`): la salida formateada UDTIO falla (registros, lista, matriz, lectura de vuelta) en los 5 tests `tensors-types-*_kinds` y en `iden_kinds`; en los `*_kinds` además `0 .ddot. (-1) = -0` (signo del cero). Los 5 `*_kinds` sólo corren desde D-036, porque antes no compilaban | `tensors-types-*_kinds`, `iden_kinds` | Pendiente, sin investigar (con gfortran pasan) | D-036 |
+| Windows: la pila del hilo principal (1 MB) desborda en `mat_batch_openmp` (`STATUS_STACK_OVERFLOW`); con 8 MB pasa | `materials-mat_batch_openmp`, gfortran y ifx | Pendiente: decidir `-Wl,--stack` en el build de Windows | — |
 | ifx con fallback en host: NaN en las regiones target de `kin_kinds`. Causa: en el código host de un procedimiento `declare target`, un constructor `[x, y]` con x de tipo array conserva sólo el último elemento de x. El código de dispositivo está bien | tests (`pack_state`); `src/` no usa el patrón | Rodeado en el test; lint `arrayctor`; reproductor en el scratchpad (`r6.f90`) | D-019.4e |
 | dp emulado en la UHD 770 deja `__isinfd`/`__isnand` sin resolver. Causa: `exponent()` → `for_exponent8_v` | spectral, cpb06/cpb06ex2/yld2004 | Corregido: `fp_exponent` con los mismos bits; lint `exponent` | D-019.5b |
 | IGC (JIT de la UHD 770) compila mal closest_point y closest_point_2 con más de un work item: tensiones erróneas, status 104 o DEVICE_LOST. Bien con 1 work item o `-ze-opt-disable` (salvo la rampa); cutting_plane bien; valgrind limpio | `mat_batch*` en SPIR64 | Causa principal: el temporal de `COND_INF` (D-030); sus kernels de material sp vuelven a pasar en GPU. `mat_batch`/`mat_batch_openmp` siguen excluidos (sin volver a probar) | D-019.5c, D-030 |
@@ -176,6 +180,7 @@ detecta si se rompe o si se puede quitar. Revisar esta tabla al cambiar de versi
 | `fp_exponent` en lugar de `exponent()`; regla de lint `exponent` | ifx con dp emulado en GPU Intel (`for_exponent8_v` no existe en el dispositivo) | `muscle_math_spectral_derivs`, cpb06, cpb06ex2, yld2004 | lint y auditoría SPIR64 | el runtime de dispositivo de ifx tenga la rutina, o GPU con FP64 nativo |
 | Regla de lint `arrayctor` (sin constructor `[x, y]` encabezado por un array en código host de `declare target`) | ifx 2026.2 (conserva sólo el último elemento) | todo el código | lint de `check.sh` | ifx corrija el constructor (reproductor `r6.f90`) |
 | Módulo `muscle_tensor_minus` (fusiona sólo `operator(-)`) | ifx 2026.2 (error #6549: se pierde el `-` unario) | `src/tensors/muscle_tensor_minus.fypp`, fachada | build con ifx | ifx resuelva la fusión de genéricos |
+| Módulo `muscle_tensor_aliases` (renombres históricos `ten_3D2O => ten_3D2O_dp`, ...; la fachada no renombra) | ifx 2026.2 (error interno #5623 en `call p%init(...)` si un módulo importa un tipo con dos nombres, D-036) | `src/tensors/muscle_tensor_aliases.fypp`, fachada | build con ifx de los 5 tests `tensors-types-*_kinds` (compilan sin error interno) | ifx acepte dos nombres de un tipo en un mismo módulo |
 | Tipos derivados como locales de un procedimiento `declare target`, nunca en `private(...)` | ifx (error interno) | `BATCH_LOOP` y kernels de lote | build SPIR64 | ifx compile tipos derivados en `private` |
 | Asignar componentes (`t%vals = x(1:6)`) en lugar de un constructor con una sección de argumento de forma asumida | IGC (recursión infinita del JIT) | kernels | tests target en la GPU Intel (con límite de memoria) | IGC corregido |
 | Exclusiones de `tools/gpu_skip_tests.sh` (4 patrones) | IGC del driver 26.05 de la UHD 770 | tests target de materiales | `check.sh` lista lo excluido | driver nuevo de Intel, o validación en NVIDIA/AMD |
@@ -185,8 +190,8 @@ detecta si se rompe o si se puede quitar. Revisar esta tabla al cambiar de versi
 | Temporales tipados en lugar de `associate` con resultados de función de tipo derivado | gfortran | código de tensores | compilación | gfortran corregido |
 | Ejecutar programas GPU con `systemd-run` (límite de memoria) y `timeout`; nunca `ulimit -s unlimited` | IGC (un bug llegó a usar 26 GB) | `check.sh`, reglas de tests | — | práctica permanente |
 
-Abierto, sin solución provisional: error interno de ifx en `call p%init(...)` con dos nombres del mismo tipo
-(D-019.4f).
+Corregido: el error interno de ifx en `call p%init(...)` con dos nombres del mismo tipo (D-019.4f) se evita con
+`muscle_tensor_aliases` (D-036).
 
 ## Tests
 
