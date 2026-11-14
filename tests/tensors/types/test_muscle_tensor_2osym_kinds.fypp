@@ -409,7 +409,7 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
 
     #:if defined('ENABLE_UDTIO')
     subroutine test_udtio_${d}$_${k}$(passed)
-        !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
+        !! Formatted output (UDTIO, bound to the type, D-038) of `${T}$`, through `muscle_tensors`:
         !!
         !! - list mode (`DT"LIST"`): `[` + the ${N}$ stored components in storage order
         !!   (${', '.join(c.name for c in L.comps)}$) + `]`, `ES11.4` by default, `(w, d)` via `v_list`;

@@ -180,9 +180,7 @@ module muscle_tensors
         & operator(*), operator(/), operator(.inv.), assignment(=), inverse
     #:endfor
     use muscle_tensor_iden, only: operator(+), operator(*), operator(/), operator(.approx.)
-    #:if defined('ENABLE_UDTIO')
-    use muscle_tensor_io, only: write(formatted)
-    #:endif
+    ! Formatted output (`write(formatted)`) is bound to each type: nothing to import (D-038)
     ! operator(-) only through muscle_tensor_minus (ifx: see the note there)
     use muscle_tensor_minus, only: operator(-)
     use muscle_tensor_ops_addition_subtraction, only: operator(+)
@@ -240,8 +238,4 @@ module muscle_tensors
     
 
     public :: assignment (=)
-
-    #:if defined('ENABLE_UDTIO')
-    public :: write(formatted)
-    #:endif
 end module muscle_tensors

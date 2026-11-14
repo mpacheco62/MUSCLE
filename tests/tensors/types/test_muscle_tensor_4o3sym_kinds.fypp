@@ -551,7 +551,7 @@ $:test_free_generics('4O3sym', d, k, 'test_4o3sym_kinds_lib', 'muscle_tensor_4o3
     #:if defined('ENABLE_UDTIO')
     #:set M = nb + 1
     subroutine test_udtio_${d}$_${k}$(passed)
-        !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
+        !! Formatted output (UDTIO, bound to the type, D-038) of `${T}$`, through `muscle_tensors`:
         !!
         !! - list mode (`DT"LIST"`): `[` + the ${N}$ stored components in storage order + `]`,
         !!   `ES11.4` by default, `(w, d)` via `v_list`;

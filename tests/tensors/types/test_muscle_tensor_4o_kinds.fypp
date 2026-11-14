@@ -764,7 +764,7 @@ $:test_free_generics('4O', d, k, 'test_4o_kinds_lib', 'muscle_tensor_4o', scalar
     #:set R11 = [''.join('{:11.4E} '.format(v) for v in row) for row in ROWS]
     #:set R9 = [''.join('{:9.2E} '.format(v) for v in row) for row in ROWS]
     subroutine test_udtio_${d}$_${k}$(passed)
-        !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
+        !! Formatted output (UDTIO, bound to the type, D-038) of `${T}$`, through `muscle_tensors`:
         !! the historical text of the original (captured from commit ec6b13d), the same in every
         !! mode (`DT`, `DT"LIST"`, list-directed; `(w, d)` via `v_list`): a leading record (empty;
         !! one blank in list-directed output), then the ${nb}$x${nb}$ matrix `vals`, one row per

@@ -482,7 +482,7 @@ $:test_free_generics('2O', d, k, 'test_2o_kinds_lib', 'muscle_tensor_2o', scalar
 
     #:if defined('ENABLE_UDTIO')
     subroutine test_udtio_${d}$_${k}$(passed)
-        !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`.
+        !! Formatted output (UDTIO, bound to the type, D-038) of `${T}$`, through `muscle_tensors`.
         !! Expected texts captured from the original (pre-FYPP)
         !! `ten_${d}$2O`${', except the matrix rows 2-3 (see below)' if d == '3D' else ''}$:
         !!

@@ -1646,12 +1646,34 @@ aprobación del usuario al revisar el commit):
   de `omptarget.dll`, también con `OMP_TARGET_OFFLOAD=DISABLED`. Sin `MUSCLE_GPU` esos 8 tests no se registran con ifx en
   Windows; corren en el build `MUSCLE_GPU=SPIR64`. Con gfortran se registran como antes (libgomp sirve al host como
   dispositivo). Sólo se midió en Windows: con ifx en Linux se siguen registrando.
-**Resultado (Windows, Debug):** gfortran 133/133; ifx 114/120 registrados (los 8 `mat_batch_dev_*` de arriba no se
-registran con ifx sin `MUSCLE_GPU`). Los 6 que fallan con ifx son `tensors-types-{2o,2osym,4o,4o2sym,4o3sym,iden}_kinds`,
-por la salida formateada UDTIO (abajo); la comprobación `0 .ddot. (-1) = -0` de los cinco `*_kinds` queda arreglada
-con `/assume:minus0` pero esos tests siguen fallando por UDTIO.
-**Causa aislada de UDTIO (sin corregir):** `write(formatted)` no encuentra la rutina de usuario cuando el tipo **y** la
-interfaz llegan por un mismo módulo que los reexporta (`muscle_tensors`): ifx escribe como un tipo intrínseco (`iostat 61`,
-tipos con componentes) o no escribe nada (`iden_2O`). Se reproduce con una fachada de 4 líneas. Funciona si el tipo viene
-de su módulo de familia, si la interfaz se importa directo de `muscle_tensor_io`, y también con
-`generic :: write(formatted) => proc` ligado al tipo, incluso a través de dos capas de módulos. Pendiente de decisión.
+**Resultado final (Windows, Debug, con D-038):** gfortran 133/133; ifx 120/120 registrados (los 8 `mat_batch_dev_*` de
+arriba no se registran con ifx sin `MUSCLE_GPU`). Antes de D-038 fallaban con ifx los 6 `tensors-types-*_kinds` e
+`iden_kinds`, por la salida formateada UDTIO (D-038) y, en los cinco `*_kinds`, por el signo del cero (arriba).
+
+## D-038 — `write(formatted)` ligado a cada tipo; `muscle_tensor_io` sin dependencia de los tipos (2026-11-14)
+
+**Contexto:** con ifx 2026.2, `write(unit, '(DT)') t` no encontraba la rutina de usuario cuando el tipo **y** la interfaz
+`write(formatted)` llegaban por un mismo módulo que los reexporta (`muscle_tensors`): escribía como un tipo intrínseco
+(`iostat 61`, tipos con componentes) o no escribía nada (`iden_2O`). Se reproduce con una fachada de 4 líneas. Funciona si
+el tipo viene de su módulo de familia, si la interfaz se importa directo de `muscle_tensor_io`, y con
+`generic :: write(formatted) => proc` ligado al tipo, incluso a través de dos capas de módulos (medido). Afectaba al uso
+documentado (`use muscle_tensors` y escribir con `DT`) con ifx.
+**Decisión del usuario (2026-11-14: «hagamos la primera, así lo dejamos listo de una vez»):** enlazar la salida formateada
+al tipo.
+- Cada tipo con salida formateada (los cinco módulos de familia y las identidades, sin y con escala, de cada kind) declara
+  `generic, public :: write(formatted) => write_<S>_<k>_tbp` dentro de `#:if defined('ENABLE_UDTIO')`. La envoltura sale de
+  la macro común `TENSOR_UDTIO_TBP` (`include/muscle_tensor_common.fypp`); las de las identidades están en su módulo.
+- `muscle_tensor_io` ya no usa los módulos de tipos (desaparece el ciclo de módulos con UDTIO que anotaba `muscle_tensor_4o`): sus rutinas
+  `print_<d><F>_<k>(vals, unit, iotype, v_list, iostat, iomsg)` y `print_I<X>[S_<k>](...)` reciben las componentes
+  almacenadas, son públicas y ya no son la interfaz `write(formatted)`. El texto de la salida y los mensajes de `iomsg`
+  (que nombran `print_...`) no cambian.
+- `muscle_tensors` ya no importa ni reexporta `write(formatted)`. Cambio de API: `use muscle_tensors, only: write(formatted)`
+  deja de compilar; no hay ningún uso así en el repo, y `use muscle_tensors` basta para escribir con `DT`.
+- Los tipos con `class(T)` en la envoltura llevan `! lint: allow(oop)` (el estándar exige `class` en UDTIO), como antes la
+  rutina; la envoltura es host-only y no la llama ningún kernel.
+**Verificación (Windows, Debug):** ifx 120/120 (ver D-037). gfortran 16.2: con `MUSCLE_UDTIO=AUTO` el UDTIO queda apagado
+(gfortran < 16.3), así que ese build (133/133) no ejercita los enlaces; con `-DMUSCLE_UDTIO=ON` (`build-gf-udtio`,
+`-DENABLE_UDTIO` en el build y ningún test que se salte UDTIO) también pasan 133/133. Los tests de UDTIO no se
+modificaron y comprueban el texto de la salida. Con gfortran < 16.3 y OpenMP el UDTIO sigue sin ser thread-safe (el
+diseño no lo cambia). Sin verificar: los builds de GPU (`MUSCLE_GPU`) con los tipos que ahora llevan un enlace
+`write(formatted)`; Linux.

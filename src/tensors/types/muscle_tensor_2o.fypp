@@ -11,7 +11,7 @@
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
 #! - the operations common to every family (+, -, *, /, =, .approx., .inv., is_approx and the
 #!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp;
-#! - formatted output lives in muscle_tensor_io (host only);
+#! - formatted output: the routines live in muscle_tensor_io (host only), the type binds `write(formatted)` (D-038);
 #! - the historical names (ten_3D2O, ten_2D2O = dp) come from muscle_tensors.
 
 module muscle_tensor_2o
@@ -52,6 +52,9 @@ module muscle_tensor_2o
     #:for k in REAL_KINDS
     use muscle_kinds, only: TOL_APPROX_${k}$, EPS_ABS_${k}$
     #:endfor
+    #:if defined('ENABLE_UDTIO')
+    use muscle_tensor_io, only: ${specifics('print_{0}_{1}', '2O')}$
+    #:endif
     implicit none
     private
 
@@ -84,6 +87,11 @@ module muscle_tensor_2o
                 !! Transposed tensor.
             procedure, public :: inv => inv_${S}$_${k}$_tbp
                 !! Inverse tensor (quiet NaN if singular).
+            #:if defined('ENABLE_UDTIO')
+            generic, public :: write(formatted) => write_${S}$_${k}$_tbp
+                !! Defined formatted output (`write(unit, '(DT)') t`, `DT"LIST"`; D-038).
+            procedure, private :: write_${S}$_${k}$_tbp
+            #:endif
     end type ${T}$
 
     #:endfor
@@ -299,6 +307,10 @@ $:LOAD_MATRIX('m', lay, k)
     ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
 
 $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm', 'det'], tensor_ops=['transpose', 'inv'])
+    #:if defined('ENABLE_UDTIO')
+
+$:TENSOR_UDTIO_TBP(d, F, k)
+    #:endif
 
     pure function is_identity_${P}$_tbp(self) result(res)
         !! `%is_identity()`: type-bound wrapper of `is_identity_${P}$` (historical API, not for kernels).

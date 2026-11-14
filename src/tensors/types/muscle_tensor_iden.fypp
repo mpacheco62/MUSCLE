@@ -58,6 +58,11 @@ module muscle_tensor_iden
     #:for k in REAL_KINDS
     use muscle_kinds, only: TOL_APPROX_IDEN_${k}$
     #:endfor
+    #:if defined('ENABLE_UDTIO')
+    #:for X in IDENTITIES
+    use muscle_tensor_io, only: print_I${X}$, ${kspecifics('print_I{0}S_{1}', X)}$
+    #:endfor
+    #:endif
     implicit none
     private
 
@@ -65,6 +70,12 @@ module muscle_tensor_iden
     type, public :: ${iname(X)}$
         !! Unscaled ${DESCRIPTION[X]}$ (no components, implicit factor 1, valid for every kind):
         !! \( ${FORMULA[X]}$ \).
+        #:if defined('ENABLE_UDTIO')
+        contains
+            generic, public :: write(formatted) => write_I${X}$_tbp
+                !! Defined formatted output (`write(unit, '(DT)') t`, `DT"LIST"`; D-038).
+            procedure, private :: write_I${X}$_tbp
+        #:endif
     end type ${iname(X)}$
 
     #:for k in REAL_KINDS
@@ -74,11 +85,18 @@ module muscle_tensor_iden
         !! \( c \, ${FORMULA[X]}$ \).
         real(${k}$) :: val
             !! The scaling factor \(c\).
-        #:if X in ALGEBRA
+        #:if X in ALGEBRA or defined('ENABLE_UDTIO')
         contains
+            #:if X in ALGEBRA
             generic, public :: init => init_I${X}$S_${k}$_tbp
                 !! Sets the scaling factor `val`.
             procedure, private :: init_I${X}$S_${k}$_tbp
+            #:endif
+            #:if defined('ENABLE_UDTIO')
+            generic, public :: write(formatted) => write_I${X}$S_${k}$_tbp
+                !! Defined formatted output (`write(unit, '(DT)') t`, `DT"LIST"`; D-038).
+            procedure, private :: write_I${X}$S_${k}$_tbp
+            #:endif
         #:endif
     end type ${TS}$
 
@@ -418,4 +436,45 @@ contains
     #:endif
     #:endfor
     #:endfor
+    #:if defined('ENABLE_UDTIO')
+    ! Defined formatted output (`write(formatted)`): wrappers of the routines of muscle_tensor_io (D-038)
+    #:for X in IDENTITIES
+
+    subroutine write_I${X}$_tbp(dtv, unit, iotype, v_list, iostat, iomsg)
+        !! `write(unit, '(DT)') t`: defined formatted output of a `${iname(X)}$`, through `print_I${X}$`.
+        class(${iname(X)}$), intent(in) :: dtv  ! lint: allow(oop) the standard requires class in UDTIO
+            !! Identity to print (no components).
+        integer, intent(in) :: unit
+            !! Output unit.
+        character(len=*), intent(in) :: iotype
+            !! Edit descriptor type (`LISTDIRECTED`, `DT...`).
+        integer, intent(in) :: v_list(:)
+            !! Optional (width, decimals).
+        integer, intent(out) :: iostat
+            !! I/O status.
+        character(len=*), intent(inout) :: iomsg
+            !! I/O error message.
+        call print_I${X}$(unit, iotype, v_list, iostat, iomsg)
+    end subroutine write_I${X}$_tbp
+    #:for k in REAL_KINDS
+
+    subroutine write_I${X}$S_${k}$_tbp(dtv, unit, iotype, v_list, iostat, iomsg)
+        !! `write(unit, '(DT)') t`: defined formatted output of a `${iname(X + 'S', k)}$`, through `print_I${X}$S_${k}$`.
+        class(${iname(X + 'S', k)}$), intent(in) :: dtv  ! lint: allow(oop) the standard requires class in UDTIO
+            !! Scaled identity to print.
+        integer, intent(in) :: unit
+            !! Output unit.
+        character(len=*), intent(in) :: iotype
+            !! Edit descriptor type (`LISTDIRECTED`, `DT...`).
+        integer, intent(in) :: v_list(:)
+            !! Optional (width, decimals).
+        integer, intent(out) :: iostat
+            !! I/O status.
+        character(len=*), intent(inout) :: iomsg
+            !! I/O error message.
+        call print_I${X}$S_${k}$(dtv%val, unit, iotype, v_list, iostat, iomsg)
+    end subroutine write_I${X}$S_${k}$_tbp
+    #:endfor
+    #:endfor
+    #:endif
 end module muscle_tensor_iden

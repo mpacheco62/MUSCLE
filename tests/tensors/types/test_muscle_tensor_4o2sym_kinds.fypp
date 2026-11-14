@@ -693,7 +693,7 @@ $:test_free_generics('4O2sym', d, k, 'test_4o2sym_kinds_lib', 'muscle_tensor_4o2
     #:set LIST11 = [' {:10.4E}'.format(v) if v >= 0 else '{:11.4E}'.format(v) for v in VALS]
     #:set LIST9 = [' {:8.2E}'.format(v) if v >= 0 else '{:9.2E}'.format(v) for v in VALS]
     subroutine test_udtio_${d}$_${k}$(passed)
-        !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
+        !! Formatted output (UDTIO, bound to the type, D-038) of `${T}$`, through `muscle_tensors`:
         !!
         !! - list mode (`DT"LIST"`): `[` + the ${N}$ components in storage order (column-major
         !!   `vals(I, J)`) + `]`, `ES11.4` by default, `(w, d)` via `v_list`;

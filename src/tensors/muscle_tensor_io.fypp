@@ -2,8 +2,9 @@
 ! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
 #:include "muscle_common.fypp"
 ! lint: host-only
-#! Formatted output (UDTIO `write(formatted)`) of the templated tensor types, generated from
-#! their layouts. Host-only: kept out of the kernel modules. Families are added here as
+#! Formatted output of the templated tensor types, generated from their layouts. Host-only: kept out of
+#! the kernel modules. The routines take the stored components (not the type): each type binds its
+#! `write(formatted)` to a wrapper of its own module that calls them (D-038). Families are added here as
 #! they are templated.
 #:set IO_FAMILIES = ['2Osym', '2O', '4O3sym', '4O2sym', '4O']
 #! Families that keep their historical output: the matrix whatever the edit descriptor (no list
@@ -14,7 +15,8 @@
 #! character, including its default width 10; the error message names its own routine.
 
 module muscle_tensor_io
-    !! Formatted output of tensors (only with `ENABLE_UDTIO`):
+    !! Formatted output of tensors (only with `ENABLE_UDTIO`), called by the `write(formatted)` binding of each
+    !! tensor type (`write(unit, '(DT"LIST")') t`, `write(unit, '(DT)') t`, `write(unit, *) t`):
     !!
     !! - `write(unit, '(DT"LIST")') t` (optionally `DT"LIST"(w,d)`): the stored components,
     !!   `[ xx yy ... ]` in storage order.
@@ -31,27 +33,21 @@ module muscle_tensor_io
     !!   Voigt matrix \(C_{IJ}\) (11, 22, 33, 12, 23, 13; tensorial components) of the 4th-order
     !!   ones: \(c\) in the normal 3x3 block for `iden_4O3T` (\(\delta_{ij}\delta_{kl}\)),
     !!   `diag(c, c, c, c/2, c/2, c/2)` for `iden_4O4T` (symmetric identity).
+    !!
+    !! The routines do not depend on the tensor types: ifx 2026.2 does not find an interface
+    !! `write(formatted)` re-exported together with its type by a module such as `muscle_tensors`, but it does
+    !! find a binding of the type (D-038).
     use muscle_kinds, only: sp, dp
-    #:for f in IO_FAMILIES
-    use muscle_tensor_${f.lower()}$, only: ${', '.join(tname(d + f, k) for d in DIMS for k in REAL_KINDS)}$
-    #:endfor
-    use muscle_tensor_iden, only: ${', '.join(iname(X) for X in IDENTITIES)}$
-    #:for X in IDENTITIES
-    use muscle_tensor_iden, only: ${', '.join(iname(X + 'S', k) for k in REAL_KINDS)}$
-    #:endfor
     implicit none
     private
     #:if defined('ENABLE_UDTIO')
 
-    public :: write(formatted)
-    interface write(formatted)
-        #:for f in IO_FAMILIES
-        module procedure ${specifics('print_{0}_{1}', f)}$
-        #:endfor
-        #:for X in IDENTITIES
-        module procedure print_I${X}$, ${kspecifics('print_I{0}S_{1}', X)}$
-        #:endfor
-    end interface
+    #:for f in IO_FAMILIES
+    public :: ${specifics('print_{0}_{1}', f)}$
+    #:endfor
+    #:for X in IDENTITIES
+    public :: print_I${X}$, ${kspecifics('print_I{0}S_{1}', X)}$
+    #:endfor
 
 contains
 
@@ -61,9 +57,9 @@ contains
     #:set n = len(lay.comps)
     #:for k in REAL_KINDS
     #:set T = tname(d + f, k)
-    #:set rows = lay.matrix('dtv%vals', zero='0.0_' + k)
+    #:set rows = lay.matrix('vals', zero='0.0_' + k)
     #:set m = len(rows)
-    subroutine print_${d + f}$_${k}$(dtv, unit, iotype, v_list, iostat, iomsg)
+    subroutine print_${d + f}$_${k}$(vals, unit, iotype, v_list, iostat, iomsg)
         #:if f in IO_MATRIX_ONLY
         !! Formatted output of a `${T}$`: the ${m}$x${m}$ matrix `vals`, one record per row, in
         !! every mode.
@@ -71,8 +67,8 @@ contains
         !! Formatted output of a `${T}$`: list mode prints the ${n}$ stored components
         !! (${', '.join(c.name for c in lay.comps)}$), matrix mode the ${m}$x${m}$ matrix.
         #:endif
-        class(${T}$), intent(in) :: dtv  ! lint: allow(oop) the standard requires class in UDTIO
-            !! Tensor to print.
+        real(${k}$), intent(in) :: vals(${', '.join(map(str, lay.shape))}$)
+            !! Stored components of the tensor to print (`vals` of a `${T}$`).
         integer, intent(in) :: unit
             !! Output unit.
         character(len=*), intent(in) :: iotype
@@ -96,16 +92,16 @@ contains
         if (size(v_list) >= 2) d = v_list(2)
 
         #:if f in IO_MATRIX_ONLY
-        #:assert rows == [['dtv%vals({}, {})'.format(i, j) for j in range(1, m + 1)] for i in range(1, m + 1)]
+        #:assert rows == [['vals({}, {})'.format(i, j) for j in range(1, m + 1)] for i in range(1, m + 1)]
         ! Historical output of this family, whatever iotype: one record per row of the matrix
         write(fmt_string, "('(/, ${m}$(ES', I0, '.', I0, ', 1X))')") w, d
         do r = 1, ${m}$
-            write(unit, fmt_string, iostat=iostat) dtv%vals(r, :)
+            write(unit, fmt_string, iostat=iostat) vals(r, :)
         end do
         #:else
         if (iotype == "DTLIST" .or. iotype == "LIST") then
             write(fmt_string, "('(A, ${n}$(ES', I0, '.', I0, ', 1X), A)')") w, d
-            write(unit, fmt_string, iostat=iostat) "[", dtv%vals, "]"
+            write(unit, fmt_string, iostat=iostat) "[", vals, "]"
         else
             ! One format with a '/' line break before each row of the ${m}$x${m}$ matrix
             write(fmt_string, "('(${m}$(/, ${m}$(ES', I0, '.', I0, ', 2X)))')") w, d
@@ -126,18 +122,20 @@ contains
     #:endfor
     #:for X in IDENTITIES
     #:for k in [None] + REAL_KINDS
-#! Unscaled: factor 1 with dp literals (as the original print_ten_I2O); scaled: dtv%val
+#! Unscaled: factor 1 with dp literals (as the original print_ten_I2O); scaled: val
     #:set P = 'print_I' + X + ('S_' + k if k else '')
     #:set T = iname(X + 'S', k) if k else iname(X)
-    #:set c = 'dtv%val' if k else '1.0_dp'
+    #:set c = 'val' if k else '1.0_dp'
     #:set ck = k if k else 'dp'
     #:set rows = iden_matrix(X, one=c, half='0.5_{0} * {1}'.format(ck, c) if k else '0.5_dp', zero='0.0_' + ck)
     #:set m = len(rows)
-    subroutine ${P}$(dtv, unit, iotype, v_list, iostat, iomsg)
+    subroutine ${P}$(${'val, ' if k else ''}$unit, iotype, v_list, iostat, iomsg)
         !! Formatted output of a `${T}$`: list mode prints the factor, matrix mode the ${m}$x${m}$
         !! ${'matrix' if m == 3 else 'Voigt matrix'}$ of the identity.
-        class(${T}$), intent(in) :: dtv  ! lint: allow(oop) the standard requires class in UDTIO
-            !! Identity to print.
+        #:if k
+        real(${k}$), intent(in) :: val
+            !! Scaling factor of the identity to print.
+        #:endif
         integer, intent(in) :: unit
             !! Output unit.
         character(len=*), intent(in) :: iotype

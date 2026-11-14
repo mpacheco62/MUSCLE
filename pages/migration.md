@@ -10,7 +10,7 @@ polymorphic components, procedure arguments) and has been removed (decisions D-0
 `docs/fypp/DECISIONES.md`). There is no compatibility layer: code that used it is rewritten against the
 declared materials (see [FEA Integration](integration.html)) or against the free functions of the model
 families. The tensor API (`muscle_tensors`, the type-bound `%init()`, `%xx()`, ... of the tensors and the
-formatted output of `muscle_tensor_io`) is unchanged.
+formatted output with `write(unit, '(DT)')`) is unchanged.
 
 ## Equivalences
 
