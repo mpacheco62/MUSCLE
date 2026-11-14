@@ -1702,3 +1702,50 @@ compila con `-Qiopenmp -Qopenmp-targets:spir64`, con `OMP_TARGET_OFFLOAD=DISABLE
 - Un `.exe` ejecutado a mano sin esa variable usaría la GPU de la máquina, si hay una.
 **Resultado (Windows, Debug):** ifx 133/133 y gfortran 133/133, con el mismo conjunto de tests en los dos. Sin verificar: ifx
 en Linux (la opción sólo se activa en Windows), `MUSCLE_GPU=SPIR64` (no cambia).
+
+## D-040 — Banderas por compilador en `cmake/MuscleCompiler.cmake`; paridad de ifx y ifx en CPU en `check.sh` (2026-11-14)
+
+**Contexto:** revisión pedida por el usuario («cómo se están separando los casos entre gfortran y ifx; que todos los tests se
+puedan correr en ambas plataformas en CPU; que CMake y las banderas queden ordenadas»). Las banderas dependientes del
+compilador estaban repartidas en seis archivos (`src/` y `tests/` repetían el mismo esqueleto `ifx-Windows / ifx-Linux /
+gfortran`, con los flags de punto flotante duplicados a mano; dos bloques copiados para los tests de compilación fallida;
+las trampas de punto flotante y `-O3 -Wall` de los benchmarks sólo con gfortran) y había diferencias de cobertura.
+**Medido (Windows: gfortran 16.2, ifx 2026.2; Linux en WSL: gfortran 15.2, ifx 2026.2):**
+- el conjunto de tests registrados era el mismo en Windows; en Linux, ifx tenía 128 registrados y fallaban 19 (los 8
+  `mat_batch_dev_*` no enlazaban, 6 por el modelo de punto flotante, 5 `*_kinds`): la rama Linux de ifx no tenía los flags de D-037;
+- con `/fpe:0` pasan los 5 tests de `math` que en gfortran llevan trampas (los otros fallos de esa prueba eran tests sin trampas
+  en gfortran que generan NaN a propósito); con `/check:bounds /check:pointers /check:shape /traceback` ifx pasa 133/133 y
+  `ctest` pasa de 12 s a 17 s; `/check:all` deja 5 tests por encima de 300 s sin ningún fallo por diagnóstico; la biblioteca
+  con `/warn:all` da 0 avisos;
+- `-fno-inline` se ignoraba con ifx en Windows (40 avisos `#10006`; la opción es `/Ob0`) y `/Od` de CMake se anulaba con `/O3` en
+  los tests (40 avisos `#10120`).
+**Decisión del usuario («reordenar más paridad, pero en Linux si está ifx que también compile y pruebe con él»):**
+- Nuevo `cmake/MuscleCompiler.cmake`: la única tabla de banderas por compilador y sistema (`MUSCLE_OPT_LIBRARY`,
+  `MUSCLE_OPT_TESTS`, `MUSCLE_FLAG_NO_INLINE`, `MUSCLE_FLAGS_HOST_OFFLOAD`, ...) y las funciones `muscle_fpe_traps` y
+  `muscle_add_compile_fail_test`. `src/`, `tests/` y `benchmarks/` la leen; sólo quedan consultas al compilador en
+  `cmake/MuscleGpu.cmake` y en dos comprobaciones de `src/` (versión de gfortran para UDTIO, sonda de auditoría). Se quita el
+  código comentado y el `FVERSION` huérfano del `CMakeLists.txt` raíz.
+- Paridad de ifx: trampas en los 5 tests de `math` (`/fpe:0`, `-fpe0`); en la biblioteca en Debug, `/warn:all` y comprobaciones de
+  límites, punteros y forma con `/traceback` (el equivalente de `-Wall -fcheck=all -fbacktrace` de gfortran); `/Ob0`; el modelo
+  preciso y el signo del cero (D-037) también en Linux; los tests de compilación fallida y `mat_batch_dev_*` (D-039) también en Linux.
+- Un build con GPU (`MUSCLE_GPU` distinto de `OFF`) conserva los flags de ifx de antes: ni el modelo preciso, ni el signo del cero,
+  ni los diagnósticos de Debug, porque se midieron sólo en CPU y los tests de un build GPU comparan bit a bit el dispositivo con
+  el host. Medido: configurado con `-DMUSCLE_GPU=SPIR64` en Linux, el árbol nuevo y el commit anterior difieren en 5 de 269
+  comandos (los `-fpe0` de los tests de `math`, que ese build no compila: sólo construye `muscle` y `build_target_tests`).
+- `tools/check.sh`: etapa nueva de ifx en CPU (`BUILD_DIR-ifx`), en la compuerta completa y con `--quick` sólo con `--ifx`; si no hay
+  ifx se salta con un mensaje. Muestra los avisos de ifx y no los cuenta.
+**Trampas encontradas:**
+- `target_compile_options` elimina las opciones repetidas: `-check bounds -check pointers -check shape` pasaba a `-check bounds
+  pointers shape` e ifx tomaba `pointers` y `shape` por archivos. Con una sola opción, `-check bounds,pointers,shape`. (En Windows
+  las opciones son distintas, `/check:bounds`, y no ocurre.)
+- Los logs incrementales de ifx ocultaban 42 avisos `#8889` que sólo salen en un build completo.
+**Verificación:** gfortran en Windows: los 1046 comandos de compilación y enlace de `ninja` son idénticos, en el mismo orden, a los
+del commit anterior (árbol de trabajo temporal), con los mismos 133 tests. Resultados: Windows gfortran 133/133, ifx 133/133;
+Linux gfortran 133/133, ifx 133/133; `tools/check.sh --quick --ifx` en Linux OK. Los comandos de ifx cambian a propósito (comprobado en
+`compile_commands.json`: 143/143 comandos de la biblioteca con `/check:bounds`, `/warn:all`, `/traceback`; ningún test con `/Od`;
+66/66 tests `target` con `/Ob0`; 8/8 `batch_dev` con `spir64`; 5 tests con `/fpe:0`).
+**Sin verificar:** la compuerta completa de `check.sh` (compilar y correr los builds de GPU: sólo se configuró `SPIR64` y se
+compararon los comandos); los flags nuevos de ifx (modelo preciso, signo del cero, diagnósticos) en un build de GPU; `-fpe0` de ifx aplana los
+denormales según la documentación de Intel (no medido: sólo se usa en 5 tests, que pasan).
+**Pendiente:** 42 avisos `#8889` de ifx en 5 tests antiguos (`fd_known_functions`, `math_inverses`, `os_chaboche`, `visco_kelvin`,
+`visco_maxwell`) que definen subrutinas externas tras `end program`: moverlas a un `contains` o a un módulo.

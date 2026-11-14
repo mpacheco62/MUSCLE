@@ -9,65 +9,13 @@ list(APPEND MUSCLE_FYPP_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/common/muscle_fd.fy
 # The tests that run kernels in an OpenMP target region (muscle_target_test_options, ctest label `target`)
 add_custom_target(build_target_tests)
 
-if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
-        message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-        if (WIN32)
-            target_compile_options(compile_options INTERFACE "/O3" "/warn:all")
-            # Precise floating point model in every configuration but Profile and SIGN(1.0, -0.0) = -1.0, as
-            # the library (D-037)
-            target_compile_options(compile_options INTERFACE /assume:minus0 $<$<NOT:$<CONFIG:Profile>>:/fp:precise>)
-            target_compile_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:/Z7>
-                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
-                                )
-            target_link_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:/Z7>
-                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
-                                )
-        else()
-            # Linux: the Windows-style options above are read as file names
-            target_compile_options(compile_options INTERFACE "-O3" "-warn" "all")
-            target_compile_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:-g>
-                                        $<$<CONFIG:Profile>:-Ofast -ipo -fp-model=fast -DNDEBUG>
-                                )
-            target_link_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:-g>
-                                        $<$<CONFIG:Profile>:-Ofast -ipo -fp-model=fast -DNDEBUG>
-                                )
-        endif()
-
-        # target_compile_options(muscle PRIVATE 
-        #                                 -c -Qopenmp -fpic
-        #                         )
-elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-        message(STATUS "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-        # Unused dummy arguments are part of uniform interfaces; unused local variables still warn
-        target_compile_options(compile_options INTERFACE "-O3" "-Wall" "-Wno-unused-dummy-argument")
-        target_compile_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:-g>
-                                        $<$<CONFIG:Profile_unittests>:-g -O0 -fprofile-arcs -ftest-coverage>
-                                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
-                                )
-        target_link_options(compile_options INTERFACE 
-                        $<$<CONFIG:Debug>:-g>
-                        $<$<CONFIG:Profile_unittests>:--coverage>
-                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
-                        )
-else()
-    message(FATAL_ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-endif()
-
-
-if (WIN32)
-    # The main thread of a Windows program has a 1 MB stack (8 MB on Linux) and mat_batch_openmp needs more:
-    # the tests reserve 16 MB (D-037)
-    if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
-        target_link_options(compile_options INTERFACE /F16777216)
-    elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-        target_link_options(compile_options INTERFACE -Wl,--stack,16777216)
-    endif()
-endif()
+# Flags of the tests by compiler and OS: cmake/MuscleCompiler.cmake (the stack of the main thread is the
+# last of the link options)
+target_compile_options(compile_options INTERFACE ${MUSCLE_OPT_TESTS})
+target_link_options(compile_options INTERFACE ${MUSCLE_LINK_TESTS} ${MUSCLE_LINK_STACK})
+# The tests are compiled with -O3 in every configuration: the -Od of the Debug flags of CMake would only be
+# overridden (ifx warns about it)
+string(REPLACE "/Od" "" CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG}")
 
 # Shared assertions (muscle_test_utils: check_approx, check_true, check_scaled) and helpers
 # (muscle_test_helpers: random generator, reference matrix operations, record) of the tests
@@ -150,21 +98,22 @@ function(muscle_target_test_options TARGET)
     # and the host comparison is bit for bit).
     # The test gets the ctest label `target` and the target joins build_target_tests (tools/check.sh
     # builds and runs those in the GPU builds).
-    if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" AND NOT MUSCLE_GPU_ENABLED)
-        target_compile_options(${TARGET} PRIVATE -foffload=disable -fno-inline)
+    if (MUSCLE_COMPILER STREQUAL "gnu" AND NOT MUSCLE_GPU_ENABLED)
+        target_compile_options(${TARGET} PRIVATE -foffload=disable ${MUSCLE_FLAG_NO_INLINE})
         target_link_options(${TARGET} PRIVATE -foffload=disable)
-    elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" OR CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
-        target_compile_options(${TARGET} PRIVATE -fno-inline)
+    else()
+        target_compile_options(${TARGET} PRIVATE ${MUSCLE_FLAG_NO_INLINE})
     endif()
     get_target_property(test_name ${TARGET} MUSCLE_TEST_NAME)
     set_tests_properties(${test_name} PROPERTIES LABELS target)
-    if (opt_HOST_OFFLOAD AND WIN32 AND CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM" AND NOT MUSCLE_GPU_ENABLED)
-        # ifx on Windows: omp_target_alloc/memcpy/free only work in a program compiled with offload (a host-only
-        # program links them with omptarget.lib but crashes in omptarget.dll). The test is built for spir64 and
-        # run with the offload disabled, so the host is the only device and the memory is the host's (D-039).
-        # Without the environment variable the test would use the GPU of the machine, if any.
-        target_compile_options(${TARGET} PRIVATE -Qopenmp-targets:spir64)
-        target_link_options(${TARGET} PRIVATE -Qopenmp-targets:spir64)
+    if (opt_HOST_OFFLOAD AND MUSCLE_COMPILER STREQUAL "intel" AND NOT MUSCLE_GPU_ENABLED)
+        # ifx: omp_target_alloc/memcpy/free only work in a program compiled with offload (a host-only program
+        # links them with omptarget.lib on Windows, or does not link on Linux, and crashes in omptarget.dll).
+        # The test is built for spir64 and run with the offload disabled, so the host is the only device and the
+        # memory is the host's (D-039). Without the environment variable the test would use the GPU of the
+        # machine, if any.
+        target_compile_options(${TARGET} PRIVATE ${MUSCLE_FLAGS_HOST_OFFLOAD})
+        target_link_options(${TARGET} PRIVATE ${MUSCLE_FLAGS_HOST_OFFLOAD})
         set_tests_properties(${test_name} PROPERTIES ENVIRONMENT "OMP_TARGET_OFFLOAD=DISABLED")
     endif()
     add_dependencies(build_target_tests ${TARGET})

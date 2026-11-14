@@ -16,9 +16,7 @@ function(add_muscle_benchmark NAME)
     # The benchmark prints the build type of the library it is linked against
     set_target_properties(${EXE_NAME} PROPERTIES Fortran_PREPROCESS ON)
     target_compile_definitions(${EXE_NAME} PRIVATE MUSCLE_BUILD_TYPE="${CMAKE_BUILD_TYPE}")
-    if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-        target_compile_options(${EXE_NAME} PRIVATE -O3 -Wall)
-    endif()
+    target_compile_options(${EXE_NAME} PRIVATE ${MUSCLE_OPT_BENCH})
     add_dependencies(build_all_benchmarks ${EXE_NAME})
 endfunction()
 

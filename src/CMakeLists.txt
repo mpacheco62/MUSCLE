@@ -63,54 +63,9 @@ add_subdirectory(elasticity)
 add_subdirectory(viscoelasticity)
 add_subdirectory(materials)
 
-if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
-        message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-        if (WIN32)
-            # ifx defaults to the fast floating point model (reassociation, contraction): the unit tests compare
-            # bit for bit and against closed forms as gfortran's strict default allows, so every configuration
-            # but Profile asks for the precise model (D-037). /assume:minus0: SIGN(1.0, -0.0) is -1.0 as the
-            # standard says and as gfortran does (ifx defaults to +1.0); sign() is used in math/eigen and yield
-            target_compile_options(muscle PRIVATE
-                                        /c /Qopenmp /assume:minus0
-                                        $<$<NOT:$<CONFIG:Profile>>:/fp:precise>
-                                        $<$<CONFIG:Debug>:/Z7>
-                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
-                                )
-        else()
-            # Linux: the Windows-style options above are read as file names
-            target_compile_options(muscle PRIVATE
-                                        -fpp -qopenmp -fPIC
-                                        $<$<CONFIG:Debug>:-g -O0>
-                                        $<$<CONFIG:Profile>:-Ofast -ipo -fp-model=fast -DNDEBUG>
-                                )
-        endif()
-
-        # target_compile_options(muscle PRIVATE 
-        #                                 -c -Qopenmp -fpic
-        #                         )
-elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-        message(STATUS "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-
-        target_compile_options(muscle PRIVATE 
-                                        -c -cpp -fopenmp -fPIC -mcmodel=medium
-                                        $<$<CONFIG:Debug>:-g -O0 -Wall -Wextra -Wimplicit-interface -Wsurprising -fcheck=all -fbacktrace -ffpe-trap=zero,overflow,invalid>
-                                        # Unused dummy arguments are the uniform contract of a family (a kinematics without
-                                        # parameters still takes prm); unused local variables still warn. The exact real
-                                        # comparisons are deliberate guards (exact zero before a division, ...): silenced for
-                                        # now, to be removed (docs/fypp/PROBLEMAS.md)
-                                        $<$<CONFIG:Debug>:-Wno-unused-dummy-argument -Wno-compare-reals>
-                                        $<$<CONFIG:Profile_unittests>:-g -O0 -fprofile-arcs -ftest-coverage>
-                                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
-                                )
-
-        target_link_options(muscle PRIVATE
-                $<$<CONFIG:Profile_unittests>:--coverage>
-                $<$<CONFIG:Debug>:-g -fbacktrace>
-                )
-else()
-    # Default options or a warning if an unsupported compiler is found
-    message(FATAL_ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-endif()
+# Flags of the library by compiler and OS: cmake/MuscleCompiler.cmake
+target_compile_options(muscle PRIVATE ${MUSCLE_OPT_LIBRARY})
+target_link_options(muscle PRIVATE ${MUSCLE_LINK_LIBRARY})
 
 
 install(TARGETS muscle EXPORT muscle-targets LIBRARY)
