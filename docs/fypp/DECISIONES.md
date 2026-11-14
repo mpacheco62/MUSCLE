@@ -1616,5 +1616,42 @@ no están versionados.
 antes y después del cambio, el único fallo es la pila de Windows en `mat_batch_openmp`; con ifx desaparecen los 5
 errores internos y los tests ya compilan. Con ifx esos tests siguen
 fallando por motivos distintos que el error interno ocultaba: con `/fp:precise` quedan 747 comprobaciones de UDTIO
-(salida formateada: registros, lista, matriz, lectura de vuelta) y 2 de `0 .ddot. (-1) = -0` (signo del cero). Sin
-investigar.
+(salida formateada: registros, lista, matriz, lectura de vuelta) y 2 de `0 .ddot. (-1) = -0` (signo del cero); la
+causa de las de UDTIO se aisló después (D-037).
+
+## D-037 — ifx en CPU (Windows): estado de visco sin arreglo de tamaño cero, `/fp:precise`, pila de los tests (2026-11-14)
+
+**Contexto:** primera corrida completa de los tests en Windows (ifx 2026.2.0, gfortran 16.2.0 de conda-forge, Debug,
+`sp;dp`). Con gfortran pasaban 132/133 y con ifx 102/128. Se atacaron las causas una a una.
+**Propuesta aplicada** (a partir de «sigamos para que la librería corra y pasen los tests con ifx»; pendiente de la
+aprobación del usuario al revisar el commit):
+- **`error #8212` de `VISCO`:** los materiales con 0 ramas de historia (Kelvin) declaraban `h(6, 0)`. ifx no trata como
+  inicializado un componente de tamaño cero (ninguna forma de inicializarlo sirve, medido en un módulo mínimo), así que
+  rechaza `mat_state_x()` sin argumentos; gfortran lo acepta. Ahora `h(6, max(1, visco_branches))`: con 0 ramas queda
+  una columna sin uso (los bucles de `hsv` van de 1 a `visco_branches`). Cambia la forma del tipo de estado de esos
+  materiales, no los resultados.
+- **Punto flotante:** ifx usa por defecto el modelo rápido (reasociación, contracción) y los tests comparan bit a bit y
+  contra formas cerradas. En la rama Windows de ifx, `src/` y `tests/` piden `/fp:precise` salvo en `Profile` (que ya pedía
+  `/fp:fast`). Las ramas Linux no se tocaron: no se pudo verificar aquí y cambiarían el host de los tests GPU.
+- **Signo del cero:** con `/assume:nominus0` (el valor por defecto de ifx) `SIGN(1.0, -0.0)` da `+1.0`, y el estándar y
+  gfortran dan `-1.0`. La suma `a1*b1 + ...` ya daba `-0`: lo que fallaba era el `sign()` de la comprobación
+  `0 .ddot. (-1) = -0`. La rama Windows de ifx de `src/` y `tests/` pide `/assume:minus0`, que alinea ifx con el estándar
+  y con gfortran. `src/` tiene cinco `sign(1.0, x)`: dos en `math/eigen` y tres en el criterio anisótropo. El resultado
+  sólo cambia con un `-0` exacto: `theta = -0` en la rotación de Jacobi (signo de los autovectores) y `lam(i) = -0` en
+  `muscle_yield_anisotropic`; el de `1 - d` en `eigen` no puede dar `-0`.
+- **Pila:** el hilo principal en Windows tiene 1 MB (8 MB en Linux) y `mat_batch_openmp` necesita ≥ 8 MB (medido con
+  `editbin /STACK`). Los tests reservan 16 MB (`/F16777216` con ifx, `-Wl,--stack,16777216` con gfortran).
+- **`mat_batch_dev_*` con ifx:** con ifx, `omp_target_alloc`/`memcpy`/`free` sólo funcionan en un programa compilado con
+  offload: un build de host los enlaza (`omptarget.lib`) pero el runtime nunca se inicializa y el programa se cae dentro
+  de `omptarget.dll`, también con `OMP_TARGET_OFFLOAD=DISABLED`. Sin `MUSCLE_GPU` esos 8 tests no se registran con ifx en
+  Windows; corren en el build `MUSCLE_GPU=SPIR64`. Con gfortran se registran como antes (libgomp sirve al host como
+  dispositivo). Sólo se midió en Windows: con ifx en Linux se siguen registrando.
+**Resultado (Windows, Debug):** gfortran 133/133; ifx 114/120 registrados (los 8 `mat_batch_dev_*` de arriba no se
+registran con ifx sin `MUSCLE_GPU`). Los 6 que fallan con ifx son `tensors-types-{2o,2osym,4o,4o2sym,4o3sym,iden}_kinds`,
+por la salida formateada UDTIO (abajo); la comprobación `0 .ddot. (-1) = -0` de los cinco `*_kinds` queda arreglada
+con `/assume:minus0` pero esos tests siguen fallando por UDTIO.
+**Causa aislada de UDTIO (sin corregir):** `write(formatted)` no encuentra la rutina de usuario cuando el tipo **y** la
+interfaz llegan por un mismo módulo que los reexporta (`muscle_tensors`): ifx escribe como un tipo intrínseco (`iostat 61`,
+tipos con componentes) o no escribe nada (`iden_2O`). Se reproduce con una fachada de 4 líneas. Funciona si el tipo viene
+de su módulo de familia, si la interfaz se importa directo de `muscle_tensor_io`, y también con
+`generic :: write(formatted) => proc` ligado al tipo, incluso a través de dos capas de módulos. Pendiente de decisión.

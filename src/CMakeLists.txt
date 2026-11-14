@@ -66,8 +66,13 @@ add_subdirectory(materials)
 if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
         if (WIN32)
+            # ifx defaults to the fast floating point model (reassociation, contraction): the unit tests compare
+            # bit for bit and against closed forms as gfortran's strict default allows, so every configuration
+            # but Profile asks for the precise model (D-037). /assume:minus0: SIGN(1.0, -0.0) is -1.0 as the
+            # standard says and as gfortran does (ifx defaults to +1.0); sign() is used in math/eigen and yield
             target_compile_options(muscle PRIVATE
-                                        /c /Qopenmp
+                                        /c /Qopenmp /assume:minus0
+                                        $<$<NOT:$<CONFIG:Profile>>:/fp:precise>
                                         $<$<CONFIG:Debug>:/Z7>
                                         $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
                                 )

@@ -13,6 +13,9 @@ if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
         message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
         if (WIN32)
             target_compile_options(compile_options INTERFACE "/O3" "/warn:all")
+            # Precise floating point model in every configuration but Profile and SIGN(1.0, -0.0) = -1.0, as
+            # the library (D-037)
+            target_compile_options(compile_options INTERFACE /assume:minus0 $<$<NOT:$<CONFIG:Profile>>:/fp:precise>)
             target_compile_options(compile_options INTERFACE
                                         $<$<CONFIG:Debug>:/Z7>
                                         $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
@@ -55,6 +58,16 @@ else()
     message(FATAL_ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
 endif()
 
+
+if (WIN32)
+    # The main thread of a Windows program has a 1 MB stack (8 MB on Linux) and mat_batch_openmp needs more:
+    # the tests reserve 16 MB (D-037)
+    if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
+        target_link_options(compile_options INTERFACE /F16777216)
+    elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
+        target_link_options(compile_options INTERFACE -Wl,--stack,16777216)
+    endif()
+endif()
 
 # Shared assertions (muscle_test_utils: check_approx, check_true, check_scaled) and helpers
 # (muscle_test_helpers: random generator, reference matrix operations, record) of the tests
