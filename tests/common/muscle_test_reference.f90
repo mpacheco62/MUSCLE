@@ -12,7 +12,9 @@ module muscle_test_reference
     !! - `REFERENCE_TOL_SOLVER`: iterative return mappings (a different rounding may change the Newton path:
     !!   10 times NEWTON_TOL_dp);
     !! - with `status_iters`, the last two values of a record are the status (exact) and the number of
-    !!   iterations (within 1).
+    !!   iterations, which is not compared (but bit for bit with `MUSCLE_REFERENCE_STRICT=1`): a different
+    !!   rounding may change it a lot in a slow Newton, and the test bounds it instead with the iteration cap of
+    !!   its case (D-041).
     !!
     !! The error of a value is relative to the largest magnitude of the real values of its record. A NaN
     !! matches any NaN (sign and payload are not results). With the environment variable
@@ -173,7 +175,8 @@ contains
         real(dp), intent(in), optional :: tol
             !! Relative tolerance of the record (default: that of `reference_init`).
         logical, intent(in), optional :: status_iters
-            !! The last two values are the status (exact) and the number of iterations (within 1).
+            !! The last two values are the status (exact) and the number of iterations (not compared, but bit for
+            !! bit with `MUSCLE_REFERENCE_STRICT=1`).
         integer(int64) :: bits(size(x))
         integer :: i, j, nr
         real(dp) :: expected(size(x)), scale, rel(size(x)), maxrel, t
@@ -239,7 +242,7 @@ contains
             ok(1:nr) = same(1:nr) .or. rel(1:nr) <= t
             if (tail) then
                 ok(nr+1) = same(nr+1)
-                ok(nr+2) = abs(x(nr+2) - expected(nr+2)) <= 1.0_dp
+                ok(nr+2) = .true.
             end if
         end if
         maxrel = maxval(rel(1:nr))

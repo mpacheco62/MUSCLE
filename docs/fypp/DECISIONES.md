@@ -1749,3 +1749,51 @@ compararon los comandos); los flags nuevos de ifx (modelo preciso, signo del cer
 denormales según la documentación de Intel (no medido: sólo se usa en 5 tests, que pasan).
 **Pendiente:** 42 avisos `#8889` de ifx en 5 tests antiguos (`fd_known_functions`, `math_inverses`, `os_chaboche`, `visco_kelvin`,
 `visco_maxwell`) que definen subrutinas externas tras `end program`: moverlas a un `contains` o a un módulo.
+
+## D-041 — Modelo rápido de ifx en la biblioteca: evaluado y aplazado; iteraciones del Newton acotadas por caso (2026-11-18)
+
+**Contexto:** el usuario pidió quitar `/fp:precise` de ifx (D-037) y, si hacía falta, que los tests dejaran de comparar bit a bit.
+Se midió en un árbol aparte (ifx 2026.2.0, Windows y Linux en WSL, `sp;dp`).
+**Medido, modelo rápido en la biblioteca:**
+- Debug (biblioteca a `-O0`): con los tests en `/fp:precise` y la biblioteca rápida con `/Qftz-`, 133/133 en los dos sistemas. No es
+  representativo: a `-O0` el modelo rápido casi no transforma nada (hallazgo del reviewer).
+- `Release` (biblioteca optimizada): fallan 9 tests en Linux y 10 en Windows, con las mismas comprobaciones: `a/s` (≤ 1 ulp), `.ddot.`
+  2D/3D (hasta 16 ulp en sp), `NORM_INF` frente a `maxval(sum(abs(A), dim=2))` bit a bit (sp), `Yld2004` conjunto frente a funciones
+  (0.3 ulp), `perzyna_checks` en sp (1.98e-9 sobre `TOL_FLOW_sp = 1e-9`), la referencia de `closest_point_time` en JC completo + Voce
+  modificado (iteraciones 7–33 frente a 23–53; valores dentro de 1.7e-9; la tangente por diferencias finitas sobre el Newton difiere en
+  ~5e2 porque amplifica el ruido de la convergencia) y, sólo en Windows, una operación inválida atrapada en `math_spectral_kinds`.
+- Aislamiento de componentes (Windows, `Release`, biblioteca rápida más una opción): `/Qfp-speculation:safe` sola arregla los 10 tests;
+  división y raíz exactas dejan 3; trascendentes exactas o sin FMA, ninguno. Pero con especulación segura la biblioteca es 19–34 %
+  más lenta que con `/fp:precise` (Linux): ifx desactiva entonces casi todas las optimizaciones de punto flotante.
+- Velocidad (`Release`, un hilo fijado a un núcleo, mínimo de 7 rondas ABBA, mismos resultados físicos): modelo rápido / preciso en
+  Windows 0.973–1.010 (dentro del ruido); en Linux 0.978–0.995 en el return mapping (`bench_closest_point_scalability`, 20 000
+  puntos) y 0.934–0.996 en la cinemática finita (`bench_kin_kernel`, 4–7 % más rápido en 5 de 6 casos).
+- Otros hallazgos: sin `/Qftz-` el modelo rápido aplana los subnormales y la biblioteca cambia de rama (`JCfull` con
+  `0 < epd < tiny`); compilado con el modelo rápido, un test reduce a `falso` una comparación con `+Inf` (el compilador supone que no
+  hay infinitos; ifx no acepta `-fhonor-infinities` ni `-fno-finite-math-only`); con las banderas rápidas ifx se cayó dos veces de forma
+  intermitente (PROBLEMAS).
+**Iteraciones del Newton (todos los casos de los 5 tests de secuencia del solver, gfortran Debug e ifx rápido Release, sp y dp):** de 69
+casos, 66 tienen pasos plásticos que convergen (3 no tienen ninguno): 51 convergen en ≤ 12 iteraciones y 15 necesitan 15–53, también con gfortran (CPB06, CPB06ex2 y Yld2004 en `closest_point`, 4 casos de
+`closest_point_2`, per3+Ludwik y Chaboche3 en Perzyna, JC+Voce, RK, NNL y VA en `time`). Algunos casos no convergen a propósito en
+ciertos pasos. Con el modelo rápido, JC+Voce en sp deja de converger en el paso 7 (gfortran: 18 iteraciones); ese caso tiene
+`check_sp=.false.`, así que hoy ningún test lo vería.
+**Decisión del usuario (2026-11-18):**
+- La biblioteca **conserva `/fp:precise`** (D-037, D-040 sin cambios) hasta mejorar el Newton de los casos lentos (tarea siguiente,
+  empezando por JC+Voce); entonces se vuelve a medir el modelo rápido. Quedan aprobadas para ese momento, y no aplicadas: `a/s` 2 ulp,
+  `.ddot.` 32 ulp, `NORM_INF` 8 ulp (a medir), `Yld2004` 2 ulp, `TOL_FLOW_sp` 1e-8, y en las 5 pruebas de `math` con ifx trampas sólo en
+  Debug con especulación segura (sin trampas optimizado).
+- **Criterio de iteraciones (aplicado):** cada caso de los tests de secuencia del solver lleva `iters_max` (por defecto 20 = 1.5 × 12, el
+  máximo de los casos rápidos: un Newton con convergencia cuadrática converge en pocas iteraciones); los 15 casos lentos llevan su tope, 1.5 veces el máximo medido redondeado a
+  múltiplo de 5 (60–80 en `closest_point`, 25–30 en `closest_point_2`, 40 en Perzyna, 30–80 en `time`). Todo paso que converge debe
+  quedar dentro, en sp y dp. La referencia ya no compara el número de iteraciones (era ±1): sigue exigiendo el estado exacto
+  (`reference_check` con `status_iters`; en modo estricto, `MUSCLE_REFERENCE_STRICT=1`, todo sigue bit a bit). Un fallo del tope
+  imprime las iteraciones y el tope. Un caso nuevo que necesite más de 20 indica un Newton lento (`pages/contributing.md`).
+  Con `/fp:precise` la comparación ±1 no fallaba en ninguna configuración medida: su retirada es preventiva, para el modelo rápido y
+  otros compiladores (en JC+Voce pasa de ±1 a ≤ 80 con 23–53 medidas).
+**Verificación:** 133/133 en Windows (gfortran e ifx, Debug) y en Linux (gfortran e ifx, Debug y `Release`). Mutaciones del área `solvers`
+(`--samples all`, 200; medido con el tope común de 15, y subirlo no puede perder detecciones porque sin topes, en `HEAD`, el resultado
+era el mismo): resultado idéntico mutación por mutación al de `HEAD` (80 detectadas por la referencia, 55 sólo por los
+unitarios, 42 por ninguno, 23 no compilan): ninguna que la comparación ±1 detectaba quedó sin detectar; las 13 que sólo detecta la
+referencia (camino del Newton) siguen detectadas.
+**Pendiente:** mejorar el Newton de los casos lentos (JC+Voce primero; revisar su `check_sp=.false.`); `.claude/rules/testing.md` dice
+aún «iteraciones ±1» (archivo local del usuario).

@@ -101,7 +101,8 @@ listed in `docs/fypp/PROBLEMAS.md` (GPU / compilers). `class(...)` survives only
 - **References** (`tests/reference/`): values stored from a validated version, kept only where no independent
   truth exists (plan R: the Newton path of two solvers, three math results), compared within the tolerance of
   their category (decision D-021): direct computations 1e-13 (default), finite differences 1e-9, iterative
-  return mappings 1e-9 with the status exact and the iterations within one. `MUSCLE_REFERENCE_STRICT=1`
+  return mappings 1e-9 with the status exact (the iteration count is not compared: the sequence tests of the
+  solvers bound it with a cap per case, `iters_max`, decision D-041). `MUSCLE_REFERENCE_STRICT=1`
   compares bit for bit (meaningful only with gfortran, Debug); `MUSCLE_REFERENCE_REPORT=1` prints the largest
   relative error of every record that is not bit-identical. The `*_reference_mutation` tests check that a
   perturbation of 1e-6 is detected.

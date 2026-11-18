@@ -52,13 +52,13 @@ program test_mat_closest_point_time
         solver_case(0, 'tm_jc_vm_swift', 'lin1000', 'jc1', 'swift_small', 'vonmises', 200, 100.0_dp, 3.00e-3_dp), &
         solver_case(0, 'tm_jc_vm_bilinear', 'steel', 'jc2', 'bilinear', 'vonmises', 200, 1.0e-3_dp, 7.04e-4_dp), &
         solver_case(3, 'tm_jcfull_vm_vocemod', 'steel', 'jcfull', 'vocemod', 'vonmises', 200, 1.0e-3_dp, 9.16e-4_dp, &
-            check_sp=.false.), &
+            check_sp=.false., iters_max=80), &
         solver_case(0, 'tm_mrk_vm', 'steel', 'mrk', '-', 'vonmises', 200, 1.0e-2_dp, 1.15e-3_dp), &
         solver_case(0, 'tm_rk_vm', 'steel', 'rk', '-', 'vonmises', 200, 1.0e-3_dp, 2.47e-3_dp, &
-            fd_tol=RK_FD_TOL), &
+            fd_tol=RK_FD_TOL, iters_max=50), &
         solver_case(6, 'tm_nnl_vm', 'steel', 'nnl', '-', 'vonmises', 200, 1.0e-2_dp, 3.57e-4_dp, &
-            fd_tol=NNL_FD_TOL), &
-        solver_case(0, 'tm_va_vm', 'steel', 'va', '-', 'vonmises', 200, 1.0e-2_dp, 8.89e-4_dp), &
+            fd_tol=NNL_FD_TOL, iters_max=30), &
+        solver_case(0, 'tm_va_vm', 'steel', 'va', '-', 'vonmises', 200, 1.0e-2_dp, 8.89e-4_dp, iters_max=40), &
         solver_case(0, 'tm_jc_hill48_swift', 'steel', 'jc3', 'swift', 'hill48-2', 200, 1.0e-2_dp, 4.37e-4_dp), &
         solver_case(0, 'tm_jc_cpb06_ludwik', 'steel', 'jc2', 'ludwik', 'cpb06-2', 200, 1.0e-3_dp, 7.04e-4_dp), &
         solver_case(0, 'tm_jc_yld2004_swift', 'steel', 'jc3', 'swift', 'yld2004-2', 200, 1.0e-2_dp, 4.34e-4_dp), &

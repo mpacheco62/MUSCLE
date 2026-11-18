@@ -157,8 +157,10 @@ Example: a new hardening law `mylaw` with \( \sigma_y = \sigma_{y0} + K\epsilon_
      (fields in `tests/materials/mat_sequence_common.fypp`: case number `0` (no reference records), the material,
      the elasticity `'steel'` (E = 210000) or `'lin1000'` (E = 1000), the parameter set names of the models,
      `iter_nw`, `dt` and the yield strain `a_y` of the strain sequence, about y0/E; copy a neighbour case). The
-     test checks sp against dp and the tangent against finite differences along the sequence; no reference
-     records are written for a new material.
+     test checks sp against dp, the tangent against finite differences and that every converged step needs at
+     most `iters_max` Newton iterations (20 by default, a quadratic convergence) along the sequence; no reference
+     records are written for a new material. If the new case needs more, its Newton is slow: look into it, and
+     only then give the case `iters_max=` 1.5 times its largest count, rounded up to a multiple of 5 (D-041).
 
    Your own materials go in a registry of your own, passed with `-DMUSCLE_MATERIALS=<path>`.
 
