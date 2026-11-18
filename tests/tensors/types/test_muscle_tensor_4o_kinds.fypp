@@ -453,13 +453,14 @@ contains
                 call a%init(ma)
                 call b%init(mb)
                 ! Component-wise operations: one correctly rounded IEEE operation per component,
-                ! identical to the same operation on the matrix entries (tol = 0).
+                ! identical to the same operation on the matrix entries (tol = 0; a/s within 2 ulp: the fast
+                ! floating point model of ifx may multiply by the reciprocal, D-042).
                 call check_approx(passed, 'a + b' // TN, vv(a + b), ma + mb, tol=ZERO)
                 call check_approx(passed, 'a - b' // TN, vv(a - b), ma - mb, tol=ZERO)
                 call check_approx(passed, '-a' // TN, vv(-a), -ma, tol=ZERO)
                 call check_approx(passed, 's*a' // TN, vv(s*a), s*ma, tol=ZERO)
                 call check_approx(passed, 'a*s' // TN, vv(a*s), ma*s, tol=ZERO)
-                call check_approx(passed, 'a/s' // TN, vv(a/s), ma/s, tol=ZERO)
+                call check_approx(passed, 'a/s' // TN, vv(a/s), ma/s, tol=2*epsilon(ZERO))
                 call check_scaled(passed, 'norm(a)' // TN, real(a%norm(), dp), sum(abs(ra)), &
                                   sum(abs(ra)), TD)
             end do
@@ -914,13 +915,13 @@ $:test_free_generics('4O', d, k, 'test_4o_kinds_lib', 'muscle_tensor_4o', scalar
             b2 = rand_${T2D}$(10.0_dp**(mod(it, 7) - 3), 0.0_dp)
             b3 = embed_${k}$(b2)
 
-            ! Component-wise operations (exact)
+            ! Component-wise operations (exact; a/s within 2 ulp, D-042)
             call check_approx(passed, 'a + b' // TN, vv(embed_${k}$(a2 + b2)), vv(a3 + b3), tol=ZERO)
             call check_approx(passed, 'a - b' // TN, vv(embed_${k}$(a2 - b2)), vv(a3 - b3), tol=ZERO)
             call check_approx(passed, '-a' // TN, vv(embed_${k}$(-a2)), vv(-a3), tol=ZERO)
             call check_approx(passed, 's*a' // TN, vv(embed_${k}$(s*a2)), vv(s*a3), tol=ZERO)
             call check_approx(passed, 'a*s' // TN, vv(embed_${k}$(a2*s)), vv(a3*s), tol=ZERO)
-            call check_approx(passed, 'a/s' // TN, vv(embed_${k}$(a2/s)), vv(a3/s), tol=ZERO)
+            call check_approx(passed, 'a/s' // TN, vv(embed_${k}$(a2/s)), vv(a3/s), tol=2*epsilon(ZERO))
             ! Assignment fills the stored components only: 2D c = s embedded is the 3D tensor
             ! with s in the in-plane components and 0 out of plane, not the 3D assignment.
             c2 = s

@@ -634,8 +634,8 @@ subroutine test_norm_inf_${k}$(passed)
     !!   first, last and in the middle, ties, a rectangular matrix, 1x1, a matrix without rows (0);
     !! - a NaN in the first, a middle or the last row gives NaN (KAPPA must stay NaN so that the
     !!   adjugate switch falls back to LU); an Inf entry gives Inf;
-    !! - general random matrices: bit for bit the value of maxval(sum(abs(A), dim=2)) (same summation
-    !!   order, so COND_INF and the inverses keep their CPU results).
+    !! - general random matrices: the value of maxval(sum(abs(A), dim=2)) within 8 ulp (not bit for bit:
+    !!   the fast floating point model of ifx may reassociate the sums, D-042).
     use, intrinsic :: ieee_arithmetic, only : ieee_is_nan, ieee_value, ieee_quiet_nan, ieee_positive_inf
     use muscle_kinds, only : ${k}$
     use muscle_math_inverses, only : NORM_INF
@@ -683,10 +683,11 @@ subroutine test_norm_inf_${k}$(passed)
                 g(i, j) = real(rnd(rng), ${k}$)*10.0_${k}$**mod(i + 2*j + t, 7)
             end do
         end do
-        call check_true(passed, '[${k}$] NORM_INF = maxval(sum(abs(A), dim=2)) bit for bit', &
-                        NORM_INF(g) == maxval(sum(abs(g), dim=2)))
-        call check_true(passed, '[${k}$] NORM_INF = maxval(sum(abs(A), dim=2)) bit for bit (5x7 block)', &
-                        NORM_INF(g(2:6, 3:9)) == maxval(sum(abs(g(2:6, 3:9)), dim=2)))
+        ! Within 8 ulp, not bit for bit: the fast floating point model of the library may sum in another order (D-042)
+        call check_approx(passed, '[${k}$] NORM_INF = maxval(sum(abs(A), dim=2))', &
+                          NORM_INF(g), maxval(sum(abs(g), dim=2)), tol=8*epsilon(1.0_${k}$))
+        call check_approx(passed, '[${k}$] NORM_INF = maxval(sum(abs(A), dim=2)) (5x7 block)', &
+                          NORM_INF(g(2:6, 3:9)), maxval(sum(abs(g(2:6, 3:9)), dim=2)), tol=8*epsilon(1.0_${k}$))
     end do
 end subroutine test_norm_inf_${k}$
 

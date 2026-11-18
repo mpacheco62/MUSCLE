@@ -50,8 +50,8 @@ program test_mat_perzyna_checks
     $:MAT_TEST_DECLS()
     real(dp), parameter :: TOL_FLOW_dp = 1.0e-8_dp
         !! Flow rule of the uniaxial step, absolute (OO test).
-    real(sp), parameter :: TOL_FLOW_sp = 1.0e-9_sp
-        !! Flow rule of the uniaxial step, absolute, sp [1.5e-10].
+    real(sp), parameter :: TOL_FLOW_sp = 1.0e-8_sp
+        !! Flow rule of the uniaxial step, absolute, sp [1.5e-10; 2e-9 with the fast model of ifx, D-042].
     real(dp), parameter :: TOL_TAN_dp = 1.0e-7_dp
         !! Analytic tangent against finite differences (OO tests).
     real(sp), parameter :: TOL_TAN_sp = 1.0e-4_sp

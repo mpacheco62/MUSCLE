@@ -52,7 +52,7 @@ program test_mat_closest_point_time
         solver_case(0, 'tm_jc_vm_swift', 'lin1000', 'jc1', 'swift_small', 'vonmises', 200, 100.0_dp, 3.00e-3_dp), &
         solver_case(0, 'tm_jc_vm_bilinear', 'steel', 'jc2', 'bilinear', 'vonmises', 200, 1.0e-3_dp, 7.04e-4_dp), &
         solver_case(3, 'tm_jcfull_vm_vocemod', 'steel', 'jcfull', 'vocemod', 'vonmises', 200, 1.0e-3_dp, 9.16e-4_dp, &
-            check_sp=.false., iters_max=80), &
+            check_sp=.false., iters_max=80, sensitive=.true.), &
         solver_case(0, 'tm_mrk_vm', 'steel', 'mrk', '-', 'vonmises', 200, 1.0e-2_dp, 1.15e-3_dp), &
         solver_case(0, 'tm_rk_vm', 'steel', 'rk', '-', 'vonmises', 200, 1.0e-3_dp, 2.47e-3_dp, &
             fd_tol=RK_FD_TOL, iters_max=50), &
@@ -73,7 +73,10 @@ program test_mat_closest_point_time
         !! - Modified Rusinek-Klepaczko: NaN from the first plastic step in case 4 (D-018.2, plastic
         !!   strain rates above epdmax), case 15 below epdmax.
         !! - Full Johnson-Cook: dp only; in sp seq step 1 does not converge (the flow stress at a zero
-        !!   rate is 0, D-017.7) and the later steps drift from dp.
+        !!   rate is 0, D-017.7) and the later steps drift from dp. A sensitive case (D-042): its Newton path
+        !!   changes with the last bits of the operations, so with the fast floating point model of ifx its
+        !!   results are compared within 2e-9, and its reference numerical tangent and the finite difference
+        !!   check of its analytic tangent are skipped (its reference analytic tangent keeps 1e-9).
 
     $:MAT_TEST_MAIN('test_mat_closest_point_time', 'solvers/closest_point_time_dp.txt', MATS, 'jcfull')
 

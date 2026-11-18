@@ -339,13 +339,14 @@ contains
                 a = from_mat_${T}$(ma)
                 b = from_mat_${T}$(mb)
                 ! Component-wise operations are one correctly rounded IEEE operation per
-                ! component: identical to the same operation on the matrix entries (tol = 0).
+                ! component: identical to the same operation on the matrix entries (tol = 0; a/s within 2 ulp: the fast
+                ! floating point model of ifx may multiply by the reciprocal, D-042).
                 call check_approx(passed, 'a + b' // TN, to_mat_${T}$(a + b), ma + mb, tol=ZERO)
                 call check_approx(passed, 'a - b' // TN, to_mat_${T}$(a - b), ma - mb, tol=ZERO)
                 call check_approx(passed, '-a' // TN, to_mat_${T}$(-a), -ma, tol=ZERO)
                 call check_approx(passed, 's*a' // TN, to_mat_${T}$(s*a), s*ma, tol=ZERO)
                 call check_approx(passed, 'a*s' // TN, to_mat_${T}$(a*s), ma*s, tol=ZERO)
-                call check_approx(passed, 'a/s' // TN, to_mat_${T}$(a/s), ma/s, tol=ZERO)
+                call check_approx(passed, 'a/s' // TN, to_mat_${T}$(a/s), ma/s, tol=2*epsilon(ZERO))
                 call check_approx(passed, 'transpose(a)' // TN, to_mat_${T}$(transpose(a)), transpose(ma), tol=ZERO)
                 call check_approx(passed, 'a%transpose()' // TN, to_mat_${T}$(a%transpose()), transpose(ma), tol=ZERO)
                 ! A few flops: rounding relative to the natural scale of each result
@@ -640,7 +641,7 @@ $:test_free_generics('2O', d, k, 'test_2o_kinds_lib', 'muscle_tensor_2o', scalar
         type(${T2}$) :: a2, b2, x2, c2
         type(${T3}$) :: a3, b3, x3, c3
         real(${k}$) :: m(3,3), s, cond2, cond3, f
-        real(dp) :: ra(3,3)
+        real(dp) :: ra(3,3), rb(3,3)
         logical :: ok2, ok3
         integer :: it, p
         character(len=*), parameter :: TN = ' [2D vs 3D, ${k}$]'
@@ -653,6 +654,7 @@ $:test_free_generics('2O', d, k, 'test_2o_kinds_lib', 'muscle_tensor_2o', scalar
             a3 = embed_${k}$(a2)
             b2 = from_mat_${T2}$(rand_mat_2D_${k}$(10.0_dp**(mod(it, 7) - 3), 0.0_dp))
             b3 = embed_${k}$(b2)
+            rb = real(to_mat_${T2}$(b2), dp)
             s = real(0.5_dp + abs(rnd(rng)), ${k}$)
 
             ! Construction (exact)
@@ -660,13 +662,14 @@ $:test_free_generics('2O', d, k, 'test_2o_kinds_lib', 'muscle_tensor_2o', scalar
                               vv(from_mat_${T3}$(m)), tol=ZERO)
             call check_approx(passed, 'to_mat(2D) == to_mat(3D)' // TN, to_mat_${T2}$(a2), to_mat_${T3}$(a3), tol=ZERO)
 
-            ! Component-wise operations and transpose (exact)
+            ! Component-wise operations and transpose (exact; a/s within 2 ulp: the fast floating point model of ifx
+            ! may multiply by the reciprocal, D-042)
             call check_approx(passed, 'a + b' // TN, vv(embed_${k}$(a2 + b2)), vv(a3 + b3), tol=ZERO)
             call check_approx(passed, 'a - b' // TN, vv(embed_${k}$(a2 - b2)), vv(a3 - b3), tol=ZERO)
             call check_approx(passed, '-a' // TN, vv(embed_${k}$(-a2)), vv(-a3), tol=ZERO)
             call check_approx(passed, 's*a' // TN, vv(embed_${k}$(s*a2)), vv(s*a3), tol=ZERO)
             call check_approx(passed, 'a*s' // TN, vv(embed_${k}$(a2*s)), vv(a3*s), tol=ZERO)
-            call check_approx(passed, 'a/s' // TN, vv(embed_${k}$(a2/s)), vv(a3/s), tol=ZERO)
+            call check_approx(passed, 'a/s' // TN, vv(embed_${k}$(a2/s)), vv(a3/s), tol=2*epsilon(ZERO))
             call check_approx(passed, 'transpose(a)' // TN, vv(embed_${k}$(transpose(a2))), vv(transpose(a3)), tol=ZERO)
             call check_approx(passed, 'a%transpose()' // TN, vv(embed_${k}$(a2%transpose())), &
                               vv(a3%transpose()), tol=ZERO)
@@ -678,11 +681,13 @@ $:test_free_generics('2O', d, k, 'test_2o_kinds_lib', 'muscle_tensor_2o', scalar
                               [s, s, ZERO, s, s, ZERO, ZERO, ZERO, s], tol=ZERO)
             call check_approx(passed, 'c = s (3D: all components)' // TN, c3%vals, spread(s, 1, 9), tol=ZERO)
 
-            ! Same order of the non-zero terms: exact
+            ! Same order of the non-zero terms: exact (.ddot.: within 32 ulp of the sum of |a_ij b_ij|, as the fast
+            ! floating point model of ifx may group the sum differently in 2D and 3D, D-042)
             call check_approx(passed, '.dev. a' // TN, vv(embed_${k}$(.dev. a2)), vv(.dev. a3), tol=ZERO)
-            call check_approx(passed, 'a .ddot. b' // TN, a2 .ddot. b2, a3 .ddot. b3, tol=ZERO)
-            call check_approx(passed, 'a .ddot. transpose(b)' // TN, a2 .ddot. transpose(b2), &
-                              a3 .ddot. transpose(b3), tol=ZERO)
+            call check_scaled(passed, 'a .ddot. b' // TN, a2 .ddot. b2, a3 .ddot. b3, &
+                              real(sum(abs(ra*rb)), ${k}$), 32*epsilon(ZERO))
+            call check_scaled(passed, 'a .ddot. transpose(b)' // TN, a2 .ddot. transpose(b2), &
+                              a3 .ddot. transpose(b3), real(sum(abs(ra*transpose(rb))), ${k}$), 32*epsilon(ZERO))
             call check_approx(passed, 'norm(a)' // TN, a2%norm(), a3%norm(), tol=ZERO)
             ! Different grouping of the products
             call check_scaled(passed, 'det(a)' // TN, real(a2%det(), dp), real(a3%det(), dp), &
