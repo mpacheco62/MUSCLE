@@ -1621,6 +1621,9 @@ causa de las de UDTIO se aisló después (D-037).
 
 ## D-037 — ifx en CPU (Windows): estado de visco sin arreglo de tamaño cero, `/fp:precise`, pila de los tests (2026-11-14)
 
+> **Reemplazada en parte por D-042 (2026-11-18):** la biblioteca ya no lleva `/fp:precise` con ifx en CPU (modelo rápido con
+> `/Qftz-`); los tests sí.
+
 **Contexto:** primera corrida completa de los tests en Windows (ifx 2026.2.0, gfortran 16.2.0 de conda-forge, Debug,
 `sp;dp`). Con gfortran pasaban 132/133 y con ifx 102/128. Se atacaron las causas una a una.
 **Propuesta aplicada** (a partir de «sigamos para que la librería corra y pasen los tests con ifx»; pendiente de la
@@ -1705,6 +1708,9 @@ en Linux (la opción sólo se activa en Windows), `MUSCLE_GPU=SPIR64` (no cambia
 
 ## D-040 — Banderas por compilador en `cmake/MuscleCompiler.cmake`; paridad de ifx y ifx en CPU en `check.sh` (2026-11-14)
 
+> **Reemplazada en parte por D-042 (2026-11-18):** con ifx, la biblioteca usa el modelo rápido y las trampas de los 5 tests de
+> `math` sólo van en Debug.
+
 **Contexto:** revisión pedida por el usuario («cómo se están separando los casos entre gfortran y ifx; que todos los tests se
 puedan correr en ambas plataformas en CPU; que CMake y las banderas queden ordenadas»). Las banderas dependientes del
 compilador estaban repartidas en seis archivos (`src/` y `tests/` repetían el mismo esqueleto `ifx-Windows / ifx-Linux /
@@ -1752,6 +1758,9 @@ denormales según la documentación de Intel (no medido: sólo se usa en 5 tests
 
 ## D-041 — Modelo rápido de ifx en la biblioteca: evaluado y aplazado; iteraciones del Newton acotadas por caso (2026-11-18)
 
+> **Reemplazada en parte por D-042 (2026-11-18):** el modelo rápido se adoptó sin esperar a mejorar el Newton, con JC+Voce como
+> caso sensible; el criterio de iteraciones sigue.
+
 **Contexto:** el usuario pidió quitar `/fp:precise` de ifx (D-037) y, si hacía falta, que los tests dejaran de comparar bit a bit.
 Se midió en un árbol aparte (ifx 2026.2.0, Windows y Linux en WSL, `sp;dp`).
 **Medido, modelo rápido en la biblioteca:**
@@ -1797,3 +1806,46 @@ unitarios, 42 por ninguno, 23 no compilan): ninguna que la comparación ±1 dete
 referencia (camino del Newton) siguen detectadas.
 **Pendiente:** mejorar el Newton de los casos lentos (JC+Voce primero; revisar su `check_sp=.false.`); `.claude/rules/testing.md` dice
 aún «iteraciones ±1» (archivo local del usuario).
+
+## D-042 — Modelo rápido de ifx en la biblioteca; tolerancias en ulp y JC+Voce como caso sensible (2026-11-18)
+
+**Contexto:** D-041 aplazó el modelo rápido hasta mejorar el Newton de los casos lentos. Antes de eso el usuario pidió revisar si
+JC completo + Voce modificado (`tm_jcfull_vm_vocemod`, caso 3 de `closest_point_time`), el único caso cuya referencia fallaba con
+el modelo rápido, es un caso especial que se mueve con cualquier cambio mínimo.
+**Medido (estudio de sensibilidad, gfortran e ifx con `/fp:precise`, Debug y `Release`):** con perturbaciones relativas de ±1e-5 a
+±1e-15 de la deformación de la secuencia (`a_y`), el camino del Newton cambia también con el modelo preciso: en dp los pasos 5 y 7 dejan de converger con
+δ = −1e-11 en las cuatro configuraciones precisas, y los pasos 1 y 6 no convergen en ninguna. El caso es frágil en sí mismo (lo que
+cambia es el camino del Newton, que no tiene verdad independiente); no es un defecto del modelo rápido.
+**Decisión del usuario (2026-11-18: «el primero de quitarla, caso aparte y dejar documentado para corregir a futuro que es un caso
+sensible»):**
+- **Biblioteca con ifx (CPU, Windows y Linux):** sin `/fp:precise` (modelo rápido por defecto), con `/assume:minus0` (D-037), `/Qftz-`
+  (`-no-ftz`: el modelo rápido aplana los subnormales y la biblioteca cambiaba de rama, D-041) salvo en `Profile`, y en Debug
+  `/Qfp-speculation:safe` (`-fp-speculation=safe`). Los tests siguen con `/fp:precise` (sus formas cerradas y comparaciones exactas
+  suponen la semántica del estándar). `Profile` no cambia (`/fp:fast`). El build GPU no cambia. Reemplaza en parte a D-037 y D-040.
+- **Trampas de punto flotante de ifx (`/fpe:0`, `-fpe0`, los 5 tests de `math`):** sólo en Debug, donde la biblioteca lleva
+  especulación segura; optimizado, el modelo rápido evalúa por especulación operaciones cuyo resultado no se usa (una operación
+  inválida atrapada en `math_spectral_kinds`, D-041). gfortran conserva sus trampas en todas las configuraciones.
+- **Define de fypp `MUSCLE_FAST_FP`** cuando la biblioteca usa el modelo rápido (ifx sin GPU, `cmake/MuscleCompiler.cmake`); los
+  tests lo leen como `FAST_FP`.
+- **Tolerancias aprobadas en D-041, aplicadas:** `a/s` de los cinco `tensors-types-*_kinds`, 2 ulp; `.ddot.` 2D frente a 3D embebido
+  (`2o_kinds`), 32 ulp (16.4 medidos en sp); `NORM_INF` frente a `maxval(sum(abs(A), dim=2))`, 8 ulp; `Yld2004` conjunto, conjunto
+  específico y `point2` frente a las funciones, 2 ulp; `TOL_FLOW_sp` de `perzyna_checks`, 1e-8 (1.98e-9 medido). La de `.ddot.` usa como escala
+  la suma de |a_ij b_ij| (`check_scaled`), no el valor: con las matrices de escala 1e-3 del test, una tolerancia relativa con piso 1
+  no comprobaría nada (hallazgo del reviewer). `.ddot.` 2D/3D y Yld2004 conjunto/`point2` comparan dos caminos de la biblioteca con
+  otra agrupación de las operaciones; las demás comprobaciones de dos caminos del mismo binario (lote = punto, genérico = específico,
+  `pack`/`unpack`, Yld2004 sin `ddf`) siguen bit a bit.
+- **JC+Voce, caso sensible conocido** (`solver_case%sensitive`): con `FAST_FP`, sus resultados de referencia se comparan con 2e-9
+  (`TOL_SENSITIVE_FAST`; 1.7e-9 medido en Linux y 1.45e-9 en Windows, frente a 1e-9 de la categoría) y no se comparan su tangente
+  numérica de referencia (diferencias finitas sobre el Newton: 4e-9 en el primer paso y 5.6e2 en el paso 7) ni la comprobación de su
+  tangente analítica por diferencias finitas. Su tangente analítica de referencia sigue a 1e-9 (3.8e-10 medido). El estado sigue
+  exacto, el tope de iteraciones (80) sigue y su sp ya no se comprobaba (`check_sp=.false.`). Con gfortran o con el modelo preciso no
+  cambia nada. **A corregir a futuro**, al mejorar su Newton (PROBLEMAS).
+**Verificación:** 133/133 en Windows (gfortran 16.2 e ifx 2026.2, Debug y `Release`) y en Linux (WSL: `tools/check.sh --quick --ifx`,
+gfortran 15.2 e ifx en Debug, y los dos en `Release`). El define llega sólo a los builds de ifx (`FAST_FP = .true.` en el código generado
+de ifx, `.false.` en el de gfortran). Con ifx `Release` en Windows, JC+Voce queda en 1.45e-9 en resultados, 3.8e-10 en la tangente
+analítica y 4e-9 / 5.6e2 en la tangente numérica (`MUSCLE_REFERENCE_REPORT=1`): sin el caso sensible su test fallaría. Mutaciones
+(`--samples all`, gfortran, árbol nuevo frente a `HEAD`): `types` 180, `linalg` 543, `solvers` 200 y `yield` 1310, idénticas mutación
+por mutación (`solvers` mantiene sus 13 que sólo detecta la referencia, como en `HEAD`). Revisión del reviewer aplicada.
+**Pendiente:** quitar `sensitive` de JC+Voce al mejorar su Newton; los 272 avisos `#10120` de ifx en los tests `Release` (CMake pone
+`/O2` y los tests `/O3`; anteriores a esta decisión); la etapa ifx de `check.sh` sólo compila Debug, donde el modelo rápido casi no
+transforma nada: el riesgo del modelo rápido sólo se ve en `Release` (correrlo a mano en las pruebas finales).

@@ -111,6 +111,11 @@ listed in `docs/fypp/PROBLEMAS.md` (GPU / compilers). `class(...)` survives only
 - A refactor that must not change anything is checked with `tools/gen_snapshot.sh` (same generated code and
   public symbols), not with the references.
 - Checks of two paths of the same binary stay exact (batch = point API, generic = specific, `pack`/`unpack`).
+  With ifx the library is built with the fast floating point model and the tests with the precise one (decision
+  D-042): a check that compares the library with the same formula written in the test, or two paths of the library
+  that group the operations differently (2D against 3D embedded, a joint evaluation against the separate
+  functions), allows a few ulp (`n*epsilon(x)`, relative to the natural scale of the rounding error, with the
+  measured value in the decision or in a comment).
 - Kernel tests run inside an `!$omp target teams distribute parallel do` region and compare with the CPU
   (ctest label `target`). Run GPU programs with memory and time limits, e.g.
   `systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0 env OMP_TARGET_OFFLOAD=MANDATORY timeout 300 ./prog`;

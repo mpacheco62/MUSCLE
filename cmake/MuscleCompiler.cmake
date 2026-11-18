@@ -8,13 +8,14 @@
 # the GPU offload (cmake/MuscleGpu.cmake) and the build checks of src/CMakeLists.txt (UDTIO, audit probe).
 #
 # What every compiler has to give (the unit tests assume it):
-#   - strict floating point evaluation (no reassociation or contraction): gfortran does it by default; ifx asks for
-#     the precise model, but in the Profile build, which wants speed
+#   - strict floating point evaluation (no reassociation or contraction) in the code of the tests: gfortran does it
+#     by default; ifx asks for the precise model, but in the Profile build, which wants speed. The library compiled by
+#     ifx uses its fast model, without flushing the subnormal numbers to zero (D-042); gfortran's is strict
 #   - the standard sign of a negative zero: gfortran does it by default; ifx asks for /assume:minus0
 #   - the diagnostics of the Debug library: -Wall -Wextra and run time checks of bounds (gfortran: -fcheck=all;
 #     ifx: bounds, pointers and shape; `-check all` of ifx is much slower and finds nothing more here)
 #   - traps of invalid operations, divisions by zero and overflows in the main program of the tests that ask
-#     for them (muscle_fpe_traps)
+#     for them (muscle_fpe_traps; with ifx only in Debug, D-042)
 #   - optimization -O3 in the tests, in every configuration
 # A build with GPU offload (MUSCLE_GPU) keeps the ifx flags it had before D-040 (see _muscle_gpu_build below).
 #
@@ -31,7 +32,7 @@
 #                                              compile-fail tests (muscle_add_compile_fail_test)
 #
 # Measured on Windows (gfortran 16.2, ifx 2026.2) and on Linux (WSL: gfortran 15.2, ifx 2026.2); see
-# docs/fypp/DECISIONES.md D-037 to D-040 and PROBLEMAS.md.
+# docs/fypp/DECISIONES.md D-037 to D-042 and PROBLEMAS.md.
 
 if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
     set(MUSCLE_COMPILER "gnu")
@@ -44,6 +45,7 @@ message(STATUS "MUSCLE: Fortran compiler ${CMAKE_Fortran_COMPILER_ID} ${CMAKE_Fo
 
 set(MUSCLE_OPT_BENCH "")
 set(MUSCLE_LINK_STACK "")
+set(MUSCLE_FAST_FP OFF)
 
 # A build with GPU offload (MUSCLE_GPU, cmake/MuscleGpu.cmake) keeps the ifx flags it had before D-040: the precise
 # floating point model, the signed zero and the Debug diagnostics were measured on the CPU only, and the tests of a GPU
@@ -92,23 +94,34 @@ if(MUSCLE_COMPILER STREQUAL "gnu")
 elseif(WIN32)
     # ifx on Windows: the options are /option, not -option
     if(_muscle_gpu_build)
-        set(MUSCLE_SEMANTICS "")
+        set(_muscle_fp_library "")
+        set(_muscle_fp_tests "")
         set(_muscle_diagnostics "")
     else()
-        set(MUSCLE_SEMANTICS
+        # The library uses the fast floating point model of ifx (D-042), with /Qftz- (the fast model flushes the
+        # subnormal numbers to zero and a branch of the library changes with them) and, in Debug, safe speculation
+        # (the traps of the Debug tests must not stop on an operation the fast model evaluates speculatively). The
+        # tests keep the precise model: the fast one assumes there are no infinities and folds a test against
+        # +Inf or NaN to false.
+        set(_muscle_fp_library
+            /assume:minus0
+            $<$<NOT:$<CONFIG:Profile>>:/Qftz->
+            $<$<CONFIG:Debug>:/Qfp-speculation:safe>)
+        set(_muscle_fp_tests
             /assume:minus0
             $<$<NOT:$<CONFIG:Profile>>:/fp:precise>)
         set(_muscle_diagnostics $<$<CONFIG:Debug>:/warn:all /check:bounds /check:pointers /check:shape /traceback>)
+        set(MUSCLE_FAST_FP ON)
     endif()
     set(MUSCLE_OPT_LIBRARY
-        /c /Qopenmp ${MUSCLE_SEMANTICS}
+        /c /Qopenmp ${_muscle_fp_library}
         $<$<CONFIG:Debug>:/Z7>
         ${_muscle_diagnostics}
         $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>)
     set(MUSCLE_LINK_LIBRARY "")
     set(MUSCLE_OPT_TESTS
         /O3 /warn:all
-        ${MUSCLE_SEMANTICS}
+        ${_muscle_fp_tests}
         $<$<CONFIG:Debug>:/Z7>
         $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>)
     set(MUSCLE_LINK_TESTS
@@ -116,7 +129,8 @@ elseif(WIN32)
         $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>)
     set(MUSCLE_FLAG_NO_INLINE /Ob0)
     set(MUSCLE_FLAGS_HOST_OFFLOAD -Qopenmp-targets:spir64)
-    set(MUSCLE_FLAG_FPE_TRAPS /fpe:0)
+    # Traps only in Debug: optimized, the fast model of the library evaluates operations speculatively (D-042)
+    set(MUSCLE_FLAG_FPE_TRAPS $<$<CONFIG:Debug>:/fpe:0>)
     set(MUSCLE_FLAGS_COMPILE_FAIL /nologo /syntax-only)
     set(MUSCLE_FLAG_INCLUDE /I)
     set(MUSCLE_COMPILE_FAIL_PASS "error #(8289|6053)")
@@ -125,25 +139,33 @@ elseif(WIN32)
 else()
     # ifx on Linux
     if(_muscle_gpu_build)
-        set(MUSCLE_SEMANTICS "")
+        set(_muscle_fp_library "")
+        set(_muscle_fp_tests "")
         set(_muscle_diagnostics "")
     else()
-        set(MUSCLE_SEMANTICS
+        # As on Windows (D-042): fast model in the library with -no-ftz (and safe speculation in Debug), precise
+        # model in the tests
+        set(_muscle_fp_library
+            -assume minus0
+            $<$<NOT:$<CONFIG:Profile>>:-no-ftz>
+            $<$<CONFIG:Debug>:-fp-speculation=safe>)
+        set(_muscle_fp_tests
             -assume minus0
             $<$<NOT:$<CONFIG:Profile>>:-fp-model=precise>)
+        set(MUSCLE_FAST_FP ON)
         # one `-check` only: CMake removes the repeated options of a target, and `-check bounds -check pointers`
         # would become `-check bounds pointers`
         set(_muscle_diagnostics $<$<CONFIG:Debug>:-warn all -check bounds,pointers,shape -traceback>)
     endif()
     set(MUSCLE_OPT_LIBRARY
-        -fpp -qopenmp -fPIC ${MUSCLE_SEMANTICS}
+        -fpp -qopenmp -fPIC ${_muscle_fp_library}
         $<$<CONFIG:Debug>:-g -O0>
         ${_muscle_diagnostics}
         $<$<CONFIG:Profile>:-Ofast -ipo -fp-model=fast -DNDEBUG>)
     set(MUSCLE_LINK_LIBRARY "")
     set(MUSCLE_OPT_TESTS
         -O3 -warn all
-        ${MUSCLE_SEMANTICS}
+        ${_muscle_fp_tests}
         $<$<CONFIG:Debug>:-g>
         $<$<CONFIG:Profile>:-Ofast -ipo -fp-model=fast -DNDEBUG>)
     set(MUSCLE_LINK_TESTS
@@ -151,11 +173,17 @@ else()
         $<$<CONFIG:Profile>:-Ofast -ipo -fp-model=fast -DNDEBUG>)
     set(MUSCLE_FLAG_NO_INLINE -fno-inline)
     set(MUSCLE_FLAGS_HOST_OFFLOAD -fopenmp-targets=spir64)
-    set(MUSCLE_FLAG_FPE_TRAPS -fpe0)
+    set(MUSCLE_FLAG_FPE_TRAPS $<$<CONFIG:Debug>:-fpe0>)
     set(MUSCLE_FLAGS_COMPILE_FAIL -syntax-only)
     set(MUSCLE_FLAG_INCLUDE -I)
     set(MUSCLE_COMPILE_FAIL_PASS "error #(8289|6053)")
     set(MUSCLE_COMPILE_FAIL_FAIL "error #7002|catastrophic error")
+endif()
+
+# The library uses a fast floating point model (ifx, not a GPU build): the fypp define MUSCLE_FAST_FP lets the tests
+# relax the checks of a case whose Newton is too sensitive to rounding (`sensitive` of tests/materials, D-042)
+if(MUSCLE_FAST_FP)
+    list(APPEND MUSCLE_FYPP_DEFINES MUSCLE_FAST_FP)
 endif()
 
 
