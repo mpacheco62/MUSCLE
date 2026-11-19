@@ -18,7 +18,8 @@
 #     ifx: bounds, pointers and shape; `-check all` of ifx is much slower and finds nothing more here)
 #   - traps of invalid operations, divisions by zero and overflows in the main program of the tests that ask
 #     for them (muscle_fpe_traps; with ifx only in Debug, D-042)
-#   - optimization -O3 in the tests, in every configuration
+#   - optimization -O3 in the tests, in every configuration, and in the Release library (with ifx on Windows CMake
+#     would give /O2)
 # A build with GPU offload (MUSCLE_GPU) keeps the ifx flags it had before D-040 (see _muscle_gpu_build below).
 #
 # Variables (lists; an element may be a generator expression with several options):
@@ -93,7 +94,9 @@ if(MUSCLE_COMPILER STREQUAL "gnu")
         set(MUSCLE_LINK_STACK -Wl,--stack,16777216)
     endif()
 elseif(WIN32)
-    # ifx on Windows: the options are /option, not -option
+    # ifx on Windows: the options are /option, not -option. Release optimizes at /O3, as gfortran and ifx on Linux
+    # (the default of CMake is /O2 here)
+    string(REPLACE "/O2" "/O3" CMAKE_Fortran_FLAGS_RELEASE "${CMAKE_Fortran_FLAGS_RELEASE}")
     if(_muscle_gpu_build)
         set(_muscle_fp_library "")
         set(_muscle_fp_tests "")

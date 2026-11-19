@@ -1849,7 +1849,7 @@ de ifx, `.false.` en el de gfortran). Con ifx `Release` en Windows, JC+Voce qued
 analítica y 4e-9 / 5.6e2 en la tangente numérica (`MUSCLE_REFERENCE_REPORT=1`): sin el caso sensible su test fallaría. Mutaciones
 (`--samples all`, gfortran, árbol nuevo frente a `HEAD`): `types` 180, `linalg` 543, `solvers` 200 y `yield` 1310, idénticas mutación
 por mutación (`solvers` mantiene sus 13 que sólo detecta la referencia, como en `HEAD`). Revisión del reviewer aplicada.
-**Pendiente:** quitar `sensitive` de JC+Voce al mejorar su Newton; los 272 avisos `#10120` de ifx en los tests `Release` (CMake pone
+**Pendiente:** quitar `sensitive` de JC+Voce al mejorar su Newton (hecho en D-043); los 272 avisos `#10120` de ifx en los tests `Release` (corregido en D-044) (CMake pone
 `/O2` y los tests `/O3`; anteriores a esta decisión); la etapa ifx de `check.sh` sólo compila Debug, donde el modelo rápido casi no
 transforma nada: el riesgo del modelo rápido sólo se ve en `Release` (correrlo a mano en las pruebas finales).
 
@@ -1902,3 +1902,19 @@ este cambio (PROBLEMAS). Revisión del reviewer aplicada (el dominio en Fortran,
 `dstress_dep` fuera del piso, referencia regenerada otra vez: sólo cambian bits del caso 3, notas de D-037, de `solvers.toml` y de la GPU).
 **Pendiente:** medir otra vez `tm_jcfull_vm_vocemod` en la GPU (su `f0 = 2` de `tests/gpu/target_cases.py` y su exclusión en sp de
 `tools/gpu_skip_tests.sh` se midieron antes de este cambio, ESTADO_OPTIMO).
+
+## D-044 — `Release` a `-O3` en todos los compiladores; los tests sin el nivel de optimización de CMake (2026-11-19)
+
+**Contexto:** con ifx en Windows los tests de `Release` daban 272 avisos `#10120` («overriding '/O2' with '/O3'»): CMake pone `/O2` en
+`CMAKE_Fortran_FLAGS_RELEASE` y los tests piden `/O3` en toda configuración (el mismo caso que el `/Od` de Debug, D-040). Además la
+biblioteca de ifx en Windows quedaba en `/O2`, y en Linux (ifx y gfortran) y con gfortran en Windows en `-O3`.
+**Decisión del usuario (2026-11-19: «dejar por defecto O3 en release en todos»):**
+- `tests/CMakeLists.txt` quita el nivel de optimización de las banderas de CMake de cada configuración (`/Od`, `/O1`, `/O2`, `-O2`,
+  `-O3`, `-Os` en Debug, `Release`, `RelWithDebInfo` y `MinSizeRel`); quedan las demás (`/DNDEBUG`, información de depuración). Los
+  tests siguen en `-O3` en toda configuración. Antes sólo se quitaba `/Od`.
+- `cmake/MuscleCompiler.cmake`: con ifx en Windows, `Release` usa `/O3` en lugar de `/O2` (también la biblioteca y un build con GPU).
+  Se cambia la variable en el ámbito del proyecto, no la caché (que sigue mostrando `/O2`).
+**Verificación:** Windows: ifx Debug y `Release` (ya con `/O3`, biblioteca y tests), gfortran Debug y `Release`: 133/133 (un `Debug` de
+gfortran tuvo el cuelgue intermitente conocido de `gpu-family_target_hard_sp`, PROBLEMAS); los avisos de ifx quedan en los 42 `#8889`
+conocidos. Linux (WSL): `tools/check.sh --quick --ifx` y `Release` con gfortran e ifx, 133/133, 0 avisos de ifx en `Release` (allí no
+cambia nada: CMake ya ponía `-O3`). Sin medir: la velocidad de la biblioteca de ifx en Windows con `/O3` frente a `/O2`.

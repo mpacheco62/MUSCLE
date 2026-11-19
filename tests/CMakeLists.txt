@@ -13,9 +13,12 @@ add_custom_target(build_target_tests)
 # last of the link options)
 target_compile_options(compile_options INTERFACE ${MUSCLE_OPT_TESTS})
 target_link_options(compile_options INTERFACE ${MUSCLE_LINK_TESTS} ${MUSCLE_LINK_STACK})
-# The tests are compiled with -O3 in every configuration: the -Od of the Debug flags of CMake would only be
-# overridden (ifx warns about it)
-string(REPLACE "/Od" "" CMAKE_Fortran_FLAGS_DEBUG "${CMAKE_Fortran_FLAGS_DEBUG}")
+# The tests are compiled with -O3 in every configuration: the optimization level of the flags of CMake for each
+# configuration (/Od in Debug, /O2 in Release with ifx on Windows, ...) would only be overridden, and ifx warns
+# about it (#10120); the other flags of CMake (/DNDEBUG, debug information) stay
+foreach(config IN ITEMS DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    string(REGEX REPLACE "(^| )[-/]O[0-3ds]( |$)" " " CMAKE_Fortran_FLAGS_${config} "${CMAKE_Fortran_FLAGS_${config}}")
+endforeach()
 
 # Shared assertions (muscle_test_utils: check_approx, check_true, check_scaled) and helpers
 # (muscle_test_helpers: random generator, reference matrix operations, record) of the tests
