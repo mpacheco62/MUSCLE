@@ -75,10 +75,16 @@ For each material of the registry, in `sp` and `dp`:
 *   **Build:** CMake 3.20+ (Ninja recommended) and **FYPP 3.1+** (`pip install fypp`).
 *   **Python 3** (FYPP and the material registry).
 *   **BLAS & LAPACK** (or Intel MKL), required by CMake.
-*   Optional: [FORD](https://forddocs.readthedocs.io) for the documentation. `environment.yml` installs
-    FYPP and FORD.
+*   Optional: [FORD](https://forddocs.readthedocs.io) for the documentation.
 
-Tested toolchain (Linux):
+The conda environment of `environment.yml` (conda-forge) has all of them, on Linux and on Windows: GNU Fortran,
+CMake, Ninja, BLAS/LAPACK, Python, FYPP and FORD (`conda env create -f environment.yml`, then
+`conda activate muscle`). Intel `ifx` comes from oneAPI, outside the environment. The environment takes its
+packages from conda-forge only; on a Miniconda whose configuration still lists the Anaconda `defaults` channel,
+conda asks first to accept that channel's terms of service (`conda tos accept`) or to remove it
+(`conda config --remove channels defaults`); Miniforge needs neither.
+
+Tested toolchain (Linux; on Windows, every test passes with GNU Fortran 16.2 of conda-forge and with `ifx` 2026.2):
 
 | Tool | Version | Scope |
 |------|---------|-------|
@@ -99,15 +105,41 @@ not thread-safe under OpenMP (`MUSCLE_UDTIO=AUTO`).
 ```bash
 git clone https://github.com/mpacheco62/muscle.git
 cd muscle
+conda env create -f environment.yml     # once
+conda activate muscle
 
-# Configure and build the library
+# Configure, build the library and the tests, run the tests (build/gfortran-debug)
+cmake --preset gfortran-debug
+cmake --build --preset gfortran-debug
+ctest --preset gfortran-debug
+```
+
+`CMakePresets.json` has `gfortran-debug`, `gfortran-release`, `ifx-debug` and `ifx-release`, each in
+`build/<preset>`. The `ifx` presets need the oneAPI environment loaded first (Linux:
+`source /opt/intel/oneapi/setvars.sh`; Windows: the *Intel oneAPI command prompt*, or `setvars.bat`), with the
+conda environment active too (for FYPP).
+
+Without presets, with the tools of your choice on the `PATH`:
+
+```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-
-# Tests (not built by the default target)
-cmake --build build --target build_all_tests
+cmake --build build                               # the library
+cmake --build build --target build_all_tests      # the tests (not built by the default target)
 ctest --test-dir build --output-on-failure
 ```
+
+**Visual Studio Code** (extension CMake Tools): it lists the presets above. CMake Tools does not activate conda
+environments: open VS Code from the active environment (`conda activate muscle`, then `code .`), or put the
+environment in the `PATH` of CMake Tools in your `.vscode/settings.json`, for example on Windows:
+
+```json
+"cmake.environment": {
+    "PATH": "${env:USERPROFILE}\\miniconda3\\envs\\muscle;${env:USERPROFILE}\\miniconda3\\envs\\muscle\\Library\\bin;${env:USERPROFILE}\\miniconda3\\envs\\muscle\\Scripts;${env:PATH}"
+}
+```
+
+(on Linux: `"PATH": "${env:HOME}/miniconda3/envs/muscle/bin:${env:PATH}"`; adapt the path to your conda
+installation). For the `ifx` presets, open VS Code from a console where oneAPI is loaded.
 
 Options:
 

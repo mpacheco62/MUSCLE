@@ -1,9 +1,19 @@
-name: ford
+# Everything needed to build MUSCLE, run its tests and generate its documentation, on Linux and Windows:
+#   conda env create -f environment.yml      (then: conda activate muscle)
+# The Fortran compiler is GNU Fortran from conda-forge (ifx comes from Intel oneAPI, outside this environment).
+# CMakePresets.json uses the tools of the active environment; README.md, section Building, has the details.
+name: muscle
 channels:
   - conda-forge
-  - defaults
+  - nodefaults
 dependencies:
   - python=3.10
+  - cmake>=3.25
+  - ninja
+  - gfortran
+  - openblas
+  - libblas=*=*openblas
+  - liblapack=*=*openblas
   - graphviz
   - pip
   - pip:

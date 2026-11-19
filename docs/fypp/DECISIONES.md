@@ -1918,3 +1918,34 @@ biblioteca de ifx en Windows quedaba en `/O2`, y en Linux (ifx y gfortran) y con
 gfortran tuvo el cuelgue intermitente conocido de `gpu-family_target_hard_sp`, PROBLEMAS); los avisos de ifx quedan en los 42 `#8889`
 conocidos. Linux (WSL): `tools/check.sh --quick --ifx` y `Release` con gfortran e ifx, 133/133, 0 avisos de ifx en `Release` (allí no
 cambia nada: CMake ya ponía `-O3`). Sin medir: la velocidad de la biblioteca de ifx en Windows con `/O3` frente a `/O2`.
+
+## D-045 — Un entorno conda (`muscle`) con todo lo del build y `CMakePresets.json`; el archivador de gfortran sin `-DCMAKE_AR` (2026-11-19)
+
+**Contexto:** compilar en Windows pedía tres cosas separadas que el usuario tenía que juntar a mano: fypp y FORD en el
+entorno conda `ford` (el único que creaba `environment.yml`), gfortran y BLAS/LAPACK en otro entorno (`gfortran`) y, con
+gfortran, `-DCMAKE_AR`/`-DCMAKE_RANLIB` apuntando a `x86_64-w64-mingw32-{ar,ranlib}` (el gfortran de conda-forge no trae un
+`ar` a secas: CMake dejaba `CMAKE_AR` sin encontrar y la biblioteca estática no enlazaba). VS Code (CMake Tools) sin presets
+configuraba con lo que hubiera en el `PATH` (ifx sin `setvars`, `cl` de Visual Studio, sin fypp) y fallaba. Es el punto M6 de
+`ANALISIS_MANTENIBILIDAD.md` («entorno no fijado: ningún compilador»).
+
+**Decisión:**
+- `environment.yml` crea **un** entorno, `muscle` (antes `ford`), sólo de conda-forge (`nodefaults`): Python 3.10, CMake ≥ 3.25,
+  Ninja, gfortran, OpenBLAS (`libblas`/`liblapack` en su variante openblas: la de MKL, la por defecto en Windows, pesa
+  varios GB), graphviz, y por pip FORD, fypp ≥ 3.1 y fortls. ifx sigue viniendo de oneAPI, fuera del entorno.
+- `CMakePresets.json` (esquema 6, CMake ≥ 3.25): `gfortran-debug`, `gfortran-release`, `ifx-debug`, `ifx-release`, cada uno en
+  `build/<preset>`, Ninja; C con `gcc` o `icx` (también en Windows: antes el C de ifx era `cl`); el preset de build compila
+  `all` y `build_all_tests`, el de test muestra la salida de los que fallan. Los presets no ponen rutas: usan las
+  herramientas del `PATH` (el entorno activo, o `cmake.environment` en el `.vscode/settings.json` local; README, *Building*).
+  Los de ifx necesitan oneAPI cargado antes (CMake Tools no corre `setvars` en modo presets).
+- `cmake/MuscleCompiler.cmake`: con gfortran, si `CMAKE_AR` no se encontró se toma `CMAKE_Fortran_COMPILER_AR` (el `gcc-ar`
+  junto al compilador, que CMake sí encuentra) y lo mismo con `ranlib`.
+- `tools/check.sh` y `ford_build.sh` buscan FORD en el entorno `muscle` y, si no, en `ford` (instalaciones previas).
+
+**Consecuencias:** en Linux y en Windows basta `conda env create -f environment.yml`, `conda activate muscle` y
+`cmake --preset gfortran-debug` (o elegir el preset en VS Code). Un Miniconda que aún lista el canal `defaults` pide antes
+aceptar sus términos de servicio (`conda tos accept`) o quitarlo; Miniforge no. El directorio `build/` pasa a contener un
+subdirectorio por preset.
+**Verificación:** Windows: `gfortran-debug` con gfortran, gcc, OpenBLAS y fypp sólo en el `PATH` (sin `-DCMAKE_AR`): 133/133;
+`ifx-debug` (oneAPI cargado, `icx`): 133/133. Linux (WSL, herramientas del sistema): `gfortran-debug` e `ifx-release`: 133/133.
+`environment.yml` resuelto en seco en Windows (gfortran 16.2, OpenBLAS 0.3.34, sin MKL); el entorno `muscle` aún no se creó ni
+se probó en una máquina nueva.

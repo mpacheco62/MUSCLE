@@ -15,7 +15,7 @@
 #    checks on every Fortran source.
 # 2. Configure BUILD_DIR (default: build-check) as Debug with every real kind, build
 #    `build_all_tests`, check the operator signatures (tools/fypp/ops_signatures.py) and run
-#    ctest; build the FORD documentation if FORD is found (PATH, conda environment ford or
+#    ctest; build the FORD documentation if FORD is found (PATH, conda environment muscle or ford, or
 #    build-check/.ford-venv). Skipped with --lint-only and --doc.
 #    With --quick, stop after ctest: no UDTIO build, no FORD and none of the GPU stages below
 #    (the everyday check; run the full gate before closing a stage).
@@ -235,9 +235,9 @@ echo "== lint: OK"
 
 # build_doc <required>: the FORD documentation in ${build_dir}/doc. FORD preprocesses the templates with fypp
 # (my_project.md) and must run without errors (warnings are listed in ${build_dir}/ford.log). FORD is looked
-# up in the PATH, then in the conda environment `ford` that environment.yml creates, then in the venv
-# build-check/.ford-venv (.claude/skills/muscle-revisar-documentacion/scripts/ford_build.sh --install creates
-# either); its directory goes first in the PATH, so that FORD runs the fypp of the same environment. Without
+# up in the PATH, then in the conda environment `muscle` that environment.yml creates (or `ford`, its former
+# name), then in the venv build-check/.ford-venv (.claude/skills/muscle-revisar-documentacion/scripts/ford_build.sh
+# --install creates either); its directory goes first in the PATH, so that FORD runs the fypp of the same environment. Without
 # FORD: skipped, or a failure if <required> is 1.
 build_doc() {
     local required="$1" ford_bin="" conda_cmd conda_path ford_env seen=" "
@@ -251,13 +251,14 @@ build_doc() {
             conda_path=$(readlink -f "$(command -v "$conda_cmd")")
             [[ "$seen" == *" $conda_path "* ]] && continue
             seen+="$conda_path "
-            ford_env=$("$conda_cmd" env list 2>/dev/null | awk '$1 == "ford" {print $NF}')
-            if [[ -n "$ford_env" && -x "$ford_env/bin/ford" ]]; then ford_bin="$ford_env/bin"; break; fi
+            for ford_env in $("$conda_cmd" env list 2>/dev/null | awk '$1 == "muscle" || $1 == "ford" {print $NF}'); do
+                if [[ -x "$ford_env/bin/ford" ]]; then ford_bin="$ford_env/bin"; break 2; fi
+            done
         done
         [[ -z "$ford_bin" && -x build-check/.ford-venv/bin/ford ]] && ford_bin="$PWD/build-check/.ford-venv/bin"
     fi
     if [[ -z "$ford_bin" ]]; then
-        echo "== doc: FORD not found (PATH, conda environment ford, build-check/.ford-venv)$( (( required )) \
+        echo "== doc: FORD not found (PATH, conda environment muscle or ford, build-check/.ford-venv)$( (( required )) \
             && echo '; install it with .claude/skills/muscle-revisar-documentacion/scripts/ford_build.sh . --install' \
             || echo ', skipped')"
         return "$required"

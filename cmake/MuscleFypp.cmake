@@ -30,8 +30,8 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_program(FYPP_EXECUTABLE fypp)
 if(NOT FYPP_EXECUTABLE)
     message(FATAL_ERROR
-        "MUSCLE: fypp not found. Install it with `pip install fypp` "
-        "or `conda env update -f environment.yml`.")
+        "MUSCLE: fypp not found. Activate the conda environment of environment.yml "
+        "(`conda env create -f environment.yml`, then `conda activate muscle`) or install it with `pip install fypp`.")
 endif()
 
 execute_process(COMMAND ${FYPP_EXECUTABLE} --version

@@ -21,8 +21,9 @@ código tenga un error, que se reporta al usuario en lugar de «documentarlo».
 ## 1. FORD: generar y validar
 
 `.claude/skills/muscle-revisar-documentacion/scripts/ford_build.sh <repo> [--warn] [OUTPUT_DIR]` busca FORD en el
-`PATH`, en el entorno conda `ford` (el de `environment.yml`) o en `build-check/.ford-venv`, genera la documentación
-desde la raíz (`my_project.md` preprocesa las plantillas con fypp) y resume los avisos sin el ruido conocido.
+`PATH`, en el entorno conda `muscle` (el de `environment.yml`; también en `ford`, su nombre anterior) o en
+`build-check/.ford-venv`, genera la documentación desde la raíz (`my_project.md` preprocesa las plantillas con fypp)
+y resume los avisos sin el ruido conocido.
 
 - **Si no encuentra FORD, pide permiso al usuario antes de instalar** y luego corre con `--install` (crea el
   entorno conda desde `environment.yml`, o un venv con `pip install ford fypp`; necesita red). Nunca instales en
