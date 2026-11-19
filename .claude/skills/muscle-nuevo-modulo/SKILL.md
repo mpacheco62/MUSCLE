@@ -115,8 +115,10 @@ En este orden (tiempos aproximados en `contributing.md`, *Development cycle*):
 4. Si el cambio no debía alterar el código generado de lo existente (por ejemplo, sólo agregar un modelo a la
    lista de un módulo de familia), `tools/gen_snapshot.sh save` antes y `compare` después.
 5. `tools/check.sh --quick`: lint (kinds, literales, GPU, 132 columnas, SPDX), build sin **ningún aviso del
-   compilador**, ctest. Un aviso nuevo hace fallar el chequeo: arréglalo, no lo silencies.
-6. `tools/check.sh` completo al cerrar (≈ 25 min: builds GPU, tests en la GPU Intel, auditoría). Para correr en
+   compilador**, ctest. Un aviso nuevo hace fallar el chequeo: arréglalo, no lo silencies. Con `--ifx` repite el
+   build y los tests con ifx en CPU (`build-check-ifx`; los avisos de ifx se muestran, no se cuentan). Las banderas
+   por compilador están en `cmake/MuscleCompiler.cmake` (D-040).
+6. `tools/check.sh` completo al cerrar (≈ 25 min: etapa de ifx en CPU si hay ifx, builds GPU, tests en la GPU Intel, auditoría). Para correr en
    GPU a mano: `systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0` + `timeout`; nunca
    `ulimit -s unlimited`.
 7. Revisión independiente del diff (agente `reviewer`, si existe en tu copia) antes de pedir aprobación; pídele también que mire si

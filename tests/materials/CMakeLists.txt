@@ -81,6 +81,9 @@ if(NOT MUSCLE_MATERIALS)
     add_muscle_fypp_test(mat_batch_openmp test_muscle_material_batch_openmp.fypp)
     # Batch API on device memory muscle_update_<name>_dev (D-019.7a): arrays of omp_target_alloc against
     # muscle_update_<name> on mapped arrays, one test per material and kind (target_cases.py)
+    # With ifx these tests are built for spir64 and run with the offload disabled, so that they
+    # also run on the CPU: omp_target_* only work in a program compiled with offload (tests/CMakeLists.txt,
+    # muscle_target_test_options, D-039). gfortran's libgomp serves the host as a device without any flag
     add_muscle_fypp_target_tests(mat_batch_dev test_muscle_material_batch_dev.fypp batch_dev)
     # Point kernels of materials that use every model and every solver in an OpenMP target region
     # against the CPU (testing.md, GPU), one test per material (add_muscle_fypp_target_tests,

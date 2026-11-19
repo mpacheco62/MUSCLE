@@ -35,7 +35,9 @@ prueba del recién llegado (agregar la ley de Perić) mostró que se olvida.
      GPU de la familia, que incluye el modelo solo);
    - un `solver_case(0, ...)` en `tests/materials/test_muscle_material_<solver>.fypp` (campos en
      `mat_sequence_common.fypp`: número de caso 0 = sin registros de referencia, material, elasticidad, nombres de
-     los conjuntos, `iter_nw`, `dt`, deformación de fluencia de la secuencia ≈ y0/E). Ese test compara sp con dp
+     los conjuntos, `iter_nw`, `dt`, deformación de fluencia de la secuencia ≈ y0/E; `iters_max`, tope de iteraciones
+     del Newton en los pasos que convergen, 20 por defecto: si el caso necesita más, el Newton es lento: revisarlo, y
+     sólo entonces darle 1.5 veces su máximo redondeado a múltiplo de 5, D-041). Ese test compara sp con dp
      y la tangente con diferencias finitas en cada paso plástico.
 7. **README:** el modelo en la lista de modelos (nada lo comprueba).
 

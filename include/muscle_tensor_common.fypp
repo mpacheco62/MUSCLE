@@ -275,6 +275,32 @@
     end function is_approx_${P}$_tbp
 #:enddef
 
+#! Defined output (`write(formatted)`) of the type of family F, dimension d and kind k: the wrapper
+#! `write_<d><F>_<k>_tbp`, which the type binds, calls `print_<d><F>_<k>` of muscle_tensor_io with the
+#! stored components. The binding is in the type of the family (inside `#:if defined('ENABLE_UDTIO')`):
+#! ifx 2026.2 does not find an interface `write(formatted)` re-exported together with its type (D-038).
+#! Expand it inside the `contains` part of the module, also under `ENABLE_UDTIO`.
+#:def TENSOR_UDTIO_TBP(d, F, k)
+    #:set S = d + F
+    #:set T = tname(S, k)
+    subroutine write_${S}$_${k}$_tbp(dtv, unit, iotype, v_list, iostat, iomsg)
+        !! `write(unit, '(DT)') t`: defined formatted output of a `${T}$`, through `print_${S}$_${k}$`.
+        class(${T}$), intent(in) :: dtv  ! lint: allow(oop) the standard requires class in UDTIO
+            !! Tensor to print.
+        integer, intent(in) :: unit
+            !! Output unit.
+        character(len=*), intent(in) :: iotype
+            !! Edit descriptor type (`LISTDIRECTED`, `DT...`).
+        integer, intent(in) :: v_list(:)
+            !! Optional (width, decimals).
+        integer, intent(out) :: iostat
+            !! I/O status.
+        character(len=*), intent(inout) :: iomsg
+            !! I/O error message.
+        call print_${S}$_${k}$(dtv%vals, unit, iotype, v_list, iostat, iomsg)
+    end subroutine write_${S}$_${k}$_tbp
+#:enddef
+
 #! Copies the matrix shown to the user of a tensor (`Layout.matrix`: the full 3x3 matrix of a
 #! 2nd-order tensor, the matrix of the base 2nd-order layout of a 4th-order one) stored in `src`
 #! into the square array `m`, column by column (`m(:,j) = (/ ... /)`); components that are not

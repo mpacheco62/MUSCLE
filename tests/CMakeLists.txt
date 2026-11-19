@@ -9,52 +9,16 @@ list(APPEND MUSCLE_FYPP_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/common/muscle_fd.fy
 # The tests that run kernels in an OpenMP target region (muscle_target_test_options, ctest label `target`)
 add_custom_target(build_target_tests)
 
-if (CMAKE_Fortran_COMPILER_ID STREQUAL "IntelLLVM")
-        message(STATUS "INTEL Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-        if (WIN32)
-            target_compile_options(compile_options INTERFACE "/O3" "/warn:all")
-            target_compile_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:/Z7>
-                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
-                                )
-            target_link_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:/Z7>
-                                        $<$<CONFIG:Profile>:/Ofast /qipo /fp:fast /DNDEBUG>
-                                )
-        else()
-            # Linux: the Windows-style options above are read as file names
-            target_compile_options(compile_options INTERFACE "-O3" "-warn" "all")
-            target_compile_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:-g>
-                                        $<$<CONFIG:Profile>:-Ofast -ipo -fp-model=fast -DNDEBUG>
-                                )
-            target_link_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:-g>
-                                        $<$<CONFIG:Profile>:-Ofast -ipo -fp-model=fast -DNDEBUG>
-                                )
-        endif()
-
-        # target_compile_options(muscle PRIVATE 
-        #                                 -c -Qopenmp -fpic
-        #                         )
-elseif  (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-        message(STATUS "GNU Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-        # Unused dummy arguments are part of uniform interfaces; unused local variables still warn
-        target_compile_options(compile_options INTERFACE "-O3" "-Wall" "-Wno-unused-dummy-argument")
-        target_compile_options(compile_options INTERFACE
-                                        $<$<CONFIG:Debug>:-g>
-                                        $<$<CONFIG:Profile_unittests>:-g -O0 -fprofile-arcs -ftest-coverage>
-                                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
-                                )
-        target_link_options(compile_options INTERFACE 
-                        $<$<CONFIG:Debug>:-g>
-                        $<$<CONFIG:Profile_unittests>:--coverage>
-                        $<$<CONFIG:Profile>:-Ofast -pg -flto -ffast-math -faggressive-loop-optimizations -DNDEBUG>
-                        )
-else()
-    message(FATAL_ERROR "Unknown Fortran compiler ID: ${CMAKE_Fortran_COMPILER_ID}.")
-endif()
-
+# Flags of the tests by compiler and OS: cmake/MuscleCompiler.cmake (the stack of the main thread is the
+# last of the link options)
+target_compile_options(compile_options INTERFACE ${MUSCLE_OPT_TESTS})
+target_link_options(compile_options INTERFACE ${MUSCLE_LINK_TESTS} ${MUSCLE_LINK_STACK})
+# The tests are compiled with -O3 in every configuration: the optimization level of the flags of CMake for each
+# configuration (/Od in Debug, /O2 in Release with ifx on Windows, ...) would only be overridden, and ifx warns
+# about it (#10120); the other flags of CMake (/DNDEBUG, debug information) stay
+foreach(config IN ITEMS DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    string(REGEX REPLACE "(^| )[-/]O[0-3ds]( |$)" " " CMAKE_Fortran_FLAGS_${config} "${CMAKE_Fortran_FLAGS_${config}}")
+endforeach()
 
 # Shared assertions (muscle_test_utils: check_approx, check_true, check_scaled) and helpers
 # (muscle_test_helpers: random generator, reference matrix operations, record) of the tests
@@ -127,6 +91,8 @@ endfunction()
 
 
 function(muscle_target_test_options TARGET)
+    # HOST_OFFLOAD: the test calls omp_target_* (batch API on device memory); see the end of the function.
+    cmake_parse_arguments(PARSE_ARGV 1 opt "HOST_OFFLOAD" "" "")
     # Options of a test that runs kernels in an OpenMP target region and compares them with the CPU
     # (testing.md, GPU). Without MUSCLE_GPU the library has no `declare target`: an offload-enabled
     # gfortran (e.g. Ubuntu's, offload-defaulted to nvptx/amdgcn) would fail to link the device image
@@ -135,14 +101,24 @@ function(muscle_target_test_options TARGET)
     # and the host comparison is bit for bit).
     # The test gets the ctest label `target` and the target joins build_target_tests (tools/check.sh
     # builds and runs those in the GPU builds).
-    if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" AND NOT MUSCLE_GPU_ENABLED)
-        target_compile_options(${TARGET} PRIVATE -foffload=disable -fno-inline)
+    if (MUSCLE_COMPILER STREQUAL "gnu" AND NOT MUSCLE_GPU_ENABLED)
+        target_compile_options(${TARGET} PRIVATE -foffload=disable ${MUSCLE_FLAG_NO_INLINE})
         target_link_options(${TARGET} PRIVATE -foffload=disable)
-    elseif (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" OR CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
-        target_compile_options(${TARGET} PRIVATE -fno-inline)
+    else()
+        target_compile_options(${TARGET} PRIVATE ${MUSCLE_FLAG_NO_INLINE})
     endif()
     get_target_property(test_name ${TARGET} MUSCLE_TEST_NAME)
     set_tests_properties(${test_name} PROPERTIES LABELS target)
+    if (opt_HOST_OFFLOAD AND MUSCLE_COMPILER STREQUAL "intel" AND NOT MUSCLE_GPU_ENABLED)
+        # ifx: omp_target_alloc/memcpy/free only work in a program compiled with offload (a host-only program
+        # links them with omptarget.lib on Windows, or does not link on Linux, and crashes in omptarget.dll).
+        # The test is built for spir64 and run with the offload disabled, so the host is the only device and the
+        # memory is the host's (D-039). Without the environment variable the test would use the GPU of the
+        # machine, if any.
+        target_compile_options(${TARGET} PRIVATE ${MUSCLE_FLAGS_HOST_OFFLOAD})
+        target_link_options(${TARGET} PRIVATE ${MUSCLE_FLAGS_HOST_OFFLOAD})
+        set_tests_properties(${test_name} PROPERTIES ENVIRONMENT "OMP_TARGET_OFFLOAD=DISABLED")
+    endif()
     add_dependencies(build_target_tests ${TARGET})
 endfunction()
 
@@ -174,7 +150,11 @@ function(add_muscle_fypp_target_tests NAME SOURCE GROUP)
         add_muscle_test(${NAME}_${case} "${output}")
         set_target_properties(test_${NAME}_${case} PROPERTIES
                               Fortran_MODULE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/modules_${NAME}_${case}")
-        muscle_target_test_options(test_${NAME}_${case})
+        if(GROUP STREQUAL "batch_dev")
+            muscle_target_test_options(test_${NAME}_${case} HOST_OFFLOAD)
+        else()
+            muscle_target_test_options(test_${NAME}_${case})
+        endif()
     endforeach()
 endfunction()
 

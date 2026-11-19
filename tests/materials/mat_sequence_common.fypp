@@ -111,6 +111,15 @@
             !! Iterations of every converged plastic step, both kinds, when the solver needs a known
             !! number (-1: not checked); `iters` = 0 exactly when the equivalent plastic strain does not
             !! change.
+        integer :: iters_max = 20
+            !! Largest number of iterations of a converged step, both kinds (D-041): a Newton with quadratic
+            !! convergence needs a few (the default, 1.5 times the 12 of the fastest cases); a slow case sets its
+            !! own cap, 1.5 times its largest measured count (gfortran and ifx, sp and dp) rounded up to a multiple
+            !! of 5. A case that needs more than the default is a sign of a slow Newton.
+        logical :: converges = .false.
+            !! Every step converges, in dp and (with `check_sp`) in sp: a case that goes through a safeguard of the
+            !! Newton (the clip of the multiplier, D-043), where a change of the safeguard shows as a step that
+            !! no longer converges.
     end type solver_case
     logical :: passed
 #:enddef
@@ -317,6 +326,7 @@ $:MAT_CASE_PROCS(mats, fd_check)
         #:endif
         character(len=:), allocatable :: key, prefix
         character(len=8) :: buf
+        character(len=48) :: itbuf
         integer :: is, s0, s1, pass_first
         logical :: first
 
@@ -382,6 +392,17 @@ $:NUM_TANGENT(m)
 #:endif
                 end if
                 #:for k in REAL_KINDS
+                #:if k == 'sp'
+                if (c%converges .and. c%check_sp) then
+                #:else
+                if (c%converges) then
+                #:endif
+                    call check_true(passed, key // ' converges (${k}$)', status_${k}$ == STATUS_OK)
+                end if
+                if (status_${k}$ == STATUS_OK) then
+                    write(itbuf, '(a, i0, a, i0, a)') ' iters ', iters_${k}$, ' <= iters_max ', c%iters_max, ' (${k}$)'
+                    call check_true(passed, key // trim(itbuf), iters_${k}$ <= c%iters_max)
+                end if
                 if (c%iters_exact >= 0 .and. status_${k}$ == STATUS_OK) then
                     call check_true(passed, key // ' iters (${k}$)', (iters_${k}$ == 0 .or. iters_${k}$ == c%iters_exact) &
                         .and. ((iters_${k}$ == 0) .eqv. (snp1_${k}$${PS}$%strain_pf == sn_${k}$${PS}$%strain_pf)))

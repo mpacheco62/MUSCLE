@@ -288,13 +288,14 @@ contains
                 a = from_mat_${T}$(ma)
                 b = from_mat_${T}$(mb)
                 ! Component-wise operations are one correctly rounded IEEE operation per
-                ! component: identical to the same operation on the matrix entries (tol = 0).
+                ! component: identical to the same operation on the matrix entries (tol = 0; a/s within 2 ulp: the fast
+                ! floating point model of ifx may multiply by the reciprocal, D-042).
                 call check_approx(passed, 'a + b' // TN, to_mat_${T}$(a + b), ma + mb, tol=ZERO)
                 call check_approx(passed, 'a - b' // TN, to_mat_${T}$(a - b), ma - mb, tol=ZERO)
                 call check_approx(passed, '-a' // TN, to_mat_${T}$(-a), -ma, tol=ZERO)
                 call check_approx(passed, 's*a' // TN, to_mat_${T}$(s*a), s*ma, tol=ZERO)
                 call check_approx(passed, 'a*s' // TN, to_mat_${T}$(a*s), ma*s, tol=ZERO)
-                call check_approx(passed, 'a/s' // TN, to_mat_${T}$(a/s), ma/s, tol=ZERO)
+                call check_approx(passed, 'a/s' // TN, to_mat_${T}$(a/s), ma/s, tol=2*epsilon(ZERO))
                 ! A few flops: rounding relative to the natural scale of each result
                 call check_scaled(passed, 'a .ddot. b' // TN, real(a .ddot. b, dp), sum(ra*rb), &
                                   sum(abs(ra*rb)), TD)
@@ -409,7 +410,7 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
 
     #:if defined('ENABLE_UDTIO')
     subroutine test_udtio_${d}$_${k}$(passed)
-        !! Formatted output (UDTIO, `muscle_tensor_io`) of `${T}$`, re-exported by `muscle_tensors`:
+        !! Formatted output (UDTIO, bound to the type, D-038) of `${T}$`, through `muscle_tensors`:
         !!
         !! - list mode (`DT"LIST"`): `[` + the ${N}$ stored components in storage order
         !!   (${', '.join(c.name for c in L.comps)}$) + `]`, `ES11.4` by default, `(w, d)` via `v_list`;
@@ -550,13 +551,13 @@ $:test_free_generics('2Osym', d, k, 'test_2osym_kinds_lib', 'muscle_tensor_2osym
             #:endfor
             call check_true(passed, 'yz() = xz() = 0' // TN, a3%yz() == ZERO .and. a3%xz() == ZERO)
 
-            ! Component-wise operations (exact)
+            ! Component-wise operations (exact; a/s within 2 ulp, D-042)
             call check_approx(passed, 'a + b' // TN, vv(embed_${k}$(a2 + b2)), vv(a3 + b3), tol=ZERO)
             call check_approx(passed, 'a - b' // TN, vv(embed_${k}$(a2 - b2)), vv(a3 - b3), tol=ZERO)
             call check_approx(passed, '-a' // TN, vv(embed_${k}$(-a2)), vv(-a3), tol=ZERO)
             call check_approx(passed, 's*a' // TN, vv(embed_${k}$(s*a2)), vv(s*a3), tol=ZERO)
             call check_approx(passed, 'a*s' // TN, vv(embed_${k}$(a2*s)), vv(a3*s), tol=ZERO)
-            call check_approx(passed, 'a/s' // TN, vv(embed_${k}$(a2/s)), vv(a3/s), tol=ZERO)
+            call check_approx(passed, 'a/s' // TN, vv(embed_${k}$(a2/s)), vv(a3/s), tol=2*epsilon(ZERO))
             ! Assignment fills the stored components only: 2D (s, s, s, s) is the 3D tensor
             ! with yz = xz = 0, not the 3D assignment (which sets them to s too).
             c2 = s

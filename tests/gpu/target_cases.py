@@ -56,8 +56,8 @@ Arg = namedtuple('Arg', 'name type')
 #: Materials with a target test and the reference case of each (test_muscle_material_<solver>.fypp): (material,
 #: elasticity, overstress or viscoplastic law, hardening, criterion, dt, yield strain a_y, first factor
 #: f0 of the strain ramp f a_y, f from f0 to 4). f0 = 2 for jcfull: its barely plastic points (rates
-#: near 0, where the rate term of the law is singular) are ill-conditioned, they converge to other
-#: iterates with other rounding.
+#: near 0, where the rate term of the law was singular before its rate floor, D-043) were ill-conditioned,
+#: they converged to other iterates with other rounding (not measured again on a GPU since D-043).
 MATERIAL_CASES = (
     ('tm_mrk_vm', 'steel', 'mrk', '-', 'vonmises', '1.0e-2', '1.15e-3', '0.0'),
     ('tm_rk_vm', 'steel', 'rk', '-', 'vonmises', '1.0e-3', '2.47e-3', '0.0'),

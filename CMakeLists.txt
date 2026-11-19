@@ -19,12 +19,10 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   set_property(CACHE CMAKE_INSTALL_PREFIX PROPERTY VALUE "${CMAKE_SOURCE_DIR}/output")
 endif()
 
-# set(CMAKE_BUILD_TYPE Debug)
-set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} ${FVERSION}")
-
-
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(MuscleFypp)
+# Every flag that depends on the Fortran compiler or on the OS (src/, tests/ and benchmarks/ read it)
+include(MuscleCompiler)
 
 find_package(BLAS REQUIRED)
 find_package(LAPACK REQUIRED)

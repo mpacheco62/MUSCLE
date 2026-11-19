@@ -5,28 +5,29 @@
 module muscle_vp_jcfull
     !! Full Johnson-Cook viscoplastic law (strain rate and thermal softening terms): the static yield
     !! stress \( \sigma_y(\epsilon_p) \) of a composed hardening law scaled by
-    !! \[ \sigma(\epsilon_p, \dot\epsilon_p) = \sigma_y(\epsilon_p)
-    !!    \left[ 1 + C \ln \frac{\dot\epsilon_p}{\dot\epsilon_{p0}} \right] \left[ 1 - T^{*m} \right], \quad
+    !! \[ \sigma(\epsilon_p, \dot\epsilon_p) = \sigma_y(\epsilon_p) \left[ 1 + C \ln x \right]
+    !!    \left[ 1 - T^{*m} \right], \quad
+    !!    x = \frac{\max^*(\dot\epsilon_p, \dot\epsilon_{min})}{\dot\epsilon_{p0}}, \quad
     !!    T^* = \frac{T - T_{room}}{T_{melt} - T_{room}} \in [0, 1] \]
+    !! where \( \max^* \) takes \( \dot\epsilon_{min} \) when \( \dot\epsilon_p \le \dot\epsilon_{min} \): the rate
+    !! floor of Johnson-Cook (`muscle_vp_jc`), below which the flow stress is constant and positive (D-043; it
+    !! replaces a floor at `tiny` and a zero flow stress at \( \dot\epsilon_p \le 0 \), D-017.7)
     !! (\( T^* = 0 \) if \( T_{melt} \le T_{room} \); no thermal factor if \( m = 0 \)). The temperature
-    !! \( T \) is the parameter `T_current`, updated by the caller. Partial derivatives (new in the
-    !! kernel API):
+    !! \( T \) is the parameter `T_current`, updated by the caller. Partial derivatives:
     !! \[ \frac{\partial\sigma}{\partial\epsilon_p} = \frac{d\sigma_y}{d\epsilon_p}
-    !!    \left[ 1 + C \ln \frac{\dot\epsilon_p}{\dot\epsilon_{p0}} \right] \left[ 1 - T^{*m} \right], \quad
-    !!    \frac{\partial\sigma}{\partial\dot\epsilon_p} = \sigma_y \frac{C}{\dot\epsilon_p} \left[ 1 - T^{*m} \right] \]
-    !! and `dstress_dep` = `dflow_dep + dflow_depd/dt`.
-    !!
-    !! Known issue (D-017.7, kept with the same results as the original code): `flow_stress` (and
-    !! the derivatives) are 0 for \( \dot\epsilon_p \le 0 \) (the rate is floored at `tiny` only for
-    !! positive rates).
+    !!    \left[ 1 + C \ln x \right] \left[ 1 - T^{*m} \right], \quad
+    !!    \frac{\partial\sigma}{\partial\dot\epsilon_p} = \sigma_y \frac{C}{x \dot\epsilon_{p0}} \left[ 1 - T^{*m} \right] \]
+    !! (0 on the floor) and `dstress_dep` = `dflow_dep + dflow_depd/dt`. `vp_newton_dstress_dep_jcfull_<k>` is
+    !! `dstress_dep` with the right-hand rate derivative on the floor, for the Newton direction of the
+    !! rate-dependent return mapping (as Johnson-Cook, D-018.19b).
     !!
     !! Composed law: the free functions receive \( \sigma_y \) (`sy`) and
     !! \( d\sigma_y/d\epsilon_p \) (`dsy_dep`) already evaluated; `ep` is part of the family contract
     !! but unused.
     !!
     !! Kernel API: parameter types `vp_jcfull_<k>` and `pure` functions `vp_flow_stress_jcfull_<k>`,
-    !! `vp_dflow_dep_jcfull_<k>`, `vp_dflow_depd_jcfull_<k>` and `vp_dstress_dep_jcfull_<k>` for each
-    !! real kind, also through the generics `vp_*` of `muscle_vp_laws`.
+    !! `vp_dflow_dep_jcfull_<k>`, `vp_dflow_depd_jcfull_<k>`, `vp_dstress_dep_jcfull_<k>` and
+    !! `vp_newton_dstress_dep_jcfull_<k>` for each real kind, also through the generics `vp_*` of `muscle_vp_laws`.
     !! `dstress_dep` is analytic (the original OO code used a finite difference; D-018.12b).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     implicit none
@@ -35,7 +36,7 @@ module muscle_vp_jcfull
     #:for k in REAL_KINDS
     public :: vp_jcfull_${k}$
     public :: vp_flow_stress_jcfull_${k}$, vp_dflow_dep_jcfull_${k}$, vp_dflow_depd_jcfull_${k}$, &
-        & vp_dstress_dep_jcfull_${k}$
+        & vp_dstress_dep_jcfull_${k}$, vp_newton_dstress_dep_jcfull_${k}$
     #:endfor
 
     #:for k in REAL_KINDS
@@ -53,6 +54,8 @@ module muscle_vp_jcfull
             !! Melting temperature \( T_{melt} \) (K).
         real(${k}$) :: T_current = 0.0_${k}$
             !! Current temperature \( T \) (K), set by the caller.
+        real(${k}$) :: epmin = 1.0e-7_${k}$
+            !! Minimum strain rate \( \dot\epsilon_{min} \) (floor of the rate, avoids \( \ln 0 \)).
     end type vp_jcfull_${k}$
     #:endfor
 
@@ -83,6 +86,28 @@ contains
         end if
     end function vp_jcfull_temp_${k}$
 
+    pure subroutine vp_jcfull_rate_${k}$(prm, epd, x, dx)
+        !! Normalized rate \( x \) of the full Johnson-Cook model in `real(${k}$)` and \( dx/d\dot\epsilon_p \)
+        !! times \( \dot\epsilon_{p0} \) (1, or 0 on the floor \( \dot\epsilon_p \le \dot\epsilon_{min} \)).
+        implicit none
+        @:DEVICE()
+        type(vp_jcfull_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate.
+        real(${k}$), intent(out) :: x
+            !! \( x \).
+        real(${k}$), intent(out) :: dx
+            !! \( \dot\epsilon_{p0} \, dx/d\dot\epsilon_p \).
+
+        x = epd/prm%epdmax
+        dx = 1.0_${k}$
+        if (epd <= prm%epmin) then
+            x = prm%epmin/prm%epdmax
+            dx = 0.0_${k}$
+        end if
+    end subroutine vp_jcfull_rate_${k}$
+
     pure function vp_flow_stress_jcfull_${k}$(prm, ep, epd, sy) &
         & result(res)
         !! Viscoplastic flow stress \( \sigma(\epsilon_p, \dot\epsilon_p) \) of the full Johnson-Cook model in `real(${k}$)`.
@@ -98,11 +123,9 @@ contains
             !! Static yield stress \( \sigma_y(\epsilon_p) \) of the composed hardening law (`hard_stress`).
         real(${k}$) :: res
             !! \( \sigma \).
-        if (epd <= 0.0_${k}$) then
-            res = 0.0_${k}$
-            return
-        end if
-        res = sy*(1.0_${k}$ + prm%C*log(max(epd, tiny(1.0_${k}$))/prm%epdmax))*vp_jcfull_temp_${k}$(prm)
+        real(${k}$) :: x, dx
+        call vp_jcfull_rate_${k}$(prm, epd, x, dx)
+        res = sy*(1.0_${k}$ + prm%C*log(x))*vp_jcfull_temp_${k}$(prm)
     end function vp_flow_stress_jcfull_${k}$
 
     pure function vp_dflow_dep_jcfull_${k}$(prm, ep, epd, sy, dsy_dep) &
@@ -123,11 +146,9 @@ contains
             !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the composed hardening law (`hard_dstress_dep`).
         real(${k}$) :: res
             !! \( \partial\sigma/\partial\epsilon_p \).
-        if (epd <= 0.0_${k}$) then
-            res = 0.0_${k}$
-            return
-        end if
-        res = dsy_dep*(1.0_${k}$ + prm%C*log(max(epd, tiny(1.0_${k}$))/prm%epdmax))*vp_jcfull_temp_${k}$(prm)
+        real(${k}$) :: x, dx
+        call vp_jcfull_rate_${k}$(prm, epd, x, dx)
+        res = dsy_dep*(1.0_${k}$ + prm%C*log(x))*vp_jcfull_temp_${k}$(prm)
     end function vp_dflow_dep_jcfull_${k}$
 
     pure function vp_dflow_depd_jcfull_${k}$(prm, ep, epd, sy) &
@@ -145,13 +166,10 @@ contains
         real(${k}$), intent(in) :: sy
             !! Static yield stress \( \sigma_y(\epsilon_p) \) of the composed hardening law (`hard_stress`).
         real(${k}$) :: res
-            !! \( \partial\sigma/\partial\dot\epsilon_p \).
-        ! The rate floor `tiny` makes sigma constant below it
-        if (epd < tiny(1.0_${k}$)) then
-            res = 0.0_${k}$
-            return
-        end if
-        res = sy*(prm%C/epd)*vp_jcfull_temp_${k}$(prm)
+            !! \( \partial\sigma/\partial\dot\epsilon_p \) (0 on the rate floor).
+        real(${k}$) :: x, dx
+        call vp_jcfull_rate_${k}$(prm, epd, x, dx)
+        res = sy*(prm%C*dx/x/prm%epdmax)*vp_jcfull_temp_${k}$(prm)
     end function vp_dflow_depd_jcfull_${k}$
 
     pure function vp_dstress_dep_jcfull_${k}$(prm, ep, epd, dt, sy, dsy_dep) &
@@ -178,6 +196,34 @@ contains
 
         res = vp_dflow_dep_jcfull_${k}$(prm, ep, epd, sy, dsy_dep) + vp_dflow_depd_jcfull_${k}$(prm, ep, epd, sy)/dt
     end function vp_dstress_dep_jcfull_${k}$
+
+    pure function vp_newton_dstress_dep_jcfull_${k}$(prm, ep, epd, dt, sy, dsy_dep) &
+        & result(res)
+        !! Derivative `dstress_dep` for the Newton direction of a rate-dependent return mapping (D-018.19b) of the full
+        !! Johnson-Cook model in `real(${k}$)`: on the rate floor the right-hand rate derivative at the floor instead of the
+        !! 0 of the constant part, so that an iteration started at a zero rate sees the rate sensitivity; elsewhere
+        !! `dstress_dep`, with the same operations.
+        implicit none
+        @:DEVICE()
+        type(vp_jcfull_${k}$), intent(in) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: ep
+            !! Equivalent plastic strain \( \epsilon_p \ge 0 \).
+        real(${k}$), intent(in) :: epd
+            !! Equivalent plastic strain rate \( \dot\epsilon_p \).
+        real(${k}$), intent(in) :: dt
+            !! Time step \( \Delta t \) (\( \dot\epsilon_p = \Delta\epsilon_p/\Delta t \)).
+        real(${k}$), intent(in) :: sy
+            !! Static yield stress \( \sigma_y(\epsilon_p) \) of the composed hardening law (`hard_stress`).
+        real(${k}$), intent(in) :: dsy_dep
+            !! Hardening modulus \( d\sigma_y/d\epsilon_p \) of the composed hardening law (`hard_dstress_dep`).
+        real(${k}$) :: res
+            !! \( d\sigma/d\Delta\epsilon_p \) for the Newton direction.
+        real(${k}$) :: x, dx, t
+        call vp_jcfull_rate_${k}$(prm, epd, x, dx)
+        t = vp_jcfull_temp_${k}$(prm)
+        res = dsy_dep*(1.0_${k}$ + prm%C*log(x))*t + sy*(prm%C/x/prm%epdmax)*t/dt
+    end function vp_newton_dstress_dep_jcfull_${k}$
 
     #:endfor
 end module muscle_vp_jcfull

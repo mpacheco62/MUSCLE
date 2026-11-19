@@ -174,4 +174,6 @@ The operators are free `pure` procedures too and can be used in kernels.
 `write(unit, *) t` and `write(unit, '(DT"LIST")') t` print a tensor only when the library is
 built with `ENABLE_UDTIO` (CMake option `MUSCLE_UDTIO`, `AUTO` by default: enabled except with
 gfortran < 16.3, whose UDTIO is not thread-safe under OpenMP). Otherwise print `t%vals`.
-Formatted output is host-only.
+Formatted output is host-only. It is bound to each tensor type (`generic :: write(formatted)`), so
+`use muscle_tensors` is enough: there is nothing to import from `muscle_tensor_io`, which only holds the
+routines the bindings call.

@@ -32,15 +32,10 @@ add_muscle_fypp_test(math_eigen_projections test_muscle_math_eigen_projections.f
 # polar_rotation (F = R0 Q diag(s) Q^T, quad truth) and log_divided_difference (quad formula, both sides of the
 # switch to its series), every kind
 add_muscle_fypp_test(math_matrix_functions test_muscle_math_matrix_functions.fypp)
-# Abort on a division by zero, overflow or invalid operation in the library: gfortran enables the
-# traps from the options of the main program
-if (CMAKE_Fortran_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(test_math_spectral_kinds PRIVATE -ffpe-trap=zero,overflow,invalid)
-    target_compile_options(test_math_eigen_eigenvals PRIVATE -ffpe-trap=zero,overflow,invalid)
-    target_compile_options(test_math_spectral_cases PRIVATE -ffpe-trap=zero,overflow,invalid)
-    target_compile_options(test_math_eigen_projections PRIVATE -ffpe-trap=zero,overflow,invalid)
-    target_compile_options(test_math_matrix_functions PRIVATE -ffpe-trap=zero,overflow,invalid)
-endif()
+# Abort on a division by zero, overflow or invalid operation in the library: the traps are set by the options of
+# the main program (muscle_fpe_traps, cmake/MuscleCompiler.cmake)
+muscle_fpe_traps(test_math_spectral_kinds test_math_eigen_eigenvals test_math_spectral_cases
+                 test_math_eigen_projections test_math_matrix_functions)
 # Math kernel routines (eigenvals, spectral_decomposition, dEigenvalues_dTensor, FD_GRAD, LU6SOLVE)
 # called from a pure point procedure inside an OpenMP target region, sp and dp, bit for bit
 # against the CPU call

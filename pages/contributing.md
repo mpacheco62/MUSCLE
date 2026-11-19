@@ -47,7 +47,7 @@ Where each family lives (paths relative to `src/` and `tests/`; `<m>` is the mod
 | `kin` | `kinematics/muscle_kin_<m>.fypp` | `muscle_kin_laws` | `KINEMATICS_MODELS`; `KINEMATICS_SPATIAL`, `KINEMATICS_ROTATION`, `KINEMATICS_FE_ROTATED` as the case may be | all, through `kin=` | `test_muscle_kin_laws_kinds`, `test_muscle_kin_finite` | `kin` (`mat_kin` adds the kinematic materials) |
 
 Besides: `MODEL_INITS` only if the model has an initializer of its own (derived parameters or validation), and
-`MODEL_DOMAINS` if `mat_init` must check a condition between parameters (today only Johnson-Cook). The device
+`MODEL_DOMAINS` if `mat_init` must check a condition between parameters (today Johnson-Cook and full Johnson-Cook). The device
 test of the family (`tests/gpu/`) takes every model of the family by itself, with the parameter sets of
 `CASE_PARAMS` (step 6). Add the model to the list of models of the `README.md` (nothing checks it).
 
@@ -157,8 +157,10 @@ Example: a new hardening law `mylaw` with \( \sigma_y = \sigma_{y0} + K\epsilon_
      (fields in `tests/materials/mat_sequence_common.fypp`: case number `0` (no reference records), the material,
      the elasticity `'steel'` (E = 210000) or `'lin1000'` (E = 1000), the parameter set names of the models,
      `iter_nw`, `dt` and the yield strain `a_y` of the strain sequence, about y0/E; copy a neighbour case). The
-     test checks sp against dp and the tangent against finite differences along the sequence; no reference
-     records are written for a new material.
+     test checks sp against dp, the tangent against finite differences and that every converged step needs at
+     most `iters_max` Newton iterations (20 by default, a quadratic convergence) along the sequence; no reference
+     records are written for a new material. If the new case needs more, its Newton is slow: look into it, and
+     only then give the case `iters_max=` 1.5 times its largest count, rounded up to a multiple of 5 (D-041).
 
    Your own materials go in a registry of your own, passed with `-DMUSCLE_MATERIALS=<path>`.
 
@@ -264,9 +266,9 @@ Typical costs on a machine with 8 or more cores (gfortran, Ninja, `sp;dp`; order
 | After touching `tools/fypp/muscle_meta.py`, `include/muscle_common.fypp` or `muscle_kinds` | the same | a full rebuild, ~1 min (a new model always touches `muscle_meta.py`) |
 | Every test | `ctest --test-dir build -j8` | ~10 s |
 | A new or changed file | `tools/mutation_check.py <area> --samples all --only <ids>` | ~2 s per mutation, about a minute for a file (a whole area: 30–45 min) |
-| Before every commit | `tools/check.sh --quick` | ~1–2 min |
+| Before every commit | `tools/check.sh --quick` (`--quick --ifx` also builds and tests with ifx on the CPU, in `build-check-ifx`) | ~1–2 min (without `--ifx`) |
 | Before a pull request that touches documentation or a public API | `tools/check.sh --doc`: lint, the FORD pages (FORD from the `PATH`, the conda environment `ford` of `environment.yml` or `build-check/.ford-venv`) and the drift between the documentation and the code | ~2 min |
-| To close a piece of work | `tools/check.sh` | ~25 min, mostly the three GPU builds and the target tests on the Intel GPU; it builds the FORD pages too |
+| To close a piece of work | `tools/check.sh` | ~25 min, mostly the three GPU builds and the target tests on the Intel GPU; it builds the FORD pages too and, when ifx is found, builds and tests with ifx on the CPU (`build-check-ifx`) |
 
 The full check needs the offload toolchains (gfortran with NVPTX and AMDGCN offload, ifx) and an Intel GPU; without
 them, `--quick` is the gate.
@@ -278,8 +280,10 @@ kernels, SPDX) and builds and tests `sp;dp` in Debug: run it while developing. T
 warnings** (library and tests, `-Wall -Wextra`; unused dummy arguments are not reported, since a family keeps a
 uniform interface, but unused local variables are): `check.sh` fails on any warning and prints its template line
 (with `--quick`, of the files it recompiled; the full check rebuilds from scratch). `tools/check.sh` without
-`--quick` also builds the formatted-output (UDTIO) path, the FORD documentation and the three GPU targets,
-runs the target tests on an Intel GPU and audits the device images: run it before closing a piece of work. See also the [migration guide](migration.html) for the mapping from the
+`--quick` also builds the formatted-output (UDTIO) path, the FORD documentation, the same build with ifx on the CPU (when ifx
+is found; the ifx warnings are shown, not counted) and the three GPU targets, runs the target tests on an Intel GPU and
+audits the device images: run it before closing a piece of work. The flags that depend on the compiler (gfortran, ifx on
+Windows, ifx on Linux) are all in `cmake/MuscleCompiler.cmake` (D-040). See also the [migration guide](migration.html) for the mapping from the
 former object-oriented API.
 
 ## Editor support

@@ -11,10 +11,10 @@
 #!   type-bound wrappers) come from the macros of muscle_tensor_common.fypp;
 #! - every operation is a free `type` procedure marked @:DEVICE() (callable from kernels); the
 #!   type-bound procedures are `class` wrappers (`*_tbp`) kept for the historical API;
-#! - formatted output lives in muscle_tensor_io (host only);
+#! - formatted output: the routines live in muscle_tensor_io (host only), the type binds `write(formatted)` (D-038);
 #! - the historical names (ten_3D4O, ten_2D4O = dp) come from muscle_tensors.
 #! - convert_2sym returns the minor-symmetric 4O2sym type of the same kind, taken from the
-#!   family module muscle_tensor_4o2sym (not from muscle_tensors, which uses muscle_tensor_io
+#!   family module muscle_tensor_4o2sym (not from muscle_tensors, which uses this module).
 #!   and would close a module cycle with UDTIO).
 
 module muscle_tensor_4o
@@ -59,6 +59,9 @@ module muscle_tensor_4o
     use muscle_kinds, only: TOL_APPROX_${k}$, EPS_ABS_${k}$
     #:endfor
     use muscle_tensor_4o2sym, only: ${', '.join(tname(d + '4O2sym', k) for d in DIMS for k in REAL_KINDS)}$
+    #:if defined('ENABLE_UDTIO')
+    use muscle_tensor_io, only: ${specifics('print_{0}_{1}', '4O')}$
+    #:endif
     implicit none
     private
 
@@ -96,6 +99,11 @@ module muscle_tensor_4o
                 !! Projection onto the minor-symmetric `${tname(d + '4O2sym', k)}$`.
             procedure, public :: inv => inv_${S}$_${k}$_tbp
                 !! Inverse tensor (quiet NaN if singular).
+            #:if defined('ENABLE_UDTIO')
+            generic, public :: write(formatted) => write_${S}$_${k}$_tbp
+                !! Defined formatted output (`write(unit, '(DT)') t`; D-038).
+            procedure, private :: write_${S}$_${k}$_tbp
+            #:endif
     end type ${T}$
 
     #:endfor
@@ -194,6 +202,10 @@ $:TENSOR_COMMON_PROCEDURES(d, F, k)
     ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
 
 $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm'], tensor_ops=['inv'], other='other')
+    #:if defined('ENABLE_UDTIO')
+
+$:TENSOR_UDTIO_TBP(d, F, k)
+    #:endif
 
     pure function convert_2sym_${P}$_tbp(self) result(res)
         !! `%convert_2sym()`: type-bound wrapper of `convert_2sym_${P}$`.

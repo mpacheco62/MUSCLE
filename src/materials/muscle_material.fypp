@@ -176,8 +176,10 @@ module ${muscle_meta.material_module(MAT.name)}$
         !! ${MAT.visco_branches}$ history tensors the FE history array keeps (not `MAX_VISCO_BRANCHES`).
         type(${tname('3D2Osym', k)}$) :: strain_e = ${tname('3D2Osym', k)}$([${', '.join(['0.0_' + k] * 6)}$])
             !! Elastic strain.
-        real(${k}$) :: h(6, ${MAT.visco_branches}$) = 0.0_${k}$
+        real(${k}$) :: h(6, ${max(1, MAT.visco_branches)}$) = 0.0_${k}$
             !! History tensors (Voigt order of `${tname('3D2Osym', k)}$`; the model uses its first `visco_n_branches`).
+            !! At least one column, even with 0 branches: ifx 2026.2 does not treat a zero-size component as
+            !! initialized and rejects `${muscle_meta.material_state_type(MAT.name, k)}$()` (error #8212, D-037).
     end type ${muscle_meta.material_visco_state(MAT.name, k)}$
 
     type :: ${muscle_meta.material_state_type(MAT.name, k)}$

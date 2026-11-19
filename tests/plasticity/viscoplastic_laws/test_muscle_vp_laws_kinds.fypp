@@ -11,9 +11,9 @@
 #!   hardening values already evaluated (D-017.6b), and their partial derivatives are checked
 #!   against finite differences of the composed flow stress; the partial derivatives of MRK and NNL
 #!   against finite differences of the flow stress (dp) or against the dp functions (sp);
-#! - documented bugs and limits (D-017.7): RK dflow_dep = 0, flow stress 0 (RK, JCfull) or sigma_u
-#!   (MRK) at epd <= 0, JCfull at epd < tiny; dstress_dep with dt = 0 as the original code (MRK 0
-#!   at epd <= 1e-12; VA and NNL +Inf or NaN, values of the original code);
+#! - documented bugs and limits (D-017.7): RK dflow_dep = 0, flow stress 0 (RK) or sigma_u
+#!   (MRK) at epd <= 0; the rate floor epmin of Johnson-Cook and of full Johnson-Cook (D-043);
+#!   dstress_dep with dt = 0 as the original code (MRK 0 at epd <= 1e-12; VA and NNL +Inf or NaN, values of the original code);
 #! - the finite-difference derivatives (FD_DERIV) and the total derivative on test-only laws, against
 #!   the analytical derivatives;
 #! - `pure`, `@:DEVICE()` point procedures that compose hard_* with vp_* and os_*.
@@ -598,58 +598,53 @@ contains
 
     function test_jcfull_${k}$() result(passed)
         !! Full Johnson-Cook composed with Swift hardening against
-        !! \( \sigma_y (1 + C \ln(\dot\epsilon_p/\dot\epsilon_{p0})) (1 - T^{*m}) \) and its partial
-        !! derivatives (0 for epd <= 0, D-017.7), in `real(${k}$)`.
+        !! \( \sigma_y (1 + C \ln x) (1 - T^{*m}) \), \( x = \max^*(\dot\epsilon_p, \dot\epsilon_{min})/\dot\epsilon_{p0} \)
+        !! (the rate floor of Johnson-Cook, D-043: below it the flow stress is constant), and its partial
+        !! derivatives, in `real(${k}$)`.
         use muscle_hard_laws, only : hard_stress, hard_dstress_dep, hard_swift_${k}$
         use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, vp_jcfull_${k}$
         logical :: passed
         real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
         type(hard_swift_${k}$) :: h
         type(vp_jcfull_${k}$) :: v, v0
-        real(dp) :: syd, dsyd, e, fr, ft, ts
+        real(dp) :: syd, dsyd, cd, x, dx, fr, ft, ts
         real(${k}$) :: ep, epd, sy, dsy, dt
         integer :: i, j, it
 
         passed = .true.
         h = hard_swift_${k}$(k=100.0_${k}$, n=0.1_${k}$, e0=1.0e-4_${k}$)
         v0 = vp_jcfull_${k}$()
-        call check_approx(passed, '${k}$ JCfull defaults', [v0%C, v0%epdmax, v0%m, v0%Troom, v0%Tmelt, v0%T_current], &
-                          [0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 293.15_${k}$, 1.0e3_${k}$, 0.0_${k}$], 0.0_${k}$)
+        call check_approx(passed, '${k}$ JCfull defaults', [v0%C, v0%epdmax, v0%m, v0%Troom, v0%Tmelt, v0%T_current, &
+                          v0%epmin], [0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 293.15_${k}$, 1.0e3_${k}$, 0.0_${k}$, 1.0e-7_${k}$], &
+                          0.0_${k}$)
         $:SET_PARAMS('v', JCF_P, k)
-        ! Below the rate floor `tiny` (subnormal rates) sigma is constant: dflow_depd = 0
-        sy = hard_stress(h, 0.2_${k}$)
-        call check_approx(passed, '${k}$ JCfull dflow_depd at 0 < epd < tiny', &
-                          vp_dflow_depd(v, 0.2_${k}$, tiny(1.0_${k}$)/4.0_${k}$, sy), 0.0_${k}$, 0.0_${k}$)
-        call check_approx(passed, '${k}$ JCfull flow_stress at 0 < epd < tiny = at tiny', &
-                          vp_flow_stress(v, 0.2_${k}$, tiny(1.0_${k}$)/4.0_${k}$, sy), &
-                          vp_flow_stress(v, 0.2_${k}$, tiny(1.0_${k}$), sy), 0.0_${k}$)
+        cd = real(v%C, dp)
         ts = (real(v%T_current, dp) - real(v%Troom, dp))/(real(v%Tmelt, dp) - real(v%Troom, dp))
         ft = 1.0_dp - exp(real(v%m, dp)*log(ts))
         do j = 1, size(EPD_PTS)
             epd = real(EPD_PTS(j), ${k}$)
-            e = real(epd, dp)
+            x = real(epd, dp)/real(v%epdmax, dp)
+            dx = 1.0_dp
+            if (epd <= v%epmin) then
+                x = real(v%epmin, dp)/real(v%epdmax, dp)
+                dx = 0.0_dp
+            end if
+            fr = 1.0_dp + cd*log(x)
             do i = 1, size(EP_PTS)
                 ep = real(EP_PTS(i), ${k}$)
                 sy = hard_stress(h, ep)
                 dsy = hard_dstress_dep(h, ep)
-                if (epd <= 0.0_${k}$) then
-                    call check_approx(passed, '${k}$ JCfull at epd <= 0 (D-017.7)', [vp_flow_stress(v, ep, epd, sy), &
-                        vp_dflow_dep(v, ep, epd, sy, dsy), vp_dflow_depd(v, ep, epd, sy)], &
-                        [0.0_${k}$, 0.0_${k}$, 0.0_${k}$], 0.0_${k}$)
-                    cycle
-                end if
                 syd = real(sy, dp)
                 dsyd = real(dsy, dp)
-                fr = 1.0_dp + real(v%C, dp)*log(e/real(v%epdmax, dp))
                 call check_approx(passed, '${k}$ JCfull flow_stress', vp_flow_stress(v, ep, epd, sy), real(syd*fr*ft, ${k}$), TOL)
                 call check_approx(passed, '${k}$ JCfull dflow_dep', vp_dflow_dep(v, ep, epd, sy, dsy), &
                                   real(dsyd*fr*ft, ${k}$), TOL)
                 call check_approx(passed, '${k}$ JCfull dflow_depd', vp_dflow_depd(v, ep, epd, sy), &
-                                  real(syd*real(v%C, dp)/e*ft, ${k}$), TOL)
+                                  real(syd*cd*dx/(x*real(v%epdmax, dp))*ft, ${k}$), TOL)
                 do it = 1, size(DTS)
                     dt = real(DTS(it), ${k}$)
                     call check_approx(passed, '${k}$ JCfull dstress_dep', vp_dstress_dep(v, ep, epd, dt, sy, dsy), &
-                                      real(dsyd*fr*ft + syd*real(v%C, dp)/e*ft/real(dt, dp), ${k}$), TOL)
+                                      real(dsyd*fr*ft + syd*cd*dx/(x*real(v%epdmax, dp))*ft/real(dt, dp), ${k}$), TOL)
                 end do
             end do
         end do

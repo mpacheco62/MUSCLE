@@ -272,7 +272,8 @@ Lo que queda abierto al cerrar la migración, por decisión del usuario «como p
 
 1. **GPU Intel (UHD 770), kernels de material** (`tools/gpu_skip_tests.sh`):
    - `tm_rk_vm` y `tm_jcfull_vm_vocemod` en sp dan otras iteraciones que la CPU (y otra tensión y tangente en
-     algunos puntos de `tm_jcfull_vm_vocemod`), también con la fusión de EUs apagada;
+     algunos puntos de `tm_jcfull_vm_vocemod`), también con la fusión de EUs apagada (medido antes del piso de tasa de JC
+     completo, D-043: volver a medir `tm_jcfull_vm_vocemod` y su `f0 = 2` de `tests/gpu/target_cases.py`);
    - todos los kernels de material dp pierden el dispositivo con la FP64 emulada (no reproducible entre corridas);
    - `mat_batch` / `mat_batch_openmp` no se volvieron a probar tras D-030;
    - en Release, IGC entrega sin sus kernels de lote las imágenes de `pz_cha_yld2004_ludwik`, `pz_cpb06ex2_bilinear` y

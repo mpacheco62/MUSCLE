@@ -93,8 +93,8 @@ program test_mat_kernels_target
     !! The plastic strain blocks (strain_p, ep) relative to max(|strain_p|, |strain|) of the point: they
     !! come from strain_p = strain - C^-1:stress, whose rounding scales with the total strain (barely
     !! plastic points: |strain_p| << |strain|).
-    !! Statuses and iterations exact; the points that do not converge on the CPU (sp of
-    !! tm_jcfull_vm_vocemod, as in its reference test) are left out of the comparison of the values.
+    !! Statuses and iterations exact; the points that do not converge on the CPU are left out of the
+    !! comparison of the values.
     use omp_lib, only : omp_is_initial_device
     $:MAT_TEST_USES(MATS)
     use muscle_test_utils, only : check_target, check_target_ran

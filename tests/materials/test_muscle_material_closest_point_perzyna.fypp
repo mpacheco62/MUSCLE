@@ -43,9 +43,9 @@ program test_mat_closest_point_perzyna
         solver_case(0, 'pz_cha_vm_swift', 'steel', 'cha1', 'swift', 'vonmises', 200, 1.0e-2_dp, 5.71e-4_dp), &
         solver_case(0, 'pz_hill48_vocemod', 'steel', 'per2', 'vocemod', 'hill48-2', 200, 1.0e-3_dp, 1.23e-3_dp), &
         solver_case(0, 'pz_cha_hill48_bilinear', 'steel', 'cha2', 'bilinear', 'hill48-3', 200, 1.0e-1_dp, 1.18e-3_dp), &
-        solver_case(0, 'pz_dp_ludwik', 'steel', 'per3', 'ludwik', 'dp-1', 200, 1.0e-3_dp, 9.05e-4_dp), &
+        solver_case(0, 'pz_dp_ludwik', 'steel', 'per3', 'ludwik', 'dp-1', 200, 1.0e-3_dp, 9.05e-4_dp, iters_max=40), &
         solver_case(6, 'pz_cha_dp_swift', 'steel', 'cha3', 'swift', 'dp-2', 200, 1.0e-1_dp, 3.64e-4_dp, &
-            fd_tol=0.3_dp), &
+            fd_tol=0.3_dp, iters_max=40), &
         solver_case(0, 'pz_cpb06_swift', 'steel', 'per1', 'swift', 'cpb06-2', 200, 1.0e-2_dp, 5.71e-4_dp), &
         solver_case(0, 'pz_cha_cpb06_vocemod', 'steel', 'cha1', 'vocemod', 'cpb06-3', 200, 1.0e-2_dp, 1.18e-3_dp), &
         solver_case(0, 'pz_cpb06ex2_bilinear', 'steel', 'per1', 'bilinear', 'cpb06ex2-1', 200, 1.0e-2_dp, 8.94e-4_dp), &

@@ -1595,3 +1595,326 @@ LU sin pivoteo con bucles también va a memoria privada: lo caro es el índice d
   aprobado), con la nota en la cabecera del archivo.
 - Pendiente: Cholesky (más rápido aún para el Newton simétrico definido positivo) y por qué los lotes de Perzyna
   siguen sin kernel en Release.
+
+## D-036 — Alias históricos de tipos en `muscle_tensor_aliases` (rodeo del error interno de ifx en `p%init`) (2026-11-14)
+
+**Contexto:** D-019.4f dejó abierto un error interno de ifx 2026.2 (`#5623`) en 5 tests `tensors-types-*_kinds`.
+Se aisló en Windows con reproductores mínimos (ifx 2026.2.0 build 20261001, `-O0` a `-O3`): cualquier `%init(...)`
+(arreglo, variable, escalares o palabra clave) sobre un tipo con sufijo (`ten_3D2O_dp`) importado de `muscle_tensors`
+falla; con el tipo importado de su módulo de familia, o con el nombre histórico, compila. La causa es que la fachada
+importaba cada tipo dp con dos nombres locales (`ten_3D2O_dp` y `ten_3D2O => ten_3D2O_dp`): en un módulo mínimo
+basta el renombre en el mismo módulo, aunque ese alias no se exporte (en la fachada sí se exportaban). Con los dos
+nombres repartidos en módulos distintos compila. Los reproductores (~5 líneas, contra los módulos de la biblioteca)
+no están versionados.
+**Decisión del usuario (2026-11-14: «partamos con 2», corregir en `src/` y no sólo en los tests):**
+- Nuevo módulo `muscle_tensor_aliases` con los renombres históricos (`ten_3D2O => ten_3D2O_dp`, ..., `iden_2OS => ...`);
+  `muscle_tensors` importa sólo los nombres con kind de los módulos de familia y toma los históricos de ese módulo.
+  Mismo precedente que `muscle_tensor_minus`.
+- Los nombres públicos, los tipos y el orden de almacenamiento no cambian (`same_type_as` entre histórico y `_dp`
+  sigue siendo verdadero); sin cambio numérico.
+**Verificación (Windows, Debug):** gfortran 16.2 `sp;dp` (la línea base de WSL es gfortran 15.2, 133/133): 132/133
+antes y después del cambio, el único fallo es la pila de Windows en `mat_batch_openmp`; con ifx desaparecen los 5
+errores internos y los tests ya compilan. Con ifx esos tests siguen
+fallando por motivos distintos que el error interno ocultaba: con `/fp:precise` quedan 747 comprobaciones de UDTIO
+(salida formateada: registros, lista, matriz, lectura de vuelta) y 2 de `0 .ddot. (-1) = -0` (signo del cero); la
+causa de las de UDTIO se aisló después (D-037).
+
+## D-037 — ifx en CPU (Windows): estado de visco sin arreglo de tamaño cero, `/fp:precise`, pila de los tests (2026-11-14)
+
+> **Reemplazada en parte por D-042 (2026-11-18):** la biblioteca ya no lleva `/fp:precise` con ifx en CPU (modelo rápido; con
+> `/Qftz-` hasta D-043); los tests sí.
+
+**Contexto:** primera corrida completa de los tests en Windows (ifx 2026.2.0, gfortran 16.2.0 de conda-forge, Debug,
+`sp;dp`). Con gfortran pasaban 132/133 y con ifx 102/128. Se atacaron las causas una a una.
+**Propuesta aplicada** (a partir de «sigamos para que la librería corra y pasen los tests con ifx»; pendiente de la
+aprobación del usuario al revisar el commit):
+- **`error #8212` de `VISCO`:** los materiales con 0 ramas de historia (Kelvin) declaraban `h(6, 0)`. ifx no trata como
+  inicializado un componente de tamaño cero (ninguna forma de inicializarlo sirve, medido en un módulo mínimo), así que
+  rechaza `mat_state_x()` sin argumentos; gfortran lo acepta. Ahora `h(6, max(1, visco_branches))`: con 0 ramas queda
+  una columna sin uso (los bucles de `hsv` van de 1 a `visco_branches`). Cambia la forma del tipo de estado de esos
+  materiales, no los resultados.
+- **Punto flotante:** ifx usa por defecto el modelo rápido (reasociación, contracción) y los tests comparan bit a bit y
+  contra formas cerradas. En la rama Windows de ifx, `src/` y `tests/` piden `/fp:precise` salvo en `Profile` (que ya pedía
+  `/fp:fast`). Las ramas Linux no se tocaron: no se pudo verificar aquí y cambiarían el host de los tests GPU.
+- **Signo del cero:** con `/assume:nominus0` (el valor por defecto de ifx) `SIGN(1.0, -0.0)` da `+1.0`, y el estándar y
+  gfortran dan `-1.0`. La suma `a1*b1 + ...` ya daba `-0`: lo que fallaba era el `sign()` de la comprobación
+  `0 .ddot. (-1) = -0`. La rama Windows de ifx de `src/` y `tests/` pide `/assume:minus0`, que alinea ifx con el estándar
+  y con gfortran. `src/` tiene cinco `sign(1.0, x)`: dos en `math/eigen` y tres en el criterio anisótropo. El resultado
+  sólo cambia con un `-0` exacto: `theta = -0` en la rotación de Jacobi (signo de los autovectores) y `lam(i) = -0` en
+  `muscle_yield_anisotropic`; el de `1 - d` en `eigen` no puede dar `-0`.
+- **Pila:** el hilo principal en Windows tiene 1 MB (8 MB en Linux) y `mat_batch_openmp` necesita ≥ 8 MB (medido con
+  `editbin /STACK`). Los tests reservan 16 MB (`/F16777216` con ifx, `-Wl,--stack,16777216` con gfortran).
+- **`mat_batch_dev_*` con ifx:** con ifx, `omp_target_alloc`/`memcpy`/`free` sólo funcionan en un programa compilado con
+  offload: un build de host los enlaza (`omptarget.lib`) pero el runtime nunca se inicializa y el programa se cae dentro
+  de `omptarget.dll`, también con `OMP_TARGET_OFFLOAD=DISABLED`. Sin `MUSCLE_GPU` esos 8 tests no se registran con ifx en
+  Windows; corren en el build `MUSCLE_GPU=SPIR64`. Con gfortran se registran como antes (libgomp sirve al host como
+  dispositivo). Sólo se midió en Windows: con ifx en Linux se siguen registrando.
+**Resultado final (Windows, Debug, con D-038):** gfortran 133/133; ifx 120/120 registrados (los 8 `mat_batch_dev_*` de
+arriba no se registran con ifx sin `MUSCLE_GPU`). Antes de D-038 fallaban con ifx los 6 `tensors-types-*_kinds` e
+`iden_kinds`, por la salida formateada UDTIO (D-038) y, en los cinco `*_kinds`, por el signo del cero (arriba).
+**Tests de compilación fallida con ifx (2026-11-14, después):** los 5 `*_private_params` (`elasticity-linear_private_params`
+y `plasticity-yield_criteria-{cpb06,druckerprager,cpb06ex2,yld2004}_private_params`) sólo se registraban con gfortran,
+por su texto de error. Ahora también con ifx en Windows, que los reconoce por el número de error de ifx 2026.2
+(`#8289` en cuatro, `#6053` en `cpb06`; no por «private», que está en el nombre del archivo) y los hace fallar con `#7002`
+(módulo no encontrado) o `catastrophic error`. Medido: pasan con la violación real; fallan con un fuente sin violación y
+con un módulo inexistente. Con ifx: 125/125 en CPU (los 8 `mat_batch_dev_*` aún sin registrar; D-039 los hace correr);
+gfortran 133/133.
+
+## D-038 — `write(formatted)` ligado a cada tipo; `muscle_tensor_io` sin dependencia de los tipos (2026-11-14)
+
+**Contexto:** con ifx 2026.2, `write(unit, '(DT)') t` no encontraba la rutina de usuario cuando el tipo **y** la interfaz
+`write(formatted)` llegaban por un mismo módulo que los reexporta (`muscle_tensors`): escribía como un tipo intrínseco
+(`iostat 61`, tipos con componentes) o no escribía nada (`iden_2O`). Se reproduce con una fachada de 4 líneas. Funciona si
+el tipo viene de su módulo de familia, si la interfaz se importa directo de `muscle_tensor_io`, y con
+`generic :: write(formatted) => proc` ligado al tipo, incluso a través de dos capas de módulos (medido). Afectaba al uso
+documentado (`use muscle_tensors` y escribir con `DT`) con ifx.
+**Decisión del usuario (2026-11-14: «hagamos la primera, así lo dejamos listo de una vez»):** enlazar la salida formateada
+al tipo.
+- Cada tipo con salida formateada (los cinco módulos de familia y las identidades, sin y con escala, de cada kind) declara
+  `generic, public :: write(formatted) => write_<S>_<k>_tbp` dentro de `#:if defined('ENABLE_UDTIO')`. La envoltura sale de
+  la macro común `TENSOR_UDTIO_TBP` (`include/muscle_tensor_common.fypp`); las de las identidades están en su módulo.
+- `muscle_tensor_io` ya no usa los módulos de tipos (desaparece el ciclo de módulos con UDTIO que anotaba `muscle_tensor_4o`): sus rutinas
+  `print_<d><F>_<k>(vals, unit, iotype, v_list, iostat, iomsg)` y `print_I<X>[S_<k>](...)` reciben las componentes
+  almacenadas, son públicas y ya no son la interfaz `write(formatted)`. El texto de la salida y los mensajes de `iomsg`
+  (que nombran `print_...`) no cambian.
+- `muscle_tensors` ya no importa ni reexporta `write(formatted)`. Cambio de API: `use muscle_tensors, only: write(formatted)`
+  deja de compilar; no hay ningún uso así en el repo, y `use muscle_tensors` basta para escribir con `DT`.
+- Los tipos con `class(T)` en la envoltura llevan `! lint: allow(oop)` (el estándar exige `class` en UDTIO), como antes la
+  rutina; la envoltura es host-only y no la llama ningún kernel.
+**Verificación (Windows, Debug):** ifx 120/120 (ver D-037). gfortran 16.2: con `MUSCLE_UDTIO=AUTO` el UDTIO queda apagado
+(gfortran < 16.3), así que ese build (133/133) no ejercita los enlaces; con `-DMUSCLE_UDTIO=ON` (`build-gf-udtio`,
+`-DENABLE_UDTIO` en el build y ningún test que se salte UDTIO) también pasan 133/133. Los tests de UDTIO no se
+modificaron y comprueban el texto de la salida. Con gfortran < 16.3 y OpenMP el UDTIO sigue sin ser thread-safe (el
+diseño no lo cambia). Sin verificar: los builds de GPU (`MUSCLE_GPU`) con los tipos que ahora llevan un enlace
+`write(formatted)`; Linux.
+
+## D-039 — `mat_batch_dev_*` en CPU con ifx: compilar con offload y ejecutar con el offload desactivado (2026-11-14)
+
+**Contexto:** D-037 dejó de registrar los 8 `mat_batch_dev_*` con ifx en Windows sin `MUSCLE_GPU`, con la hipótesis de que
+`omp_target_alloc`/`memcpy`/`free` necesitan un dispositivo. A pregunta del usuario («¿se pueden hacer correr en CPU de alguna
+forma?») se midió que no hace falta GPU: el fallo era compilar el programa sin offload.
+**Medido (ifx 2026.2.0, Windows):** un programa mínimo que reserva y libera memoria del dispositivo inicial (`omp_get_initial_device()`)
+no enlaza sin offload, se cae en `omptarget.dll` si se enlaza con `omptarget.lib`, y funciona (también una región `target`) si se
+compila con `-Qiopenmp -Qopenmp-targets:spir64`, con `OMP_TARGET_OFFLOAD=DISABLED` o sin él. El test real
+(`mat_batch_dev_cut_vm_bilinear_dp`) compila y enlaza así, con la biblioteca sin `declare target`, y pasa con el offload desactivado.
+**Propuesta aplicada (a raíz de esa pregunta; pendiente de la aprobación del usuario al revisar el commit):**
+- `muscle_target_test_options` tiene una opción `HOST_OFFLOAD`, que sólo usa el grupo `batch_dev`: con ifx en Windows y sin
+  `MUSCLE_GPU` compila y enlaza el test con `-Qopenmp-targets:spir64` y fija `OMP_TARGET_OFFLOAD=DISABLED` en el entorno de
+  `ctest`, así que el host es el único dispositivo y la memoria es la del host. Los demás tests `target` no cambian.
+- Se retira la exclusión de D-037 (los 8 tests se registran otra vez).
+- Un `.exe` ejecutado a mano sin esa variable usaría la GPU de la máquina, si hay una.
+**Resultado (Windows, Debug):** ifx 133/133 y gfortran 133/133, con el mismo conjunto de tests en los dos. Sin verificar: ifx
+en Linux (la opción sólo se activa en Windows), `MUSCLE_GPU=SPIR64` (no cambia).
+
+## D-040 — Banderas por compilador en `cmake/MuscleCompiler.cmake`; paridad de ifx y ifx en CPU en `check.sh` (2026-11-14)
+
+> **Reemplazada en parte por D-042 (2026-11-18):** con ifx, la biblioteca usa el modelo rápido y las trampas de los 5 tests de
+> `math` sólo van en Debug.
+
+**Contexto:** revisión pedida por el usuario («cómo se están separando los casos entre gfortran y ifx; que todos los tests se
+puedan correr en ambas plataformas en CPU; que CMake y las banderas queden ordenadas»). Las banderas dependientes del
+compilador estaban repartidas en seis archivos (`src/` y `tests/` repetían el mismo esqueleto `ifx-Windows / ifx-Linux /
+gfortran`, con los flags de punto flotante duplicados a mano; dos bloques copiados para los tests de compilación fallida;
+las trampas de punto flotante y `-O3 -Wall` de los benchmarks sólo con gfortran) y había diferencias de cobertura.
+**Medido (Windows: gfortran 16.2, ifx 2026.2; Linux en WSL: gfortran 15.2, ifx 2026.2):**
+- el conjunto de tests registrados era el mismo en Windows; en Linux, ifx tenía 128 registrados y fallaban 19 (los 8
+  `mat_batch_dev_*` no enlazaban, 6 por el modelo de punto flotante, 5 `*_kinds`): la rama Linux de ifx no tenía los flags de D-037;
+- con `/fpe:0` pasan los 5 tests de `math` que en gfortran llevan trampas (los otros fallos de esa prueba eran tests sin trampas
+  en gfortran que generan NaN a propósito); con `/check:bounds /check:pointers /check:shape /traceback` ifx pasa 133/133 y
+  `ctest` pasa de 12 s a 17 s; `/check:all` deja 5 tests por encima de 300 s sin ningún fallo por diagnóstico; la biblioteca
+  con `/warn:all` da 0 avisos;
+- `-fno-inline` se ignoraba con ifx en Windows (40 avisos `#10006`; la opción es `/Ob0`) y `/Od` de CMake se anulaba con `/O3` en
+  los tests (40 avisos `#10120`).
+**Decisión del usuario («reordenar más paridad, pero en Linux si está ifx que también compile y pruebe con él»):**
+- Nuevo `cmake/MuscleCompiler.cmake`: la única tabla de banderas por compilador y sistema (`MUSCLE_OPT_LIBRARY`,
+  `MUSCLE_OPT_TESTS`, `MUSCLE_FLAG_NO_INLINE`, `MUSCLE_FLAGS_HOST_OFFLOAD`, ...) y las funciones `muscle_fpe_traps` y
+  `muscle_add_compile_fail_test`. `src/`, `tests/` y `benchmarks/` la leen; sólo quedan consultas al compilador en
+  `cmake/MuscleGpu.cmake` y en dos comprobaciones de `src/` (versión de gfortran para UDTIO, sonda de auditoría). Se quita el
+  código comentado y el `FVERSION` huérfano del `CMakeLists.txt` raíz.
+- Paridad de ifx: trampas en los 5 tests de `math` (`/fpe:0`, `-fpe0`); en la biblioteca en Debug, `/warn:all` y comprobaciones de
+  límites, punteros y forma con `/traceback` (el equivalente de `-Wall -fcheck=all -fbacktrace` de gfortran); `/Ob0`; el modelo
+  preciso y el signo del cero (D-037) también en Linux; los tests de compilación fallida y `mat_batch_dev_*` (D-039) también en Linux.
+- Un build con GPU (`MUSCLE_GPU` distinto de `OFF`) conserva los flags de ifx de antes: ni el modelo preciso, ni el signo del cero,
+  ni los diagnósticos de Debug, porque se midieron sólo en CPU y los tests de un build GPU comparan bit a bit el dispositivo con
+  el host. Medido: configurado con `-DMUSCLE_GPU=SPIR64` en Linux, el árbol nuevo y el commit anterior difieren en 5 de 269
+  comandos (los `-fpe0` de los tests de `math`, que ese build no compila: sólo construye `muscle` y `build_target_tests`).
+- `tools/check.sh`: etapa nueva de ifx en CPU (`BUILD_DIR-ifx`), en la compuerta completa y con `--quick` sólo con `--ifx`; si no hay
+  ifx se salta con un mensaje. Muestra los avisos de ifx y no los cuenta.
+**Trampas encontradas:**
+- `target_compile_options` elimina las opciones repetidas: `-check bounds -check pointers -check shape` pasaba a `-check bounds
+  pointers shape` e ifx tomaba `pointers` y `shape` por archivos. Con una sola opción, `-check bounds,pointers,shape`. (En Windows
+  las opciones son distintas, `/check:bounds`, y no ocurre.)
+- Los logs incrementales de ifx ocultaban 42 avisos `#8889` que sólo salen en un build completo.
+**Verificación:** gfortran en Windows: los 1046 comandos de compilación y enlace de `ninja` son idénticos, en el mismo orden, a los
+del commit anterior (árbol de trabajo temporal), con los mismos 133 tests. Resultados: Windows gfortran 133/133, ifx 133/133;
+Linux gfortran 133/133, ifx 133/133; `tools/check.sh --quick --ifx` en Linux OK. Los comandos de ifx cambian a propósito (comprobado en
+`compile_commands.json`: 143/143 comandos de la biblioteca con `/check:bounds`, `/warn:all`, `/traceback`; ningún test con `/Od`;
+66/66 tests `target` con `/Ob0`; 8/8 `batch_dev` con `spir64`; 5 tests con `/fpe:0`).
+**Sin verificar:** la compuerta completa de `check.sh` (compilar y correr los builds de GPU: sólo se configuró `SPIR64` y se
+compararon los comandos); los flags nuevos de ifx (modelo preciso, signo del cero, diagnósticos) en un build de GPU; `-fpe0` de ifx aplana los
+denormales según la documentación de Intel (no medido: sólo se usa en 5 tests, que pasan).
+**Pendiente:** (hecho el 2026-11-19: procedimientos internos del programa) 42 avisos `#8889` de ifx en 5 tests antiguos (`fd_known_functions`, `math_inverses`, `os_chaboche`, `visco_kelvin`,
+`visco_maxwell`) que definen subrutinas externas tras `end program`: moverlas a un `contains` o a un módulo.
+
+## D-041 — Modelo rápido de ifx en la biblioteca: evaluado y aplazado; iteraciones del Newton acotadas por caso (2026-11-18)
+
+> **Reemplazada en parte por D-042 (2026-11-18):** el modelo rápido se adoptó sin esperar a mejorar el Newton, con JC+Voce como
+> caso sensible; el criterio de iteraciones sigue.
+
+**Contexto:** el usuario pidió quitar `/fp:precise` de ifx (D-037) y, si hacía falta, que los tests dejaran de comparar bit a bit.
+Se midió en un árbol aparte (ifx 2026.2.0, Windows y Linux en WSL, `sp;dp`).
+**Medido, modelo rápido en la biblioteca:**
+- Debug (biblioteca a `-O0`): con los tests en `/fp:precise` y la biblioteca rápida con `/Qftz-`, 133/133 en los dos sistemas. No es
+  representativo: a `-O0` el modelo rápido casi no transforma nada (hallazgo del reviewer).
+- `Release` (biblioteca optimizada): fallan 9 tests en Linux y 10 en Windows, con las mismas comprobaciones: `a/s` (≤ 1 ulp), `.ddot.`
+  2D/3D (hasta 16 ulp en sp), `NORM_INF` frente a `maxval(sum(abs(A), dim=2))` bit a bit (sp), `Yld2004` conjunto frente a funciones
+  (0.3 ulp), `perzyna_checks` en sp (1.98e-9 sobre `TOL_FLOW_sp = 1e-9`), la referencia de `closest_point_time` en JC completo + Voce
+  modificado (iteraciones 7–33 frente a 23–53; valores dentro de 1.7e-9; la tangente por diferencias finitas sobre el Newton difiere en
+  ~5e2 porque amplifica el ruido de la convergencia) y, sólo en Windows, una operación inválida atrapada en `math_spectral_kinds`.
+- Aislamiento de componentes (Windows, `Release`, biblioteca rápida más una opción): `/Qfp-speculation:safe` sola arregla los 10 tests;
+  división y raíz exactas dejan 3; trascendentes exactas o sin FMA, ninguno. Pero con especulación segura la biblioteca es 19–34 %
+  más lenta que con `/fp:precise` (Linux): ifx desactiva entonces casi todas las optimizaciones de punto flotante.
+- Velocidad (`Release`, un hilo fijado a un núcleo, mínimo de 7 rondas ABBA, mismos resultados físicos): modelo rápido / preciso en
+  Windows 0.973–1.010 (dentro del ruido); en Linux 0.978–0.995 en el return mapping (`bench_closest_point_scalability`, 20 000
+  puntos) y 0.934–0.996 en la cinemática finita (`bench_kin_kernel`, 4–7 % más rápido en 5 de 6 casos).
+- Otros hallazgos: sin `/Qftz-` el modelo rápido aplana los subnormales y la biblioteca cambia de rama (`JCfull` con
+  `0 < epd < tiny`); compilado con el modelo rápido, un test reduce a `falso` una comparación con `+Inf` (el compilador supone que no
+  hay infinitos; ifx no acepta `-fhonor-infinities` ni `-fno-finite-math-only`); con las banderas rápidas ifx se cayó dos veces de forma
+  intermitente (PROBLEMAS).
+**Iteraciones del Newton (todos los casos de los 5 tests de secuencia del solver, gfortran Debug e ifx rápido Release, sp y dp):** de 69
+casos, 66 tienen pasos plásticos que convergen (3 no tienen ninguno): 51 convergen en ≤ 12 iteraciones y 15 necesitan 15–53, también con gfortran (CPB06, CPB06ex2 y Yld2004 en `closest_point`, 4 casos de
+`closest_point_2`, per3+Ludwik y Chaboche3 en Perzyna, JC+Voce, RK, NNL y VA en `time`). Algunos casos no convergen a propósito en
+ciertos pasos. Con el modelo rápido, JC+Voce en sp deja de converger en el paso 7 (gfortran: 18 iteraciones); ese caso tiene
+`check_sp=.false.`, así que hoy ningún test lo vería.
+**Decisión del usuario (2026-11-18):**
+- La biblioteca **conserva `/fp:precise`** (D-037, D-040 sin cambios) hasta mejorar el Newton de los casos lentos (tarea siguiente,
+  empezando por JC+Voce); entonces se vuelve a medir el modelo rápido. Quedan aprobadas para ese momento, y no aplicadas: `a/s` 2 ulp,
+  `.ddot.` 32 ulp, `NORM_INF` 8 ulp (a medir), `Yld2004` 2 ulp, `TOL_FLOW_sp` 1e-8, y en las 5 pruebas de `math` con ifx trampas sólo en
+  Debug con especulación segura (sin trampas optimizado).
+- **Criterio de iteraciones (aplicado):** cada caso de los tests de secuencia del solver lleva `iters_max` (por defecto 20 = 1.5 × 12, el
+  máximo de los casos rápidos: un Newton con convergencia cuadrática converge en pocas iteraciones); los 15 casos lentos llevan su tope, 1.5 veces el máximo medido redondeado a
+  múltiplo de 5 (60–80 en `closest_point`, 25–30 en `closest_point_2`, 40 en Perzyna, 30–80 en `time`). Todo paso que converge debe
+  quedar dentro, en sp y dp. La referencia ya no compara el número de iteraciones (era ±1): sigue exigiendo el estado exacto
+  (`reference_check` con `status_iters`; en modo estricto, `MUSCLE_REFERENCE_STRICT=1`, todo sigue bit a bit). Un fallo del tope
+  imprime las iteraciones y el tope. Un caso nuevo que necesite más de 20 indica un Newton lento (`pages/contributing.md`).
+  Con `/fp:precise` la comparación ±1 no fallaba en ninguna configuración medida: su retirada es preventiva, para el modelo rápido y
+  otros compiladores (en JC+Voce pasa de ±1 a ≤ 80 con 23–53 medidas).
+**Verificación:** 133/133 en Windows (gfortran e ifx, Debug) y en Linux (gfortran e ifx, Debug y `Release`). Mutaciones del área `solvers`
+(`--samples all`, 200; medido con el tope común de 15, y subirlo no puede perder detecciones porque sin topes, en `HEAD`, el resultado
+era el mismo): resultado idéntico mutación por mutación al de `HEAD` (80 detectadas por la referencia, 55 sólo por los
+unitarios, 42 por ninguno, 23 no compilan): ninguna que la comparación ±1 detectaba quedó sin detectar; las 13 que sólo detecta la
+referencia (camino del Newton) siguen detectadas.
+**Pendiente:** mejorar el Newton de los casos lentos (JC+Voce primero; revisar su `check_sp=.false.`); `.claude/rules/testing.md` dice
+aún «iteraciones ±1» (archivo local del usuario).
+
+## D-042 — Modelo rápido de ifx en la biblioteca; tolerancias en ulp y JC+Voce como caso sensible (2026-11-18)
+
+> **Reemplazada en parte por D-043 (2026-11-19):** JC completo tiene el piso de tasa de JC; el caso sensible, su mecanismo
+> (`sensitive`, `FAST_FP`, `TOL_SENSITIVE_FAST`, el define `MUSCLE_FAST_FP`) y `/Qftz-` (`-no-ftz`) se retiraron.
+
+**Contexto:** D-041 aplazó el modelo rápido hasta mejorar el Newton de los casos lentos. Antes de eso el usuario pidió revisar si
+JC completo + Voce modificado (`tm_jcfull_vm_vocemod`, caso 3 de `closest_point_time`), el único caso cuya referencia fallaba con
+el modelo rápido, es un caso especial que se mueve con cualquier cambio mínimo.
+**Medido (estudio de sensibilidad, gfortran e ifx con `/fp:precise`, Debug y `Release`):** con perturbaciones relativas de ±1e-5 a
+±1e-15 de la deformación de la secuencia (`a_y`), el camino del Newton cambia también con el modelo preciso: en dp los pasos 5 y 7 dejan de converger con
+δ = −1e-11 en las cuatro configuraciones precisas, y los pasos 1 y 6 no convergen en ninguna. El caso es frágil en sí mismo (lo que
+cambia es el camino del Newton, que no tiene verdad independiente); no es un defecto del modelo rápido.
+**Decisión del usuario (2026-11-18: «el primero de quitarla, caso aparte y dejar documentado para corregir a futuro que es un caso
+sensible»):**
+- **Biblioteca con ifx (CPU, Windows y Linux):** sin `/fp:precise` (modelo rápido por defecto), con `/assume:minus0` (D-037), `/Qftz-`
+  (`-no-ftz`: el modelo rápido aplana los subnormales y la biblioteca cambiaba de rama, D-041) salvo en `Profile`, y en Debug
+  `/Qfp-speculation:safe` (`-fp-speculation=safe`). Los tests siguen con `/fp:precise` (sus formas cerradas y comparaciones exactas
+  suponen la semántica del estándar). `Profile` no cambia (`/fp:fast`). El build GPU no cambia. Reemplaza en parte a D-037 y D-040.
+- **Trampas de punto flotante de ifx (`/fpe:0`, `-fpe0`, los 5 tests de `math`):** sólo en Debug, donde la biblioteca lleva
+  especulación segura; optimizado, el modelo rápido evalúa por especulación operaciones cuyo resultado no se usa (una operación
+  inválida atrapada en `math_spectral_kinds`, D-041). gfortran conserva sus trampas en todas las configuraciones.
+- **Define de fypp `MUSCLE_FAST_FP`** cuando la biblioteca usa el modelo rápido (ifx sin GPU, `cmake/MuscleCompiler.cmake`); los
+  tests lo leen como `FAST_FP`.
+- **Tolerancias aprobadas en D-041, aplicadas:** `a/s` de los cinco `tensors-types-*_kinds`, 2 ulp; `.ddot.` 2D frente a 3D embebido
+  (`2o_kinds`), 32 ulp (16.4 medidos en sp); `NORM_INF` frente a `maxval(sum(abs(A), dim=2))`, 8 ulp; `Yld2004` conjunto, conjunto
+  específico y `point2` frente a las funciones, 2 ulp; `TOL_FLOW_sp` de `perzyna_checks`, 1e-8 (1.98e-9 medido). La de `.ddot.` usa como escala
+  la suma de |a_ij b_ij| (`check_scaled`), no el valor: con las matrices de escala 1e-3 del test, una tolerancia relativa con piso 1
+  no comprobaría nada (hallazgo del reviewer). `.ddot.` 2D/3D y Yld2004 conjunto/`point2` comparan dos caminos de la biblioteca con
+  otra agrupación de las operaciones; las demás comprobaciones de dos caminos del mismo binario (lote = punto, genérico = específico,
+  `pack`/`unpack`, Yld2004 sin `ddf`) siguen bit a bit.
+- **JC+Voce, caso sensible conocido** (`solver_case%sensitive`): con `FAST_FP`, sus resultados de referencia se comparan con 2e-9
+  (`TOL_SENSITIVE_FAST`; 1.7e-9 medido en Linux y 1.45e-9 en Windows, frente a 1e-9 de la categoría) y no se comparan su tangente
+  numérica de referencia (diferencias finitas sobre el Newton: 4e-9 en el primer paso y 5.6e2 en el paso 7) ni la comprobación de su
+  tangente analítica por diferencias finitas. Su tangente analítica de referencia sigue a 1e-9 (3.8e-10 medido). El estado sigue
+  exacto, el tope de iteraciones (80) sigue y su sp ya no se comprobaba (`check_sp=.false.`). Con gfortran o con el modelo preciso no
+  cambia nada. **A corregir a futuro**, al mejorar su Newton (PROBLEMAS).
+**Verificación:** 133/133 en Windows (gfortran 16.2 e ifx 2026.2, Debug y `Release`) y en Linux (WSL: `tools/check.sh --quick --ifx`,
+gfortran 15.2 e ifx en Debug, y los dos en `Release`). El define llega sólo a los builds de ifx (`FAST_FP = .true.` en el código generado
+de ifx, `.false.` en el de gfortran). Con ifx `Release` en Windows, JC+Voce queda en 1.45e-9 en resultados, 3.8e-10 en la tangente
+analítica y 4e-9 / 5.6e2 en la tangente numérica (`MUSCLE_REFERENCE_REPORT=1`): sin el caso sensible su test fallaría. Mutaciones
+(`--samples all`, gfortran, árbol nuevo frente a `HEAD`): `types` 180, `linalg` 543, `solvers` 200 y `yield` 1310, idénticas mutación
+por mutación (`solvers` mantiene sus 13 que sólo detecta la referencia, como en `HEAD`). Revisión del reviewer aplicada.
+**Pendiente:** quitar `sensitive` de JC+Voce al mejorar su Newton (hecho en D-043); los 272 avisos `#10120` de ifx en los tests `Release` (corregido en D-044) (CMake pone
+`/O2` y los tests `/O3`; anteriores a esta decisión); la etapa ifx de `check.sh` sólo compila Debug, donde el modelo rápido casi no
+transforma nada: el riesgo del modelo rápido sólo se ve en `Release` (correrlo a mano en las pruebas finales).
+
+## D-043 — Piso de tasa `epmin` en JC completo; la biblioteca de ifx sin `/Qftz-` (2026-11-19)
+
+**Contexto:** el usuario quiso que la biblioteca funcionara con el modelo rápido de ifx sin `/Qftz-`, también optimizada, y
+cuestionó que una rama dependiera de los subnormales. Esa rama era la de JC completo (`muscle_vp_jcfull`): flujo 0 con
+\( \dot\epsilon_p \le 0 \) (fallo heredado, D-017.7), piso en `tiny` del logaritmo y derivada respecto de la tasa 0 bajo `tiny` y
+\( \sigma_y C/\dot\epsilon_p \) encima. Con los parámetros del caso de prueba (C = 0.014, \( \dot\epsilon_{p0} = 1 \)) el factor
+\( 1 + C\ln\dot\epsilon_p \) es negativo para \( \dot\epsilon_p < e^{-1/C} \approx 10^{-31} \) (≈ −8.9 en `tiny`): flujo negativo, un salto
+a 0 en la tasa nula y una derivada ≈ 1e306. Al aplanar un subnormal a 0, el modelo rápido sólo cambiaba de un lado del salto al otro.
+**Decisión del usuario (2026-11-19, «piso epmin como JC»):** JC completo usa el piso de tasa de JC (`muscle_vp_jc`):
+- parámetro nuevo `epmin` (\( \dot\epsilon_{min} \), 1e-7 por defecto), **al final** del tipo y de `MODEL_PARAMS`; bajo el piso
+  \( x = \dot\epsilon_{min}/\dot\epsilon_{p0} \) (flujo constante, positivo y continuo, derivada respecto de la tasa 0), también con tasa nula o
+  negativa;
+- `vp_newton_dstress_dep_jcfull_<k>` (`VISCOPLASTIC_FLOOR`): la dirección del Newton usa la derivada por la derecha en el piso, como JC
+  (D-018.19b); la ley y la tangente conservan el 0;
+- `MODEL_DOMAINS`: `mat_init` exige \( C\,|\ln(\dot\epsilon_{min}/\dot\epsilon_{p0})| < 1 \), como JC.
+- **Cambio de API:** el arreglo `props` de un material con JC completo tiene un valor más (`epmin`, tras `T_current`): se corren los
+  parámetros que le siguen (en `tm_jcfull_vm_vocemod`, `epmin` es `props(9)` y la ley de endurecimiento empieza en `props(10)`).
+- La biblioteca de ifx deja `/Qftz-` (`-no-ftz`): ninguna rama depende ya de los subnormales.
+- Se retira el caso sensible de D-042 y todo su mecanismo (ningún caso lo usa); JC+Voce vuelve a comprobar sp (`check_sp`), con el tope
+  por defecto (20) y la comprobación de su tangente por diferencias finitas.
+**Medido (caso 3 de `closest_point_time`, gfortran):** iteraciones por paso 6–8 (antes 22–53, y los pasos 1 y 6 no convergían en 200);
+los pasos 1 y 6 (una carga bajo fluencia y una descarga) son ahora elásticos. Referencia regenerada con
+`tests/reference/solvers/regenerate.sh` (Linux, gfortran 15.2, Debug): 23 registros del caso 3 cambian (8 `result`, 6 `tangent`,
+9 `tangent_num`) y se quitan 2 (las tangentes de los pasos 1 y 6); en los pasos plásticos que convergen, ≤ 3.3e-12 relativo en
+`result`, ≤ 5.8e-10 en `tangent` y ≤ 4e-9 en `tangent_num` (antes 2.8e305 en los pasos 0, 1 y 6); ningún registro de otro caso ni de
+Perzyna cambia.
+**Tests nuevos (antes de implementar):** `vp_laws_kinds` (forma cerrada con el piso, valor por defecto de `epmin`), `vp_laws_limits`
+(`test_jcfull_newton`: en el piso y con tasas nula y negativa, flujo positivo, derivada del Newton contra forma cerrada y contra
+diferencias finitas laterales, continuidad en el piso, y por encima del piso igual a `dstress_dep`), `material_init` (`vp epmin` en el
+contrato y la condición de dominio en Fortran, como JC),
+`test_muscle_material_props.py` (la condición de dominio), `material_smoke` (JC completo ya tiene dominio elástico).
+**Recorte del multiplicador:** el caso 3 viejo era el único que pasaba por el recorte \( \Delta\lambda \ge 0 \) del Newton de
+`closest_point_time` (`muscle_closest_point_time_body.fypp`, con la reducción de `omega` que le sigue); con el piso ya no, y 3 mutaciones de
+esas líneas dejaron de detectarse. Para encontrar otro, se agregaron en una copia 112 variantes de los casos del test (pasos de tiempo
+×1e-4 a ×1e4, deformación ×1 y ×3) y se compararon los resultados con el recorte mutado: lo usan 7 variantes de RK y NNL. Se agrega el
+caso NNL con `dt = 1` (número de caso 0, sin referencia nueva): converge en todos sus pasos (≤ 17 iteraciones; el paso 2, un incremento
+plástico de 6e-8, pasa por el recorte). Campo nuevo `solver_case%converges`: todos los pasos deben converger (dp, y sp con `check_sp`),
+porque cambiar la reducción de `omega` hace que los pasos siguientes dejen de converger, cosa que el test no comprobaba. Las 3 mutaciones
+vuelven a detectarse.
+**Verificación:** 133/133 en Windows (gfortran 16.2 e ifx 2026.2, Debug y `Release`) y en Linux (WSL: `tools/check.sh --quick --ifx`, con el
+lint, gfortran 15.2 e ifx en Debug, y los dos en `Release`); la biblioteca de ifx `Release` compila con `/O2` y el modelo rápido, sin
+`/Qftz-`. Referencia en modo estricto (`MUSCLE_REFERENCE_STRICT=1`, Linux gfortran Debug): pasa. Mutaciones (`--samples all`, gfortran):
+`vp` 408, ninguna detección perdida (en `muscle_vp_jcfull` sobrevive 1, `denomT > 0 → > 1`, frente a 4 en `HEAD`; fuera de ese archivo los
+mismos 16 supervivientes); `solvers` 200, las 3 del recorte detectadas otra vez (por el test de secuencia de `closest_point_time`, grupo
+`reference`). El cuelgue intermitente de `gpu-family_target_hard_*` con gfortran en Windows se repite igual en `HEAD` (2 de 30), no es de
+este cambio (PROBLEMAS). Revisión del reviewer aplicada (el dominio en Fortran, `newton_dstress_dep` con las mismas operaciones que
+`dstress_dep` fuera del piso, referencia regenerada otra vez: sólo cambian bits del caso 3, notas de D-037, de `solvers.toml` y de la GPU).
+**Pendiente:** medir otra vez `tm_jcfull_vm_vocemod` en la GPU (su `f0 = 2` de `tests/gpu/target_cases.py` y su exclusión en sp de
+`tools/gpu_skip_tests.sh` se midieron antes de este cambio, ESTADO_OPTIMO).
+
+## D-044 — `Release` a `-O3` en todos los compiladores; los tests sin el nivel de optimización de CMake (2026-11-19)
+
+**Contexto:** con ifx en Windows los tests de `Release` daban 272 avisos `#10120` («overriding '/O2' with '/O3'»): CMake pone `/O2` en
+`CMAKE_Fortran_FLAGS_RELEASE` y los tests piden `/O3` en toda configuración (el mismo caso que el `/Od` de Debug, D-040). Además la
+biblioteca de ifx en Windows quedaba en `/O2`, y en Linux (ifx y gfortran) y con gfortran en Windows en `-O3`.
+**Decisión del usuario (2026-11-19: «dejar por defecto O3 en release en todos»):**
+- `tests/CMakeLists.txt` quita el nivel de optimización de las banderas de CMake de cada configuración (`/Od`, `/O1`, `/O2`, `-O2`,
+  `-O3`, `-Os` en Debug, `Release`, `RelWithDebInfo` y `MinSizeRel`); quedan las demás (`/DNDEBUG`, información de depuración). Los
+  tests siguen en `-O3` en toda configuración. Antes sólo se quitaba `/Od`.
+- `cmake/MuscleCompiler.cmake`: con ifx en Windows, `Release` usa `/O3` en lugar de `/O2` (también la biblioteca y un build con GPU).
+  Se cambia la variable en el ámbito del proyecto, no la caché (que sigue mostrando `/O2`).
+**Verificación:** Windows: ifx Debug y `Release` (ya con `/O3`, biblioteca y tests), gfortran Debug y `Release`: 133/133 (un `Debug` de
+gfortran tuvo el cuelgue intermitente conocido de `gpu-family_target_hard_sp`, PROBLEMAS); los avisos de ifx quedan en los 42 `#8889`
+conocidos. Linux (WSL): `tools/check.sh --quick --ifx` y `Release` con gfortran e ifx, 133/133, 0 avisos de ifx en `Release` (allí no
+cambia nada: CMake ya ponía `-O3`). Sin medir: la velocidad de la biblioteca de ifx en Windows con `/O3` frente a `/O2`.

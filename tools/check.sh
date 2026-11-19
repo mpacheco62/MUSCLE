@@ -4,7 +4,7 @@
 #
 # Verification gate of MUSCLE (pages/contributing.md, Development cycle).
 #
-#   tools/check.sh [--lint-only | --doc | --quick] [--gpu-full] [BUILD_DIR]
+#   tools/check.sh [--lint-only | --doc | --quick] [--ifx] [--gpu-full] [BUILD_DIR]
 #
 # Modes: --lint-only (stage 1, seconds, while editing); --doc (stage 1, the FORD documentation and the drift between
 # the documentation and the code, ~2 min, before a pull request that touches documentation or a public API);
@@ -19,6 +19,9 @@
 #    build-check/.ford-venv). Skipped with --lint-only and --doc.
 #    With --quick, stop after ctest: no UDTIO build, no FORD and none of the GPU stages below
 #    (the everyday check; run the full gate before closing a stage).
+#    The same Debug build and ctest run again with ifx in BUILD_DIR-ifx (D-040) when ifx is found (PATH or
+#    $ONEAPI_ROOT/setvars.sh; skipped, not failed, when it is not): in the full gate, and with --quick only when
+#    asked with --ifx. ifx warnings are shown, not counted (the old tests have some).
 # 3. GPU builds (D-019.3, D-019.4b), library and target tests (GPU_TARGET_TESTS): BUILD_DIR-nvptx and
 #    BUILD_DIR-amdgcn (gfortran, compiled and linked with offload, both at once) and BUILD_DIR-spir64
 #    (ifx, the target tests run on the Intel GPU with memory and time limits). With --gpu-full,
@@ -42,19 +45,22 @@ lint_only=0
 doc_only=0
 quick=0
 gpu_full=0
+ifx_cpu=0
 while [[ "${1:-}" == --* ]]; do
     case "$1" in
         --lint-only) lint_only=1 ;;
         --doc) doc_only=1 ;;
         --quick) quick=1 ;;
         --gpu-full) gpu_full=1 ;;
-        *) echo "usage: $0 [--lint-only | --doc | --quick] [--gpu-full] [BUILD_DIR]" >&2; exit 2 ;;
+        --ifx) ifx_cpu=1 ;;
+        *) echo "usage: $0 [--lint-only | --doc | --quick] [--ifx] [--gpu-full] [BUILD_DIR]" >&2; exit 2 ;;
     esac
     shift
 done
 build_dir="${1:-build-check}"
+(( ifx_cpu && (lint_only || doc_only) )) && echo "== --ifx ignored: --lint-only and --doc build nothing"
 if (( lint_only + doc_only + quick > 1 )); then
-    echo "usage: $0 [--lint-only | --doc | --quick] [--gpu-full] [BUILD_DIR]: one mode at most" >&2
+    echo "usage: $0 [--lint-only | --doc | --quick] [--ifx] [--gpu-full] [BUILD_DIR]: one mode at most" >&2
     exit 2
 fi
 
@@ -295,6 +301,7 @@ prune_stale_modules() {
 }
 prune_stale_modules "$build_dir"
 prune_stale_modules "${build_dir}-udtio"
+prune_stale_modules "${build_dir}-ifx"
 for gpu in nvptx nvptx-release amdgcn spir64; do prune_stale_modules "${build_dir}-${gpu}"; done
 
 echo "== build: ${build_dir} (Debug, MUSCLE_REAL_KINDS=sp;dp)"
@@ -367,9 +374,47 @@ build_doc 0 || exit 1
 fi
 
 ctest --test-dir "$build_dir" --output-on-failure -j "$(nproc)" || failures=$((failures + 1))
+
+# The same build and tests with ifx on the CPU (D-040), in its own directory, in a subshell with the oneAPI
+# environment. Without ifx the stage is skipped, not failed: ifx is optional here (the GPU stage below needs it).
+ifx_cpu_stage() {
+    local oneapi="${ONEAPI_ROOT:-/opt/intel/oneapi}"
+    if ! command -v ifx > /dev/null && [[ ! -f "$oneapi/setvars.sh" ]]; then
+        echo "== ifx CPU: ifx not found (PATH, $oneapi/setvars.sh): skipped"
+        return 0
+    fi
+    (
+        # setvars.sh reads unset variables
+        set +u
+        command -v ifx > /dev/null || source "$oneapi/setvars.sh" > /dev/null 2>&1
+        set -u
+        command -v ifx > /dev/null || { echo "== ifx CPU: ifx not found after $oneapi/setvars.sh"; exit 1; }
+        echo "== build: ${build_dir}-ifx (Debug, MUSCLE_REAL_KINDS=sp;dp, ifx)"
+        mkdir -p "${build_dir}-ifx"
+        # the C compiler of the tests: icx when oneAPI has it
+        c_args=()
+        command -v icx > /dev/null && c_args=(-DCMAKE_C_COMPILER=icx)
+        cmake -S . -B "${build_dir}-ifx" -G Ninja -DCMAKE_BUILD_TYPE=Debug "-DMUSCLE_REAL_KINDS=sp;dp" \
+            -DCMAKE_Fortran_COMPILER=ifx "${c_args[@]}" > "${build_dir}-ifx/configure.log" 2>&1 || {
+            echo "== ifx CPU: configure failed (see ${build_dir}-ifx/configure.log)"
+            tail -5 "${build_dir}-ifx/configure.log"; exit 1; }
+        cmake --build "${build_dir}-ifx" --target build_all_tests -j "$(nproc)" > "${build_dir}-ifx/build.log" 2>&1 || {
+            echo "== ifx CPU: build failed (see ${build_dir}-ifx/build.log)"; exit 1; }
+        echo "   ifx warnings: $(grep -c 'warning #' "${build_dir}-ifx/build.log")"
+        ctest --test-dir "${build_dir}-ifx" --output-on-failure -j "$(nproc)" || {
+            echo "== ifx CPU: ctest failed"; exit 1; }
+    )
+}
+if (( ifx_cpu || ! quick )); then
+    ifx_cpu_stage || failures=$((failures + 1))
+fi
 if (( quick )); then
-    (( failures > 0 )) && { echo "== check --quick: ctest failed"; exit 1; }
-    echo "== check --quick: OK (UDTIO, FORD and GPU stages skipped)"
+    (( failures > 0 )) && { echo "== check --quick: ${failures} stage(s) failed"; exit 1; }
+    if (( ifx_cpu )); then
+        echo "== check --quick: OK (UDTIO, FORD and GPU stages skipped)"
+    else
+        echo "== check --quick: OK (UDTIO, FORD, ifx and GPU stages skipped; --ifx adds ifx)"
+    fi
     exit 0
 fi
 

@@ -10,6 +10,13 @@ sources = ["src/solvers/muscle_*.fypp"]
 # norm of its convergence check, the backtracking line search and merit function of closest_point_perzyna),
 # which has no independent truth: only the reduced reference detects them. With this file the check reports
 # those 13 as killed only by the reference (expected).
+# D-041 (2026-11-18): the reference no longer compares the iteration count (was within 1); the tests bound it with the
+# iteration cap of each case and the status stays exact. Measured with --samples all on HEAD and on the change: the
+# same outcome mutation by mutation (reference 80, only unit 55, none 42, not compiled 23); the 13 above are still
+# killed by the reference.
+# D-043 (2026-11-19): with the rate floor of full Johnson-Cook, case 3 no longer goes through the multiplier clipping
+# of closest_point_time; a Nemat-Nasser-Li case with dt = 1 (case number 0, no records, `converges`) does, and kills its
+# 3 mutations. They still count as `reference` because that case is in the reference test mat_closest_point_time.
 reference = "^materials-mat_(closest_point_perzyna|closest_point_time)$"
 unit = "^materials-mat_(closest_point|closest_point_2|cutting_plane|solver_checks|perzyna_checks|cp_anisotropic|cp2_singular|visco_errors|return_mapping)$"
 samples = 50

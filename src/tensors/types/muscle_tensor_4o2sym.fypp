@@ -59,6 +59,9 @@ module muscle_tensor_4o2sym
     use muscle_kinds, only: TOL_APPROX_4O2SYM_${k}$, EPS_ABS_${k}$
     #:endfor
     use muscle_tensor_4o3sym, only: ${', '.join(tname(d + '4O3sym', k) for d in DIMS for k in REAL_KINDS)}$
+    #:if defined('ENABLE_UDTIO')
+    use muscle_tensor_io, only: ${specifics('print_{0}_{1}', '4O2sym')}$
+    #:endif
     implicit none
     private
 
@@ -87,6 +90,11 @@ module muscle_tensor_4o2sym
                 !! Fully symmetric `${tname(d + '4O3sym', k)}$` from the upper triangle.
             procedure, public :: inv => inv_${S}$_${k}$_tbp
                 !! Inverse tensor (quiet NaN if singular).
+            #:if defined('ENABLE_UDTIO')
+            generic, public :: write(formatted) => write_${S}$_${k}$_tbp
+                !! Defined formatted output (`write(unit, '(DT)') t`, `DT"LIST"`; D-038).
+            procedure, private :: write_${S}$_${k}$_tbp
+            #:endif
     end type ${T}$
 
     #:endfor
@@ -203,6 +211,10 @@ $:LOAD_MATRIX('mat_a', lay, k)
     ! Type-bound wrappers of ${T}$ (historical API; `class` passed object, not for kernels)
 
 $:TENSOR_COMMON_TBP(d, F, k, scalar_ops=['norm'], tensor_ops=['inv'])
+    #:if defined('ENABLE_UDTIO')
+
+$:TENSOR_UDTIO_TBP(d, F, k)
+    #:endif
 
     pure function convert_3sym_${P}$_tbp(self) result(res)
         !! `%convert_3sym()`: type-bound wrapper of `convert_3sym_${P}$`.

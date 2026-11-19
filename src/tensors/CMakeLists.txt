@@ -11,6 +11,7 @@ muscle_add_fypp_sources(muscle
                    types/muscle_tensor_iden.fypp
                    muscle_tensor_io.fypp
                    muscle_tensor_minus.fypp
+                   muscle_tensor_aliases.fypp
                    muscle_tensors.fypp
                    )
 
