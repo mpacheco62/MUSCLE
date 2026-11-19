@@ -75,7 +75,9 @@ class TestMaterialProps(unittest.TestCase):
         mat = mm.material('tm_jc_vm_swift')
         self.assertEqual([c for c, _ in mm.material_domain_checks(mat, 'sp')],
                          ['props(3)*abs(log(props(5)/props(4))) < 1.0_sp'])
-        self.assertEqual(mm.material_domain_checks(mm.material('tm_jcfull_vm_vocemod'), 'dp'), [])
+        # Full Johnson-Cook (D-043): the same condition, with epmin after the temperatures
+        self.assertEqual([c for c, _ in mm.material_domain_checks(mm.material('tm_jcfull_vm_vocemod'), 'dp')],
+                         ['props(3)*abs(log(props(9)/props(4))) < 1.0_dp'])
         saved = mm.MODEL_DOMAINS
         try:
             mm.MODEL_DOMAINS = {('vp', 'jc'): (('{nope} > 0.0_{k}', 'X.'),)}

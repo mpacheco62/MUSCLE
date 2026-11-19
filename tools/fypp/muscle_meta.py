@@ -107,7 +107,7 @@ VISCOPLASTIC_COMPOSED = ('jc', 'jcfull')
 #: Viscoplastic laws with a rate floor (the flow stress is constant below a minimum rate) that give the
 #: Newton iterations of the rate-dependent return mapping the right-hand rate derivative there
 #: (``vp_newton_dstress_dep``, D-018.19b); the others use ``vp_dstress_dep``.
-VISCOPLASTIC_FLOOR = ('jc',)
+VISCOPLASTIC_FLOOR = ('jc', 'jcfull')
 
 #: Registered overstress laws \( \dot\lambda = g(\sigma_{eq}, \epsilon_p) \) (D-017): one template
 #: ``src/plasticity/viscoplastic_laws/muscle_os_<name>.fypp`` each (the directory of the flow stress laws),
@@ -1185,6 +1185,8 @@ MODEL_PARAMS = MappingProxyType({
         _P('Troom', 'real', '', r'Reference (room) temperature \( T_{room} \) (K).', '293.15'),
         _P('Tmelt', 'real', '', r'Melting temperature \( T_{melt} \) (K).', '1.0e3'),
         _P('T_current', 'real', '', r'Current temperature \( T \) (K), set by the caller.', '0.0'),
+        _P('epmin', 'real', '',
+           r'Minimum strain rate \( \dot\epsilon_{min} \) (floor of the rate, avoids \( \ln 0 \)).', '1.0e-7'),
     ),
     ('vp', 'mrk'): (
         _P('B01', 'real', '', r'Linear hardening modulus \( B_{01} \).', None),
@@ -1993,12 +1995,15 @@ def material_prop_check(prop, kind, props='props'):
 #: ``MODEL_DOMAINS[(prefix, model)]``: ``(condition, doc)`` pairs, the condition a Fortran logical expression
 #: with each input as ``{name}`` and literals of kind ``{k}``, ``doc`` its FORD text;
 #: ``STATUS_INVALID_PARAMETER`` otherwise (as ``ModelInput.domain``: the model initializer and the kernel
-#: do not check them). Johnson-Cook: the rate factor \( 1 + C\ln x \) stays positive on the rate floor
-#: \( x = \dot\epsilon_{min}/\dot\epsilon_{p0} \) (else a negative flow stress there).
+#: do not check them). Johnson-Cook and full Johnson-Cook (D-043): the rate factor \( 1 + C\ln x \) stays
+#: positive on the rate floor \( x = \dot\epsilon_{min}/\dot\epsilon_{p0} \) (else a negative flow stress there).
 MODEL_DOMAINS = MappingProxyType({
     ('vp', 'jc'): (('{C}*abs(log({epmin}/{epdmax})) < 1.0_{k}',
                     r'\( C\,|\ln(\dot\epsilon_{min}/\dot\epsilon_{p0})| < 1 \) (positive flow stress on the rate '
                     r'floor)'),),
+    ('vp', 'jcfull'): (('{C}*abs(log({epmin}/{epdmax})) < 1.0_{k}',
+                        r'\( C\,|\ln(\dot\epsilon_{min}/\dot\epsilon_{p0})| < 1 \) (positive flow stress on the '
+                        r'rate floor)'),),
 })
 
 

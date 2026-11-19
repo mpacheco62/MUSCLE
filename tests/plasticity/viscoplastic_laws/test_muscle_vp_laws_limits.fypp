@@ -7,11 +7,12 @@
 #! at the documented boundaries (value exactly on the boundary and on both sides), against closed forms
 #! written here (references in dp from the kind-k parameters):
 #! - full Johnson-Cook: thermal factor 1 - T*^m with T* clamped to [0, 1], T* = 0 when Tmelt <= Troom,
-#!   m = 0 (no softening) and m = 1; dflow_depd exactly at the rate floor `tiny`;
-#! - Johnson-Cook: the rate floor epd <= epmin (dflow_depd = 0 on the floor, finite dstress_dep);
-#! - Johnson-Cook newton_dstress_dep (D-018.19b): on the floor the right-hand rate derivative
-#!   sigma_y C/epmin instead of 0 (closed form, and a one-sided FD of the flow stress in dp), elsewhere
-#!   dstress_dep (and its closed form);
+#!   m = 0 (no softening) and m = 1;
+#! - Johnson-Cook and full Johnson-Cook (D-043): the rate floor epd <= epmin (dflow_depd = 0 on the floor,
+#!   finite dstress_dep);
+#! - their newton_dstress_dep (D-018.19b): on the floor the right-hand rate derivative
+#!   sigma_y C/epmin (times the thermal factor) instead of 0 (closed form, and a one-sided FD of the flow
+#!   stress in dp), elsewhere dstress_dep (and its closed form);
 #! - Perzyna: overstress psi = 0 exactly with n = 1 (g_psi = 0 for psi <= 0);
 #! - VA: m = 0 (f = 1 - B2, no rate term) and m = 1;
 #! - Rusinek-Klepaczko: the derivatives clamp the rate to [epmin, 0.99 epdmax] and floor
@@ -45,6 +46,8 @@ program test_vp_limits
     call record(test_mrk_${k}$(), ${10*i + 6}$, 'MRK floor of L in the derivatives ${k}$', code)
     call record(test_nnl_${k}$(), ${10*i + 7}$, 'NNL clamp of X ${k}$', code)
     call record(test_jc_newton_${k}$(), ${10*i + 8}$, 'Johnson-Cook newton_dstress_dep at and off the rate floor ${k}$', code)
+    call record(test_jcfull_newton_${k}$(), ${10*i + 9}$, &
+        'full Johnson-Cook rate floor and newton_dstress_dep ${k}$', code)
     #:endfor
     if (code /= 0) stop code
     print '(a)', ' Passed!'
@@ -104,15 +107,92 @@ contains
             call check_approx(passed, trim(label) // ': dflow_depd', vp_dflow_depd(v, ep, epd, sy), &
                               real(real(sy, dp)*real(v%C, dp)/real(epd, dp)*ft, ${k}$), TOL)
         end do
-
-        ! Exactly at the rate floor `tiny` the derivative is the formula sigma_y C/epd (not 0): with
-        ! sigma_y = 1 and no softening it is C/tiny, finite
-        v%m = 0.0_${k}$
-        call check_approx(passed, '${k}$ JCfull dflow_depd at epd = tiny', vp_dflow_depd(v, ep, tiny(1.0_${k}$), 1.0_${k}$), &
-                          v%C/tiny(1.0_${k}$), TOL)
-        call check_approx(passed, '${k}$ JCfull dflow_depd below tiny', &
-                          vp_dflow_depd(v, ep, tiny(1.0_${k}$)/2.0_${k}$, 1.0_${k}$), 0.0_${k}$, 0.0_${k}$)
     end function test_jcfull_${k}$
+
+    function test_jcfull_newton_${k}$() result(passed)
+        !! Full Johnson-Cook in `real(${k}$)` at the rate floor (D-043), with thermal factor ft = 1 - T*^m:
+        !! for epd <= epmin, x0 = epmin/epd0, sigma = sigma_y (1 + C ln x0) ft (positive, continuous at the
+        !! floor), dflow_depd = 0 and dstress_dep = dsigma_y/dep (1 + C ln x0) ft; `vp_newton_dstress_dep`
+        !! (D-018.19b) adds the right-hand rate derivative sigma_y C ft/(epmin dt) (checked also against a
+        !! one-sided FD of `vp_flow_stress` in dp); above the floor it is `vp_dstress_dep` and its closed form.
+        use muscle_vp_laws, only : vp_flow_stress, vp_dflow_dep, vp_dflow_depd, vp_dstress_dep, &
+            & vp_newton_dstress_dep, vp_jcfull_${k}$, vp_jcfull_dp
+        logical :: passed
+        real(${k}$), parameter :: TOL = ${TOL_K[k]}$_${k}$
+        integer, parameter :: NP = 3
+        ! Parameter sets: default floor without softening, default floor with softening, a high floor
+        real(${k}$), parameter :: MS(NP) = [0.0_${k}$, 1.5_${k}$, 1.5_${k}$]
+        real(${k}$), parameter :: EPMINS(NP) = [1.0e-7_${k}$, 1.0e-7_${k}$, 1.0e-3_${k}$]
+        type(vp_jcfull_${k}$) :: v
+        type(vp_jcfull_dp) :: vd
+        real(${k}$) :: sy, dsy, ep, epd, dt, rates(4), above(4)
+        real(dp) :: c, e0, emin, x, ft, ref, dfd, e
+        character(len=72) :: label
+        integer :: ip, j
+
+        passed = .true.
+        ep = 0.1_${k}$
+        sy = 100.0_${k}$
+        dsy = 10.0_${k}$
+        dt = 1.0e-3_${k}$
+        do ip = 1, NP
+            v = vp_jcfull_${k}$(C=0.05_${k}$, epdmax=0.1_${k}$, m=MS(ip), Troom=293.15_${k}$, Tmelt=1700.0_${k}$, &
+                                T_current=600.0_${k}$, epmin=EPMINS(ip))
+            c = real(v%C, dp)
+            e0 = real(v%epdmax, dp)
+            emin = real(v%epmin, dp)
+            ft = 1.0_dp
+            if (MS(ip) /= 0.0_${k}$) ft = 1.0_dp - ((real(v%T_current, dp) - real(v%Troom, dp)) &
+                /(real(v%Tmelt, dp) - real(v%Troom, dp)))**real(MS(ip), dp)
+
+            ! On the floor (also at a zero and a negative rate): closed forms with x0 = epmin/epd0
+            x = emin/e0
+            rates = [v%epmin, v%epmin/2.0_${k}$, 0.0_${k}$, -1.0_${k}$]
+            do j = 1, size(rates)
+                write(label, '(a, i0, a, i0)') '${k}$ JCfull on the floor, set ', ip, ', rate ', j
+                call check_approx(passed, trim(label) // ': flow_stress', vp_flow_stress(v, ep, rates(j), sy), &
+                                  real(real(sy, dp)*(1.0_dp + c*log(x))*ft, ${k}$), TOL)
+                call check_approx(passed, trim(label) // ': dflow_dep', vp_dflow_dep(v, ep, rates(j), sy, dsy), &
+                                  real(real(dsy, dp)*(1.0_dp + c*log(x))*ft, ${k}$), TOL)
+                call check_approx(passed, trim(label) // ': dflow_depd', vp_dflow_depd(v, ep, rates(j), sy), &
+                                  0.0_${k}$, 0.0_${k}$)
+                call check_approx(passed, trim(label) // ': dstress_dep', vp_dstress_dep(v, ep, rates(j), dt, sy, dsy), &
+                                  real(real(dsy, dp)*(1.0_dp + c*log(x))*ft, ${k}$), TOL)
+                ref = real(dsy, dp)*(1.0_dp + c*log(x))*ft + real(sy, dp)*c*ft/(emin*real(dt, dp))
+                call check_approx(passed, trim(label) // ': newton_dstress_dep', &
+                                  vp_newton_dstress_dep(v, ep, rates(j), dt, sy, dsy), real(ref, ${k}$), TOL)
+            end do
+            write(label, '(a, i0)') '${k}$ JCfull flow stress positive on the floor, set ', ip
+            call check_true(passed, trim(label), vp_flow_stress(v, ep, 0.0_${k}$, sy) > 0.0_${k}$)
+            write(label, '(a, i0)') '${k}$ JCfull flow stress continuous at the floor, set ', ip
+            call check_approx(passed, trim(label), vp_flow_stress(v, ep, nearest(v%epmin, 1.0_${k}$), sy), &
+                              vp_flow_stress(v, ep, v%epmin, sy), TOL)
+
+            ! On the floor: dflow_dep + (right-hand FD of the flow stress in epd)/dt, in dp from the
+            ! kind-k parameters (forward stencil: x - h < lower = epmin)
+            vd = vp_jcfull_dp(C=c, epdmax=e0, m=real(v%m, dp), Troom=real(v%Troom, dp), Tmelt=real(v%Tmelt, dp), &
+                              T_current=real(v%T_current, dp), epmin=emin)
+            e = emin
+            @:FD_DERIV(dfd, vp_flow_stress(vd, real(ep, dp), {x}, real(sy, dp)), e, dp, step=1.0e-3_dp*emin, lower=emin)
+            write(label, '(a, i0)') '${k}$ JCfull newton_dstress_dep vs one-sided FD, set ', ip
+            call check_approx(passed, trim(label), vp_newton_dstress_dep(v, ep, v%epmin, dt, sy, dsy), &
+                              real(vp_dflow_dep(vd, real(ep, dp), e, real(sy, dp), real(dsy, dp)) &
+                                   + dfd/real(dt, dp), ${k}$), ${TOL_FD}$_${k}$)
+
+            ! Above the floor: dstress_dep and its closed form with x = epd/epd0
+            above = [nearest(v%epmin, 1.0_${k}$), 2.0_${k}$*v%epmin, 0.05_${k}$, 1.0_${k}$]
+            do j = 1, size(above)
+                epd = above(j)
+                x = real(epd, dp)/e0
+                ref = real(dsy, dp)*(1.0_dp + c*log(x))*ft + real(sy, dp)*c*ft/(real(epd, dp)*real(dt, dp))
+                write(label, '(a, i0, a, i0)') '${k}$ JCfull newton_dstress_dep above the floor, set ', ip, ', rate ', j
+                call check_approx(passed, trim(label) // ' (closed form)', &
+                                  vp_newton_dstress_dep(v, ep, epd, dt, sy, dsy), real(ref, ${k}$), TOL)
+                call check_approx(passed, trim(label) // ' (= dstress_dep)', &
+                                  vp_newton_dstress_dep(v, ep, epd, dt, sy, dsy), vp_dstress_dep(v, ep, epd, dt, sy, dsy), TOL)
+            end do
+        end do
+    end function test_jcfull_newton_${k}$
 
     function test_jc_${k}$() result(passed)
         !! Johnson-Cook in `real(${k}$)` at the rate floor: for epd <= epmin, x = epmin/epd0 and

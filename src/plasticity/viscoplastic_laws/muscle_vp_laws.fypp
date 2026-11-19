@@ -15,7 +15,7 @@ module muscle_vp_laws
     !!   \( \partial\sigma/\partial\epsilon_p + \partial\sigma/\partial\dot\epsilon_p/\Delta t \)
     !!   (the historical `dstress_dep` of the return mapping);
     !! - `vp_newton_dstress_dep(prm, ep, epd, dt, sy, dsy_dep)`: only the laws with a rate floor
-    !!   (`VISCOPLASTIC_FLOOR` of `muscle_meta.py`: Johnson-Cook), the derivative of the Newton direction of
+    !!   (`VISCOPLASTIC_FLOOR` of `muscle_meta.py`: Johnson-Cook and full Johnson-Cook), the derivative of the Newton direction of
     !!   `closest_point_time`: on the floor, the right-hand rate derivative instead of the 0 of the constant part;
     !!   elsewhere `vp_dstress_dep` (the solver calls `vp_dstress_dep` for the other laws).
     !!
@@ -31,7 +31,8 @@ module muscle_vp_laws
     use muscle_vp_jc, only : vp_jc_${k}$, vp_flow_stress_jc_${k}$, vp_dflow_dep_jc_${k}$, &
         & vp_dflow_depd_jc_${k}$, vp_dstress_dep_jc_${k}$, vp_newton_dstress_dep_jc_${k}$
     use muscle_vp_jcfull, only : vp_jcfull_${k}$, vp_flow_stress_jcfull_${k}$, &
-        & vp_dflow_dep_jcfull_${k}$, vp_dflow_depd_jcfull_${k}$, vp_dstress_dep_jcfull_${k}$
+        & vp_dflow_dep_jcfull_${k}$, vp_dflow_depd_jcfull_${k}$, vp_dstress_dep_jcfull_${k}$, &
+        & vp_newton_dstress_dep_jcfull_${k}$
     use muscle_vp_mrk, only : vp_mrk_${k}$, vp_flow_stress_mrk_${k}$, vp_dflow_dep_mrk_${k}$, &
         & vp_dflow_depd_mrk_${k}$, vp_dstress_dep_mrk_${k}$
     use muscle_vp_nnl, only : vp_nnl_${k}$, vp_flow_stress_nnl_${k}$, vp_dflow_dep_nnl_${k}$, &
@@ -108,6 +109,7 @@ module muscle_vp_laws
         !! elsewhere `dstress_dep`) (every applicable model and kind of the family).
         #:for k in REAL_KINDS
         module procedure vp_newton_dstress_dep_jc_${k}$
+        module procedure vp_newton_dstress_dep_jcfull_${k}$
         #:endfor
     end interface vp_newton_dstress_dep
 

@@ -47,7 +47,7 @@ Where each family lives (paths relative to `src/` and `tests/`; `<m>` is the mod
 | `kin` | `kinematics/muscle_kin_<m>.fypp` | `muscle_kin_laws` | `KINEMATICS_MODELS`; `KINEMATICS_SPATIAL`, `KINEMATICS_ROTATION`, `KINEMATICS_FE_ROTATED` as the case may be | all, through `kin=` | `test_muscle_kin_laws_kinds`, `test_muscle_kin_finite` | `kin` (`mat_kin` adds the kinematic materials) |
 
 Besides: `MODEL_INITS` only if the model has an initializer of its own (derived parameters or validation), and
-`MODEL_DOMAINS` if `mat_init` must check a condition between parameters (today only Johnson-Cook). The device
+`MODEL_DOMAINS` if `mat_init` must check a condition between parameters (today Johnson-Cook and full Johnson-Cook). The device
 test of the family (`tests/gpu/`) takes every model of the family by itself, with the parameter sets of
 `CASE_PARAMS` (step 6). Add the model to the list of models of the `README.md` (nothing checks it).
 

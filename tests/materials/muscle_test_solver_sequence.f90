@@ -55,9 +55,6 @@ module muscle_test_solver_sequence
         !! Parameter set perturbed by `--mutate` (empty: none). Set by the test.
     real(dp), parameter :: TOL_TANGENT_NUM = REFERENCE_TOL_FD
         !! Reference tolerance of the numerical tangents (finite differences of a return mapping).
-    real(dp), parameter :: TOL_SENSITIVE_FAST = 2.0e-9_dp
-        !! Reference tolerance of the results of a sensitive case (`solver_case%sensitive`) built with the fast
-        !! floating point model of ifx (D-042): its Newton path moves with the last bits of the operations.
     real(dp), parameter :: MUTATE_REL = 1.0e-6_dp
         !! Relative perturbation of `--mutate rel`: far above the reference tolerances.
 
@@ -92,34 +89,21 @@ contains
         end if
     end function step_key
 
-    subroutine record_result(key, strain, stress, ep, strain_p, status, iters, sensitive)
+    subroutine record_result(key, strain, stress, ep, strain_p, status, iters)
         !! Reference record of the result of a step.
         character(len=*), intent(in) :: key
         type(ten_3D2Osym), intent(in) :: strain, stress, strain_p
         real(dp), intent(in) :: ep
         integer, intent(in) :: status, iters
-        logical, intent(in) :: sensitive
-            !! A sensitive case built with the fast floating point model: tolerance `TOL_SENSITIVE_FAST`.
-        if (sensitive) then
-            call reference_check(key // ' | result', [strain%vals, stress%vals, ep, strain_p%vals, &
-                real(status, dp), real(iters, dp)], tol=TOL_SENSITIVE_FAST, status_iters=.true.)
-        else
-            call reference_check(key // ' | result', [strain%vals, stress%vals, ep, strain_p%vals, &
-                real(status, dp), real(iters, dp)], status_iters=.true.)
-        end if
+        call reference_check(key // ' | result', [strain%vals, stress%vals, ep, strain_p%vals, &
+            real(status, dp), real(iters, dp)], status_iters=.true.)
     end subroutine record_result
 
-    subroutine record_tangent(key, what, t, sensitive)
+    subroutine record_tangent(key, what, t)
         !! Reference record of a tangent (6x6 Voigt matrix, column major).
         character(len=*), intent(in) :: key, what
         type(ten_3D4O2sym), intent(in) :: t
-        logical, intent(in) :: sensitive
-            !! A sensitive case built with the fast floating point model: the numerical tangent is not compared
-            !! (its finite differences amplify the changes of the Newton path, D-042); the record is still read.
-            !! The analytic tangent keeps the default tolerance.
-        if (what == 'tangent_num' .and. sensitive) then
-            call reference_check(key // ' | ' // what, reshape(t%vals, [36]), tol=huge(1.0_dp))
-        else if (what == 'tangent_num') then
+        if (what == 'tangent_num') then
             ! Finite differences of the return mapping
             call reference_check(key // ' | ' // what, reshape(t%vals, [36]), tol=TOL_TANGENT_NUM)
         else

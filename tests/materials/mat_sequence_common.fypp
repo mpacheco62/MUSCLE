@@ -116,18 +116,11 @@
             !! convergence needs a few (the default, 1.5 times the 12 of the fastest cases); a slow case sets its
             !! own cap, 1.5 times its largest measured count (gfortran and ifx, sp and dp) rounded up to a multiple
             !! of 5. A case that needs more than the default is a sign of a slow Newton.
-        logical :: sensitive = .false.
-            !! Known sensitive case (D-042, PROBLEMAS): its Newton path changes with the last bits of the operations.
-            !! Built with the fast floating point model of ifx (`FAST_FP`), its reference results are compared
-            !! within `TOL_SENSITIVE_FAST`, and neither its numerical tangent nor the finite difference check of
-            !! its analytic tangent are compared (its reference analytic tangent keeps the default tolerance).
+        logical :: converges = .false.
+            !! Every step converges, in dp and (with `check_sp`) in sp: a case that goes through a safeguard of the
+            !! Newton (the clip of the multiplier, D-043), where a change of the safeguard shows as a step that
+            !! no longer converges.
     end type solver_case
-    #:if defined('MUSCLE_FAST_FP')
-    logical, parameter :: FAST_FP = .true.
-    #:else
-    logical, parameter :: FAST_FP = .false.
-    #:endif
-        !! The library is built with a fast floating point model (ifx, D-042).
     logical :: passed
 #:enddef
 
@@ -266,7 +259,7 @@
 #! Reference record `tangent_num` of a step of material `m` from the state at t_n (inside run_<m>)
 #:def NUM_TANGENT(m)
 @:FD_JAC(tan_num, num_stress_${m}$(mat_dp, {x}, c%dt${coefs_arg(m, 'coefs_dp')}$, sn_dp), strain_dp, dp, 3D, indent=20)
-                    call record_tangent(key, 'tangent_num', tan_num, relaxed)
+                    call record_tangent(key, 'tangent_num', tan_num)
 #:enddef
 
 #! Procedures of the test program for the materials `mats` of solver `solver`; `tag`: first field of
@@ -335,9 +328,7 @@ $:MAT_CASE_PROCS(mats, fd_check)
         character(len=8) :: buf
         character(len=48) :: itbuf
         integer :: is, s0, s1, pass_first
-        logical :: first, relaxed
-
-        relaxed = c%sensitive .and. FAST_FP
+        logical :: first
 
         write(buf, '(i0)') c%ic
         #:if has_visc(solver)
@@ -383,24 +374,31 @@ $:MAT_CASE_PROCS(mats, fd_check)
                     #:endif
                     #:if flag_codes
                     call record_result(key, strain_dp, stress_rec, snp1_dp${PS}$%strain_pf, snp1_dp${PS}$%strain_p, &
-                        merge(1, 0, status_dp /= STATUS_OK), 0, relaxed)
+                        merge(1, 0, status_dp /= STATUS_OK), 0)
                     #:else
                     call record_result(key, strain_dp, stress_rec, snp1_dp${PS}$%strain_pf, snp1_dp${PS}$%strain_p, &
-                        oo_status(status_dp, iters_dp), iters_dp, relaxed)
+                        oo_status(status_dp, iters_dp), iters_dp)
                     #:endif
 #:if tangent_num == 'before'
 $:NUM_TANGENT(m)
 #:endif
                     #:if reference_tangent == 'always'
-                    call record_tangent(key, 'tangent', tan_dp, relaxed)
+                    call record_tangent(key, 'tangent', tan_dp)
                     #:elif reference_tangent == 'plastic'
-                    if (iters_dp > 0) call record_tangent(key, 'tangent', tan_dp, relaxed)
+                    if (iters_dp > 0) call record_tangent(key, 'tangent', tan_dp)
                     #:endif
 #:if tangent_num == 'after'
 $:NUM_TANGENT(m)
 #:endif
                 end if
                 #:for k in REAL_KINDS
+                #:if k == 'sp'
+                if (c%converges .and. c%check_sp) then
+                #:else
+                if (c%converges) then
+                #:endif
+                    call check_true(passed, key // ' converges (${k}$)', status_${k}$ == STATUS_OK)
+                end if
                 if (status_${k}$ == STATUS_OK) then
                     write(itbuf, '(a, i0, a, i0, a)') ' iters ', iters_${k}$, ' <= iters_max ', c%iters_max, ' (${k}$)'
                     call check_true(passed, key // trim(itbuf), iters_${k}$ <= c%iters_max)
@@ -411,7 +409,7 @@ $:NUM_TANGENT(m)
                 end if
                 #:endfor
                 #:if fd_check
-                if (status_dp == STATUS_OK .and. iters_dp > 0 .and. .not. relaxed) then
+                if (status_dp == STATUS_OK .and. iters_dp > 0) then
                     call fd_check_${m}$_dp(key, mat_dp, strain_dp, c%dt${coefs_arg(m, 'coefs_dp')}$, sn_dp, tan_dp, &
                         max(TOL_DP_FD, c%fd_tol))
                 end if
