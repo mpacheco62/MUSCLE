@@ -1621,8 +1621,8 @@ causa de las de UDTIO se aisló después (D-037).
 
 ## D-037 — ifx en CPU (Windows): estado de visco sin arreglo de tamaño cero, `/fp:precise`, pila de los tests (2026-11-14)
 
-> **Reemplazada en parte por D-042 (2026-11-18):** la biblioteca ya no lleva `/fp:precise` con ifx en CPU (modelo rápido con
-> `/Qftz-`); los tests sí.
+> **Reemplazada en parte por D-042 (2026-11-18):** la biblioteca ya no lleva `/fp:precise` con ifx en CPU (modelo rápido; con
+> `/Qftz-` hasta D-043); los tests sí.
 
 **Contexto:** primera corrida completa de los tests en Windows (ifx 2026.2.0, gfortran 16.2.0 de conda-forge, Debug,
 `sp;dp`). Con gfortran pasaban 132/133 y con ifx 102/128. Se atacaron las causas una a una.
@@ -1809,6 +1809,9 @@ aún «iteraciones ±1» (archivo local del usuario).
 
 ## D-042 — Modelo rápido de ifx en la biblioteca; tolerancias en ulp y JC+Voce como caso sensible (2026-11-18)
 
+> **Reemplazada en parte por D-043 (2026-11-19):** JC completo tiene el piso de tasa de JC; el caso sensible, su mecanismo
+> (`sensitive`, `FAST_FP`, `TOL_SENSITIVE_FAST`, el define `MUSCLE_FAST_FP`) y `/Qftz-` (`-no-ftz`) se retiraron.
+
 **Contexto:** D-041 aplazó el modelo rápido hasta mejorar el Newton de los casos lentos. Antes de eso el usuario pidió revisar si
 JC completo + Voce modificado (`tm_jcfull_vm_vocemod`, caso 3 de `closest_point_time`), el único caso cuya referencia fallaba con
 el modelo rápido, es un caso especial que se mueve con cualquier cambio mínimo.
@@ -1849,3 +1852,53 @@ por mutación (`solvers` mantiene sus 13 que sólo detecta la referencia, como e
 **Pendiente:** quitar `sensitive` de JC+Voce al mejorar su Newton; los 272 avisos `#10120` de ifx en los tests `Release` (CMake pone
 `/O2` y los tests `/O3`; anteriores a esta decisión); la etapa ifx de `check.sh` sólo compila Debug, donde el modelo rápido casi no
 transforma nada: el riesgo del modelo rápido sólo se ve en `Release` (correrlo a mano en las pruebas finales).
+
+## D-043 — Piso de tasa `epmin` en JC completo; la biblioteca de ifx sin `/Qftz-` (2026-11-19)
+
+**Contexto:** el usuario quiso que la biblioteca funcionara con el modelo rápido de ifx sin `/Qftz-`, también optimizada, y
+cuestionó que una rama dependiera de los subnormales. Esa rama era la de JC completo (`muscle_vp_jcfull`): flujo 0 con
+\( \dot\epsilon_p \le 0 \) (fallo heredado, D-017.7), piso en `tiny` del logaritmo y derivada respecto de la tasa 0 bajo `tiny` y
+\( \sigma_y C/\dot\epsilon_p \) encima. Con los parámetros del caso de prueba (C = 0.014, \( \dot\epsilon_{p0} = 1 \)) el factor
+\( 1 + C\ln\dot\epsilon_p \) es negativo para \( \dot\epsilon_p < e^{-1/C} \approx 10^{-31} \) (≈ −8.9 en `tiny`): flujo negativo, un salto
+a 0 en la tasa nula y una derivada ≈ 1e306. Al aplanar un subnormal a 0, el modelo rápido sólo cambiaba de un lado del salto al otro.
+**Decisión del usuario (2026-11-19, «piso epmin como JC»):** JC completo usa el piso de tasa de JC (`muscle_vp_jc`):
+- parámetro nuevo `epmin` (\( \dot\epsilon_{min} \), 1e-7 por defecto), **al final** del tipo y de `MODEL_PARAMS`; bajo el piso
+  \( x = \dot\epsilon_{min}/\dot\epsilon_{p0} \) (flujo constante, positivo y continuo, derivada respecto de la tasa 0), también con tasa nula o
+  negativa;
+- `vp_newton_dstress_dep_jcfull_<k>` (`VISCOPLASTIC_FLOOR`): la dirección del Newton usa la derivada por la derecha en el piso, como JC
+  (D-018.19b); la ley y la tangente conservan el 0;
+- `MODEL_DOMAINS`: `mat_init` exige \( C\,|\ln(\dot\epsilon_{min}/\dot\epsilon_{p0})| < 1 \), como JC.
+- **Cambio de API:** el arreglo `props` de un material con JC completo tiene un valor más (`epmin`, tras `T_current`): se corren los
+  parámetros que le siguen (en `tm_jcfull_vm_vocemod`, `epmin` es `props(9)` y la ley de endurecimiento empieza en `props(10)`).
+- La biblioteca de ifx deja `/Qftz-` (`-no-ftz`): ninguna rama depende ya de los subnormales.
+- Se retira el caso sensible de D-042 y todo su mecanismo (ningún caso lo usa); JC+Voce vuelve a comprobar sp (`check_sp`), con el tope
+  por defecto (20) y la comprobación de su tangente por diferencias finitas.
+**Medido (caso 3 de `closest_point_time`, gfortran):** iteraciones por paso 6–8 (antes 22–53, y los pasos 1 y 6 no convergían en 200);
+los pasos 1 y 6 (una carga bajo fluencia y una descarga) son ahora elásticos. Referencia regenerada con
+`tests/reference/solvers/regenerate.sh` (Linux, gfortran 15.2, Debug): 23 registros del caso 3 cambian (8 `result`, 6 `tangent`,
+9 `tangent_num`) y se quitan 2 (las tangentes de los pasos 1 y 6); en los pasos plásticos que convergen, ≤ 3.3e-12 relativo en
+`result`, ≤ 5.8e-10 en `tangent` y ≤ 4e-9 en `tangent_num` (antes 2.8e305 en los pasos 0, 1 y 6); ningún registro de otro caso ni de
+Perzyna cambia.
+**Tests nuevos (antes de implementar):** `vp_laws_kinds` (forma cerrada con el piso, valor por defecto de `epmin`), `vp_laws_limits`
+(`test_jcfull_newton`: en el piso y con tasas nula y negativa, flujo positivo, derivada del Newton contra forma cerrada y contra
+diferencias finitas laterales, continuidad en el piso, y por encima del piso igual a `dstress_dep`), `material_init` (`vp epmin` en el
+contrato y la condición de dominio en Fortran, como JC),
+`test_muscle_material_props.py` (la condición de dominio), `material_smoke` (JC completo ya tiene dominio elástico).
+**Recorte del multiplicador:** el caso 3 viejo era el único que pasaba por el recorte \( \Delta\lambda \ge 0 \) del Newton de
+`closest_point_time` (`muscle_closest_point_time_body.fypp`, con la reducción de `omega` que le sigue); con el piso ya no, y 3 mutaciones de
+esas líneas dejaron de detectarse. Para encontrar otro, se agregaron en una copia 112 variantes de los casos del test (pasos de tiempo
+×1e-4 a ×1e4, deformación ×1 y ×3) y se compararon los resultados con el recorte mutado: lo usan 7 variantes de RK y NNL. Se agrega el
+caso NNL con `dt = 1` (número de caso 0, sin referencia nueva): converge en todos sus pasos (≤ 17 iteraciones; el paso 2, un incremento
+plástico de 6e-8, pasa por el recorte). Campo nuevo `solver_case%converges`: todos los pasos deben converger (dp, y sp con `check_sp`),
+porque cambiar la reducción de `omega` hace que los pasos siguientes dejen de converger, cosa que el test no comprobaba. Las 3 mutaciones
+vuelven a detectarse.
+**Verificación:** 133/133 en Windows (gfortran 16.2 e ifx 2026.2, Debug y `Release`) y en Linux (WSL: `tools/check.sh --quick --ifx`, con el
+lint, gfortran 15.2 e ifx en Debug, y los dos en `Release`); la biblioteca de ifx `Release` compila con `/O2` y el modelo rápido, sin
+`/Qftz-`. Referencia en modo estricto (`MUSCLE_REFERENCE_STRICT=1`, Linux gfortran Debug): pasa. Mutaciones (`--samples all`, gfortran):
+`vp` 408, ninguna detección perdida (en `muscle_vp_jcfull` sobrevive 1, `denomT > 0 → > 1`, frente a 4 en `HEAD`; fuera de ese archivo los
+mismos 16 supervivientes); `solvers` 200, las 3 del recorte detectadas otra vez (por el test de secuencia de `closest_point_time`, grupo
+`reference`). El cuelgue intermitente de `gpu-family_target_hard_*` con gfortran en Windows se repite igual en `HEAD` (2 de 30), no es de
+este cambio (PROBLEMAS). Revisión del reviewer aplicada (el dominio en Fortran, `newton_dstress_dep` con las mismas operaciones que
+`dstress_dep` fuera del piso, referencia regenerada otra vez: sólo cambian bits del caso 3, notas de D-037, de `solvers.toml` y de la GPU).
+**Pendiente:** medir otra vez `tm_jcfull_vm_vocemod` en la GPU (su `f0 = 2` de `tests/gpu/target_cases.py` y su exclusión en sp de
+`tools/gpu_skip_tests.sh` se midieron antes de este cambio, ESTADO_OPTIMO).

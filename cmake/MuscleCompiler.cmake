@@ -10,7 +10,9 @@
 # What every compiler has to give (the unit tests assume it):
 #   - strict floating point evaluation (no reassociation or contraction) in the code of the tests: gfortran does it
 #     by default; ifx asks for the precise model, but in the Profile build, which wants speed. The library compiled by
-#     ifx uses its fast model, without flushing the subnormal numbers to zero (D-042); gfortran's is strict
+#     ifx uses its fast model (D-042; it may flush the subnormal numbers to zero: no branch of a model depends on
+#     them since D-043);
+#     gfortran's is strict
 #   - the standard sign of a negative zero: gfortran does it by default; ifx asks for /assume:minus0
 #   - the diagnostics of the Debug library: -Wall -Wextra and run time checks of bounds (gfortran: -fcheck=all;
 #     ifx: bounds, pointers and shape; `-check all` of ifx is much slower and finds nothing more here)
@@ -45,7 +47,6 @@ message(STATUS "MUSCLE: Fortran compiler ${CMAKE_Fortran_COMPILER_ID} ${CMAKE_Fo
 
 set(MUSCLE_OPT_BENCH "")
 set(MUSCLE_LINK_STACK "")
-set(MUSCLE_FAST_FP OFF)
 
 # A build with GPU offload (MUSCLE_GPU, cmake/MuscleGpu.cmake) keeps the ifx flags it had before D-040: the precise
 # floating point model, the signed zero and the Debug diagnostics were measured on the CPU only, and the tests of a GPU
@@ -98,20 +99,17 @@ elseif(WIN32)
         set(_muscle_fp_tests "")
         set(_muscle_diagnostics "")
     else()
-        # The library uses the fast floating point model of ifx (D-042), with /Qftz- (the fast model flushes the
-        # subnormal numbers to zero and a branch of the library changes with them) and, in Debug, safe speculation
-        # (the traps of the Debug tests must not stop on an operation the fast model evaluates speculatively). The
-        # tests keep the precise model: the fast one assumes there are no infinities and folds a test against
-        # +Inf or NaN to false.
+        # The library uses the fast floating point model of ifx (D-042; the subnormal numbers may be flushed to zero,
+        # no branch of a model depends on them since D-043) and, in Debug, safe speculation (the traps of the Debug tests must not
+        # stop on an operation the fast model evaluates speculatively). The tests keep the precise model: the fast
+        # one assumes there are no infinities and folds a test against +Inf or NaN to false.
         set(_muscle_fp_library
             /assume:minus0
-            $<$<NOT:$<CONFIG:Profile>>:/Qftz->
             $<$<CONFIG:Debug>:/Qfp-speculation:safe>)
         set(_muscle_fp_tests
             /assume:minus0
             $<$<NOT:$<CONFIG:Profile>>:/fp:precise>)
         set(_muscle_diagnostics $<$<CONFIG:Debug>:/warn:all /check:bounds /check:pointers /check:shape /traceback>)
-        set(MUSCLE_FAST_FP ON)
     endif()
     set(MUSCLE_OPT_LIBRARY
         /c /Qopenmp ${_muscle_fp_library}
@@ -143,16 +141,14 @@ else()
         set(_muscle_fp_tests "")
         set(_muscle_diagnostics "")
     else()
-        # As on Windows (D-042): fast model in the library with -no-ftz (and safe speculation in Debug), precise
-        # model in the tests
+        # As on Windows (D-042, D-043): fast model in the library (safe speculation in Debug), precise model in the
+        # tests
         set(_muscle_fp_library
             -assume minus0
-            $<$<NOT:$<CONFIG:Profile>>:-no-ftz>
             $<$<CONFIG:Debug>:-fp-speculation=safe>)
         set(_muscle_fp_tests
             -assume minus0
             $<$<NOT:$<CONFIG:Profile>>:-fp-model=precise>)
-        set(MUSCLE_FAST_FP ON)
         # one `-check` only: CMake removes the repeated options of a target, and `-check bounds -check pointers`
         # would become `-check bounds pointers`
         set(_muscle_diagnostics $<$<CONFIG:Debug>:-warn all -check bounds,pointers,shape -traceback>)
@@ -179,13 +175,6 @@ else()
     set(MUSCLE_COMPILE_FAIL_PASS "error #(8289|6053)")
     set(MUSCLE_COMPILE_FAIL_FAIL "error #7002|catastrophic error")
 endif()
-
-# The library uses a fast floating point model (ifx, not a GPU build): the fypp define MUSCLE_FAST_FP lets the tests
-# relax the checks of a case whose Newton is too sensitive to rounding (`sensitive` of tests/materials, D-042)
-if(MUSCLE_FAST_FP)
-    list(APPEND MUSCLE_FYPP_DEFINES MUSCLE_FAST_FP)
-endif()
-
 
 function(muscle_fpe_traps)
     # Aborts a division by zero, an overflow or an invalid operation in the library, for the tests (targets) that
