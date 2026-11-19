@@ -5,7 +5,10 @@ title: FEA Integration
 MUSCLE ships no user subroutine for any FE code (D-018.17). Each declared material
 `muscle_mat_<name>` (generated from the material registry, see the module documentation and the
 [Developer Guide](contributing.html)) provides
-the pieces an adapter needs, in single (`_sp`) and double (`_dp`) precision:
+the pieces an adapter needs, in single (`_sp`) and double (`_dp`) precision. The registry accepts names
+whose generated identifiers fit in 63 characters; with a name longer than 25 characters ifx (Linux,
+optimized build) may warn `#5462` ("Global name too long, shortened"): it shortens an internal symbol that
+holds the name twice (module and procedure), with no effect on the results.
 
 | Piece | Purpose |
 |-------|---------|
