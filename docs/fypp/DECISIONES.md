@@ -1753,7 +1753,7 @@ Linux gfortran 133/133, ifx 133/133; `tools/check.sh --quick --ifx` en Linux OK.
 **Sin verificar:** la compuerta completa de `check.sh` (compilar y correr los builds de GPU: sólo se configuró `SPIR64` y se
 compararon los comandos); los flags nuevos de ifx (modelo preciso, signo del cero, diagnósticos) en un build de GPU; `-fpe0` de ifx aplana los
 denormales según la documentación de Intel (no medido: sólo se usa en 5 tests, que pasan).
-**Pendiente:** 42 avisos `#8889` de ifx en 5 tests antiguos (`fd_known_functions`, `math_inverses`, `os_chaboche`, `visco_kelvin`,
+**Pendiente:** (hecho el 2026-11-19: procedimientos internos del programa) 42 avisos `#8889` de ifx en 5 tests antiguos (`fd_known_functions`, `math_inverses`, `os_chaboche`, `visco_kelvin`,
 `visco_maxwell`) que definen subrutinas externas tras `end program`: moverlas a un `contains` o a un módulo.
 
 ## D-041 — Modelo rápido de ifx en la biblioteca: evaluado y aplazado; iteraciones del Newton acotadas por caso (2026-11-18)
