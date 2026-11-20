@@ -46,6 +46,18 @@ else()
 endif()
 message(STATUS "MUSCLE: Fortran compiler ${CMAKE_Fortran_COMPILER_ID} ${CMAKE_Fortran_COMPILER_VERSION} (flags: cmake/MuscleCompiler.cmake)")
 
+# The archiver of a gfortran without a plain `ar` on the PATH (conda-forge on Windows ships only
+# x86_64-w64-mingw32-ar and gcc-ar): CMake leaves CMAKE_AR not found, and the static library would not link;
+# take the gcc-ar and gcc-ranlib that CMake found next to the compiler (no -DCMAKE_AR/-DCMAKE_RANLIB needed)
+if(MUSCLE_COMPILER STREQUAL "gnu")
+    if(NOT CMAKE_AR AND CMAKE_Fortran_COMPILER_AR)
+        set(CMAKE_AR "${CMAKE_Fortran_COMPILER_AR}" CACHE FILEPATH "Archiver (the one of the compiler)" FORCE)
+    endif()
+    if((NOT CMAKE_RANLIB OR CMAKE_RANLIB STREQUAL ":") AND CMAKE_Fortran_COMPILER_RANLIB)
+        set(CMAKE_RANLIB "${CMAKE_Fortran_COMPILER_RANLIB}" CACHE FILEPATH "Ranlib (the one of the compiler)" FORCE)
+    endif()
+endif()
+
 set(MUSCLE_OPT_BENCH "")
 set(MUSCLE_LINK_STACK "")
 

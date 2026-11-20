@@ -1,0 +1,70 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {"major": 3, "minor": 25, "patch": 0},
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}"
+        },
+        {
+            "name": "gfortran",
+            "hidden": true,
+            "inherits": "base",
+            "cacheVariables": {"CMAKE_Fortran_COMPILER": "gfortran", "CMAKE_C_COMPILER": "gcc"}
+        },
+        {
+            "name": "ifx",
+            "hidden": true,
+            "inherits": "base",
+            "cacheVariables": {"CMAKE_Fortran_COMPILER": "ifx", "CMAKE_C_COMPILER": "icx"}
+        },
+        {
+            "name": "gfortran-debug",
+            "displayName": "gfortran Debug",
+            "description": "GNU Fortran (conda environment muscle of environment.yml), Debug, sp and dp",
+            "inherits": "gfortran",
+            "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug"}
+        },
+        {
+            "name": "gfortran-release",
+            "displayName": "gfortran Release",
+            "description": "GNU Fortran (conda environment muscle of environment.yml), Release, sp and dp",
+            "inherits": "gfortran",
+            "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}
+        },
+        {
+            "name": "ifx-debug",
+            "displayName": "ifx Debug",
+            "description": "Intel ifx, Debug, sp and dp; needs the oneAPI environment (setvars) loaded before CMake",
+            "inherits": "ifx",
+            "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug"}
+        },
+        {
+            "name": "ifx-release",
+            "displayName": "ifx Release",
+            "description": "Intel ifx, Release, sp and dp; needs the oneAPI environment (setvars) loaded before CMake",
+            "inherits": "ifx",
+            "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}
+        }
+    ],
+    "buildPresets": [
+        {"name": "gfortran-debug", "displayName": "gfortran Debug: library and tests", "configurePreset": "gfortran-debug",
+         "targets": ["all", "build_all_tests"]},
+        {"name": "gfortran-release", "displayName": "gfortran Release: library and tests",
+         "configurePreset": "gfortran-release", "targets": ["all", "build_all_tests"]},
+        {"name": "ifx-debug", "displayName": "ifx Debug: library and tests", "configurePreset": "ifx-debug",
+         "targets": ["all", "build_all_tests"]},
+        {"name": "ifx-release", "displayName": "ifx Release: library and tests", "configurePreset": "ifx-release",
+         "targets": ["all", "build_all_tests"]}
+    ],
+    "testPresets": [
+        {"name": "base", "hidden": true, "output": {"outputOnFailure": true}, "execution": {"timeout": 300}},
+        {"name": "gfortran-debug", "displayName": "gfortran Debug", "inherits": "base", "configurePreset": "gfortran-debug"},
+        {"name": "gfortran-release", "displayName": "gfortran Release", "inherits": "base",
+         "configurePreset": "gfortran-release"},
+        {"name": "ifx-debug", "displayName": "ifx Debug", "inherits": "base", "configurePreset": "ifx-debug"},
+        {"name": "ifx-release", "displayName": "ifx Release", "inherits": "base", "configurePreset": "ifx-release"}
+    ]
+}

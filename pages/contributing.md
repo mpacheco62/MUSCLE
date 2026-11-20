@@ -267,7 +267,7 @@ Typical costs on a machine with 8 or more cores (gfortran, Ninja, `sp;dp`; order
 | Every test | `ctest --test-dir build -j8` | ~10 s |
 | A new or changed file | `tools/mutation_check.py <area> --samples all --only <ids>` | ~2 s per mutation, about a minute for a file (a whole area: 30–45 min) |
 | Before every commit | `tools/check.sh --quick` (`--quick --ifx` also builds and tests with ifx on the CPU, in `build-check-ifx`) | ~1–2 min (without `--ifx`) |
-| Before a pull request that touches documentation or a public API | `tools/check.sh --doc`: lint, the FORD pages (FORD from the `PATH`, the conda environment `ford` of `environment.yml` or `build-check/.ford-venv`) and the drift between the documentation and the code | ~2 min |
+| Before a pull request that touches documentation or a public API | `tools/check.sh --doc`: lint, the FORD pages (FORD from the `PATH`, the conda environment `muscle` of `environment.yml` or `build-check/.ford-venv`) and the drift between the documentation and the code | ~2 min |
 | To close a piece of work | `tools/check.sh` | ~25 min, mostly the three GPU builds and the target tests on the Intel GPU; it builds the FORD pages too and, when ifx is found, builds and tests with ifx on the CPU (`build-check-ifx`) |
 
 The full check needs the offload toolchains (gfortran with NVPTX and AMDGCN offload, ifx) and an Intel GPU; without
