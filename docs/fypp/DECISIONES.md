@@ -2032,6 +2032,10 @@ la corrida GPU; gfortran en Linux (WSL): 52/52 sin avisos. Sin dp, ifx SPIR64 en
 de arriba). `sp;dp`, Debug: gfortran 133/133 e ifx 133/133 en Windows (ifx con `compiler\bin` de oneAPI primero en el `PATH`,
 PROBLEMAS) y en Linux (`tools/check.sh --quick --ifx`); lint OK; GPU en Linux (WSL, NEO 26.05, ifx, código actual) 48/48 con
 `tools/gpu_skip_tests.sh`. Sin `Release`: no cambian banderas de optimización ni de punto flotante.
+**Ampliación (2026-11-21, para medir en la GPU de Windows):** los benchmarks ya no exigen dp. Sin dp se compilan los escritos
+para cualquier kind (álgebra lineal pequeña en CPU y en GPU, `bench_linalg_gpu` con el `use` de las inversas generado por kind, y
+los lotes `bench_batch_gpu_*`); `spectral`, `closest_point_scalability` y `kin_kernel` usan dp por nombre y se omiten con un aviso
+(6 benchmarks sin dp, 14 con `sp;dp`; los dos builds sin avisos). `bench_linalg_gpu` corre completo en la GPU de Windows.
 
 ## D-048 — Rodeo del IGC de Windows: `mat_update` trabaja sobre una copia local de `strain` (2026-11-21)
 

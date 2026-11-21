@@ -58,8 +58,7 @@ program bench_linalg_gpu
     use, intrinsic :: iso_fortran_env, only : output_unit, int64
     use omp_lib, only : omp_get_wtime
     use muscle_kinds, only : sp, dp
-    use muscle_math_inverses, only : M33INV_sp, M44INV_sp, M66INV_sp, M99INV_sp, &
-        M33INV_dp, M44INV_dp, M66INV_dp, M99INV_dp
+    use muscle_math_inverses, only : ${', '.join('{0}_{1}'.format(LIBNAME[N], k) for k in REAL_KINDS for N in NS)}$
     use bench_linalg_candidates
     implicit none
 

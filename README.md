@@ -332,7 +332,7 @@ Options:
 | `-DCMAKE_BUILD_TYPE=Debug\|Release\|Profile\|Profile_unittests` | Build type (`Profile_unittests`: coverage, target `coverage_report`). |
 | `-DMUSCLE_MATERIALS=<path>` | Your material registry (default: the test registry `tools/fypp/muscle_materials.py`). |
 | `-DMUSCLE_REAL_KINDS=dp` | Generate only double precision (default `sp;dp`). |
-| `-DMUSCLE_REAL_KINDS=sp` | Generate only single precision, for GPUs without FP64 (no historical names such as `ten_3D2Osym`: use `ten_3D2Osym_sp`; only the GPU tests and the tests that do not need dp are built). |
+| `-DMUSCLE_REAL_KINDS=sp` | Generate only single precision, for GPUs without FP64 (no historical names such as `ten_3D2Osym`: use `ten_3D2Osym_sp`; only the GPU tests and the tests that do not need dp are built; with benchmarks, those written for every kind). |
 | `-DMUSCLE_BUILD_BENCHMARKS=ON` | Build the benchmarks (`benchmarks/`, target `build_all_benchmarks`). |
 | `-DMUSCLE_GPU=OFF\|NVPTX\|AMDGCN\|SPIR64` | OpenMP offload target of the kernels (default `OFF`, see below). |
 | `-DMUSCLE_GPU_ARCH=<arch>` | Device architecture (NVPTX: e.g. `sm_80`; AMDGCN: default `gfx90a`; not used with SPIR64). |

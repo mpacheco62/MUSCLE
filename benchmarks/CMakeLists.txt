@@ -4,9 +4,14 @@
 # a pass/fail result. Enable them with -DMUSCLE_BUILD_BENCHMARKS=ON and build the target
 # build_all_benchmarks. Use a Release build to obtain meaningful timings.
 
-# Several benchmarks compare with or run the dp instances (D-047): they need a build with dp
-if(NOT "dp" IN_LIST MUSCLE_REAL_KINDS)
-    message(FATAL_ERROR "MUSCLE: the benchmarks need dp in MUSCLE_REAL_KINDS (now '${MUSCLE_REAL_KINDS}').")
+# A build without dp (D-047, a GPU without FP64) builds the benchmarks written for every kind (the small dense linear
+# algebra on the CPU and on the device, the batch API on the device); those that run the dp instances by name
+# (spectral, closest_point_scalability, kin_kernel) need dp and are left out
+if("dp" IN_LIST MUSCLE_REAL_KINDS)
+    set(_muscle_bench_dp ON)
+else()
+    set(_muscle_bench_dp OFF)
+    message(STATUS "MUSCLE: no dp: benchmarks spectral, closest_point_scalability and kin_kernel not built")
 endif()
 
 find_package(OpenMP REQUIRED COMPONENTS Fortran)
@@ -27,28 +32,32 @@ endfunction()
 
 # Plan C, phase F0 (docs/fypp/PLAN_ESPECTRAL.md): accuracy against a quad-precision truth and cost of the
 # spectral decompositions of muscle_math_eigen and of the candidates of math/spectral_candidates.fypp
-set(_bench_spectral)
-foreach(_src bench_spectral_candidates bench_spectral)
-    _muscle_fypp_source("${CMAKE_CURRENT_SOURCE_DIR}/math/${_src}.fypp" _src_abs _src_rel)
-    set(_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/math/${_src}.f90")
-    _muscle_fypp_command("${_src_abs}" "${_out}" "FYPP ${_src_rel}"
-                         DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/math/spectral_candidates.fypp")
-    list(APPEND _bench_spectral "${_out}")
-endforeach()
-add_muscle_benchmark(spectral ${_bench_spectral})
-set_source_files_properties(${_bench_spectral} PROPERTIES Fortran_PREPROCESS ON)
+if(_muscle_bench_dp)
+    set(_bench_spectral)
+    foreach(_src bench_spectral_candidates bench_spectral)
+        _muscle_fypp_source("${CMAKE_CURRENT_SOURCE_DIR}/math/${_src}.fypp" _src_abs _src_rel)
+        set(_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/math/${_src}.f90")
+        _muscle_fypp_command("${_src_abs}" "${_out}" "FYPP ${_src_rel}"
+                             DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/math/spectral_candidates.fypp")
+        list(APPEND _bench_spectral "${_out}")
+    endforeach()
+    add_muscle_benchmark(spectral ${_bench_spectral})
+    set_source_files_properties(${_bench_spectral} PROPERTIES Fortran_PREPROCESS ON)
+endif()
 
 # Batch API of materials of the test registry (tools/fypp/muscle_materials.py): not built with a user
 # registry (-DMUSCLE_MATERIALS)
 if(NOT MUSCLE_MATERIALS)
-    add_muscle_benchmark(closest_point_scalability solvers/bench_closest_point_scalability.f90)
+    if(_muscle_bench_dp)
+        add_muscle_benchmark(closest_point_scalability solvers/bench_closest_point_scalability.f90)
 
-    # Time per point of the point kernel of finite strain materials (plan C, F0: the spectral decompositions of
-    # the kinematics), one thread
-    _muscle_fypp_source("${CMAKE_CURRENT_SOURCE_DIR}/math/bench_kin_kernel.fypp" _kin_abs _kin_rel)
-    set(_kin_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/math/bench_kin_kernel.f90")
-    _muscle_fypp_command("${_kin_abs}" "${_kin_out}" "FYPP ${_kin_rel}")
-    add_muscle_benchmark(kin_kernel "${_kin_out}")
+        # Time per point of the point kernel of finite strain materials (plan C, F0: the spectral decompositions of
+        # the kinematics), one thread
+        _muscle_fypp_source("${CMAKE_CURRENT_SOURCE_DIR}/math/bench_kin_kernel.fypp" _kin_abs _kin_rel)
+        set(_kin_out "${MUSCLE_BINARY_DIR}/fypp/benchmarks/math/bench_kin_kernel.f90")
+        _muscle_fypp_command("${_kin_abs}" "${_kin_out}" "FYPP ${_kin_rel}")
+        add_muscle_benchmark(kin_kernel "${_kin_out}")
+    endif()
 
     # Accuracy against a quad-precision truth and cost of the small dense inverses and lu_solve
     # (with the candidate algorithms of math/linalg_candidates.fypp, a module of its own)
