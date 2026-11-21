@@ -41,7 +41,7 @@ module muscle_tensor_iden
     !!   identity of kind `k` (`val = a`, `val = 1/a`); `S * a`, `a * S`, `S / a` scale `val`.
     !! - Second order only: `+` and `-` (binary and unary) between identities, `I * I = I`,
     !!   `S * S`, `S .approx. S` and `call S%init(c)`. Without a scalar to fix the kind
-    !!   (`I + I`, `I - I`, `-I`) the result is `iden_2OS_dp`.
+    !!   (`I + I`, `I - I`, `-I`) the result is `iden_2OS_dp` (these three do not exist in a build without dp).
     !!
     !! ```fortran
     !! use muscle_tensors                      ! iden_2OS is iden_2OS_dp
@@ -127,7 +127,9 @@ module muscle_tensor_iden
     public :: operator(+)
     interface operator (+)
         #:for X in ALGEBRA
+        #:if 'dp' in REAL_KINDS
         module procedure sum_I${X}$_I${X}$
+        #:endif
         module procedure ${kspecifics('sum_I{0}_I{0}S_{1}', X)}$
         module procedure ${kspecifics('sum_I{0}S_I{0}_{1}', X)}$
         module procedure ${kspecifics('sum_I{0}S_I{0}S_{1}', X)}$
@@ -137,8 +139,10 @@ module muscle_tensor_iden
     public :: operator(-)
     interface operator (-)
         #:for X in ALGEBRA
+        #:if 'dp' in REAL_KINDS
         module procedure subU_I${X}$
         module procedure sub_I${X}$_I${X}$
+        #:endif
         module procedure ${kspecifics('sub_I{0}_I{0}S_{1}', X)}$
         module procedure ${kspecifics('sub_I{0}S_I{0}_{1}', X)}$
         module procedure ${kspecifics('subU_I{0}S_{1}', X)}$
@@ -159,9 +163,10 @@ contains
     #:set U = iname(X)
     #:set I = 'I' + X
     #:if X in ALGEBRA
+    #:if 'dp' in REAL_KINDS
     #:set S = iname(X + 'S', 'dp')
     ! ---------------------------------------------------------------------------------------
-    ! ${U}$ (op) ${U}$: no scalar fixes the kind, the result is double precision
+    ! ${U}$ (op) ${U}$: no scalar fixes the kind, the result is double precision (absent without dp)
     ! ---------------------------------------------------------------------------------------
 
     pure function sum_${I}$_${I}$(a, b) result(res)
@@ -200,6 +205,7 @@ contains
             !! Scaled identity with `val = 0`.
         res%val = 0.0_dp
     end function sub_${I}$_${I}$
+    #:endif
 
     pure function mul_${I}$_${I}$(a, b) result(res)
         !! `${U}$ * ${U}$` = `${U}$` (\( \mathbf{I} \cdot \mathbf{I} = \mathbf{I} \)).

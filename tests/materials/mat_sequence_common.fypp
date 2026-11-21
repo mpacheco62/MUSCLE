@@ -259,7 +259,7 @@
 #! Reference record `tangent_num` of a step of material `m` from the state at t_n (inside run_<m>)
 #:def NUM_TANGENT(m)
 @:FD_JAC(tan_num, num_stress_${m}$(mat_dp, {x}, c%dt${coefs_arg(m, 'coefs_dp')}$, sn_dp), strain_dp, dp, 3D, indent=20)
-                    call record_tangent(key, 'tangent_num', tan_num)
+                    call record_tangent(key, 'tangent_num', tan_num%vals)
 #:enddef
 
 #! Procedures of the test program for the materials `mats` of solver `solver`; `tag`: first field of
@@ -355,9 +355,9 @@ $:MAT_CASE_PROCS(mats, fd_check)
             do is = s0, s1
                 key = step_key(prefix, is)
                 if (first) then
-                    strain_dp = first_strain(c%a_y)
+                    strain_dp%vals = first_strain(c%a_y)
                 else
-                    strain_dp = seq_strain(is, c%a_y)
+                    strain_dp%vals = seq_strain(is, c%a_y)
                 end if
                 #:if 'sp' in REAL_KINDS
                 strain_sp%vals = real(strain_dp%vals, sp)
@@ -373,19 +373,19 @@ $:MAT_CASE_PROCS(mats, fd_check)
                     if (status_dp /= STATUS_OK) stress_rec%vals = 0.0_dp
                     #:endif
                     #:if flag_codes
-                    call record_result(key, strain_dp, stress_rec, snp1_dp${PS}$%strain_pf, snp1_dp${PS}$%strain_p, &
-                        merge(1, 0, status_dp /= STATUS_OK), 0)
+                    call record_result(key, strain_dp%vals, stress_rec%vals, snp1_dp${PS}$%strain_pf, &
+                        snp1_dp${PS}$%strain_p%vals, merge(1, 0, status_dp /= STATUS_OK), 0)
                     #:else
-                    call record_result(key, strain_dp, stress_rec, snp1_dp${PS}$%strain_pf, snp1_dp${PS}$%strain_p, &
-                        oo_status(status_dp, iters_dp), iters_dp)
+                    call record_result(key, strain_dp%vals, stress_rec%vals, snp1_dp${PS}$%strain_pf, &
+                        snp1_dp${PS}$%strain_p%vals, oo_status(status_dp, iters_dp), iters_dp)
                     #:endif
 #:if tangent_num == 'before'
 $:NUM_TANGENT(m)
 #:endif
                     #:if reference_tangent == 'always'
-                    call record_tangent(key, 'tangent', tan_dp)
+                    call record_tangent(key, 'tangent', tan_dp%vals)
                     #:elif reference_tangent == 'plastic'
-                    if (iters_dp > 0) call record_tangent(key, 'tangent', tan_dp)
+                    if (iters_dp > 0) call record_tangent(key, 'tangent', tan_dp%vals)
                     #:endif
 #:if tangent_num == 'after'
 $:NUM_TANGENT(m)

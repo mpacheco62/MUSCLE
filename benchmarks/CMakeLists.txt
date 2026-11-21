@@ -4,6 +4,11 @@
 # a pass/fail result. Enable them with -DMUSCLE_BUILD_BENCHMARKS=ON and build the target
 # build_all_benchmarks. Use a Release build to obtain meaningful timings.
 
+# Several benchmarks compare with or run the dp instances (D-047): they need a build with dp
+if(NOT "dp" IN_LIST MUSCLE_REAL_KINDS)
+    message(FATAL_ERROR "MUSCLE: the benchmarks need dp in MUSCLE_REAL_KINDS (now '${MUSCLE_REAL_KINDS}').")
+endif()
+
 find_package(OpenMP REQUIRED COMPONENTS Fortran)
 add_custom_target(build_all_benchmarks)
 

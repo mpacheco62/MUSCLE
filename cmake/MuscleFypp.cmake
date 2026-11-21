@@ -46,16 +46,20 @@ message(STATUS "MUSCLE: fypp ${FYPP_VERSION} (${FYPP_EXECUTABLE})")
 # The allowed kinds are validated again inside the templates (muscle_common.fypp,
 # muscle_meta.KINDS); this check only gives an early, readable error at configure time.
 set(MUSCLE_REAL_KINDS "sp;dp" CACHE STRING
-    "Real kinds instantiated by the FYPP templates (dp is always required)")
+    "Real kinds instantiated by the FYPP templates (sp;dp, sp or dp)")
 list(REMOVE_DUPLICATES MUSCLE_REAL_KINDS)
 foreach(_kind IN LISTS MUSCLE_REAL_KINDS)
     if(NOT _kind MATCHES "^(sp|dp)$")
         message(FATAL_ERROR "MUSCLE: unknown kind '${_kind}' in MUSCLE_REAL_KINDS (allowed: sp, dp).")
     endif()
 endforeach()
-# The historical type names are aliases of the dp instances (D-003), so dp cannot be dropped.
+if(NOT MUSCLE_REAL_KINDS)
+    message(FATAL_ERROR "MUSCLE: MUSCLE_REAL_KINDS is empty (allowed: sp, dp).")
+endif()
+# The historical type names are aliases of the dp instances (D-003): without dp they do not exist (sp only, for
+# devices without FP64)
 if(NOT "dp" IN_LIST MUSCLE_REAL_KINDS)
-    message(FATAL_ERROR "MUSCLE: MUSCLE_REAL_KINDS must contain dp.")
+    message(STATUS "MUSCLE: no dp, so no historical type names (ten_3D2Osym, ...): use the _sp names")
 endif()
 message(STATUS "MUSCLE: real kinds generated: ${MUSCLE_REAL_KINDS}")
 

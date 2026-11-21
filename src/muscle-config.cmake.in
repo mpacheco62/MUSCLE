@@ -9,3 +9,5 @@ find_dependency(OpenMP COMPONENTS Fortran)
 include("${CMAKE_CURRENT_LIST_DIR}/muscle-targets.cmake")
 
 get_filename_component(muscle_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../../include" ABSOLUTE)
+# Real kinds of the installed build (sp;dp, sp or dp): without dp there are no historical names such as ten_3D2Osym
+set(muscle_REAL_KINDS "@MUSCLE_REAL_KINDS@")

@@ -6,7 +6,7 @@
 #:mute
 
 #! Every kind MUSCLE knows, and the subset to instantiate. CMake passes MUSCLE_REAL_KINDS
-#! (cache variable of the same name); dp is required by the historical aliases.
+#! (cache variable of the same name); without dp there are no historical aliases (sp only, for devices without FP64).
 #:set ALL_KINDS = list(muscle_meta.KINDS)
 #:if defined('MUSCLE_REAL_KINDS')
 #:set REAL_KINDS = MUSCLE_REAL_KINDS
@@ -14,7 +14,7 @@
 #:set REAL_KINDS = ALL_KINDS
 #:endif
 #:assert all(k in ALL_KINDS for k in REAL_KINDS)
-#:assert 'dp' in REAL_KINDS
+#:assert len(REAL_KINDS) > 0
 #:set REAL_TYPES = ['real({})'.format(k) for k in REAL_KINDS]
 
 #! Space dimensions and tensor families with a template instance.

@@ -26,7 +26,8 @@ genéricos que agrupan ambos.
 **Consecuencias:** Más símbolos; resolución de genéricos por kind; sin coste en tiempo de ejecución.
 
 ## D-003 — Nombres históricos = doble precisión
-**Estado:** Aceptada (2026-10-29, implementada en el piloto de la Fase 2; mecanismo en D-011)
+**Estado:** Aceptada (2026-10-29, implementada en el piloto de la Fase 2; mecanismo en D-011; modificada por D-047: los
+alias sólo existen en un build con dp)
 **Decisión:** `muscle_tensors` re-exporta `ten_3D2Osym => ten_3D2Osym_dp` (y así para
 todos los tipos). Tests y código de usuario existentes compilan sin cambios.
 
@@ -1988,3 +1989,46 @@ Quien usaba `-Dmuscle_DIR=<prefix>/lib` debe pasar a `CMAKE_PREFIX_PATH=<prefix>
 con el ejemplo del README (`find_package(muscle)`, sin `find_package(OpenMP)` propio) compila, enlaza y da `sigma_xx = 848.8317…`
 en 4 iteraciones. Lint OK. Con el orden de `tools/vscode.cmd` (oneAPI y después el entorno conda): `ifx-debug` y
 `gfortran-debug` en Windows 133/133 (ifx toma `link`/`lib` de Visual Studio; gfortran, `gcc-ar` del entorno).
+
+## D-047 — Build sin dp (`-DMUSCLE_REAL_KINDS=sp`) para GPU sin FP64; los nombres históricos dp sólo existen con dp (2026-11-21)
+
+**Contexto:** la GPU de pruebas (Intel UHD 770) no tiene FP64. En Linux su driver lo emula (`OverrideDefaultFP64Settings=1`,
+`IGC_EnableDPEmulation=1`); el driver de Windows no (32.0.101.5972 y 32.0.101.7092: ni esas variables, ni
+`NEO_FP64_EMULATION`, ni claves de registro, PROBLEMAS). Una imagen de dispositivo con cualquier operación dp no carga, y cada
+módulo de material trae sus kernels por lotes sp y dp: en Windows no corría en la GPU ningún test de materiales, tampoco los sp
+(tensores y familias sí: su código dp sólo entra a la imagen si un kernel lo usa). Lo mismo pasa con cualquier GPU sin FP64.
+Hasta ahora `MUSCLE_REAL_KINDS` exigía dp porque los nombres históricos (`ten_3D2Osym`, `iden_2OS`, ...) son alias de los tipos dp
+(D-003).
+**Decisión del usuario (2026-11-21, opción 3 de tres: frente a sólo validar tensores y familias en Windows, o separar los kinds
+de GPU de los de CPU):** se permite un build sin dp.
+- `cmake/MuscleFypp.cmake` e `include/muscle_common.fypp` aceptan `sp`, `dp` o `sp;dp` (no vacío).
+- Lo que tiene un «nombre por defecto» dp existe sólo si se genera dp (`#:if 'dp' in REAL_KINDS`): los alias de
+  `muscle_tensor_aliases` y su reexportación en `muscle_tensors`, el genérico `QUIET_NAN` (`muscle_math_fp`), `ADJ_KAPPA_MAX`
+  (`muscle_math_inverses`), `I + I`, `I - I` y `-I` de la identidad sin escala (devuelven `iden_2OS_dp`, D-014) y las tolerancias dp
+  de Drucker-Prager. Con `sp;dp` el código generado no cambia (`tools/gen_snapshot.sh`: 141 archivos idénticos, 2 con líneas
+  `public` reordenadas, 0 cambiados).
+- **Alcance de los tests:** casi toda la suite usa dp como verdad en el host (sp contra dp, referencias dp, tensores dp
+  completos): 50 de 85 ejecutables no compilan sin dp, y reescribirlos quitaría la comparación sp/dp, que es su verificación
+  principal. Un build sin dp compila los tests `target` (por caso, `target_cases.py` ya recibe los kinds) y los registrados con
+  `add_muscle_fypp_test(... WITHOUT_DP)` (15: math, smoke, lotes, API de punto, init); los demás no se registran
+  (`MUSCLE_TESTS_DP` en `tests/CMakeLists.txt`; quien use el target de un test sin esa marca comprueba `if(TARGET ...)`). La suite
+  completa y la verificación de cada cambio siguen siendo `sp;dp`.
+- `tests/materials/muscle_test_solver_sequence.f90` pasa de tensores dp a arreglos `real(dp)` (mismos números: las referencias no
+  cambian), para que lo usen también los tests `target` de materiales sin dp.
+- **GPU en Windows** (lo que hizo falta para medir): `cmake/MuscleGpu.cmake` ya no rechaza Windows (`/Qiopenmp
+  /Qopenmp-targets:spir64`, la sintaxis de ifx allí); `tools/limit_run.ps1` reemplaza a `systemd-run` + `timeout` (un Job
+  Object con tope de memoria para el comando y sus hijos, y el árbol de procesos muerto al límite de tiempo; código 124). Para
+  correr en la GPU, `compiler\bin` de oneAPI va primero en el `PATH` (el `libiomp5md.dll` de conda no sirve para offload,
+  PROBLEMAS).
+**Descartadas:** sólo tensores y familias en la GPU de Windows (no valida ningún material en una GPU sin FP64);
+`MUSCLE_GPU_REAL_KINDS` aparte (dp en CPU, sólo sp en el dispositivo: más plantillas tocadas, recomendada en su momento pero no
+elegida).
+**Consecuencias:** quien compile sin dp usa los nombres con sufijo (`ten_3D2Osym_sp`). Una plantilla nueva no puede suponer que
+dp existe (`.claude/rules/fypp-templates.md`). En la GPU de Windows quedan 7 kernels sp de materiales que difieren de la CPU y
+que en Linux pasan (PROBLEMAS, pendiente).
+**Verificación:** sin dp, gfortran en Windows (CPU): compila sin avisos; pasan todos los tests registrados salvo
+`math_kernels_target`, que se colgó por el interbloqueo intermitente de libgomp 16.2 en Windows (PROBLEMAS, conocido) y pasa en
+la corrida GPU; gfortran en Linux (WSL): 52/52 sin avisos. Sin dp, ifx SPIR64 en la GPU de Windows: 24/31 tests `target` (los 7
+de arriba). `sp;dp`, Debug: gfortran 133/133 e ifx 133/133 en Windows (ifx con `compiler\bin` de oneAPI primero en el `PATH`,
+PROBLEMAS) y en Linux (`tools/check.sh --quick --ifx`); lint OK; GPU en Linux (WSL, NEO 26.05, ifx, código actual) 48/48 con
+`tools/gpu_skip_tests.sh`. Sin `Release`: no cambian banderas de optimización ni de punto flotante.

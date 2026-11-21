@@ -5,22 +5,28 @@
 module muscle_tensor_aliases
     !! The historical type names (`ten_3D2O`, `ten_2D4O3sym`, `iden_2OS`, ...), which are the double precision
     !! types (`ten_3D2O_dp`, ...), in a module of their own, re-exported by [[muscle_tensors]].
+    !! A build without dp (`-DMUSCLE_REAL_KINDS=sp`, for devices without FP64) has no historical names: the
+    !! module is empty.
     !!
     !! Workaround for ifx 2026.2: when one module imports a type under two names (`ten_3D2O_dp` and
     !! `ten_3D2O => ten_3D2O_dp`), `call t%init(...)` on that type through the module gives an internal
     !! compiler error (D-036). Renaming the types here, and importing the suffixed names in
     !! [[muscle_tensors]] from the family modules, keeps the two names in different modules.
+    #:if 'dp' in REAL_KINDS
     #:for F in FAMILIES
     use muscle_tensor_${F.lower()}$, only: &
         & ${', '.join('{0} => {1}'.format(tname(d + F, 'dp')[:-3], tname(d + F, 'dp')) for d in DIMS)}$
     #:endfor
     use muscle_tensor_iden, only: &
         & ${', '.join('{0} => {1}'.format(iname(X + 'S', 'dp')[:-3], iname(X + 'S', 'dp')) for X in IDENTITIES)}$
+    #:endif
     implicit none
     private
 
+    #:if 'dp' in REAL_KINDS
     #:for F in FAMILIES
     public :: ${', '.join(tname(d + F, 'dp')[:-3] for d in DIMS)}$
     #:endfor
     public :: ${', '.join(iname(X + 'S', 'dp')[:-3] for X in IDENTITIES)}$
+    #:endif
 end module muscle_tensor_aliases

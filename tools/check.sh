@@ -17,7 +17,9 @@
 #    `build_all_tests`, check the operator signatures (tools/fypp/ops_signatures.py) and run
 #    ctest; build the FORD documentation if FORD is found (PATH, conda environment muscle or ford, or
 #    build-check/.ford-venv). Skipped with --lint-only and --doc.
-#    With --quick, stop after ctest: no UDTIO build, no FORD and none of the GPU stages below
+#    The full gate also builds BUILD_DIR-udtio (UDTIO on, tensor tests) and BUILD_DIR-sp (MUSCLE_REAL_KINDS=sp, D-047:
+#    the library and the tests that build without dp, no warnings).
+#    With --quick, stop after ctest: no UDTIO build, no build without dp, no FORD and none of the GPU stages below
 #    (the everyday check; run the full gate before closing a stage).
 #    The same Debug build and ctest run again with ifx in BUILD_DIR-ifx (D-040) when ifx is found (PATH or
 #    $ONEAPI_ROOT/setvars.sh; skipped, not failed, when it is not): in the full gate, and with --quick only when
@@ -302,6 +304,7 @@ prune_stale_modules() {
 }
 prune_stale_modules "$build_dir"
 prune_stale_modules "${build_dir}-udtio"
+prune_stale_modules "${build_dir}-sp"
 prune_stale_modules "${build_dir}-ifx"
 for gpu in nvptx nvptx-release amdgcn spir64; do prune_stale_modules "${build_dir}-${gpu}"; done
 
@@ -370,6 +373,18 @@ cmake --build "${build_dir}-udtio" --target build_all_tests -j "$(nproc)" > /dev
 ctest --test-dir "${build_dir}-udtio" -R 'tensors-types-.*_kinds' --output-on-failure -j "$(nproc)" \
     > "${build_dir}-udtio/ctest-udtio.log" || {
     echo "== UDTIO tensor tests failed (see ${build_dir}-udtio/ctest-udtio.log)"; exit 1; }
+
+# A build without dp (GPUs without FP64, D-047): the templates must not assume dp. The library and the tests that
+# build without dp (target tests and WITHOUT_DP), without warnings
+echo "== build: ${build_dir}-sp (MUSCLE_REAL_KINDS=sp)"
+cmake -S . -B "${build_dir}-sp" -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMUSCLE_REAL_KINDS=sp > /dev/null || exit 1
+cmake --build "${build_dir}-sp" --target build_all_tests -j "$(nproc)" > "${build_dir}-sp/build.log" 2>&1 || {
+    echo "== build with MUSCLE_REAL_KINDS=sp failed (see ${build_dir}-sp/build.log)"; exit 1; }
+if grep -q '^Warning:' "${build_dir}-sp/build.log"; then
+    echo "LINT [warnings] the build without dp has compiler warnings (see ${build_dir}-sp/build.log)"; exit 1
+fi
+ctest --test-dir "${build_dir}-sp" --output-on-failure -j "$(nproc)" > "${build_dir}-sp/ctest-sp.log" || {
+    echo "== tests without dp failed (see ${build_dir}-sp/ctest-sp.log)"; exit 1; }
 
 build_doc 0 || exit 1
 fi

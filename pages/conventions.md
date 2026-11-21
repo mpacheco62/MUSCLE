@@ -118,5 +118,7 @@ listed in `docs/fypp/PROBLEMAS.md` (GPU / compilers). `class(...)` survives only
   measured value in the decision or in a comment).
 - Kernel tests run inside an `!$omp target teams distribute parallel do` region and compare with the CPU
   (ctest label `target`). Run GPU programs with memory and time limits, e.g.
-  `systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0 env OMP_TARGET_OFFLOAD=MANDATORY timeout 300 ./prog`;
-  never `ulimit -s unlimited` (a JIT compiler bug once exhausted the memory of the machine).
+  `systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0 env OMP_TARGET_OFFLOAD=MANDATORY timeout 300 ./prog`
+  (Windows: `powershell -ExecutionPolicy Bypass -File tools\limit_run.ps1 -MemoryGB 4 -TimeoutSec 300 -SetEnv
+  OMP_TARGET_OFFLOAD=MANDATORY -- prog.exe`); never `ulimit -s unlimited` (a JIT compiler bug once exhausted the memory
+  of the machine).
