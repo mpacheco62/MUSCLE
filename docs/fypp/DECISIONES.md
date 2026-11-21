@@ -2025,10 +2025,35 @@ de GPU de los de CPU):** se permite un build sin dp.
 elegida).
 **Consecuencias:** quien compile sin dp usa los nombres con sufijo (`ten_3D2Osym_sp`). Una plantilla nueva no puede suponer que
 dp existe (`.claude/rules/fypp-templates.md`). En la GPU de Windows quedan 7 kernels sp de materiales que difieren de la CPU y
-que en Linux pasan (PROBLEMAS, pendiente).
+que en Linux pasan (PROBLEMAS; corregidos con un rodeo en D-048).
 **Verificación:** sin dp, gfortran en Windows (CPU): compila sin avisos; pasan todos los tests registrados salvo
 `math_kernels_target`, que se colgó por el interbloqueo intermitente de libgomp 16.2 en Windows (PROBLEMAS, conocido) y pasa en
 la corrida GPU; gfortran en Linux (WSL): 52/52 sin avisos. Sin dp, ifx SPIR64 en la GPU de Windows: 24/31 tests `target` (los 7
 de arriba). `sp;dp`, Debug: gfortran 133/133 e ifx 133/133 en Windows (ifx con `compiler\bin` de oneAPI primero en el `PATH`,
 PROBLEMAS) y en Linux (`tools/check.sh --quick --ifx`); lint OK; GPU en Linux (WSL, NEO 26.05, ifx, código actual) 48/48 con
 `tools/gpu_skip_tests.sh`. Sin `Release`: no cambian banderas de optimización ni de punto flotante.
+
+## D-048 — Rodeo del IGC de Windows: `mat_update` trabaja sobre una copia local de `strain` (2026-11-21)
+
+**Contexto:** con el build sin dp (D-047), 7 de 31 tests `target` de materiales sp fallaban en la GPU de Windows (driver
+32.0.101.7092, UHD 770) y pasaban en Linux con el mismo código (PROBLEMAS): la historia viscoelástica (`cp_kelvin_hill48_swift`,
+`cp2_maxwell_vm_bilinear`), NaN y otros status (`cut_yld2004_ludwik`) y la tangente de los `tm_*`. Las banderas de ifx en un
+build con GPU son las mismas en los dos sistemas, el error es determinista y el IGC de Windows no tiene las palancas de
+diagnóstico de Linux. Imprimiendo la salida de un punto se vio que, en el dispositivo, el argumento `strain` (`intent(in)`) de
+`mat_update` sale del return mapping con la tensión que éste escribió en `stress`; todo lo que se lee de `strain` después sale
+mal. Con una copia local de `strain` los tres patrones pasan (probado sobre copias de los módulos generados, enlazadas en lugar
+de las de la biblioteca). Interpretación, sin reproductor mínimo: el IGC de Windows ubica el `strain` y el `stress` de quien
+llama en la misma memoria privada.
+**Decisión del usuario (2026-11-21: «Implementalo … que quede claro en el código que ese rodeo es por este problema»):**
+`src/materials/muscle_material_kernel.fypp`, variante de deformación pequeña de `mat_update` (con y sin viscoelasticidad): copia
+`strain_in = strain` al entrar; el return mapping y `strain_e` usan la copia, y el comentario junto a la declaración explica el
+rodeo y cita esta decisión. Seis números por punto; en CPU no cambia ningún resultado. Fila nueva en la tabla de rodeos vigentes
+de PROBLEMAS y regla en `.claude/rules/gpu-static-dispatch.md`.
+**Consecuencias:** `tm_rk_vm_sp` y `tm_jcfull_vm_vocemod_sp`, excluidos de la GPU desde la Fase 8 (otros iterados), pasan con este
+código en Linux y en Windows y salen de `tools/gpu_skip_tests.sh` (no se midió si ya pasaban sin el rodeo, tras D-043). Las
+cinemáticas finitas (otra variante de `mat_update`) no mostraron el problema y no se tocaron.
+**Verificación:** GPU de Windows (build sin dp): 31/31 tests `target`, más los 2 que se excluían; GPU de Linux (`sp;dp`, WSL, NEO
+26.05): 50/50 (los 48 de siempre más esos 2). CPU, Debug `sp;dp`: Windows gfortran 133/133 (un cuelgue del interbloqueo conocido
+de libgomp en `family_target_hard_dp`, que pasa 5/5 al repetirlo) e ifx 133/133; Linux gfortran 133/133 e ifx 133/133
+(`tools/check.sh --quick --ifx`); lint OK. (Un apóstrofo del comentario nuevo daba un aviso de `cpp` con gfortran en Linux:
+se reescribió; las corridas de Windows son de antes de ese cambio, que sólo toca el comentario.)
