@@ -24,6 +24,10 @@ else()
 endif()
 
 target_link_libraries(muscle PUBLIC ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+# The batch API calls the OpenMP runtime: a program that links the library also links OpenMP (the library itself
+# compiles with the OpenMP flag of MUSCLE_OPT_LIBRARY, cmake/MuscleCompiler.cmake)
+find_package(OpenMP REQUIRED COMPONENTS Fortran)
+target_link_libraries(muscle INTERFACE OpenMP::OpenMP_Fortran)
 
 if(BLAS_LIBRARIES MATCHES "mkl" OR LAPACK_LIBRARIES MATCHES "mkl")
     message(STATUS "MUSCLE: Intel MKL detectado. Activando directiva USE_MKL.")
@@ -68,20 +72,15 @@ target_compile_options(muscle PRIVATE ${MUSCLE_OPT_LIBRARY})
 target_link_options(muscle PRIVATE ${MUSCLE_LINK_LIBRARY})
 
 
-install(TARGETS muscle EXPORT muscle-targets LIBRARY)
+# Installation: the library in lib/, the Fortran modules in include/ and the CMake package in lib/cmake/muscle/,
+# where find_package(muscle) looks for it (CMAKE_PREFIX_PATH=<prefix>)
+install(TARGETS muscle EXPORT muscle-targets)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/modules/muscle/ TYPE INCLUDE)
 
-# Create and install package configuration and version files.
-configure_file(
-  muscle-config.cmake.in
-  ${CMAKE_BINARY_DIR}/muscle-config.cmake @ONLY)
-
-install(FILES ${CMAKE_BINARY_DIR}/muscle-config.cmake
-	TYPE LIB
-        )
-
-install(EXPORT muscle-targets
-        DESTINATION lib)
-
-
-
+include(CMakePackageConfigHelpers)
+configure_file(muscle-config.cmake.in ${CMAKE_BINARY_DIR}/muscle-config.cmake @ONLY)
+write_basic_package_version_file(${CMAKE_BINARY_DIR}/muscle-config-version.cmake
+                                 VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
+install(FILES ${CMAKE_BINARY_DIR}/muscle-config.cmake ${CMAKE_BINARY_DIR}/muscle-config-version.cmake
+        DESTINATION lib/cmake/muscle)
+install(EXPORT muscle-targets DESTINATION lib/cmake/muscle)

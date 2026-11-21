@@ -1,9 +1,11 @@
-# Compute installation prefix relative to this file.
-get_filename_component(_dir "${CMAKE_CURRENT_LIST_FILE}" PATH)
-get_filename_component(_prefix "${_dir}/.." ABSOLUTE)
+# CMake package of MUSCLE (installed in <prefix>/lib/cmake/muscle):
+#   find_package(muscle REQUIRED)                  (with CMAKE_PREFIX_PATH=<prefix>)
+#   target_link_libraries(<your target> PRIVATE muscle)
+# The target `muscle` brings the library, its Fortran modules (<prefix>/include), BLAS/LAPACK and OpenMP. The modules
+# are those of the compiler that built MUSCLE: the program that uses them is compiled with the same compiler.
+include(CMakeFindDependencyMacro)
+find_dependency(OpenMP COMPONENTS Fortran)
 
-# Import the targets.
-include("${_prefix}/lib/muscle-targets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/muscle-targets.cmake")
 
-# Report other information.
-set(muscle_INCLUDE_DIRS "${_prefix}/include/")
+get_filename_component(muscle_INCLUDE_DIRS "${CMAKE_CURRENT_LIST_DIR}/../../../include" ABSOLUTE)

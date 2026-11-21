@@ -1949,3 +1949,42 @@ subdirectorio por preset.
 `ifx-debug` (oneAPI cargado, `icx`): 133/133. Linux (WSL, herramientas del sistema): `gfortran-debug` e `ifx-release`: 133/133.
 `environment.yml` resuelto en seco en Windows (gfortran 16.2, OpenBLAS 0.3.34, sin MKL); el entorno `muscle` aún no se creó ni
 se probó en una máquina nueva.
+
+## D-046 — Paquete CMake instalable: `find_package(muscle)` sin rutas a mano y OpenMP en la interfaz del target (2026-11-20)
+
+**Contexto:** al escribir el tutorial del README se probó instalar MUSCLE (`cmake --install`) y usarlo desde un proyecto aparte
+con el ejemplo del README. Fallaba de dos maneras: `muscle-config.cmake` se instalaba en `<prefix>/lib/`, donde
+`find_package` no busca (había que pasar `-Dmuscle_DIR=<prefix>/lib`), y el enlace del programa fallaba con
+`undefined reference to omp_get_num_threads`: la biblioteca se compila con OpenMP (`MUSCLE_OPT_LIBRARY`) pero el target no
+pasaba esa dependencia a quien lo usa (los tests y los benchmarks la agregaban por su cuenta).
+
+**Decisión:**
+- `src/CMakeLists.txt`: `target_link_libraries(muscle INTERFACE OpenMP::OpenMP_Fortran)` (INTERFACE: no cambia cómo se compila
+  la biblioteca, sólo lo que recibe quien la enlaza).
+- El paquete se instala en `<prefix>/lib/cmake/muscle/` (`muscle-config.cmake`, `muscle-config-version.cmake` con la versión del
+  proyecto y compatibilidad `SameMinorVersion`, `muscle-targets*.cmake`); la biblioteca sigue en `lib/` y los módulos en
+  `include/`. `muscle-config.cmake` hace `find_dependency(OpenMP COMPONENTS Fortran)` antes de importar el target.
+- Uso: `find_package(muscle REQUIRED)` con `CMAKE_PREFIX_PATH=<prefix>` y `target_link_libraries(<app> PRIVATE muscle)`. Los
+  módulos `.mod` son del compilador que construyó MUSCLE: el programa se compila con el mismo. BLAS/LAPACK quedan con las rutas
+  absolutas de la máquina que construyó (el paquete no es reubicable entre máquinas).
+
+**Consecuencias:** el README tiene un tutorial de punta a punta (herramientas, entorno, presets, VS Code, materiales propios,
+instalación y un proyecto que usa la biblioteca). En Windows, `ifx` necesita además `icx` (otro instalador de Intel: el de
+Fortran no lo trae), las herramientas C++ de Visual Studio y oneMKL (el OpenBLAS de conda exporta `sgemm_` y `ifx` en Windows
+llama `SGEMM`: CMake no encuentra BLAS); VS Code abierto desde el menú de inicio no ve ni oneAPI ni el
+entorno conda, así que `tools/vscode.cmd` carga oneAPI (si está) y después el entorno `muscle` (su CMake antes que el de Visual
+Studio) y abre VS Code; `--check` lista lo que encuentra. `.gitattributes` fija CRLF para `*.cmd`/`*.bat`.
+`tools/install_windows.ps1` instala con `winget` lo que falta (Miniforge, el entorno, y con `-VSCode`/`-Ifx` VS Code, Build Tools
+con C++, Intel Fortran y oneMKL); `icx` no está en `winget` y queda como paso manual (decisión del usuario: mantener `icx` como C
+de los presets `ifx-*` en vez de `cl`, aunque `ifx` + `cl` pasa 133/133 en Windows). Probado aquí con `-DryRun` (con todo instalado
+y simulando una máquina sin Visual Studio ni oneAPI) y, de verdad, por el usuario en una máquina Windows limpia (Hyper-V): el
+script corre completo y, con `tools/vscode.cmd`, VS Code configura el preset `ifx-release`. Detalles de Windows que salieron
+en esa prueba: Windows PowerShell 5.1 convierte en error la salida por stderr de un programa redirigido (el script los corre con
+`Invoke-Quiet` y decide por el código de salida); la ruta `Program Files (x86)` rompe un bloque `( )` de cmd (`tools/vscode.cmd`
+no usa bloques con la ruta de Visual Studio).
+Quien usaba `-Dmuscle_DIR=<prefix>/lib` debe pasar a `CMAKE_PREFIX_PATH=<prefix>` (o
+`-Dmuscle_DIR=<prefix>/lib/cmake/muscle`).
+**Verificación:** `gfortran-release` e `ifx-release` en Windows y en Linux (WSL): 133/133, `cmake --install` y un proyecto aparte
+con el ejemplo del README (`find_package(muscle)`, sin `find_package(OpenMP)` propio) compila, enlaza y da `sigma_xx = 848.8317…`
+en 4 iteraciones. Lint OK. Con el orden de `tools/vscode.cmd` (oneAPI y después el entorno conda): `ifx-debug` y
+`gfortran-debug` en Windows 133/133 (ifx toma `link`/`lib` de Visual Studio; gfortran, `gcc-ar` del entorno).
