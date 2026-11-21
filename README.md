@@ -100,6 +100,189 @@ not thread-safe under OpenMP (`MUSCLE_UDTIO=AUTO`).
 
 ---
 
+## Getting started: from a fresh clone to your own program
+
+The commands work the same in a Linux shell and in Windows PowerShell (keep the quotes around the `-D` options that
+contain `$PWD` or `$HOME`: PowerShell does not expand a variable inside an unquoted `-D...` argument).
+
+**1. Install the tools.** Git and [Miniforge](https://conda-forge.org/download/) (conda with the conda-forge channel;
+Miniconda also works, see Requirements). The compiler, CMake and the rest come in step 2.
+
+On Windows there are two ways: the script `tools\install_windows.ps1` (installs everything in one command), or by hand
+(the commands below, then steps 2 and 3, and *Optional: Intel ifx*). Both end in the same place.
+
+> **Windows with the script.** Needs `winget` (see below if it is missing), Git (`winget install --id Git.Git -e`) and
+> the repository cloned (step 2, the `git clone`). From the folder of the repository:
+>
+> ```powershell
+> powershell -ExecutionPolicy Bypass -File tools\install_windows.ps1 -VSCode -Ifx
+> ```
+>
+> It installs with `winget` what is missing and skips what is already there: Miniforge and the conda environment
+> `muscle` (step 2), and optionally VS Code with its extensions (`-VSCode`) and what the `ifx-*` presets need (`-Ifx`:
+> Build Tools with the C++ tools, Intel Fortran Compiler, oneMKL). The Intel C/C++ compiler (`icx`) is not in
+> `winget`: the script lists it as pending, with the page to download it. At the end it runs `tools\vscode.cmd --check`
+> and lists what is left to do. `-DryRun` only shows what it would do; `-EnvName <name>` uses another environment. The
+> installers of Visual Studio and Intel ask for administrator rights. Then open a new console and continue with step 3
+> (or open VS Code with `tools\vscode.cmd`, *Working in VS Code*).
+
+*Windows by hand* (PowerShell). The commands use `winget`, which comes with Windows 10 (1809 or later) and Windows 11 as part of
+*App Installer*. Check it with `winget --version`; if it is missing, install *App Installer* from the Microsoft Store, or
+(Windows Server, or without the Store) from a PowerShell opened as administrator:
+
+```powershell
+Install-PackageProvider -Name NuGet -Force
+Install-Module -Name Microsoft.WinGet.Client -Force -Repository PSGallery
+Repair-WinGetPackageManager -AllUsers          # installs winget and its dependencies; then open a new console
+```
+
+Without `winget`, the installers of [Git](https://git-scm.com/downloads/win) and
+[Miniforge](https://conda-forge.org/download/) work the same. Then:
+
+```powershell
+winget install --id Git.Git -e
+winget install --id CondaForge.Miniforge3 -e
+```
+
+Then open the *Miniforge Prompt* (start menu) and run `conda init powershell` once, so that `conda activate` works in
+PowerShell; close and open PowerShell again (if it refuses to run the profile script:
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`).
+
+*Linux* (Debian/Ubuntu; other distributions: their package manager for Git):
+
+```bash
+sudo apt install git
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+bash Miniforge3-$(uname)-$(uname -m).sh      # accept the license, and "yes" to initialize conda; reopen the shell
+```
+
+*Optional:*
+- Visual Studio Code (Windows: `winget install --id Microsoft.VisualStudioCode -e`; Linux: the package of
+  [code.visualstudio.com](https://code.visualstudio.com/download)) with the extensions *CMake Tools* and *Modern Fortran*:
+  `code --install-extension ms-vscode.cmake-tools` and `code --install-extension fortran-lang.linter-gfortran`.
+- Intel `ifx`: see below.
+
+Check: `git --version` and `conda --version` answer in a new console.
+
+*Optional: Intel `ifx`* (the `ifx-*` presets). GNU Fortran from step 2 is enough to build and use MUSCLE.
+
+- **Windows.** `ifx` compiles, but links with the Microsoft linker (`link.exe`) and the Windows SDK, which come with
+  Visual Studio; without them the oneAPI installer warns that it finds no Visual Studio and `ifx` cannot link.
+  1. The C++ tools of Visual Studio (tested with Visual Studio 2022; the free *Build Tools* are enough, no IDE):
+
+     ```powershell
+     winget install --id Microsoft.VisualStudio.2022.BuildTools -e `
+         --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+     ```
+
+     (or, in the *Visual Studio Installer* of an existing Visual Studio, the workload *Desktop development with C++*).
+  2. **Two** Intel compilers, each from its download page (Windows, *Online* or *Offline* installer): the
+     [Intel Fortran Compiler](https://www.intel.com/content/www/us/en/developer/tools/oneapi/fortran-compiler-download.html)
+     (`ifx`) and the
+     [Intel oneAPI DPC++/C++ Compiler](https://www.intel.com/content/www/us/en/developer/tools/oneapi/dpc-compiler-download.html)
+     (`icx`, the C compiler of the `ifx-*` presets; the Fortran installer does not include it, and without it CMake
+     stops with `CMAKE_C_COMPILER: icx is not a full path and was not found in the PATH`). Both install in
+     `C:\Program Files (x86)\Intel\oneAPI`; check that `compiler\latest\bin` has `ifx.exe` and `icx.exe`. If you
+     installed them before Visual Studio, there is no need to reinstall them: `setvars.bat` finds Visual Studio when it
+     runs.
+  3. Intel oneMKL, the BLAS/LAPACK of `ifx` on Windows (`winget install --id Intel.oneMKL -e`, or its download page).
+     The OpenBLAS of the conda environment does not work with `ifx` on Windows: it exports the names of GNU Fortran
+     (`sgemm_`) and `ifx` calls `SGEMM`, so CMake stops with `Could NOT find BLAS (missing: BLAS_LIBRARIES)`. On Linux
+     both compilers use the same names and the OpenBLAS of the environment is enough.
+  4. Every time you use `ifx`, oneAPI must be loaded, and before the conda environment (`setvars.bat` puts the CMake of
+     Visual Studio on the `PATH`; the one of the environment must come first). In VS Code, `tools\vscode.cmd` does it
+     (see *Working in VS Code* below); in a terminal, load oneAPI into a new PowerShell and activate the environment
+     there:
+
+     ```powershell
+     cmd /c '"C:\Program Files (x86)\Intel\oneAPI\setvars.bat" && powershell'
+     conda activate muscle
+     ifx /QV                          # Intel(R) Fortran Compiler ... Version 2026.x
+     icx /QV                          # Intel(R) oneAPI DPC++/C++ Compiler ... Version 2026.x
+     cmake --preset ifx-release       # and the rest of step 3 with ifx-release
+     ```
+
+     If CMake then fails with `ifx: error #10037: could not find 'link.exe'` or `icx: ... cannot open file
+     'libcmt.lib'`, `setvars.bat` did not recognize the Visual Studio installation (it happens with the Build Tools
+     alone): load its C++ tools by hand before `conda activate`, with
+     `cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" && powershell'`
+     (`...\2022\Community\...` for Visual Studio Community), and check with `where.exe link`. `tools\vscode.cmd` does
+     it by itself.
+- **Linux.** The same two compilers (no Visual Studio needed), from the download pages or from Intel's APT repository
+  (packages `intel-oneapi-compiler-fortran` and `intel-oneapi-compiler-dpcpp-cpp`); every time:
+  `source /opt/intel/oneapi/setvars.sh`, then the `ifx-*` presets.
+
+**2. Get the code and create the environment** (GNU Fortran, CMake, Ninja, OpenBLAS, FYPP, FORD; once per machine):
+
+```bash
+git clone https://github.com/mpacheco62/muscle.git
+cd muscle
+conda env create -f environment.yml
+conda activate muscle               # in every new console
+```
+
+**3. Build the library and run the tests:**
+
+```bash
+cmake --preset gfortran-release     # configure (build/gfortran-release)
+cmake --build --preset gfortran-release
+ctest --preset gfortran-release     # every test should pass
+```
+
+*Working in VS Code.* The extension CMake Tools uses the tools of the environment VS Code was started from, and
+VS Code started from the start menu has neither the conda environment nor oneAPI (errors such as `icx is not a full
+path and was not found in the PATH`, `fypp not found`, or the CMake of Visual Studio instead of the one of the
+environment). So:
+
+- **Windows:** close every VS Code window and open it with `tools\vscode.cmd` (double click in the Explorer, or run it
+  from a console). It loads Intel oneAPI when it is installed, then the conda environment `muscle`, and opens VS Code
+  on the repository. `tools\vscode.cmd --check` only lists the tools it finds (`gfortran`, `ifx`, `icx`, `link`,
+  `cmake`, `ninja`, `fypp`, ...), to see what is missing; `tools\vscode.cmd <env>` uses another conda environment.
+- **Linux:** `conda activate muscle` (and `source /opt/intel/oneapi/setvars.sh` for `ifx`), then `code .`.
+
+Then *CMake: Select Configure Preset* (for example *gfortran Debug* or *ifx Release*), `F7` builds, and
+*CMake: Run Tests* runs the tests. After changing the way VS Code is opened, *CMake: Delete Cache and Reconfigure*.
+
+**4. (Optional) Choose your materials.** The library contains one module per material of a registry; the default one,
+`tools/fypp/muscle_materials.py`, has a test material per combination of models, `cp_vm_swift` among them. To build
+yours, write a registry (see [Declaring materials](#declaring-materials)) and configure with it:
+
+```bash
+cmake --preset gfortran-release "-DMUSCLE_MATERIALS=$PWD/my_materials.py"
+cmake --build --preset gfortran-release
+```
+
+**5. Install it** where your projects will find it (any folder; the library goes to `lib/`, the Fortran modules to
+`include/`, the CMake package to `lib/cmake/muscle/`):
+
+```bash
+cmake --install build/gfortran-release --prefix "$HOME/muscle-install"
+```
+
+**6. Use it from your own CMake project.** Two files in a new folder, `myapp/`: the `main.f90` of the
+[Quick Usage Example](#quick-usage-example) and this `CMakeLists.txt`:
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(myapp LANGUAGES Fortran)
+find_package(muscle REQUIRED)        # the library, its modules, BLAS/LAPACK and OpenMP
+add_executable(myapp main.f90)
+target_link_libraries(myapp PRIVATE muscle)
+```
+
+```bash
+cd myapp
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$HOME/muscle-install"
+cmake --build build
+./build/myapp                       # sigma_xx = 848.83...  iterations: 4
+```
+
+The example uses `cp_vm_swift`, from the default registry; with your own registry (step 4), use the names of your
+materials. Compile your program with the same compiler that built MUSCLE (the `.mod` files belong to that compiler): with
+the `ifx-*` presets, add `-DCMAKE_Fortran_COMPILER=ifx`.
+
+---
+
 ## Building
 
 ```bash
@@ -129,7 +312,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 **Visual Studio Code** (extension CMake Tools): it lists the presets above. CMake Tools does not activate conda
-environments: open VS Code from the active environment (`conda activate muscle`, then `code .`), or put the
+environments nor load oneAPI: open VS Code with `tools\vscode.cmd` on Windows, or from a console with the environment
+active on Linux (*Working in VS Code*, in Getting started). Alternatively, for the `gfortran` presets only, put the
 environment in the `PATH` of CMake Tools in your `.vscode/settings.json`, for example on Windows:
 
 ```json
@@ -139,7 +323,7 @@ environment in the `PATH` of CMake Tools in your `.vscode/settings.json`, for ex
 ```
 
 (on Linux: `"PATH": "${env:HOME}/miniconda3/envs/muscle/bin:${env:PATH}"`; adapt the path to your conda
-installation). For the `ifx` presets, open VS Code from a console where oneAPI is loaded.
+installation).
 
 Options:
 
