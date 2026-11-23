@@ -39,4 +39,5 @@ Guía: `pages/contributing.md`, *How to add a solver*, y la tabla «Which one to
 - Una referencia guardada sólo se justifica para lo que ninguna verdad independiente detecta (el camino de Newton
   con amortiguamiento o búsqueda lineal); requiere decisión del usuario (D-023).
 - Si el solver nuevo comparte residuo con otro, la tangente puede ser la misma: compruébalo con diferencias
-  finitas, no lo supongas (al jacobiano de `closest_point_2` le falta el factor 2 de los cortes y no se vio hasta el plan R).
+  finitas, no lo supongas (al jacobiano de `closest_point_2` le faltaba el factor 2 de los cortes; no se vio hasta el
+  plan R y se corrigió en D-049).

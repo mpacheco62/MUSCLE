@@ -215,7 +215,7 @@ no se movió sino que se borró (no estaba registrado, no compilaba y lo cubre `
 `reference/materials` desapareció con R4, así que no hubo nada que unir; `muscle_test_solver_golden.f90` pasó a
 `tests/materials/muscle_test_solver_sequence.f90`. Hallazgos (PROBLEMAS): `check_approx` aceptaba Inf (corregido),
 el mismo hueco en `.approx.` (corregido a pedido del usuario), y marcados sin corregir: la rama `|1 - d| <= EPS` de
-`eigenvals`, el jacobiano de `closest_point_2` sin factor 2 de corte y `closest_point_time` + JC sin convergencia con
+`eigenvals`, el jacobiano de `closest_point_2` sin factor 2 de corte (corregido en D-049) y `closest_point_time` + JC sin convergencia con
 poca sobretensión.
 
 ### Bloque 4. No ahora (sólo si aparece la necesidad)

@@ -51,7 +51,7 @@ Which one to declare a material with:
 | Solver | For | Iterations | Tangent | When |
 |--------|-----|------------|---------|------|
 | `closest_point` | rate-independent plasticity | scalar Newton on the plastic multiplier \(\Delta\gamma \ge 0\), damped (x0.75) when it does not converge | consistent | **the default**: quadratic convergence |
-| `closest_point_2` | rate-independent plasticity | monolithic 7x7 Newton on the plastic strain and \(\Delta\gamma\), own LU, no \(\Delta\gamma \ge 0\) | the same as `closest_point` | compatibility with the historical solver; known issue: it converges linearly with shear components (its Jacobian lacks the factor 2 of the shears), prefer `closest_point` |
+| `closest_point_2` | rate-independent plasticity | monolithic 7x7 Newton on the plastic strain and \(\Delta\gamma\), own LU, no \(\Delta\gamma \ge 0\) | the same as `closest_point` | compatibility with the historical solver; without the constraint \(\Delta\gamma \ge 0\) it may converge to a step with \(\Delta\gamma < 0\), prefer `closest_point` |
 | `cutting_plane` | rate-independent plasticity | explicit corrections (at most 100), no linear system | continuum, not consistent | cheap iterations; fits an explicit FE code (no tangent needed); with an implicit one the global convergence is slower |
 | `closest_point_perzyna` | overstress viscoplasticity (Perzyna, Chaboche) | Newton with a line search | consistent | a material with an overstress (`os`) law |
 | `closest_point_time` | consistency viscoplasticity (Johnson-Cook, ...) | Newton | consistent | a material with a flow stress (`vp`) law; known issue: Johnson-Cook with a very small overstress may not converge |

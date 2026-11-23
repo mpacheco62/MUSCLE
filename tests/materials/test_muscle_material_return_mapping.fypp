@@ -20,8 +20,8 @@
     & 'cutting_plane': 'NEWTON'}
 #! Newton solvers (the converged state solves the backward Euler equations; quadratic convergence)
 #:set NEWTON = ['closest_point', 'closest_point_2', 'closest_point_time', 'closest_point_perzyna']
-#! Newton solvers checked for quadratic convergence (closest_point_2: not quadratic, see the known issues)
-#:set QUADRATIC = ['closest_point', 'closest_point_time', 'closest_point_perzyna']
+#! Newton solvers checked for quadratic convergence
+#:set QUADRATIC = NEWTON
 
 program test_mat_return_mapping
     !! Return mapping kernels of every solver against truths independent of the solver (plan R, R6), in
@@ -35,7 +35,8 @@ program test_mat_return_mapping
     !!   Johnson-Cook the root of q_tr - 3G dgamma = sigma_y(ep_n + dgamma) (1 + C ln(dgamma/(dt epdmax)))
     !!   by bisection. Stress, plastic strain (radial: 3/2 dgamma s_tr/q_tr) and ep. A Newton solver on a
     !!   problem linear in dgamma (closest_point, closest_point_2) is exact after one update and the next
-    !!   iteration confirms it: 2 iterations; cutting_plane needs one correction. The consistent tangent
+    !!   iteration confirms it: 2 iterations (closest_point_2 too since the factor 2 of the shears in its
+    !!   Jacobian, D-049); cutting_plane needs one correction. The consistent tangent
     !!   of the rate independent Newton solvers against its closed form (Box 3.2), the continuum tangent
     !!   of cutting_plane against its closed form, and the tangent of every Newton solver against finite
     !!   differences from that plastic state.
@@ -53,15 +54,8 @@ program test_mat_return_mapping
     !! - Quadratic convergence of the Newton solvers on the Hill step: the iterates (the state returned
     !!   with iter_nw = 1, 2, ...) approach the converged state with e_{k+1} <= Q e_k^2 once e_k < 0.1.
     !!
-    !! Known issues found by these checks (reported, not checked until they are fixed):
+    !! Known issue found by these checks (reported, not checked until it is fixed):
     !!
-    !! - closest_point_2: the consistency row of its 7x7 Newton Jacobian, a(7, j) = -(C:n)_j, lacks the
-    !!   factor 2 of the shear components (the derivative of f with respect to the Voigt component j of
-    !!   the plastic strain is -(C:n):e_j, which counts a tensorial shear twice). The fixed point is
-    !!   right, but the convergence is linear when the step has shears: the radial return is not exact
-    !!   after one update (6 iterations for a trial 4 TOL above the yield stress; 50 for the large Hill
-    !!   step). Hence no iteration count and no quadratic convergence check for it, and the radial
-    !!   return tolerance of the rate dependent solvers (the Newton tolerance).
     !! - closest_point_time with Johnson-Cook: a trial stress slightly above the yield stress at a zero
     !!   rate (4 TOL_ELASTIC) does not converge in 200 iterations: the solution lies on the rate floor
     !!   (dgamma/dt < epmin), where the right-hand rate derivative of the Newton direction (D-018.19b),
@@ -88,20 +82,20 @@ program test_mat_return_mapping
     real(dp), parameter :: SCALE_EXP = 20.0_dp
         !! Stress scales 2^-20 and 2^20 of the threshold and homogeneity checks.
     real(sp), parameter :: TOL_RADIAL_sp = 2.0e-6_sp
-        !! Radial return of closest_point and cutting_plane, relative (to dgamma, the largest stress and
-        !! plastic strain), sp [1.9e-7].
+        !! Radial return of closest_point, closest_point_2 and cutting_plane, relative (to dgamma, the
+        !! largest stress and plastic strain), sp [1.9e-7].
     real(dp), parameter :: TOL_RADIAL_dp = 1.0e-11_dp
-        !! Radial return of closest_point and cutting_plane: one exact update, rounding only [2.7e-16].
+        !! Radial return of closest_point, closest_point_2 and cutting_plane: one exact update, rounding
+        !! only [2.7e-16].
     real(sp), parameter :: TOL_RADIAL_RATE_sp = 5.0e-5_sp
-        !! Radial return of the other solvers, sp [5.4e-6, closest_point_2].
+        !! Radial return of the rate dependent solvers, sp [1.5e-7].
     real(dp), parameter :: TOL_RADIAL_RATE_dp = 1.0e-8_dp
-        !! Radial return of the other solvers: the Newton tolerance 1e-10 on f relative to sigma_y,
-        !! divided by the slope 3G/sigma_y of f in dgamma [1.1e-10, closest_point_2].
+        !! Radial return of the rate dependent solvers: the Newton tolerance 1e-10 on f relative to
+        !! sigma_y, divided by the slope 3G/sigma_y of f in dgamma [2.7e-16].
     real(sp), parameter :: TOL_TAN_sp = 1.0e-5_sp
-        !! Tangent against its closed form, relative to the elastic response, sp [2.1e-6].
-    real(dp), parameter :: TOL_TAN_dp = 5.0e-10_dp
-        !! Tangent against its closed form, relative to the elastic response [4.4e-11 closest_point_2, at
-        !! its Newton tolerance; 2.8e-15 the others].
+        !! Tangent against its closed form, relative to the elastic response, sp [1.4e-6].
+    real(dp), parameter :: TOL_TAN_dp = 1.0e-13_dp
+        !! Tangent against its closed form, relative to the elastic response: rounding only [2.8e-15].
     real(sp), parameter :: TOL_FD_sp = 5.0e-4_sp
         !! Tangent against finite differences, sp [4.8e-5].
     real(dp), parameter :: TOL_FD_dp = 1.0e-6_dp
@@ -283,12 +277,7 @@ $:MAT_CASE_PROCS(MATS, fd_check=[m for m in LINEAR if solver_of(m) in NEWTON])
         q_tr = q_vm_${k}$(trial)
         #:if SOLVER in ('closest_point', 'closest_point_2', 'cutting_plane')
         dgam = (q_tr - y_n)/(3.0_${k}$*g + hmod)
-        #:if SOLVER == 'closest_point_2'
-        ! Not exact after one update (KNOWN_ISSUES): converged to the Newton tolerance
-        tol = TOL_RADIAL_RATE_${k}$
-        #:else
         tol = TOL_RADIAL_${k}$
-        #:endif
         #:elif SOLVER == 'closest_point_time'
         ! q_tr - 3G x = sigma_y(ep_n + x) (1 + C ln(max(x/dt, epmin)/epdmax)): decreasing in x
         lo = 0.0_dp
@@ -318,7 +307,7 @@ $:MAT_CASE_PROCS(MATS, fd_check=[m for m in LINEAR if solver_of(m) in NEWTON])
         flow = (1.5_${k}$/q_tr)*s_tr
         call mat_update(mat, strain, ${DT}$, sn, snp1, stress, tangent, status, iters)
         call check_true(passed, '${m}$ radial return converged (${k}$)', status == STATUS_OK)
-        #:if SOLVER == 'closest_point'
+        #:if SOLVER in ('closest_point', 'closest_point_2')
         call check_true(passed, '${m}$ radial return: one exact Newton update, confirmed by the next iteration (${k}$)', &
             iters == 2)
         #:elif SOLVER == 'cutting_plane'
