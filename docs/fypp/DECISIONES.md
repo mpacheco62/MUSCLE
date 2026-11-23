@@ -2061,3 +2061,29 @@ cinemáticas finitas (otra variante de `mat_update`) no mostraron el problema y 
 de libgomp en `family_target_hard_dp`, que pasa 5/5 al repetirlo) e ifx 133/133; Linux gfortran 133/133 e ifx 133/133
 (`tools/check.sh --quick --ifx`); lint OK. (Un apóstrofo del comentario nuevo daba un aviso de `cpp` con gfortran en Linux:
 se reescribió; las corridas de Windows son de antes de ese cambio, que sólo toca el comentario.)
+
+## D-049 — Factor 2 de los cortes en la fila de consistencia del jacobiano de `closest_point_2` (2026-11-23)
+
+**Contexto:** la fila 7 del jacobiano 7x7 de `closest_point_2` (`a(7, j)`, la derivada de f respecto de la componente Voigt j
+de la deformación plástica) se armaba con las componentes de `-C:n`. Con Voigt tensorial, la componente unitaria de corte
+`e_j` contiene ij y ji, así que \( -(\mathbb{C}:\mathbf{n}):\mathbf{e}_j \) lleva un factor 2 en los cortes (marcado en
+PROBLEMAS desde el plan R, R6; el usuario lo dejó pendiente el 2026-11-09 porque cambia resultados). El punto fijo era el
+correcto, pero el Newton no era exacto: convergencia lineal en cuanto el paso tiene cortes. El experimento de GPU de
+2026-11-22/23 (worktree aparte, sin `src/`) lo midió en el banco de lote de los materiales cp2 (sp, UHD 770): con sólo esta
+corrección, iteraciones medias cpb06_vocemod 3,34 → 2,46, cpb06_ludwik 5,74 → 4,87, cpb06ex2 5,27 → 4,45, yld2004 84,0 → 76,1
+(idénticas a las de un Newton reducido exacto) y tiempo de lote −8 % a −39 % en los 8 materiales cp2.
+**Decisión del usuario (2026-11-23: «quiero corregir el tema de la tangente … hacer el commit y un pr»):**
+`src/solvers/muscle_closest_point_2_body.fypp`: `a(7, 1:3) = (-C:n)(1:3)`, `a(7, 4:6) = 2 (-C:n)(4:6)`; el resto del sistema
+(columnas por la acción sobre cada componente unitaria, residuos en componentes almacenadas) ya era correcto. La tangente
+consistente (`muscle_closest_point_tangent.fypp`, compartida con `closest_point`) se arma con operadores de tensores y no
+tenía el error.
+**Consecuencias:** cambian los iterados y el número de iteraciones de `closest_point_2`; el estado convergido sólo cambia
+dentro de la tolerancia del Newton. Tests: `test_mat_return_mapping` deja de exceptuar a cp2 (retorno radial exacto en 2
+iteraciones con la tolerancia de `closest_point`, convergencia cuadrática del paso Hill grande) y `TOL_TAN_dp` baja de 5e-10 a
+1e-13 (el 4,4e-11 era de cp2; ahora máximo 2,8e-15); los casos de secuencia de cp2 vuelven al tope por defecto de 20
+iteraciones (máximo medido 13, yld2004; reemplaza los topes 25–30 de cp2 de D-041). PROBLEMAS: fila corregida; README: la
+tabla de solvers ya no lo cita (sigue recomendando `closest_point` por la falta de \( \Delta\gamma \ge 0 \), D-018.10c).
+**Verificación:** los tests nuevos fallan sin la corrección (retorno radial y convergencia cuadrática de cp2, sp y dp). Con
+ella, CPU Debug `sp;dp`: Windows gfortran 133/133 e ifx 133/133; Linux (WSL) gfortran 133/133 e ifx 133/133
+(`tools/check.sh --quick --ifx`), lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 50/50 tests `target`. Mutaciones de las
+dos líneas nuevas (`tools/mutation_check.py solvers --only ...`): 4 de 4 detectadas por los unitarios.
