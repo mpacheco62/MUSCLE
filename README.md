@@ -332,6 +332,7 @@ Options:
 | `-DCMAKE_BUILD_TYPE=Debug\|Release\|Profile\|Profile_unittests` | Build type (`Profile_unittests`: coverage, target `coverage_report`). |
 | `-DMUSCLE_MATERIALS=<path>` | Your material registry (default: the test registry `tools/fypp/muscle_materials.py`). |
 | `-DMUSCLE_REAL_KINDS=dp` | Generate only double precision (default `sp;dp`). |
+| `-DMUSCLE_REAL_KINDS=sp` | Generate only single precision, for GPUs without FP64 (no historical names such as `ten_3D2Osym`: use `ten_3D2Osym_sp`; only the GPU tests and the tests that do not need dp are built; with benchmarks, those written for every kind). |
 | `-DMUSCLE_BUILD_BENCHMARKS=ON` | Build the benchmarks (`benchmarks/`, target `build_all_benchmarks`). |
 | `-DMUSCLE_GPU=OFF\|NVPTX\|AMDGCN\|SPIR64` | OpenMP offload target of the kernels (default `OFF`, see below). |
 | `-DMUSCLE_GPU_ARCH=<arch>` | Device architecture (NVPTX: e.g. `sm_80`; AMDGCN: default `gfx90a`; not used with SPIR64). |
@@ -343,7 +344,7 @@ Options:
 |--------------|----------|-------------------------|
 | `NVPTX` | GNU Fortran | GCC built with the nvptx offload backend (e.g. the distribution package `gcc-<version>-offload-nvptx`) |
 | `AMDGCN` | GNU Fortran | GCC built with the amdgcn offload backend (`gcc-<version>-offload-amdgcn`) |
-| `SPIR64` | Intel `ifx` | oneAPI with its environment loaded (`source /opt/intel/oneapi/setvars.sh`) and the Intel GPU driver (Level Zero) |
+| `SPIR64` | Intel `ifx` | oneAPI with its environment loaded (`source /opt/intel/oneapi/setvars.sh`; Windows: `setvars.bat`) and the Intel GPU driver (Level Zero) |
 
 ```bash
 # NVIDIA (gfortran with nvptx offload)
@@ -357,7 +358,13 @@ cmake -S . -B build-spir64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DMUSCLE_GPU=SPIR
 CMake checks the combination at configure time by linking a small program with a target region. Run
 GPU programs with `OMP_TARGET_OFFLOAD=MANDATORY` to fail instead of falling back to the host; on Intel GPUs
 without native double precision, `OverrideDefaultFP64Settings=1 IGC_EnableDPEmulation=1` enables the
-emulated FP64. The batch API on the device is described in [FEA integration](pages/integration.md).
+emulated FP64 on Linux. The Windows driver does not emulate FP64: there, on such a GPU, build with
+`-DMUSCLE_REAL_KINDS=sp` (a device image with any double precision code does not load). On Windows, put
+oneAPI's `compiler\bin` first in the `PATH` when a conda environment is active after `setvars.bat`: the
+`libiomp5md.dll` of some conda environments (package `llvm-openmp`) does not work with offload. The tests run
+on the GPU under a memory cap and a time limit (`tools/check.sh` on Linux; on Windows
+`powershell -ExecutionPolicy Bypass -File tools\limit_run.ps1 -MemoryGB 4 -TimeoutSec 3600 -- ctest ...`).
+The batch API on the device is described in [FEA integration](pages/integration.md).
 
 Documentation: `cmake --build build --target doc` (output in `build/doc`, when CMake finds `ford`), or
 `ford my_project.md` from the repository root.

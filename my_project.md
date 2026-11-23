@@ -96,7 +96,7 @@ cmake --build build --target build_all_tests
 ctest --test-dir build
 ```
 
-`-DMUSCLE_REAL_KINDS=dp` generates only double precision (faster development builds); `-DMUSCLE_MATERIALS=<path>` replaces the test registry of materials with yours.
+`-DMUSCLE_REAL_KINDS=dp` generates only double precision (faster development builds), `-DMUSCLE_REAL_KINDS=sp` only single precision (GPUs without FP64; without the historical dp names); `-DMUSCLE_MATERIALS=<path>` replaces the test registry of materials with yours.
 
 # Requirements
 

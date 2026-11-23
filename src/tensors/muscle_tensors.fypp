@@ -191,6 +191,8 @@ module muscle_tensors
     use muscle_tensor_ops_transform
     implicit None
 
+    #:if 'dp' in REAL_KINDS
+    ! Historical names, the dp types (absent in a build without dp)
     public :: ten_3D2O
     public :: ten_3D2Osym
     public :: ten_2D2O
@@ -202,10 +204,12 @@ module muscle_tensors
     public :: ten_3D4O2sym
     public :: ten_3D4O
     public :: iden_2OS
-    public :: iden_2O
     public :: iden_4O3TS
-    public :: iden_4O3T
     public :: iden_4O4TS
+    #:endif
+    ! Unscaled identities: no kind, they serve every kind
+    public :: iden_2O
+    public :: iden_4O3T
     public :: iden_4O4T
     ! Types with an instance per kind (historical names above are the dp ones)
     public :: ${', '.join(tname(d + '2Osym', k) for d in DIMS for k in REAL_KINDS)}$

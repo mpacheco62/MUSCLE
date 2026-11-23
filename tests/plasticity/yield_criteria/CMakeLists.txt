@@ -9,8 +9,11 @@ add_muscle_fypp_test(yield_kinds test_muscle_yield_laws_kinds.fypp)
 # Compile-fail checks (D-017.10b): the kernel types with derived parameters (CPB06: B, L;
 # Drucker-Prager: f_factor, I1_factor; CPB06ex2: L, Lp, B; Yld2004: Lp, Lpp) have them private, so
 # they cannot be set outside the model module (only by yield_<m>_init). Each test passes when the
-# compiler rejects <m>_private_params.f90 (muscle_add_compile_fail_test, cmake/MuscleCompiler.cmake)
-foreach(_muscle_model cpb06 druckerprager cpb06ex2 yld2004)
-    muscle_add_compile_fail_test(plasticity-yield_criteria-${_muscle_model}_private_params
-                                 ${CMAKE_CURRENT_SOURCE_DIR}/${_muscle_model}_private_params.f90)
-endforeach()
+# compiler rejects <m>_private_params.f90 (muscle_add_compile_fail_test, cmake/MuscleCompiler.cmake).
+# Written on the dp types (the same for every kind): not in a build without dp
+if(MUSCLE_TESTS_DP)
+    foreach(_muscle_model cpb06 druckerprager cpb06ex2 yld2004)
+        muscle_add_compile_fail_test(plasticity-yield_criteria-${_muscle_model}_private_params
+                                     ${CMAKE_CURRENT_SOURCE_DIR}/${_muscle_model}_private_params.f90)
+    endforeach()
+endif()

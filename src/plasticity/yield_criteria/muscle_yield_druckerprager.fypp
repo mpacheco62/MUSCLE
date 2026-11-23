@@ -88,10 +88,12 @@ module muscle_yield_druckerprager
     real(sp), parameter :: DP_TOL_REL_sp = 1.0e-5_sp
         !! Hydrostatic axis: q/|sigma| below this (`real(sp)`).
     #:endif
+    #:if 'dp' in REAL_KINDS
     real(dp), parameter :: DP_TOL_ABS_dp = 1.0e-40_dp
         !! Zero stress: |sigma| below this (`real(dp)`).
     real(dp), parameter :: DP_TOL_REL_dp = 1.0e-9_dp
         !! Hydrostatic axis: q/|sigma| below this (`real(dp)`).
+    #:endif
 
     #:for k in REAL_KINDS
     type :: yield_druckerprager_${k}$

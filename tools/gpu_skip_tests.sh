@@ -8,12 +8,11 @@
 # private memory for the run-time-size temporary of COND_INF (D-030, fixed: NORM_INF); they run again. Still out:
 # - mat_batch / mat_batch_openmp: IGC miscompiled the closest point kernels with more than one work item
 #   (D-019.5c, not checked again after D-030);
-# - two sp time-dependent kernels: other iterations than the CPU (and other stresses and tangents in
-#   tm_jcfull_vm_vocemod), also with the EU fusion disabled (to investigate);
 # - every dp material kernel: the emulated FP64 of the UHD 770 loses the device, not the same from one run to
 #   the next.
+# The sp kernels tm_rk_vm and tm_jcfull_vm_vocemod (other iterations than the CPU) run again: they pass with the code of
+# D-048 (2026-11-21, Linux and Windows; whether they also pass without its workaround was not measured).
 declare -A GPU_SKIP_TESTS=(
     ['materials-mat_batch(_openmp)?']="IGC miscompiled the closest point kernels with more than one work item (D-019.5c)"
-    ['materials-mat_kernels_target_(tm_rk_vm|tm_jcfull_vm_vocemod)_sp']="IGC: other iterations than the CPU (to investigate)"
     ['materials-mat_(kernels_target|batch_dev)_[a-z0-9_]+_dp']="IGC with the emulated FP64: device lost (not reproducible run to run)"
 )

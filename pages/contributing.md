@@ -14,7 +14,9 @@ the [architecture](architecture.html) page shows how a material is put together 
 A model is written **by hand, in Fortran, in one file**: the parameter type, the signatures with their `intent`
 and documentation, the bodies and the closings are in the template. FYPP only instantiates the text for each
 kind (`#:for k in REAL_KINDS`, `${k}$`) and marks the kernels (`@:DEVICE()`), which is what Fortran cannot do
-(rule «minimal FYPP», see [Conventions](conventions.html#minimal-fypp)). No model declaration is built from metadata. The
+(rule «minimal FYPP», see [Conventions](conventions.html#minimal-fypp)). A template never assumes that dp exists: a
+build may have only sp (`-DMUSCLE_REAL_KINDS=sp`, GPUs without FP64), so a name that defaults to dp goes inside
+`#:if 'dp' in REAL_KINDS`. No model declaration is built from metadata. The
 only generated modules are the materials, one per entry of the registry (type, parameter array and APIs of each
 material), because Fortran cannot declare one module per entry; they are written once in `src/materials/`.
 
@@ -227,7 +229,9 @@ and are private.
 `src/<path>/muscle_<x>.fypp` are `tests/<path>/test_muscle_<x>[_<topic>].fypp` (e.g. `test_muscle_hard_laws_kinds`,
 `test_muscle_material_point`; a test of no single module is named after its topic, `test_muscle_fypp_smoke`). The
 ctest name is the folder path joined with `-` plus the name given to `add_muscle_fypp_test`
-(`plasticity-hardening_laws-hard_laws_kinds`). `tests/common/` holds the shared assertions
+(`plasticity-hardening_laws-hard_laws_kinds`). A test that does not use dp as its truth also builds without dp:
+register it with `add_muscle_fypp_test(<name> <file> WITHOUT_DP)`; the others are left out of a build with only sp.
+`tests/common/` holds the shared assertions
 (`muscle_test_utils`), helpers and finite-difference macros, `tests/tools/` the Python tests of the FYPP
 metadata and `tests/gpu/` the kernel tests of every model family on the device (`test_muscle_family_target.fypp`,
 one test per family and kind, cases in `target_cases.py`). Every ctest test of the Fortran code carries a label

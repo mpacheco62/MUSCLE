@@ -18,7 +18,7 @@
 #   target  compiler          flags
 #   NVPTX   gfortran (GNU)    -fopenmp -foffload=nvptx-none [-foffload-options=nvptx-none=-march=<arch>]
 #   AMDGCN  gfortran (GNU)    -fopenmp -foffload=amdgcn-amdhsa -foffload-options=amdgcn-amdhsa=-march=<arch>
-#   SPIR64  ifx (IntelLLVM)   -fiopenmp -fopenmp-targets=spir64
+#   SPIR64  ifx (IntelLLVM)   -fiopenmp -fopenmp-targets=spir64 (Windows: /Qiopenmp /Qopenmp-targets:spir64)
 #   (gfortran links libgomp with --no-as-needed too, see below)
 #
 # The combination is validated at configure time (compiler, installed offload backend) by linking a
@@ -81,15 +81,18 @@ elseif(_muscle_gpu STREQUAL "SPIR64")
         message(FATAL_ERROR "MUSCLE: MUSCLE_GPU=SPIR64 needs ifx (IntelLLVM); the Fortran compiler is "
                             "${CMAKE_Fortran_COMPILER_ID} (${CMAKE_Fortran_COMPILER}). Use NVPTX or AMDGCN with gfortran.")
     endif()
-    if(WIN32)
-        message(FATAL_ERROR "MUSCLE: MUSCLE_GPU=SPIR64 is only set up for ifx on Linux.")
-    endif()
     if(NOT _muscle_gpu_arch STREQUAL "")
         message(FATAL_ERROR "MUSCLE: MUSCLE_GPU_ARCH is not used with SPIR64 (JIT compilation); leave it empty.")
     endif()
-    set(MUSCLE_GPU_COMPILE_OPTIONS -fiopenmp -fopenmp-targets=spir64)
+    if(WIN32)
+        # The same options with the syntax of ifx on Windows
+        set(MUSCLE_GPU_COMPILE_OPTIONS /Qiopenmp /Qopenmp-targets:spir64)
+        set(_muscle_gpu_hint "check the oneAPI environment (setvars.bat, with the C++ tools of Visual Studio)")
+    else()
+        set(MUSCLE_GPU_COMPILE_OPTIONS -fiopenmp -fopenmp-targets=spir64)
+        set(_muscle_gpu_hint "check the oneAPI environment (source setvars.sh)")
+    endif()
     set(MUSCLE_GPU_LINK_OPTIONS ${MUSCLE_GPU_COMPILE_OPTIONS})
-    set(_muscle_gpu_hint "check the oneAPI environment (source setvars.sh)")
 else()
     message(FATAL_ERROR "MUSCLE: unknown MUSCLE_GPU='${MUSCLE_GPU}' (allowed: OFF, NVPTX, AMDGCN, SPIR64).")
 endif()

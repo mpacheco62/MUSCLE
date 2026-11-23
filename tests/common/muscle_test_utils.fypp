@@ -64,8 +64,9 @@ module muscle_test_utils
 #! <= 2.0 eps, LU6SOLVE <= 0.1 eps kappa_inf(A), kinematics <= 19 eps kappa(C) (dp material logarithmic
 #! tangent; sp <= 7.4), closest point batch (IGC optimizations off) <= 10 eps; 64 leaves a margin of ~3.
     #:set TOL_DEVICE_ULPS = 64
-#! Tensor types checked: every (family, dim), double precision only until the sp types exist.
-    #:set TENSORS = [(fam, dim) for dim in DIMS for fam in FAMILIES]
+#! Tensor types checked: every (family, dim), double precision only until the sp types exist (none in a build
+#! without dp).
+    #:set TENSORS = [(fam, dim) for dim in DIMS for fam in FAMILIES] if 'dp' in REAL_KINDS else []
     #:for k in REAL_KINDS
     real(${k}$), parameter :: DEFAULT_TOL_${k}$ = TOL_APPROX_${k}$
         !! Default relative tolerance for `real(${k}$)` values (same as `.approx.` for most tensor types).
@@ -77,8 +78,10 @@ module muscle_test_utils
         !! device math library) changes the rounding of every operation; a point kernel then differs
         !! by a few eps relative to its scale (see `TOL_DEVICE_ULPS`).
     #:endfor
+    #:if 'dp' in REAL_KINDS
     real(dp), parameter :: DEFAULT_TOL_4O2SYM = 1.0e-8_dp
         !! Default tolerance of `.approx.` for the minor-symmetric 4th-order types.
+    #:endif
 
     #:for fam, dim in TENSORS
     #:set comps = layout(fam, dim).comps

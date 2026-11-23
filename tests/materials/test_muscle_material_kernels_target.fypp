@@ -99,7 +99,6 @@ program test_mat_kernels_target
     $:MAT_TEST_USES(MATS)
     use muscle_test_utils, only : check_target, check_target_ran
     use muscle_test_solver_sequence, only : FIRST_FACTOR
-    use muscle_tensors, only : ten_3D2Osym_dp
     use test_mat_target_points
     implicit none
 
@@ -128,14 +127,14 @@ contains
         real(dp), intent(in) :: a
         real(dp), intent(in) :: f0
         real(dp) :: e(6)
-        type(ten_3D2Osym_dp) :: d1, d2
+        real(dp) :: d1(6), d2(6)
 
         ! d1 = FIRST_FACTOR D1; d2 = D2, from the last step 2.6 D1 + 25 D2 of the reference sequence
         d1 = first_strain(1.0_dp)
         d2 = seq_strain(NSTEP - 1, 1.0_dp)
-        d2%vals = (d2%vals - 2.6_dp*d1%vals/FIRST_FACTOR)/25.0_dp
-        e = ((f0 + (FIRST_FACTOR - f0)*(real(i, dp) - 0.5_dp)/real(NPTS, dp))/FIRST_FACTOR*a)*d1%vals &
-            + (0.3_dp*a*sin(real(i, dp)))*d2%vals
+        d2 = (d2 - 2.6_dp*d1/FIRST_FACTOR)/25.0_dp
+        e = ((f0 + (FIRST_FACTOR - f0)*(real(i, dp) - 0.5_dp)/real(NPTS, dp))/FIRST_FACTOR*a)*d1 &
+            + (0.3_dp*a*sin(real(i, dp)))*d2
     end function strain_ramp
 
 $:MAT_CASE_PROCS(MATS, fd_check=False)

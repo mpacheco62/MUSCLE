@@ -319,22 +319,28 @@ ${'        use muscle_tensors, only : operator(+)' if MAT.tangent_rate == 'jauma
             !! `STATUS_OK` or an error code of muscle_status (outputs not to be used).
         integer, intent(out) :: iters
             !! Iterations of the return mapping (0 in an elastic step).
+        ! Workaround of the IGC of the Intel GPU driver for Windows (D-048, docs/fypp/PROBLEMAS.md): there, `strain`
+        ! ends up holding the stress written by the return mapping (the strain and the stress of the caller seem to share
+        ! their private memory), which corrupted the tangent, the status and the viscoelastic history. The return mapping
+        ! works on this local copy instead; do not pass `strain` itself.
+        type(${S2}$) :: strain_in
         #:if VISCO
-
         type(${ELAS_T}$) :: elas
         type(${S2}$) :: strain_e
 
+        strain_in = strain
         ! The ${NBRANCHES}$ history tensors of the material: the model uses its own number, at most ${NBRANCHES}$
         elas = visco_freeze_branches(mat%${VISCO}$, coefs, state_n%visco%strain_e, ${NBRANCHES}$, state_n%visco%h)
-        call ${SOLVE}$(mat, elas, strain, dt, state_n%plastic, state_np1%plastic, stress, tangent, &
+        call ${SOLVE}$(mat, elas, strain_in, dt, state_n%plastic, state_np1%plastic, stress, tangent, &
             status, iters)
-        strain_e = strain - state_np1%plastic%strain_p
+        strain_e = strain_in - state_np1%plastic%strain_p
         call visco_update_branches(mat%${VISCO}$, coefs, state_n%visco%strain_e, ${NBRANCHES}$, state_n%visco%h, strain_e, &
             state_np1%visco%h)
         state_np1%visco%strain_e = strain_e
         #:else
 
-        call ${SOLVE}$(mat, mat%elas, strain, dt, state_n, state_np1, stress, tangent, status, iters)
+        strain_in = strain
+        call ${SOLVE}$(mat, mat%elas, strain_in, dt, state_n, state_np1, stress, tangent, status, iters)
         #:endif
     end subroutine ${UPDATE}$
     #:endif

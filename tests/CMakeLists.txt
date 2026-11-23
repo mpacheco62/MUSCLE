@@ -26,6 +26,14 @@ muscle_fypp_preprocess(MUSCLE_TEST_UTILS_SRC common/muscle_test_utils.fypp commo
 # muscle_test_reference: reference checks (tolerance by category, D-021) against tests/reference/ (register the
 # test with muscle_reference_test); muscle_test_solver_sequence: strain
 # sequence and record layout of the reference tests of the return mapping solvers
+# Most tests take dp as the truth on the host (sp against dp, dp references): a build without dp
+# (-DMUSCLE_REAL_KINDS=sp, for devices without FP64, D-047) builds the target tests and the tests registered with
+# WITHOUT_DP only
+if("dp" IN_LIST MUSCLE_REAL_KINDS)
+    set(MUSCLE_TESTS_DP ON)
+else()
+    set(MUSCLE_TESTS_DP OFF)
+endif()
 add_library(muscle_test_utils STATIC ${MUSCLE_TEST_UTILS_SRC} common/muscle_test_reference.f90
             materials/muscle_test_solver_sequence.f90)
 target_link_libraries(muscle_test_utils PUBLIC muscle PRIVATE compile_options)
@@ -71,8 +79,12 @@ endfunction()
 function(add_muscle_fypp_test NAME SOURCE)
     # Same as add_muscle_test, for a single .fypp template (see cmake/MuscleFypp.cmake).
     # DEPENDS lists the files the template includes (e.g. tests/common/*.fypp macros) so that
-    # it is regenerated when they change.
-    cmake_parse_arguments(PARSE_ARGV 2 arg "" "" "DEPENDS")
+    # it is regenerated when they change. WITHOUT_DP: the test also builds without dp; the others are
+    # skipped in a build without dp (MUSCLE_TESTS_DP), so check `if(TARGET test_<name>)` before using one.
+    cmake_parse_arguments(PARSE_ARGV 2 arg "WITHOUT_DP" "" "DEPENDS")
+    if(NOT MUSCLE_TESTS_DP AND NOT arg_WITHOUT_DP)
+        return()
+    endif()
     muscle_fypp_preprocess(GENERATED ${SOURCE} DEPENDS ${arg_DEPENDS})
     add_muscle_test(${NAME} ${GENERATED})
     get_target_property(test_name test_${NAME} MUSCLE_TEST_NAME)

@@ -26,7 +26,10 @@ module muscle_math_inverses
     implicit none
     private
 
-    public :: M33INV, M44INV, M55INV, M66INV, M99INV, COND_INF, NORM_INF, ADJ_KAPPA_MAX
+    public :: M33INV, M44INV, M55INV, M66INV, M99INV, COND_INF, NORM_INF
+    #:if 'dp' in REAL_KINDS
+    public :: ADJ_KAPPA_MAX
+    #:endif
     #:for k in REAL_KINDS
     public :: M33INV_${k}$, M44INV_${k}$, M55INV_${k}$, M66INV_${k}$, M99INV_${k}$
     public :: COND_INF_${k}$, NORM_INF_${k}$, ADJ_KAPPA_MAX_${k}$
@@ -49,8 +52,10 @@ module muscle_math_inverses
         !! `M44INV`); above it they are recomputed by LU, which is more accurate for ill-conditioned
         !! matrices, while well-conditioned ones keep the fast adjugate path.
     #:endfor
+    #:if 'dp' in REAL_KINDS
     real(dp), parameter :: ADJ_KAPPA_MAX = ADJ_KAPPA_MAX_dp
-        !! Historical name of `ADJ_KAPPA_MAX_dp`.
+        !! Historical name of `ADJ_KAPPA_MAX_dp` (absent in a build without dp).
+    #:endif
 
     contains
 

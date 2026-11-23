@@ -9,7 +9,7 @@ set(_defines "${MUSCLE_FYPP_DEFINES}")
 if(_registry_flags)
     list(APPEND MUSCLE_FYPP_DEFINES "MUSCLE_MATERIALS_FILE='${_registry}'")
 endif()
-add_muscle_fypp_test(mat_smoke test_muscle_material_smoke.fypp
+add_muscle_fypp_test(mat_smoke test_muscle_material_smoke.fypp WITHOUT_DP
                      DEPENDS "${_registry}" ${CMAKE_CURRENT_SOURCE_DIR}/props_samples.py
                              ${CMAKE_CURRENT_SOURCE_DIR}/case_params.py)
 set(MUSCLE_FYPP_DEFINES "${_defines}")
@@ -31,7 +31,11 @@ if(NOT MUSCLE_MATERIALS)
     # test runs it with `--mutate rel` (one parameter perturbed by 1e-6 relative, above every reference
     # tolerance) and passes only if the reference comparison reports it; `*_reference_mutation_strict` runs
     # `--mutate ulp` (one ulp) under MUSCLE_REFERENCE_STRICT=1 and must report the bit-for-bit difference.
+    # dp references: not in a build without dp (the sequence tests are not built there)
     foreach(solver IN ITEMS closest_point_perzyna closest_point_time)
+        if(NOT MUSCLE_TESTS_DP)
+            break()
+        endif()
         muscle_reference_test(materials-mat_${solver})
         add_test(NAME materials-mat_${solver}_reference_mutation COMMAND test_mat_${solver} --mutate rel)
         muscle_reference_test(materials-mat_${solver}_reference_mutation)
@@ -67,18 +71,18 @@ if(NOT MUSCLE_MATERIALS)
                          DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mat_sequence_common.fypp
                                  ${CMAKE_CURRENT_SOURCE_DIR}/case_params.py)
     # Singular Newton system of closest_point_2 (own LU, D-018.1)
-    add_muscle_fypp_test(mat_cp2_singular test_muscle_material_cp2_singular.fypp)
+    add_muscle_fypp_test(mat_cp2_singular test_muscle_material_cp2_singular.fypp WITHOUT_DP)
     # Error paths of the time step of a viscoelastic material and a model with fewer branches than the
     # history array keeps (Phase 7 step 6)
-    add_muscle_fypp_test(mat_visco_errors test_muscle_material_visco_errors.fypp)
+    add_muscle_fypp_test(mat_visco_errors test_muscle_material_visco_errors.fypp WITHOUT_DP)
     # Finite strain materials (D-018.15): physical oracles (tangent vs finite differences of the
     # Kirchhoff stress, objectivity, F -> I, uniaxial closed form)
     add_muscle_fypp_test(mat_kinematics test_muscle_material_kinematics.fypp)
     # Batch API muscle_update_<name> (D-008.2, D-018.7): bit for bit the point kernel point by point
     # (every solver, frozen viscoelasticity, every kinematics; tangent, index list, 1 and 4 threads,
     # rejected time step) and its thread safety (the historical test of the OO solvers, test_muscle_openmp)
-    add_muscle_fypp_test(mat_batch test_muscle_material_batch.fypp)
-    add_muscle_fypp_test(mat_batch_openmp test_muscle_material_batch_openmp.fypp)
+    add_muscle_fypp_test(mat_batch test_muscle_material_batch.fypp WITHOUT_DP)
+    add_muscle_fypp_test(mat_batch_openmp test_muscle_material_batch_openmp.fypp WITHOUT_DP)
     # Batch API on device memory muscle_update_<name>_dev (D-019.7a): arrays of omp_target_alloc against
     # muscle_update_<name> on mapped arrays, one test per material and kind (target_cases.py)
     # With ifx these tests are built for spir64 and run with the offload disabled, so that they
@@ -93,10 +97,10 @@ if(NOT MUSCLE_MATERIALS)
                                          ${CMAKE_CURRENT_SOURCE_DIR}/case_params.py)
     # Generic API for FE codes (D-018.17): point API over flat arrays bit for bit the point kernel,
     # rotation of the history array
-    add_muscle_fypp_test(mat_point test_muscle_material_point.fypp)
+    add_muscle_fypp_test(mat_point test_muscle_material_point.fypp WITHOUT_DP)
     # Material initializers from a flat parameter array (D-018.17a, e): every material of the registry,
     # positions of the parameter table, same behaviour as the material built by hand, error statuses
-    add_muscle_fypp_test(mat_init test_muscle_material_init.fypp
+    add_muscle_fypp_test(mat_init test_muscle_material_init.fypp WITHOUT_DP
                          DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/props_samples.py
                                  ${CMAKE_CURRENT_SOURCE_DIR}/case_params.py)
 endif()

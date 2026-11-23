@@ -2,7 +2,9 @@
 # deformation gradients (D-017.14a), objectivity, and pure @:DEVICE() point procedures in an OpenMP
 # target region (muscle_target_test_options, tests/CMakeLists.txt)
 add_muscle_fypp_test(kin_kinds test_muscle_kin_laws_kinds.fypp)
-muscle_target_test_options(test_kin_kinds)
+if(TARGET test_kin_kinds)
+    muscle_target_test_options(test_kin_kinds)
+endif()
 
 # Unit tests of muscle_kin_finite and of the corotational update in every kind against an independent truth
 # in quad precision (plan R): strain measures, J and R of F = R0 Q diag(s) Q^T, the ten stress conversions,

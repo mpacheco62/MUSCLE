@@ -23,8 +23,10 @@ module muscle_test_solver_sequence
     !! by MUTATE_REL relative when its component is built, and `<test> --mutate ulp` by one ulp; the
     !! ctest `*_reference_mutation` checks that the reference comparison detects the first one (larger than any
     !! tolerance, D-021) and `*_reference_mutation_strict` the second one with MUSCLE_REFERENCE_STRICT=1.
+    !!
+    !! Strains, stresses and tangents are `real(dp)` arrays (the `vals` of the tensors), not tensor types: the
+    !! module also builds without the dp tensors (-DMUSCLE_REAL_KINDS=sp, D-047), for the target tests.
     use muscle_kinds, only : dp
-    use muscle_tensors, only : ten_3D2Osym, ten_3D4O2sym
     use muscle_test_reference, only : reference_check, REFERENCE_TOL_FD
     implicit none
     private
@@ -61,18 +63,18 @@ module muscle_test_solver_sequence
 contains
 
     pure function seq_strain(step, a) result(strain)
-        !! Strain of step `step` of the sequence for a yield strain `a`.
+        !! Strain (Voigt, tensorial) of step `step` of the sequence for a yield strain `a`.
         integer, intent(in) :: step
         real(dp), intent(in) :: a
-        type(ten_3D2Osym) :: strain
-        strain%vals = (F1(step)*a)*D1 + (F2(step)*a)*D2
+        real(dp) :: strain(6)
+        strain = (F1(step)*a)*D1 + (F2(step)*a)*D2
     end function seq_strain
 
     pure function first_strain(a) result(strain)
-        !! Strain of the single first increment from the zero state.
+        !! Strain (Voigt, tensorial) of the single first increment from the zero state.
         real(dp), intent(in) :: a
-        type(ten_3D2Osym) :: strain
-        strain%vals = (FIRST_FACTOR*a)*D1
+        real(dp) :: strain(6)
+        strain = (FIRST_FACTOR*a)*D1
     end function first_strain
 
     function step_key(prefix, step) result(key)
@@ -92,22 +94,22 @@ contains
     subroutine record_result(key, strain, stress, ep, strain_p, status, iters)
         !! Reference record of the result of a step.
         character(len=*), intent(in) :: key
-        type(ten_3D2Osym), intent(in) :: strain, stress, strain_p
+        real(dp), intent(in) :: strain(6), stress(6), strain_p(6)
         real(dp), intent(in) :: ep
         integer, intent(in) :: status, iters
-        call reference_check(key // ' | result', [strain%vals, stress%vals, ep, strain_p%vals, &
+        call reference_check(key // ' | result', [strain, stress, ep, strain_p, &
             real(status, dp), real(iters, dp)], status_iters=.true.)
     end subroutine record_result
 
     subroutine record_tangent(key, what, t)
         !! Reference record of a tangent (6x6 Voigt matrix, column major).
         character(len=*), intent(in) :: key, what
-        type(ten_3D4O2sym), intent(in) :: t
+        real(dp), intent(in) :: t(6, 6)
         if (what == 'tangent_num') then
             ! Finite differences of the return mapping
-            call reference_check(key // ' | ' // what, reshape(t%vals, [36]), tol=TOL_TANGENT_NUM)
+            call reference_check(key // ' | ' // what, reshape(t, [36]), tol=TOL_TANGENT_NUM)
         else
-            call reference_check(key // ' | ' // what, reshape(t%vals, [36]))
+            call reference_check(key // ' | ' // what, reshape(t, [36]))
         end if
     end subroutine record_tangent
 
@@ -115,9 +117,9 @@ contains
         !! Prints a note when the analytic and numerical tangents differ beyond TANGENT_NOTE_TOL
         !! (relative to the largest numerical component). Information for the report, not a check.
         character(len=*), intent(in) :: key
-        type(ten_3D4O2sym), intent(in) :: ta, tn
+        real(dp), intent(in) :: ta(6, 6), tn(6, 6)
         real(dp) :: rel
-        rel = maxval(abs(ta%vals - tn%vals))/max(maxval(abs(tn%vals)), tiny(1.0_dp))
+        rel = maxval(abs(ta - tn))/max(maxval(abs(tn)), tiny(1.0_dp))
         if (.not. (rel <= TANGENT_NOTE_TOL)) then
             n_tangent_notes = n_tangent_notes + 1
             print '(a, es10.3)', ' NOTE: ' // key // ': analytic vs numerical tangent, max rel diff ', rel
