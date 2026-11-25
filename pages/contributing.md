@@ -169,8 +169,13 @@ Example: a new hardening law `mylaw` with \( \sigma_y = \sigma_{y0} + K\epsilon_
 The same steps apply to the other families, with the names of the table above (copy the neighbour model of
 the family): a yield criterion
 writes `stress_eq` and its gradient and Hessian (and may write the joint evaluation by hand, as the
-existing criteria do); a viscoplastic or overstress law that composes a hardening law receives its values
-(`sy`, `dsy_dep`) as arguments.
+existing criteria do), plus the Hessian-vector product of the matrix-free solvers (D-051): a type
+`yield_<m>_hd_<k>` with the data of the product, `yield_hess_prepare_<m>_3D_<k>` (equivalent stress, gradient
+and that data) and `yield_hess_apply_<m>_3D_<k>` (the second derivative applied to a tensor), added to the two
+generics of `muscle_yield_laws`; the simplest form keeps the second derivative in the data (von Mises, Hill48,
+Drucker-Prager); a spectral criterion keeps its eigenbases and principal derivatives (`yield_eig_coords`,
+`yield_eig_hess`, `yield_eig_back` of `muscle_yield_anisotropic`). A viscoplastic or overstress law that composes a
+hardening law receives its values (`sy`, `dsy_dep`) as arguments.
 
 ## How to add a solver
 

@@ -2127,3 +2127,45 @@ exactos, los que esa referencia guarda); 12 equivalentes: 5 divisores de la rama
 algo en empates (`>=`/`>` y `<`/`<=` de selecciones y del ordenamiento) o en el límite del umbral `small`, el umbral `small`
 2 → 3 (las dos fórmulas de la tangente coinciden ahí) y `pq/diff` → `pq*diff` en esa rama (|tg| ≤ 1e-15, por debajo del
 redondeo); y `l(1) + l(2)` en lugar de `l(1) - l(2)` en `top`, igual porque la traza del desviador es 0.
+
+## D-051 — Producto Hessiana-vector de los criterios de fluencia (`yield_hess_prepare` / `yield_hess_apply`) (2026-11-25)
+
+**Contexto:** el experimento de solvers sin matriz (2026-11-24/25, worktree aparte) midió un closest point que resuelve cada
+corrección de Newton con gradiente conjugado (paso siguiente de la rama `perf/closest-point-cg`). Ese solver sólo necesita la
+segunda derivada del criterio aplicada a tensores, \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 : \mathbf{x} \), no
+la Hessiana armada: en los criterios espectrales, armarla (suma de productos de cuarto orden y dos pull-backs por
+transformación) es lo más caro del kernel y lo que más registros usa en GPU.
+**Decisión del usuario (2026-11-25, plan de la rama):** dos genéricos nuevos de la familia `yield`, en `muscle_yield_laws`, que
+cada criterio aporta junto a un tipo `yield_<m>_hd_<k>` con los datos del producto:
+- `call yield_hess_prepare(prm, sigma, f, df, hd)`: tensión equivalente y gradiente (las mismas operaciones que las
+  funciones, con helpers compartidos `yield_cpb06_equivalent` y `yield_cpb06ex2_equivalent`: mismos bits con gfortran;
+  con el modelo rápido de ifx, D-042, pueden diferir en pocos ulp y el test admite 8 ε) y los datos del producto, con
+  una sola descomposición espectral por transformación;
+- `yield_hess_apply(prm, hd, x)`: la segunda derivada aplicada a `x`, para cualquier número de tensores.
+von Mises, Hill48 y Drucker-Prager guardan la segunda derivada (21 valores; el producto es `ddf .ddot. x`). CPB06, CPB06ex2
+y Yld2004 guardan los autovectores, las segundas derivadas principales y los \( \theta_{ab} \) (`spectral_theta`, D-050):
+el producto transforma x con la misma transformación que la tensión (`yield_lin_apply` en CPB06 y CPB06ex2, la de
+Yld2004 en Yld2004, para que el producto sea simétrico como la Hessiana armada), lo pasa a la base propia
+(`yield_eig_coords`), aplica allí la Hessiana espectral
+(`yield_eig_hess`: \( z_{aa} = \sum_b \phi_{ab} y_{bb} \), \( z_{ab} = \theta_{ab} y_{ab} \)) y vuelve
+(`yield_eig_back`, \( \mathbf{L}^T : \mathbf{V}\mathbf{Z}\mathbf{V}^T \)), helpers nuevos de `muscle_yield_anisotropic`;
+CPB06ex2 suma su término mixto con los dos términos del gradiente y Yld2004 su término cruzado acoplando las diagonales de
+las dos bases. No entran en `ModelFamily.funcs` de `muscle_meta.py`: son una subrutina con un tipo propio por modelo, que el
+generador de tests `target` por familia no sabe llamar; su ejecución en GPU la cubren los materiales del solver que los usa.
+Descartado: un módulo aparte (como en el experimento) y las variantes de acumulación de la Hessiana armada (dan resultados
+erróneos en la GPU Intel por el recorte de kernels de IGC, PROBLEMAS).
+**Consecuencias:** un criterio nuevo debe aportar el tipo y los dos procedimientos (`pages/contributing.md`). Nada existente
+cambia de comportamiento (las funciones de CPB06 y CPB06ex2 sólo pasan a usar el helper de la tensión equivalente, con las
+mismas operaciones). Sin test en el dispositivo hasta el paso del solver con gradiente conjugado (ESTADO_OPTIMO §7.8).
+**Verificación:** test nuevo `test_hess_apply` en `plasticity-yield_criteria-yield_kinds`, contra las funciones de la familia
+(otra ruta: la segunda derivada armada, comprobada con diferencias centrales en `test_model_fd`) en los 32 estados generales,
+los hidrostáticos (exactos y con ruido de redondeo) y el tensor nulo, con todos los juegos de parámetros: f y df con 0 ε
+(gfortran; tolerancia 8 ε), el producto con 13 ε en sp y 15 en dp (tolerancia 64 ε) y su simetría
+\( \mathbf{y} : (\mathbb{H} : \mathbf{x}) = \mathbf{x} : (\mathbb{H} : \mathbf{y}) \) con 20 y 18 ε (tolerancia 64 ε). CPU Debug
+`sp;dp`: Windows gfortran 133/133 e ifx 133/133; Linux (WSL) gfortran 133/133 e ifx 133/133 (`tools/check.sh --quick --ifx`),
+lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 50/50 tests `target` (los kernels nuevos sólo compilan ahí, ESTADO_OPTIMO §7.8). Mutaciones de las líneas nuevas (`tools/mutation_check.py yield --only ...`, 516): 509 detectadas por los unitarios,
+2 no compilan y 5 sobreviven: 3 en la rama de \( \Phi = 0 \) de CPB06ex2 (`g`, `gp` o `cross` en 1 en lugar de 0:
+equivalentes, el término mixto sigue siendo 0 con los otros dos factores nulos) y 2 que cambian la guarda `phi == 0` por
+`phi == 1` (CPB06 y Yld2004: en el tensor nulo la guarda es redundante, las derivadas principales ya son 0; sólo cambiaría el
+resultado con \( \Phi \) escalado exactamente igual a 1, que ningún estado del test alcanza; la misma guarda de
+`yield_ddstress_eq` está en igual situación).

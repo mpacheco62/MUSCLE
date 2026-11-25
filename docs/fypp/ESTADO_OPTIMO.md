@@ -288,3 +288,6 @@ Lo que queda abierto al cerrar la migración, por decisión del usuario «como p
 7. **Hueco de tests en `kin`:** el chequeo de mutaciones del cierre (`tools/mutation_check.py kin`, muestra de 40) deja
    10 sobrevivientes, todas en `muscle_kin_small_strain.fypp` (líneas 66–67: la parte simétrica de F y la deformación
    de pequeñas deformaciones a partir de F); ese archivo no cambió en el plan espectral.
+8. **Producto Hessiana-vector de los criterios (D-051, rama `perf/closest-point-cg`):** `yield_hess_prepare` y
+   `yield_hess_apply` todavía no se ejecutan en el dispositivo en ningún test: los cubren los materiales del solver con
+   gradiente conjugado, que llega en un paso posterior de la misma rama (hasta entonces sólo compilan para SPIR64).

@@ -328,6 +328,8 @@ module test_yield_cases
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
     use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, yield_joint_evaluation, &
+        yield_hess_prepare, yield_hess_apply, &
+        ${', '.join('yield_{}_hd_{}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$, &
         ${', '.join('yield_{}_{}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$
     use muscle_yield_cpb06, only : yield_cpb06_init
     use muscle_yield_druckerprager, only : yield_druckerprager_init, DP_HARDENING_TENSION, DP_HARDENING_COMPRESSION, &
@@ -453,6 +455,7 @@ contains
         call record(test_generics_${k}$(), ${10*i + 2}$, 'generics, joint evaluation and flag ${k}$', code)
         call record(test_point_${k}$(), ${10*i + 3}$, 'pure point procedure ${k}$', code)
         call record(test_model_fd_${k}$(), ${10*i + 4}$, 'FD_GRAD gradient and FD_HESS Hessian ${k}$', code)
+        call record(test_hess_apply_${k}$(), ${80 + i}$, 'yield_hess_prepare and yield_hess_apply ${k}$ (D-051)', code)
         #:if k != 'dp'
         call record(test_vs_dp_${k}$(), ${10*i + 5}$, '${k}$ against dp', code)
         #:endif
@@ -548,6 +551,84 @@ contains
             r = t
         end select
     end function dp_i1_${k}$
+
+    function test_hess_apply_${k}$() result(passed)
+        !! `yield_hess_prepare` and `yield_hess_apply` of every criterion and parameter set in `real(${k}$)` against the
+        !! family functions (another route: the assembled second derivative, itself checked against central
+        !! differences in `test_model_fd`): f and df relative to their size, d2f : x for pseudo-random x relative to
+        !! max|d2f| max|x|, and the symmetry y : (d2f : x) = x : (d2f : y) of the product (a property the matrix-free
+        !! solvers need), on the general states, on hydrostatic ones (exact and with a rounding-noise deviator, where
+        !! the transformed stress is noise) and at the zero tensor (f, df and the product exactly 0). Prints the
+        !! worst ratios in eps (gfortran, 2026-11-25: f and df 0, the same operations; the product 13 eps in sp and
+        !! 15 in dp; the symmetry 20 and 18).
+        use muscle_tensors, only : operator(.ddot.)
+        logical :: passed
+        type(park_miller) :: rng
+        type(${tname('3D2Osym', k)}$) :: s, x, y, df, hx, hy, ref, dref
+        type(${tname('3D4O3sym', k)}$) :: ddf
+        type(yield_vonmises_${k}$) :: v
+        #:for m in MODELS
+        type(yield_${m}$_hd_${k}$) :: hd_${m}$
+        #:endfor
+        real(${k}$) :: f, eps, worst(4), e
+        integer :: i, j, l, c
+
+        passed = .true.
+        rng = park_miller(20261125)
+        eps = epsilon(1.0_${k}$)
+        worst = 0.0_${k}$
+        do j = 0, NS + size(PRESSURES) + size(NOISY)
+            if (j == 0) then
+                s%vals = 0.0_${k}$
+            else if (j <= NS) then
+                s = stress_${k}$(j)
+            else
+                s%vals = 0.0_${k}$
+                s%vals(1:3) = real(merge(PRESSURES(min(j - NS, size(PRESSURES))), &
+                                         NOISY(max(j - NS - size(PRESSURES), 1)), j - NS <= size(PRESSURES)), ${k}$)
+            end if
+            do l = 1, 3
+                do c = 1, 6
+                    x%vals(c) = real(rnd(rng), ${k}$)
+                    y%vals(c) = real(rnd(rng), ${k}$)
+                end do
+                #:for m, inst, n in [('vonmises', 'v', '1'), ('hill48', 'hill_' + k + '(i)', 'size(HILLV, 2)'), &
+                    & ('druckerprager', 'dpr_' + k + '(i)', 'size(DPV, 2)'), ('cpb06', 'cpb_' + k + '(i)', 'size(CPBV, 2)'), &
+                    & ('cpb06ex2', 'ex2_' + k + '(i)', 'size(EX2V, 2)'), ('yld2004', 'yld_' + k + '(i)', 'size(YLDV, 2)')]
+                do i = 1, ${n}$
+                    call yield_hess_prepare(${inst}$, s, f, df, hd_${m}$)
+                    hx = yield_hess_apply(${inst}$, hd_${m}$, x)
+                    #:if m != 'druckerprager'
+                    ! (Drucker-Prager has a pressure gradient at the zero tensor: compared with the functions below)
+                    if (j == 0) then
+                        call check_true(passed, '${k}$ hess_prepare/apply ${m}$ at the zero tensor', f == 0.0_${k}$ &
+                                        .and. all(df%vals == 0.0_${k}$) .and. all(hx%vals == 0.0_${k}$))
+                        cycle
+                    end if
+                    #:endif
+                    ddf = yield_ddstress_eq(${inst}$, s)
+                    ref = ddf .ddot. x
+                    dref = yield_dstress_eq(${inst}$, s)
+                    e = abs(f - yield_stress_eq(${inst}$, s))/(max(abs(f), tiny(f))*eps)
+                    worst(1) = max(worst(1), e)
+                    call check_true(passed, '${k}$ hess_prepare f ${m}$', e <= 8.0_${k}$)
+                    e = maxval(abs(df%vals - dref%vals))/(max(maxval(abs(dref%vals)), tiny(f))*eps)
+                    worst(2) = max(worst(2), e)
+                    call check_true(passed, '${k}$ hess_prepare df ${m}$', e <= 8.0_${k}$)
+                    e = maxval(abs(hx%vals - ref%vals))/(max(maxval(abs(ddf%vals))*maxval(abs(x%vals)), tiny(f))*eps)
+                    worst(3) = max(worst(3), e)
+                    call check_true(passed, '${k}$ hess_apply ${m}$', e <= 64.0_${k}$)
+                    hy = yield_hess_apply(${inst}$, hd_${m}$, y)
+                    e = abs((y .ddot. hx) - (x .ddot. hy)) &
+                        /(max(maxval(abs(ddf%vals))*maxval(abs(x%vals))*maxval(abs(y%vals)), tiny(f))*eps)
+                    worst(4) = max(worst(4), e)
+                    call check_true(passed, '${k}$ hess_apply symmetric ${m}$', e <= 64.0_${k}$)
+                end do
+                #:endfor
+            end do
+        end do
+        print '(a, 4f10.2)', '  ${k}$ hess_prepare f, df, hess_apply, symmetry: worst error/eps', worst
+    end function test_hess_apply_${k}$
 
     function test_small_shear_${k}$() result(passed)
         !! CPB06, CPB06ex2 and Yld2004 (f through `ev`, the family generics) at a shear tau e12 far below the old

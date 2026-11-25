@@ -17,7 +17,12 @@ module muscle_yield_anisotropic
     !! - `yield_cpb_terms`, `yield_cpb_hessian`: the principal-value terms of the CPB06 family,
     !!   \( \sum_i (|\lambda_i| - k \lambda_i)^a \) (Cazacu et al., 2006, Eq. 9; Plunkett et al.,
     !!   2008, Eq. 8), and their second derivatives (with the private `yield_cpb_curvature_<k>`, the
-    !!   value chosen at a null principal value).
+    !!   value chosen at a null principal value);
+    !! - `yield_eig_coords(V, s)`, `yield_eig_hess(phi, th, y)`, `yield_eig_back(L, c, V, z)`: the three
+    !!   steps of the second derivative of a criterion applied to a tensor without forming it (the Hessian-vector
+    !!   product of `yield_hess_apply`, D-051): the coordinates of \( \mathbf{L} : \mathbf{x} \) in the
+    !!   eigenbasis of \( \boldsymbol\Sigma \), the Hessian of a symmetric function of the eigenvalues acting
+    !!   there, and the way back, \( \mathbf{L}^T : (\mathbf{V} \mathbf{Z} \mathbf{V}^T) \).
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
@@ -27,6 +32,7 @@ module muscle_yield_anisotropic
 
     public :: yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, yield_lin_pull_back_hessian
     public :: yield_cpb_terms, yield_cpb_hessian
+    public :: yield_eig_coords, yield_eig_hess, yield_eig_back
 
     interface yield_lin_dev_block
         !! Normal block of L = C P_dev from the normal block of C.
@@ -70,6 +76,26 @@ module muscle_yield_anisotropic
         #:endfor
     end interface yield_cpb_hessian
 
+    interface yield_eig_coords
+        !! Coordinates of a symmetric tensor in an eigenbasis.
+        #:for k in REAL_KINDS
+        module procedure yield_eig_coords_3D_${k}$
+        #:endfor
+    end interface yield_eig_coords
+
+    interface yield_eig_hess
+        !! Hessian of a symmetric function of the eigenvalues acting in its eigenbasis.
+        #:for k in REAL_KINDS
+        module procedure yield_eig_hess_${k}$
+        #:endfor
+    end interface yield_eig_hess
+
+    interface yield_eig_back
+        !! L^T : (V Z V^T).
+        #:for k in REAL_KINDS
+        module procedure yield_eig_back_3D_${k}$
+        #:endfor
+    end interface yield_eig_back
 
 contains
     #:for k in REAL_KINDS
@@ -316,6 +342,94 @@ contains
         res%vals(20) = nxz(2)                 ! yyxz
         res%vals(21) = nxz(1)                 ! xxxz
     end function yield_lin_pull_back_hessian_3D_${k}$
+
+    pure function yield_eig_coords_3D_${k}$(V, s) result(y)
+        !! Coordinates of a symmetric tensor \( \mathbf{s} \) in the orthonormal eigenbasis \( \mathbf{V} \) (columns
+        !! \( \mathbf{v}_a \)), \( y_{ab} = \mathbf{v}_a \cdot \mathbf{s}\,\mathbf{v}_b \), in the order 11, 22, 33,
+        !! 12, 23, 13, `real(${k}$)`: the first step of `yield_hess_apply`, with \( \mathbf{s} = \mathbf{L} : \mathbf{x} \)
+        !! computed by the criterion with the same transformation as the stress whose eigenbasis V is (so that the
+        !! product is \( \mathbf{L}^T \mathbb{H} \mathbf{L} \) and symmetric, as the assembled second derivative).
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: V(3,3)
+            !! Orthonormal eigenvectors (columns).
+        type(ten_3D2Osym_${k}$), intent(in) :: s
+            !! Transformed tensor.
+        real(${k}$) :: y(6)
+            !! Coordinates.
+        real(${k}$) :: t(3,3)
+
+        ! t(:,b) = s v_b
+        #:for b in range(1, 4)
+        t(1,${b}$) = s%vals(1)*V(1,${b}$) + s%vals(4)*V(2,${b}$) + s%vals(6)*V(3,${b}$)
+        t(2,${b}$) = s%vals(4)*V(1,${b}$) + s%vals(2)*V(2,${b}$) + s%vals(5)*V(3,${b}$)
+        t(3,${b}$) = s%vals(6)*V(1,${b}$) + s%vals(5)*V(2,${b}$) + s%vals(3)*V(3,${b}$)
+        #:endfor
+        y(1) = V(1,1)*t(1,1) + V(2,1)*t(2,1) + V(3,1)*t(3,1)
+        y(2) = V(1,2)*t(1,2) + V(2,2)*t(2,2) + V(3,2)*t(3,2)
+        y(3) = V(1,3)*t(1,3) + V(2,3)*t(2,3) + V(3,3)*t(3,3)
+        y(4) = V(1,1)*t(1,2) + V(2,1)*t(2,2) + V(3,1)*t(3,2)
+        y(5) = V(1,2)*t(1,3) + V(2,2)*t(2,3) + V(3,2)*t(3,3)
+        y(6) = V(1,1)*t(1,3) + V(2,1)*t(2,3) + V(3,1)*t(3,3)
+    end function yield_eig_coords_3D_${k}$
+
+    pure function yield_eig_hess_${k}$(phi, th, y) result(z)
+        !! The Hessian of a symmetric function \( \phi(\lambda_1, \lambda_2, \lambda_3) \) of the eigenvalues
+        !! acting on a tensor given by its coordinates in the eigenbasis (`spectral_hessian`, de Souza Neto et al.,
+        !! 2008, Box A.6), `real(${k}$)`: \( z_{aa} = \sum_b \phi_{ab} y_{bb} \) and
+        !! \( z_{ab} = \theta_{ab} y_{ab} \) for \( a \ne b \), in the order 11, 22, 33, 12, 23, 13.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: phi(6)
+            !! \( \phi_{ab} = \partial^2\phi/\partial\lambda_a\partial\lambda_b \) in the order 11, 22, 33, 12, 23, 13.
+        real(${k}$), intent(in) :: th(3)
+            !! \( \theta_{12}, \theta_{13}, \theta_{23} \) (`spectral_theta`).
+        real(${k}$), intent(in) :: y(6)
+            !! Coordinates of the argument.
+        real(${k}$) :: z(6)
+            !! Coordinates of the result.
+
+        z(1) = phi(1)*y(1) + phi(4)*y(2) + phi(6)*y(3)
+        z(2) = phi(4)*y(1) + phi(2)*y(2) + phi(5)*y(3)
+        z(3) = phi(6)*y(1) + phi(5)*y(2) + phi(3)*y(3)
+        z(4) = th(1)*y(4)
+        z(5) = th(3)*y(5)
+        z(6) = th(2)*y(6)
+    end function yield_eig_hess_${k}$
+
+    pure function yield_eig_back_3D_${k}$(L, c, V, z) result(res)
+        !! \( \mathbf{L}^T : (\mathbf{V} \mathbf{Z} \mathbf{V}^T) \), with \( \mathbf{Z} \) the symmetric
+        !! matrix of the coordinates z (order 11, 22, 33, 12, 23, 13) in the eigenbasis V, `real(${k}$)`: the last
+        !! step of `yield_hess_apply`.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: L(3,3)
+            !! Normal block of L.
+        real(${k}$), intent(in) :: c(3)
+            !! Shear factors (xy, yz, xz).
+        real(${k}$), intent(in) :: V(3,3)
+            !! Orthonormal eigenvectors (columns).
+        real(${k}$), intent(in) :: z(6)
+            !! Coordinates.
+        type(ten_3D2Osym_${k}$) :: res
+            !! L^T : (V Z V^T).
+        type(ten_3D2Osym_${k}$) :: r
+        real(${k}$) :: w(3,3)
+
+        ! w(i,a) = sum_b V(i,b) Z(b,a)
+        #:for i in range(1, 4)
+        w(${i}$,1) = V(${i}$,1)*z(1) + V(${i}$,2)*z(4) + V(${i}$,3)*z(6)
+        w(${i}$,2) = V(${i}$,1)*z(4) + V(${i}$,2)*z(2) + V(${i}$,3)*z(5)
+        w(${i}$,3) = V(${i}$,1)*z(6) + V(${i}$,2)*z(5) + V(${i}$,3)*z(3)
+        #:endfor
+        r%vals(1) = w(1,1)*V(1,1) + w(1,2)*V(1,2) + w(1,3)*V(1,3)
+        r%vals(2) = w(2,1)*V(2,1) + w(2,2)*V(2,2) + w(2,3)*V(2,3)
+        r%vals(3) = w(3,1)*V(3,1) + w(3,2)*V(3,2) + w(3,3)*V(3,3)
+        r%vals(4) = w(1,1)*V(2,1) + w(1,2)*V(2,2) + w(1,3)*V(2,3)
+        r%vals(5) = w(2,1)*V(3,1) + w(2,2)*V(3,2) + w(2,3)*V(3,3)
+        r%vals(6) = w(1,1)*V(3,1) + w(1,2)*V(3,2) + w(1,3)*V(3,3)
+        res = yield_lin_pull_back_3D_${k}$(L, c, r)
+    end function yield_eig_back_3D_${k}$
     #:endfor
 
 end module muscle_yield_anisotropic

@@ -46,9 +46,10 @@ module muscle_yield_yld2004
     #:endfor
     use muscle_tensors, only : operator(.tdotsym.), operator(*), operator(+), assignment(=)
     use muscle_math_eigen, only : spectral_decomposition
-    use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian
+    use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian, spectral_theta
     use muscle_math_fp, only : fp_exponent, fp_scale
-    use muscle_yield_anisotropic, only : yield_lin_pull_back, yield_lin_pull_back_hessian
+    use muscle_yield_anisotropic, only : yield_lin_pull_back, yield_lin_pull_back_hessian, yield_eig_coords, &
+        & yield_eig_hess, yield_eig_back
     implicit none
     private
 
@@ -56,6 +57,7 @@ module muscle_yield_yld2004
     public :: yield_yld2004_${k}$
     public :: yield_stress_eq_yld2004_3D_${k}$, yield_dstress_eq_yld2004_3D_${k}$, yield_ddstress_eq_yld2004_3D_${k}$
     public :: yield_stress_eq_and_derivatives_yld2004_3D_${k}$, yield_joint_evaluation_yld2004_${k}$
+    public :: yield_yld2004_hd_${k}$, yield_hess_prepare_yld2004_3D_${k}$, yield_hess_apply_yld2004_3D_${k}$
     public :: yield_yld2004_init_${k}$
     #:endfor
     public :: yield_yld2004_init
@@ -76,6 +78,22 @@ module muscle_yield_yld2004
         real(${k}$) :: a
             !! Exponent \( a \ge 2 \) (the analytical derivatives need it).
     end type yield_yld2004_${k}$
+
+    type :: yield_yld2004_hd_${k}$
+        !! Data of the second derivative of Yld2004-18p applied to a tensor (`yield_hess_apply`, D-051),
+        !! `real(${k}$)`: what the two spectral terms and the cross term need, 39 values (the Hessian of the yield
+        !! function itself is never assembled).
+        real(${k}$) :: Vp(3,3), Vpp(3,3)
+            !! Eigenvectors of \( \mathbf{S}^\prime \) and \( \mathbf{S}^{\prime\prime} \) (columns).
+        real(${k}$) :: phip(6), phipp(6)
+            !! \( \partial^2 f/\partial\lambda^\prime_a\partial\lambda^\prime_b \) and the same for
+            !! \( \mathbf{S}^{\prime\prime} \), order 11, 22, 33, 12, 23, 13.
+        real(${k}$) :: thp(3), thpp(3)
+            !! \( \theta_{12}, \theta_{13}, \theta_{23} \) of \( \mathbf{S}^\prime \) and of
+            !! \( \mathbf{S}^{\prime\prime} \) (`spectral_theta`).
+        real(${k}$) :: d2fx(3,3)
+            !! \( \partial^2 f/\partial\lambda^\prime_a\partial\lambda^{\prime\prime}_b \) (the cross term).
+    end type yield_yld2004_hd_${k}$
     #:endfor
 
     interface yield_yld2004_init
@@ -489,6 +507,80 @@ contains
         df = yield_yld2004_gradient_3D_${k}$(prm, Vp, Vpp, dfp, dfpp)
         if (present(ddf)) ddf = yield_yld2004_hessian_3D_${k}$(prm, lp, lpp, Vp, Vpp, dfp, dfpp, d2fp, d2fpp, d2fx)
     end subroutine yield_stress_eq_and_derivatives_yld2004_3D_${k}$
+
+    pure subroutine yield_hess_prepare_yld2004_3D_${k}$(prm, sigma, f, df, hd)
+        !! Equivalent stress, gradient and the data of `yield_hess_apply_yld2004_3D_${k}$` from one spectral
+        !! decomposition of \( \mathbf{S}^\prime \) and one of \( \mathbf{S}^{\prime\prime} \), in `real(${k}$)` (D-051). At a null
+        !! equivalent stress the gradient and the data are zero, as `yield_dstress_eq` and `yield_ddstress_eq`.
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor.
+        real(${k}$), intent(out) :: f
+            !! Equivalent stress.
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! Gradient.
+        type(yield_yld2004_hd_${k}$), intent(out) :: hd
+            !! Data of the product.
+        real(${k}$) :: lp(3), lpp(3), dfp(3), dfpp(3), phi, x(3), y(3), d2fp(3,3), d2fpp(3,3)
+        integer :: e
+
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, sigma), lp, hd%Vp)
+        call spectral_decomposition(yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, sigma), lpp, hd%Vpp)
+        call yield_yld2004_scaled_${k}$(lp, lpp, x, y, e)
+        f = yield_yld2004_equivalent_${k}$(prm, x, y, e)
+        call yield_yld2004_principal_${k}$(prm, x, y, e, phi, dfp, dfpp, d2fp, d2fpp, hd%d2fx)
+        if (phi == 0.0_${k}$) then
+            df%vals = 0.0_${k}$  ! null equivalent stress: zero derivatives
+            hd%phip = 0.0_${k}$
+            hd%phipp = 0.0_${k}$
+            hd%thp = 0.0_${k}$
+            hd%thpp = 0.0_${k}$
+            hd%d2fx = 0.0_${k}$
+            return
+        end if
+        df = yield_yld2004_gradient_3D_${k}$(prm, hd%Vp, hd%Vpp, dfp, dfpp)
+        hd%phip = [d2fp(1,1), d2fp(2,2), d2fp(3,3), d2fp(1,2), d2fp(2,3), d2fp(1,3)]
+        hd%phipp = [d2fpp(1,1), d2fpp(2,2), d2fpp(3,3), d2fpp(1,2), d2fpp(2,3), d2fpp(1,3)]
+        hd%thp = spectral_theta(lp, dfp, d2fp)
+        hd%thpp = spectral_theta(lpp, dfpp, d2fpp)
+    end subroutine yield_hess_prepare_yld2004_3D_${k}$
+
+    pure function yield_hess_apply_yld2004_3D_${k}$(prm, hd, x) result(res)
+        !! The second derivative applied to a tensor without forming it, in `real(${k}$)` (D-051): x is taken to the
+        !! eigenbases of \( \mathbf{S}^\prime \) and \( \mathbf{S}^{\prime\prime} \) (coordinates \( y^\prime \),
+        !! \( y^{\prime\prime} \), `yield_eig_coords`), where the spectral terms act (`yield_eig_hess`) and the cross
+        !! term couples the diagonals,
+        !! \( z^\prime_{aa} \mathrel{+}= \sum_b f_{,a^\prime b^{\prime\prime}}\, y^{\prime\prime}_{bb} \) and
+        !! \( z^{\prime\prime}_{bb} \mathrel{+}= \sum_a f_{,a^\prime b^{\prime\prime}}\, y^\prime_{aa} \);
+        !! then back (`yield_eig_back`). x is transformed as the stress (`yield_yld2004_linear_transform`, the full
+        !! normal block), so that the product is symmetric as the assembled second derivative.
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(yield_yld2004_hd_${k}$), intent(in) :: hd
+            !! Data from `yield_hess_prepare`.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Tensor.
+        type(ten_3D2Osym_${k}$) :: res
+            !! d2f/dsigma2 : x.
+        real(${k}$) :: yp(6), ypp(6), zp(6), zpp(6)
+
+        yp = yield_eig_coords(hd%Vp, yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, x))
+        ypp = yield_eig_coords(hd%Vpp, yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, x))
+        zp = yield_eig_hess(hd%phip, hd%thp, yp)
+        zpp = yield_eig_hess(hd%phipp, hd%thpp, ypp)
+        zp(1) = zp(1) + hd%d2fx(1,1)*ypp(1) + hd%d2fx(1,2)*ypp(2) + hd%d2fx(1,3)*ypp(3)
+        zp(2) = zp(2) + hd%d2fx(2,1)*ypp(1) + hd%d2fx(2,2)*ypp(2) + hd%d2fx(2,3)*ypp(3)
+        zp(3) = zp(3) + hd%d2fx(3,1)*ypp(1) + hd%d2fx(3,2)*ypp(2) + hd%d2fx(3,3)*ypp(3)
+        zpp(1) = zpp(1) + hd%d2fx(1,1)*yp(1) + hd%d2fx(2,1)*yp(2) + hd%d2fx(3,1)*yp(3)
+        zpp(2) = zpp(2) + hd%d2fx(1,2)*yp(1) + hd%d2fx(2,2)*yp(2) + hd%d2fx(3,2)*yp(3)
+        zpp(3) = zpp(3) + hd%d2fx(1,3)*yp(1) + hd%d2fx(2,3)*yp(2) + hd%d2fx(3,3)*yp(3)
+        res = yield_eig_back(prm%Lp, prm%cp_shear, hd%Vp, zp) + yield_eig_back(prm%Lpp, prm%cpp_shear, hd%Vpp, zpp)
+    end function yield_hess_apply_yld2004_3D_${k}$
 
     pure function yield_yld2004_linear_transform_3D_${k}$(L, c_shear, stress) result(res)
         !! S = L : stress in `real(${k}$)` (3D) with L = C P_dev (Barlat et al., 2005, Eq. 11): Sp
