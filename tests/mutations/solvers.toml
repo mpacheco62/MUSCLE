@@ -18,5 +18,5 @@ sources = ["src/solvers/muscle_*.fypp"]
 # of closest_point_time; a Nemat-Nasser-Li case with dt = 1 (case number 0, no records, `converges`) does, and kills its
 # 3 mutations. They still count as `reference` because that case is in the reference test mat_closest_point_time.
 reference = "^materials-mat_(closest_point_perzyna|closest_point_time)$"
-unit = "^materials-mat_(closest_point|closest_point_2|closest_point_lu|cutting_plane|solver_checks|perzyna_checks|cp_anisotropic|cp2_singular|visco_errors|return_mapping)$"
+unit = "^materials-mat_(closest_point|closest_point_2|closest_point_lu|closest_point_cg|cutting_plane|solver_checks|perzyna_checks|cp_anisotropic|cp2_singular|visco_errors|return_mapping)$"
 samples = 50

@@ -5,16 +5,21 @@
 #:include "mat_sequence_common.fypp"
 #:set ANISO = muscle_meta.load_python_file('anisotropic_cases.py', base=_THIS_FILE_)
 #! The single steps with closest_point (cp_*) and again with closest_point_lu (cplu_*: the same models and the same
-#! Newton iteration without inverses, D-052)
+#! Newton iteration without inverses, D-052) and closest_point_cg (cpcg_*: the same iteration, matrix-free, D-053)
 #:assert all(c['material'].startswith('cp_') for c in ANISO.CASES)
-#:set CASES = list(ANISO.CASES) + [dict(c, material='cplu_' + c['material'][3:], name='lu ' + c['name']) for c in ANISO.CASES]
-#! Materials of the single steps; cp_cpb06_swift also runs the large increments
-#:set MATS = sorted({c['material'] for c in CASES})
+#:set CASES = list(ANISO.CASES) + [dict(c, material='cplu_' + c['material'][3:], name='lu ' + c['name']) for c in ANISO.CASES] &
+    & + [dict(c, material='cpcg_' + c['material'][3:], name='cg ' + c['name']) for c in ANISO.CASES]
+#! The large increments, with every closest point (the worst conditioned Newton systems of the tests, where the
+#! conjugate gradients of closest_point_cg are the least accurate)
+#:set LARGE = ['cp_cpb06_swift', 'cplu_cpb06_swift', 'cpcg_cpb06_swift']
+#! Materials of the single steps and of the large increments
+#:set MATS = sorted({c['material'] for c in CASES} | set(LARGE))
 #! dp array constructor of a tuple of literals without kind
 #:set dp_vec = lambda xs: '[' + ', '.join(x + '_dp' for x in xs) + ']'
 
 program test_mat_cp_anisotropic
-    !! Physical checks of the anisotropic yield criteria with the closest point kernel (D-018.18g),
+    !! Physical checks of the anisotropic yield criteria with the closest point kernels (D-018.18g; also
+    !! closest_point_lu, D-052, and closest_point_cg, D-053),
     !! ported from the historical OO tests test_muscle_solver_closest_point_{hill48,cpb06,cpb06ex2,
     !! yld2004,large_increment}.f90, in every kind:
     !!
@@ -82,7 +87,9 @@ program test_mat_cp_anisotropic
         ${dp_vec(c.get('width', ('0.0',) * 6))}$, ${c.get('r', '0.0')}$_dp, &
         ${dp_vec(c.get('ratio', ('0.0', '0.0')))}$, ${c.get('tol_tan', '0.0')}$_dp)
     #:endfor
-    call large_increments_${k}$()
+    #:for m in LARGE
+    call large_increments_${m}$_${k}$()
+    #:endfor
     #:endfor
     if (.not. passed) then
         print '(a)', ' FAIL: test_mat_cp_anisotropic'
@@ -146,9 +153,11 @@ $:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in CASES if 'tol_tan' in c]
     end subroutine step_${m}$_${k}$
     #:endfor
 
-    subroutine large_increments_${k}$()
-        !! Increments of 100, 300 and 1000 yield strains of CPB06 from the virgin state along six
-        !! directions (uniaxial RD and TD, equibiaxial, plane strain RD, shear xy, general), scaled to
+    #:for m in LARGE
+
+    subroutine large_increments_${m}$_${k}$()
+        !! Increments of 100, 300 and 1000 yield strains of CPB06 (material `${m}$`) from the virgin state along
+        !! six directions (uniaxial RD and TD, equibiaxial, plane strain RD, shear xy, general), scaled to
         !! a largest component of lambda times the yield strain, `real(${k}$)` (sp: 100 and 300).
         real(${k}$), parameter :: YOUNG = 70000.0_${k}$, LAMBDAS(3) = [100.0_${k}$, 300.0_${k}$, 1000.0_${k}$]
         #:if k == 'dp'
@@ -165,24 +174,24 @@ $:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in CASES if 'tol_tan' in c]
             1.0_${k}$, 0.0_${k}$, -1.0_${k}$, 0.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
             0.0_${k}$, 0.0_${k}$, 0.0_${k}$, 1.0_${k}$, 0.0_${k}$, 0.0_${k}$, &
             0.8_${k}$, -0.3_${k}$, -0.5_${k}$, 0.4_${k}$, -0.2_${k}$, 0.3_${k}$], [6, 6])
-        type(${muscle_meta.material_type('cp_cpb06_swift', k)}$) :: mat
-        type(${state_t('cp_cpb06_swift', k)}$) :: sn, snp1
+        type(${muscle_meta.material_type(m, k)}$) :: mat
+        type(${state_t(m, k)}$) :: sn, snp1
         type(${tname('3D2Osym', k)}$) :: strain, stress, law, flow
         type(${tname('3D4O2sym', k)}$) :: tangent
         real(${k}$) :: sigma_y0, eps_y, ep(6)
         character(len=64) :: label
         integer :: i, j, status, iters
 
-        call make_cp_cpb06_swift_${k}$(solver_case(0, 'cp_cpb06_swift', 'lin1000', '', 'swift_li', 'cpb06-li', 200, &
+        call make_${m}$_${k}$(solver_case(0, '${m}$', 'lin1000', '', 'swift_li', 'cpb06-li', 200, &
             0.0_dp, 0.0_dp), mat)
         call elas_linear_init(mat%elas, young=YOUNG, poisson=0.33_${k}$, status=status)
-        call check_true(passed, 'large increments: elastic init (${k}$)', status == STATUS_OK)
+        call check_true(passed, '${m}$ large increments: elastic init (${k}$)', status == STATUS_OK)
         sigma_y0 = hard_stress(mat%hard, 0.0_${k}$)
         eps_y = sigma_y0/YOUNG
-        sn = ${state_t('cp_cpb06_swift', k)}$()
+        sn = ${state_t(m, k)}$()
         do j = 1, 6
             do i = 1, NLAMBDA
-                write(label, '(a, i0, a, f6.0)') 'cpb06 large increment, direction ', j, ', lambda ', LAMBDAS(i)
+                write(label, '(a, i0, a, f6.0)') '${m}$ large increment, direction ', j, ', lambda ', LAMBDAS(i)
                 strain%vals = (LAMBDAS(i)*eps_y/maxval(abs(D(:, j))))*D(:, j)
                 call mat_update(mat, strain, 0.0_${k}$, sn, snp1, stress, tangent, status, iters)
                 call check_true(passed, trim(label) // ' converged (${k}$)', status == STATUS_OK)
@@ -198,7 +207,8 @@ $:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in CASES if 'tol_tan' in c]
                     sqrt(sum(ep(1:3)**2) + 2.0_${k}$*sum(ep(4:6)**2)), TOL_TRACE_${k}$)
             end do
         end do
-    end subroutine large_increments_${k}$
+    end subroutine large_increments_${m}$_${k}$
+    #:endfor
     #:endfor
 
 end program test_mat_cp_anisotropic

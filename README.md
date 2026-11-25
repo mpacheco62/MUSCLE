@@ -46,6 +46,8 @@ Voigt-notation tensor algebra with manually unrolled loops, in 3D and 2D, `sp` a
 *   **Monolithic closest point** (`closest_point_2`, 7x7 Newton with an own LU solver).
 *   **Closest point without inverses** (`closest_point_lu`: the iterates of `closest_point` from one bordered 7x7
     system per iteration).
+*   **Matrix-free closest point** (`closest_point_cg`: the same iteration, each correction by conjugate gradients
+    with Hessian-vector products of the criterion; for GPUs).
 *   **Cutting plane** (explicit, continuum elastoplastic tangent).
 
 Which one to declare a material with:
@@ -54,6 +56,7 @@ Which one to declare a material with:
 |--------|-----|------------|---------|------|
 | `closest_point` | rate-independent plasticity | scalar Newton on the plastic multiplier \(\Delta\gamma \ge 0\), damped (x0.75) when it does not converge | consistent | **the default**: quadratic convergence |
 | `closest_point_lu` | rate-independent plasticity | the Newton iteration of `closest_point` (the same iterates up to rounding), each correction from one 7x7 system (own LU) instead of two 6x6 inverses | consistent, the same as `closest_point`, without inverting the elasticity | **the fastest closest point on the CPU** (5 to 21 % less time than `closest_point`, every criterion, D-052) |
+| `closest_point_cg` | rate-independent plasticity | the Newton iteration of `closest_point`, each correction from two conjugate gradient solutions with Hessian-vector products of the criterion (no matrix formed, D-051) | consistent, the same as `closest_point_lu` | **GPUs**: smaller kernels and fewer live values; on the Intel UHD 770 5 to 6 times faster than `closest_point` for CPB06ex2 and Yld2004, whose `closest_point` kernels exceed the size at which the GPU compiler stops inlining (Yld2004: 2 times faster without that limit; D-053); on the CPU slower than `closest_point_lu` |
 | `closest_point_2` | rate-independent plasticity | monolithic 7x7 Newton on the plastic strain and \(\Delta\gamma\), own LU, no \(\Delta\gamma \ge 0\) | the same as `closest_point` | compatibility with the historical solver; without the constraint \(\Delta\gamma \ge 0\) it may converge to a step with \(\Delta\gamma < 0\), prefer `closest_point` |
 | `cutting_plane` | rate-independent plasticity | explicit corrections (at most 100), no linear system | continuum, not consistent | cheap iterations; fits an explicit FE code (no tangent needed); with an implicit one the global convergence is slower |
 | `closest_point_perzyna` | overstress viscoplasticity (Perzyna, Chaboche) | Newton with a line search | consistent | a material with an overstress (`os`) law |

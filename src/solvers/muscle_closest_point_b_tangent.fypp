@@ -1,0 +1,92 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! Consistent algorithmic tangent of the closest point return mappings that do not invert the elasticity:
+#! the `TANGENT` procedure of the material, shared by the bodies of `closest_point_lu`
+#! (src/solvers/muscle_closest_point_lu_body.fypp, D-052) and `closest_point_cg`
+#! (muscle_closest_point_cg_body.fypp, D-053). The same tangent as muscle_closest_point_tangent.fypp (that of
+#! `closest_point`), written with one 6x6 inverse of B = I + dgamma ddf:C instead of the inverses of C and of
+#! C^-1 + dgamma ddf. Included by src/materials/muscle_material.fypp (after the solver body) with its variables
+#! set (`k`, `MAT`, `MAT_T`, `ELAS_T`, `TANGENT`, `S2`, `C4`, `T4`); the material type has the components `yield`
+#! and `hard`. Preprocessed alone (FORD preprocesses every template) it expands to nothing.
+#:if defined('MAT')
+    pure subroutine ${TANGENT}$(mat, elas, strain, state_n, state_np1, tangent)
+        !! Consistent algorithmic tangent of the closest point return mappings without inverses of material
+        !! `${MAT.name}$` at the state `state_np1`, `real(${k}$)`: the tangent of `closest_point`,
+        !! \( \mathbb{C}^{ep} = \mathbb{H} - (\mathbb{H}:\mathbf{n})\otimes(\mathbf{n}:\mathbb{H})
+        !! /(\mathbf{n}:\mathbb{H}:\mathbf{n} + d\sigma_y/d\epsilon_p) \), with
+        !! \( \mathbb{H} = \mathbb{C}:\mathbb{B}^{-1} \), \( \mathbb{B} = \mathbb{I} +
+        !! \Delta\gamma\,(\partial^2 f/\partial\boldsymbol\sigma^2):\mathbb{C} \) (one 6x6 inverse; the elasticity
+        !! is not inverted). The elastic tangent when \( |\Delta\gamma| \le \) `DGAMMA_MIN_${k}$`, or when
+        !! \( \mathbb{B} \) is singular.
+        use muscle_tensors, only : operator(-), operator(.ddot.), assignment(=)
+        use muscle_elas_laws, only : elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_dstress_eq, yield_ddstress_eq
+        use muscle_hard_laws, only : hard_dstress_dep
+        use muscle_kinds, only : DGAMMA_MIN_${k}$
+        use muscle_math_inverses, only : M66INV
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material.
+        type(${ELAS_T}$), intent(in) :: elas
+            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
+        type(${S2}$), intent(in) :: strain
+            !! Total strain at \( t_{n+1} \).
+        type(plastic_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(plastic_state_${k}$), intent(in) :: state_np1
+            !! State at \( t_{n+1} \).
+        type(${T4}$), intent(out) :: tangent
+            !! Consistent tangent.
+
+        type(${S2}$) :: df, e_basis, col, m
+        type(${C4}$) :: elas_tan, ddf
+        real(${k}$) :: dhard, dgamma, den, bmat(6,6), binv(6,6)
+        logical :: ok
+        integer :: i, j
+
+        dgamma = state_np1%strain_pf - state_n%strain_pf
+        elas_tan = elas_dstress_dstrain(elas, strain - state_np1%strain_p)
+        if (abs(dgamma) <= DGAMMA_MIN_${k}$) then
+            tangent = elas_tan
+            return
+        end if
+
+        dhard = hard_dstress_dep(mat%hard, state_np1%strain_pf)
+        df = yield_dstress_eq(mat%yield, state_np1%stress)
+        ddf = yield_ddstress_eq(mat%yield, state_np1%stress)
+
+        ! B in the Voigt components of the storage (column j: its action on the unit component e_j)
+        do j = 1, 6
+            e_basis%vals = 0.0_${k}$
+            e_basis%vals(j) = 1.0_${k}$
+            col = ddf .ddot. (elas_tan .ddot. e_basis)
+            bmat(:, j) = dgamma*col%vals
+            bmat(j, j) = bmat(j, j) + 1.0_${k}$
+        end do
+        call M66INV(bmat, binv, ok)
+        if (.not. ok) then
+            tangent = elas_tan
+            return
+        end if
+
+        ! H = C:B^-1: its action on e_j is C:(B^-1 e_j); the stored entry is that action divided by the
+        ! weight of component j in the contraction (1 normal, 2 shear)
+        do j = 1, 6
+            e_basis%vals = binv(:, j)
+            col = elas_tan .ddot. e_basis
+            if (j > 3) col%vals = 0.5_${k}$*col%vals
+            tangent%vals(:, j) = col%vals
+        end do
+        ! H:n = C:(B^-1 n), B^-1 acting on the stored components of n as on those of the unit e_j
+        do i = 1, 6
+            e_basis%vals(i) = binv(i, 1)*df%vals(1) + binv(i, 2)*df%vals(2) + binv(i, 3)*df%vals(3) &
+                + binv(i, 4)*df%vals(4) + binv(i, 5)*df%vals(5) + binv(i, 6)*df%vals(6)
+        end do
+        m = elas_tan .ddot. e_basis
+        den = (df .ddot. m) + dhard
+        do j = 1, 6
+            tangent%vals(:, j) = tangent%vals(:, j) - m%vals*(m%vals(j)/den)
+        end do
+    end subroutine ${TANGENT}$
+#:endif

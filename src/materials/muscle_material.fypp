@@ -293,6 +293,9 @@ contains
 #:elif MAT.solver == 'closest_point_lu'
 
 #:include "../solvers/muscle_closest_point_lu_body.fypp"
+#:elif MAT.solver == 'closest_point_cg'
+
+#:include "../solvers/muscle_closest_point_cg_body.fypp"
 #:elif MAT.solver == 'cutting_plane'
 
 #:include "../solvers/muscle_cutting_plane_body.fypp"
@@ -300,10 +303,14 @@ contains
 #:stop 'muscle_material.fypp: no body for solver {}'.format(MAT.solver)
 #:endif
 
-#! Consistent tangent shared by closest_point and closest_point_2 (closest_point_lu writes its own) (one include level).
+#! Consistent tangents shared by two solvers each (one include level): closest_point and closest_point_2; the
+#! solvers that do not invert the elasticity, closest_point_lu and closest_point_cg
 #:if MAT.solver in ('closest_point', 'closest_point_2')
 
 #:include "../solvers/muscle_closest_point_tangent.fypp"
+#:elif MAT.solver in ('closest_point_lu', 'closest_point_cg')
+
+#:include "../solvers/muscle_closest_point_b_tangent.fypp"
 #:endif
 
 #:include "muscle_material_kernel.fypp"

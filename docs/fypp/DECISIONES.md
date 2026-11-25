@@ -2207,3 +2207,45 @@ la tangente), 1 equivalente (`strain + strain_p` en la tangente elástica, que n
 lineal ni con la congelada) y 5 en las salvaguardas del Newton copiadas de `closest_point` (el factor 0,75 de las iteraciones
 10/20/30/40 y del recorte, el valor del recorte): cambian el camino de las iteraciones, no la solución convergida que comprueban
 los tests.
+
+## D-053 — Solver `closest_point_cg`: el closest point sin matriz, por gradiente conjugado (2026-11-25)
+
+**Contexto:** en la GPU Intel (UHD 770, sp) los closest point con criterios espectrales son lentos porque cada iteración arma
+la segunda derivada del criterio (21 valores, más sus pull-backs) y la matriz del Newton: muchos valores vivos, spill y
+kernels grandes; sobre el tamaño en que IGC deja de expandir en línea (PROBLEMAS) el kernel se vuelve mucho más lento y
+algunas variantes dan resultados erróneos. El experimento `wt-spec` (2026-11-24/25) probó un closest point sin matriz.
+**Decisión del usuario (2026-11-25, plan de la rama `perf/closest-point-cg`):** solver nuevo `closest_point_cg` (prefijo
+`cpcg`), sin cambiar `closest_point`. La iteración es la de `closest_point`; la corrección
+\( \delta\Delta\gamma = (f - (\mathbb{C}:\mathbf{n}):\mathbf{y}_r)/((\mathbb{C}:\mathbf{n}):\mathbf{y}_n + h) \),
+\( \delta\boldsymbol\varepsilon^p = \mathbf{y}_r + \delta\Delta\gamma\,\mathbf{y}_n \) sale de dos soluciones del sistema
+simétrico y definido positivo (para un criterio convexo)
+\( (\mathbb{C} + \Delta\gamma\,\mathbb{C}:\partial^2 f/\partial\boldsymbol\sigma^2:\mathbb{C}):\mathbf{y} = \mathbb{C}:\mathbf{b} \),
+\( \mathbf{b} = \mathbf{r}, \mathbf{n} \), por gradiente conjugado con los productos `yield_hess_apply` (D-051): ni la segunda
+derivada ni ninguna matriz se arman en la iteración. Como máximo 12 pasos (6 en aritmética exacta; el redondeo puede retrasar
+la terminación) hasta un residuo relativo de 8 ε: el Newton admite una corrección inexacta. La tangente consistente es la de
+`closest_point_lu` (una inversa 6x6, la segunda derivada armada una vez por punto), que pasa a un include compartido por los
+dos, `muscle_closest_point_b_tangent.fypp` (como `muscle_closest_point_tangent.fypp` con `closest_point` y
+`closest_point_2`).
+**Medido (en el experimento; cifras no repetidas en esta rama):** GPU Intel UHD 770 (sp, 100 000 puntos, banco de lote):
+von Mises 2,2 ms, Hill48 4,1, Drucker-Prager 3,6, CPB06 6,3 (Voce) y 9,0 (Swift), CPB06ex2 21,8 (115 con `closest_point`),
+Yld2004 48 (282 con `closest_point`); kernels entre 35 y 45 % más chicos que los de `closest_point`, ninguno sobre el
+umbral de recorte de IGC. Los de `closest_point` con CPB06ex2 y Yld2004 sí lo superan, y eso explica parte de la
+diferencia: sin el umbral (`IGC_KernelTotalSizeThreshold`, sólo para diagnosticar) `closest_point` con Yld2004 tarda 98 ms. CPU
+(gfortran Release, dp, un hilo): entre 1,0 y 2,3 veces el tiempo de `closest_point_lu` (Hill48 60,8 contra 26,6 ms, Yld2004
+575 contra 332). En una NVIDIA RTX 5060 (gfortran 15 con offload `nvptx`, tiempos absolutos no representativos: el código de
+gfortran usa un carril por warp) el orden se repite: el más rápido con CPB06 (−28 % frente a `closest_point_lu`), CPB06ex2
+(−33 %) y Yld2004 (−24 %).
+**Consecuencias:** en la GPU, `closest_point_cg` es el closest point recomendado; en la CPU, `closest_point_lu` (README). El
+registro de prueba cubre cada criterio y ley de endurecimiento con `cpcg` y el caso Maxwell; tests: secuencia propia, retorno
+radial y convergencia cuadrática (`mat_return_mapping`), pasos anisótropos de `mat_cp_anisotropic` y un test `target`
+(`cpcg_yld2004_swift`, que además ejecuta en el dispositivo los productos Hessiana-vector de D-051). ESTADO_OPTIMO §7.8 queda
+cerrado con él. Los incrementos grandes de CPB06 (100 a 1000 deformaciones de fluencia, los sistemas peor condicionados
+de los tests) de `mat_cp_anisotropic` corren ahora con `cp`, `cplu` y `cpcg`. El gradiente conjugado se detiene en una
+dirección con \( \mathbf{p}:\mathbb{K}:\mathbf{p} \le 0 \) (imposible con un criterio convexo y \( \Delta\gamma \ge 0 \)).
+**Verificación:** CPU Debug `sp;dp`: Windows gfortran 139/139 e ifx 139/139; Linux (WSL) gfortran 139/139 e ifx 139/139
+(`tools/check.sh --quick --ifx`), lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 52/52 tests `target`, con `cpcg_yld2004_swift`
+en sp. Mutaciones del cuerpo (`tools/mutation_check.py solvers --only ...`, 48): 30
+detectadas, 8 no compilan y 10 sobreviven: 6 que sólo cambian algo en empates (`<`/`<=` en la convergencia del Newton, en el
+predictor, en el recorte, en la parada del gradiente conjugado y en la guarda de \( \mathbf{p}:\mathbb{K}:\mathbf{p} \)), 1
+equivalente (la tangente elástica no depende de la deformación) y 3 en las salvaguardas del Newton de `closest_point` (el factor
+0,75 del recorte y el valor del recorte, que cambian el camino y no la solución). Las de `CG_MAX` y `CG_TOL` se detectan.
