@@ -2087,3 +2087,43 @@ tabla de solvers ya no lo cita (sigue recomendando `closest_point` por la falta 
 ella, CPU Debug `sp;dp`: Windows gfortran 133/133 e ifx 133/133; Linux (WSL) gfortran 133/133 e ifx 133/133
 (`tools/check.sh --quick --ifx`), lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 50/50 tests `target`. Mutaciones de las
 dos líneas nuevas (`tools/mutation_check.py solvers --only ...`): 4 de 4 detectadas por los unitarios.
+
+## D-050 — Descomposición espectral sin índices en tiempo de ejecución y Hessiana espectral con la identidad simétrica (2026-11-25)
+
+**Contexto:** el experimento de rutinas espectrales (2026-11-23/24, worktree aparte; notas locales no versionadas, las cifras que sostienen la decisión están aquí) midió
+alternativas a `spectral_decomposition` y `spectral_hessian`, solas en CPU y en la GPU Intel (UHD 770, sp), y luego dentro
+de los kernels de material. Dos problemas de dispositivo: (1) en `spectral_decomposition`, las columnas y entradas elegidas
+en tiempo de ejecución (`V(:,a)`, `l(b+1)`, el ordenamiento con intercambios) hacen que IGC guarde `V` y `l` en memoria
+privada, direccionada con un puntero de 64 bits por carril; (2) `spectral_hessian` sumaba seis productos `.tdotsym.` de
+cuarto orden: unos 128 registros y SIMD8.
+**Decisión del usuario (2026-11-25, plan de la rama `perf/closest-point-cg`):**
+- `spectral_decomposition`: las mismas operaciones con índices literales y selecciones (`merge`): el autovector más
+  separado y el par restante se ubican con `merge` según `top`, y el orden descendente es una red de tres
+  comparaciones-intercambios (`order_pair`, sin intercambio en empates). Mismos resultados: bit a bit con gfortran (-O0 y -O2, sp y dp) en 1,1 millones
+  de casos por kind (empates, autovalores repetidos, escalas 1e-10 a 1e10, NaN), sin trampas de punto flotante nuevas
+  (revisión del paso); en el experimento, memoria privada 0 y −32 % de tiempo en GPU medida sola (cifras del worktree, no
+  repetidas en esta rama).
+- `spectral_hessian`: el término del par (1,3) se escribe con la identidad
+  \( \sum_a E_a \otimes E_a + 2\sum_{a<b} N_{ab} \otimes N_{ab} = I_{sym} \): cinco productos por componente almacenada,
+  desenrollado desde el layout, sin temporales de cuarto orden. Difiere de la suma explícita en hasta 9 ε relativo a la entrada
+  mayor (2e5 casos dp con autovalores repetidos); contra cuádruple precisión 3,6 ε, el mismo orden que la anterior. En el
+  experimento: 1,3–1,6 veces más rápida en CPU y, en GPU, SIMD16 con ~70 registros en lugar de SIMD8 con 128.
+- `spectral_theta` (pública): los tres factores \( \theta_{ab} \) (diferencia dividida o su límite con `REPEATED_TOL`),
+  para los criterios que arman la Hessiana en otra base (la Hessiana aplicada de los solvers sin matriz), de modo que el
+  umbral de autovalores repetidos quede en un solo lugar. Su primer usuario llega con la Hessiana aplicada (paso siguiente).
+**Consecuencias:** cambian en pocos ε las Hessianas de CPB06, CPB06ex2 y Yld2004 (y con ellas los iterados del Newton, dentro
+de su tolerancia); nada cambia de API. El límite de precisión de \( \theta_{ab} \) cerca de `REPEATED_TOL` (≈3e-5 relativo en
+sp, 1e-8 en dp) sigue igual y queda documentado en la rutina, con dos mejoras posibles no hechas (umbral \( \sqrt\epsilon \),
+diferencia dividida sin cancelación dada por el criterio). Descartadas en el experimento: Cayley-Hamilton para la Hessiana
+(1e11–1e15 ε) y las variantes que no mejoraban la GPU.
+**Verificación:** test nuevo de `spectral_theta` (diferencia dividida, límite dentro de la banda, justo fuera, banda relativa a
+los autovalores extremos y no al intermedio, tensor nulo; contra las fórmulas en dp) en `math-math_spectral_kinds`; los tests
+existentes de la descomposición y de la Hessiana (\( \mathrm{tr}(S^3) \) contra su forma cerrada, a varias escalas y
+multiplicidades) pasan sin cambiar tolerancias. CPU Debug `sp;dp`: Windows gfortran 133/133 e ifx 133/133; Linux (WSL)
+gfortran 133/133 e ifx 133/133 (`tools/check.sh --quick --ifx`), lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 50/50
+tests `target`. Mutaciones de las líneas cambiadas (`tools/mutation_check.py math --only ...`, 184): 169 detectadas por los
+unitarios; 3 sólo por `math_reference` (comparaciones `>=`/`>` de la descomposición que sólo cambian el resultado en empates
+exactos, los que esa referencia guarda); 12 equivalentes: 5 divisores de la rama que `merge` descarta, 4 que sólo cambian
+algo en empates (`>=`/`>` y `<`/`<=` de selecciones y del ordenamiento) o en el límite del umbral `small`, el umbral `small`
+2 → 3 (las dos fórmulas de la tangente coinciden ahí) y `pq/diff` → `pq*diff` en esa rama (|tg| ≤ 1e-15, por debajo del
+redondeo); y `l(1) + l(2)` en lugar de `l(1) - l(2)` en `top`, igual porque la traza del desviador es 0.

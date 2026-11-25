@@ -65,7 +65,7 @@ program test_math_spectral_kinds
     use muscle_tensors
     use muscle_math_eigen, only : eigenvals, spectral_decomposition
     use muscle_math_spectral_derivs, only : dEigenvalues_dTensor, d2Eigenvalues_dTensor2, spectral_gradient, &
-        spectral_hessian
+        spectral_hessian, spectral_theta
     use muscle_test_utils, only : check_true
     use muscle_test_helpers, only : park_miller, rnd, rotation_ref, eye, record
     implicit none
@@ -85,6 +85,7 @@ program test_math_spectral_kinds
     #:for i, k in enumerate(REAL_KINDS)
     call record(test_scales_${k}$(), ${i + 1}$, 'spectral routines at several scales ${k}$', code)
     call record(test_zero_${k}$(), ${i + 11}$, 'spectral routines at the zero tensor ${k}$', code)
+    call record(test_theta_${k}$(), ${i + 21}$, 'spectral_theta branches ${k}$', code)
     #:endfor
     if (code /= 0) stop code
 
@@ -455,7 +456,79 @@ contains
         shess = spectral_hessian(lam, v, [0.0_${k}$, 0.0_${k}$, 0.0_${k}$], reshape([(1.0_${k}$, a = 1, 9)], [3, 3]))
         call check_true(passed, '${k}$ zero: spectral_hessian finite', all(abs(shess%vals) < huge(1.0_${k}$)))
     end function test_zero_${k}$
+
+    function test_theta_${k}$() result(passed)
+        !! `spectral_theta` in `real(${k}$)`: the divided difference for separated eigenvalues, its limit
+        !! (phi_aa + phi_bb)/2 - phi_ab inside the band REPEATED_TOL max(|lam_1|, |lam_3|) and at the zero tensor
+        !! (no division by zero), checked against the formulas evaluated here in dp.
+        logical :: passed
+        real(${k}$), parameter :: T = ${REPEATED_TOL[k]}$_${k}$
+        real(${k}$) :: lam(3), dphi(3), d2phi(3,3), th(3)
+        real(dp) :: g(3), h(3,3), lim(3), e(3), tol
+
+        passed = .true.
+        dphi = [0.7_${k}$, -0.2_${k}$, 0.4_${k}$]
+        d2phi = reshape([1.5_${k}$, 0.25_${k}$, -0.5_${k}$, 0.25_${k}$, 2.0_${k}$, 0.75_${k}$, -0.5_${k}$, 0.75_${k}$, &
+                         3.0_${k}$], [3, 3])
+        g = real(dphi, dp)
+        h = real(d2phi, dp)
+        lim = [0.5_dp*(h(1,1) + h(2,2)) - h(1,2), 0.5_dp*(h(1,1) + h(3,3)) - h(1,3), &
+               0.5_dp*(h(2,2) + h(3,3)) - h(2,3)]
+        tol = 4.0_dp*real(epsilon(1.0_${k}$), dp)
+
+        ! Separated: the three divided differences
+        lam = [3.0_${k}$, 1.0_${k}$, -2.0_${k}$]
+        th = spectral_theta(lam, dphi, d2phi)
+        e = ddiff(real(lam, dp), g)
+        call check_true(passed, '${k}$ theta: separated, divided differences', all(abs(real(th, dp) - e) <= tol*abs(e)))
+
+        ! Gap of (1,2) inside the band (2 T = tolerance for max |lam| = 2): limit for (1,2) only
+        lam = [2.0_${k}$, 2.0_${k}$ - T, -1.0_${k}$]
+        th = spectral_theta(lam, dphi, d2phi)
+        e = ddiff(real(lam, dp), g)
+        call check_true(passed, '${k}$ theta: (1,2) in the band -> limit', abs(real(th(1), dp) - lim(1)) <= tol*abs(lim(1)))
+        call check_true(passed, '${k}$ theta: (1,3), (2,3) outside -> divided differences', &
+                        all(abs(real(th(2:3), dp) - e(2:3)) <= tol*abs(e(2:3))))
+
+        ! Gap of (1,2) just outside the band (3 T > 2 T): divided difference
+        lam = [2.0_${k}$, 2.0_${k}$ - 3.0_${k}$*T, -1.0_${k}$]
+        th = spectral_theta(lam, dphi, d2phi)
+        e = ddiff(real(lam, dp), g)
+        call check_true(passed, '${k}$ theta: (1,2) outside the band -> divided difference', &
+                        abs(real(th(1), dp) - e(1)) <= tol*abs(e(1)))
+
+        ! Gap of (2,3) inside the band with |lam_3| > |lam_1| (tolerance 2 T from lam_3, gap 1.5 T): limit for (2,3)
+        ! only; the band is relative to max(|lam_1|, |lam_3|), not to |lam_1|
+        lam = [1.0_${k}$, -2.0_${k}$ + 1.5_${k}$*T, -2.0_${k}$]
+        th = spectral_theta(lam, dphi, d2phi)
+        e = ddiff(real(lam, dp), g)
+        call check_true(passed, '${k}$ theta: (2,3) in the band -> limit', abs(real(th(3), dp) - lim(3)) <= tol*abs(lim(3)))
+        call check_true(passed, '${k}$ theta: (1,2), (1,3) outside -> divided differences', &
+                        all(abs(real(th(1:2), dp) - e(1:2)) <= tol*abs(e(1:2))))
+
+        ! The band uses the extreme eigenvalues, not the middle one: |lam_1| largest and (2,3) at 1.5 T near a small
+        ! lam_2, then |lam_3| largest and (1,2) at 1.5 T near a small lam_2 (with |lam_2| the band would be 4 times
+        ! narrower and both pairs would take the divided difference)
+        lam = [2.0_${k}$, 0.5_${k}$, 0.5_${k}$ - 1.5_${k}$*T]
+        th = spectral_theta(lam, dphi, d2phi)
+        call check_true(passed, '${k}$ theta: (2,3) in the band of |lam_1|', abs(real(th(3), dp) - lim(3)) <= tol*abs(lim(3)))
+        lam = [0.5_${k}$ + 1.5_${k}$*T, 0.5_${k}$, -2.0_${k}$]
+        th = spectral_theta(lam, dphi, d2phi)
+        call check_true(passed, '${k}$ theta: (1,2) in the band of |lam_3|', abs(real(th(1), dp) - lim(1)) <= tol*abs(lim(1)))
+
+        ! Zero tensor: every pair takes the limit, finite
+        lam = 0.0_${k}$
+        th = spectral_theta(lam, dphi, d2phi)
+        call check_true(passed, '${k}$ theta: zero tensor -> limits', all(abs(real(th, dp) - lim) <= tol*abs(lim)))
+    end function test_theta_${k}$
     #:endfor
+
+    pure function ddiff(l, g) result(r)
+        !! The divided differences (g_a - g_b)/(l_a - l_b) of the pairs (1,2), (1,3), (2,3).
+        real(dp), intent(in) :: l(3), g(3)
+        real(dp) :: r(3)
+        r = [(g(1) - g(2))/(l(1) - l(2)), (g(1) - g(3))/(l(1) - l(3)), (g(2) - g(3))/(l(2) - l(3))]
+    end function ddiff
 
     subroutine regimes(drel, thr, regime, nsing, good)
         !! Predicted branch of each root: 1 distinct (drel > 3 thr), 2 singular (drel < thr/3),

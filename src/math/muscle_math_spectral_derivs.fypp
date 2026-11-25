@@ -49,13 +49,15 @@ module muscle_math_spectral_derivs
     public :: d2Eigenvalues_dTensor2
     public :: spectral_gradient
     public :: spectral_hessian
+    public :: spectral_theta
     public :: dsquare
     #:for k in REAL_KINDS
     public :: dEigenvalues_dTensor_${k}$, d2Eigenvalues_dTensor2_${k}$
-    public :: spectral_gradient_${k}$, spectral_hessian_${k}$, dsquare_${k}$
+    public :: spectral_gradient_${k}$, spectral_hessian_${k}$, spectral_theta_${k}$, dsquare_${k}$
     #:endfor
 
-    #:for name in ['dEigenvalues_dTensor', 'd2Eigenvalues_dTensor2', 'spectral_gradient', 'spectral_hessian', 'dsquare']
+    #:for name in ['dEigenvalues_dTensor', 'd2Eigenvalues_dTensor2', 'spectral_gradient', 'spectral_hessian', 'spectral_theta', &
+        & 'dsquare']
     interface ${name}$
         module procedure ${kspecifics('{0}_{1}', name)}$
     end interface ${name}$
@@ -267,62 +269,136 @@ contains
     end function spectral_gradient_${k}$
 
     pure function spectral_hessian_${k}$(lam, V, dphi, d2phi) result(res)
-        !! Hessian of phi(T) = phi(lam_1, lam_2, lam_3) (de Souza Neto et al., 2008, Box A.6;
-        !! Miehe, 1998, Eq. 10), in `real(${k}$)`:
-        !! d2phi/dT2 = sum_ab phi_ab E_a (x) E_b + sum_(a<b) 2 theta_ab N_ab (x) N_ab,
-        !! with E_a = v_a (x) v_a, N_ab = sym(v_a (x) v_b) and
-        !! theta_ab = (phi_a - phi_b)/(lam_a - lam_b). For (nearly) repeated eigenvalues
-        !! theta_ab takes its limit 1/2 (phi_aa + phi_bb) - phi_ab.
-        !! Called by the CPB06 and Yld2004-18p Hessians.
+        !! Hessian of a symmetric function of the eigenvalues, \( \phi(T) = \phi(\lambda_1, \lambda_2, \lambda_3) \),
+        !! in `real(${k}$)`, from its eigenvalue derivatives \( \phi_a = \partial\phi/\partial\lambda_a \) and
+        !! \( \phi_{ab} = \partial^2\phi/\partial\lambda_a\partial\lambda_b \), supplied by the caller (the yield criterion).
+        !! Called by the CPB06, CPB06ex2 and Yld2004-18p Hessians.
+        !!
+        !! **Where it comes from.** With \( E_a = v_a \otimes v_a \) and \( N_{ab} = \mathrm{sym}(v_a \otimes v_b) \)
+        !! (orthonormal eigenvectors \( v_a \)), the derivative of the eigenprojections gives
+        !! (de Souza Neto et al., 2008, Box A.6; Miehe, 1998, Eq. 10)
+        !!
+        !! \[ \frac{\partial^2\phi}{\partial T^2} = \sum_{a,b} \phi_{ab}\, E_a \otimes E_b
+        !!    + \sum_{a \lt b} 2\theta_{ab}\, N_{ab} \otimes N_{ab}, \qquad
+        !!    \theta_{ab} = \frac{\phi_a - \phi_b}{\lambda_a - \lambda_b}, \]
+        !!
+        !! and, when \( |\lambda_a - \lambda_b| \le \) `REPEATED_TOL` \( \max(|\lambda_1|, |\lambda_3|) \), the limit
+        !! \( \theta_{ab} = \tfrac12(\phi_{aa} + \phi_{bb}) - \phi_{ab} \).
+        !!
+        !! **Algorithm.** The six eigenbasis tensors resolve the symmetric identity,
+        !! \( \sum_a E_a \otimes E_a + 2\sum_{a \lt b} N_{ab} \otimes N_{ab} = I_{sym} \), so the \( N_{13} \) term is
+        !! written through the others:
+        !!
+        !! \[ \frac{\partial^2\phi}{\partial T^2} = \sum_{a,b} (\phi_{ab} - \theta_{13}\delta_{ab})\, E_a \otimes E_b
+        !!    + 2(\theta_{12} - \theta_{13})\, N_{12} \otimes N_{12} + 2(\theta_{23} - \theta_{13})\, N_{23} \otimes N_{23}
+        !!    + \theta_{13}\, I_{sym}. \]
+        !!
+        !! 1. \( \theta_{12}, \theta_{13}, \theta_{23} \) (divided difference or its limit, `spectral_theta`).
+        !! 2. \( E_a \), \( N_{12} \), \( N_{23} \) in Voigt storage, and
+        !!    \( G_a = \sum_b (\phi_{ab} - \theta_{13}\delta_{ab}) E_b \),
+        !!    \( S_{12} = 2(\theta_{12} - \theta_{13}) N_{12} \), \( S_{23} = 2(\theta_{23} - \theta_{13}) N_{23} \).
+        !! 3. Each of the 21 stored entries, unrolled:
+        !!    \( H_{IJ} = \sum_a E_{a,I} G_{a,J} + N_{12,I} S_{12,J} + N_{23,I} S_{23,J} \), plus \( \theta_{13} \) on the
+        !!    normal diagonal and \( \theta_{13}/2 \) on the shear diagonal (\( I_{sym} \) in the tensorial storage).
+        !!
+        !! Five products per entry instead of the nine of the explicit sum and no fourth-order temporaries, so
+        !! that on a GPU it stays in registers (D-050). The rounding differs from the explicit sum by a few eps.
+        !!
+        !! **Weak points (what to watch or improve).**
+        !!
+        !! - *The quotient \( \theta_{ab} \) dominates the error.* For close eigenvalues \( \phi_a - \phi_b \) cancels:
+        !!   the relative error of \( \theta_{ab} \) grows like \( \epsilon\,|\phi_a| / |\phi_a - \phi_b| \) until the gap
+        !!   reaches the tolerance. With `REPEATED_TOL` (sp 1e-4, dp 1e-9) the Hessian is accurate to about 3e-5
+        !!   relative in sp and 1e-8 in dp near that band, whatever the assembly; the assembly itself adds a few
+        !!   eps. Improvements: a tolerance of \( \sqrt\epsilon \) (dp 100 to 1000 times better), or a divided
+        !!   difference supplied by the criterion, computed without cancellation (a few eps).
+        !! - *The limit assumes \( \phi \) is twice differentiable between the two eigenvalues.* Where
+        !!   \( \phi_{ab} \) jumps (CPB06 with a = 2 and k /= 0 at \( \lambda = 0 \)) the limit is wrong inside the band,
+        !!   which is why the tolerance stays narrow.
+        !! - *The identity needs orthonormal eigenvectors.* The \( \theta_{13} I_{sym} \) term replaces
+        !!   \( 2\theta_{13} N_{13} \otimes N_{13} \) exactly only if \( V \) is orthonormal: with the eigenvectors of
+        !!   `spectral_decomposition` (orthogonal to a few eps) it adds about \( \epsilon|\theta_{13}| \); a caller passing
+        !!   another basis gets the error of the identity, not the explicit sum.
+        !! - *The pair eliminated is (1,3).* With the eigenvalues in descending order (as `spectral_decomposition`
+        !!   returns them) it is the widest gap, so \( \theta_{13} \) is the best conditioned of the three; the
+        !!   differences \( \theta_{12} - \theta_{13} \), \( \theta_{23} - \theta_{13} \) and \( \phi_{aa} - \theta_{13} \)
+        !!   cancel when the three are close, but the error stays relative to the size of the entries.
+        !! - *Inputs are not checked.* A NaN in `lam`, `dphi` or `d2phi` propagates to every entry; non-finite
+        !!   divided differences are not trapped. `spectral_theta` evaluates both the divided difference and the
+        !!   limit and selects one: an infinite \( \phi_{aa} \) (CPB06 with 1 <= a < 2 at \( \lambda = 0 \)) raises
+        !!   the invalid flag even when the divided difference is selected (the Hessian is then not finite anyway).
+        !! - *Memory traffic.* The result has 21 values; on the GPU writing them costs more than computing them.
+        !!   Callers that only need \( L^T H L \) or \( C^{-1} + \Delta\gamma H \) could assemble that directly
+        !!   from \( E_a \), \( N_{ab} \) without forming \( H \) (not done).
         implicit none
         @:DEVICE()
         real(${k}$), intent(in) :: lam(3)
-            !! Eigenvalues from spectral_decomposition
+            !! Eigenvalues from spectral_decomposition, in descending order
         real(${k}$), intent(in) :: V(3,3)
-            !! Eigenvectors from spectral_decomposition
+            !! Orthonormal eigenvectors from spectral_decomposition (columns)
+        real(${k}$), intent(in) :: dphi(3)
+            !! phi_a = dphi/dlam_a
+        real(${k}$), intent(in) :: d2phi(3,3)
+            !! phi_ab = d2phi/dlam_a dlam_b (symmetric)
+        type(${T4}$) :: res
+
+        type(${T2}$) :: E1, E2, E3, N12, N23
+        real(${k}$) :: theta(3), g1(6), g2(6), g3(6), s12(6), s23(6)
+
+        theta = spectral_theta_${k}$(lam, dphi, d2phi)
+        E1 = sym_outer_${k}$(V(:,1), V(:,1))
+        E2 = sym_outer_${k}$(V(:,2), V(:,2))
+        E3 = sym_outer_${k}$(V(:,3), V(:,3))
+        N12 = sym_outer_${k}$(V(:,1), V(:,2))
+        N23 = sym_outer_${k}$(V(:,2), V(:,3))
+        ! G_a = sum_b (phi_ab - theta_13 delta_ab) E_b
+        g1 = (d2phi(1,1) - theta(2))*E1%vals + d2phi(1,2)*E2%vals + d2phi(1,3)*E3%vals
+        g2 = d2phi(1,2)*E1%vals + (d2phi(2,2) - theta(2))*E2%vals + d2phi(2,3)*E3%vals
+        g3 = d2phi(1,3)*E1%vals + d2phi(2,3)*E2%vals + (d2phi(3,3) - theta(2))*E3%vals
+        s12 = (2.0_${k}$*(theta(1) - theta(2)))*N12%vals
+        s23 = (2.0_${k}$*(theta(3) - theta(2)))*N23%vals
+        ! Entry (I, J) of the upper triangle
+        #:for c in layout('4O3sym', '3D').comps
+        #:set I, J = c.voigt
+        res%vals(${c.pos[0]}$) = E1%vals(${I}$)*g1(${J}$) + E2%vals(${I}$)*g2(${J}$) + E3%vals(${I}$)*g3(${J}$) &
+            + N12%vals(${I}$)*s12(${J}$) + N23%vals(${I}$)*s23(${J}$)
+        #:endfor
+        ! theta_13 I_sym: 1 on the normal diagonal, 1/2 on the shear diagonal (tensorial storage; entries 1 to 6 of
+        ! the 4O3sym storage are the diagonal (11,11) ... (13,13))
+        res%vals(1:3) = res%vals(1:3) + theta(2)
+        res%vals(4:6) = res%vals(4:6) + 0.5_${k}$*theta(2)
+    end function spectral_hessian_${k}$
+
+    pure function spectral_theta_${k}$(lam, dphi, d2phi) result(theta)
+        !! The factors \( \theta_{ab} \) of `spectral_hessian` for the pairs (1,2), (1,3), (2,3), in `real(${k}$)`:
+        !! the divided difference \( (\phi_a - \phi_b)/(\lambda_a - \lambda_b) \), or its limit
+        !! \( \tfrac12(\phi_{aa} + \phi_{bb}) - \phi_{ab} \) when the gap is within `REPEATED_TOL` relative to
+        !! \( \max(|\lambda_1|, |\lambda_3|) \). For callers that assemble the Hessian in another basis (the pull-back
+        !! of an anisotropic criterion), so that the threshold stays in one place. Selects (merge) instead of
+        !! branches; the divisor is 1 in the unused lane, so no division by zero is evaluated.
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: lam(3)
+            !! Eigenvalues, in descending order
         real(${k}$), intent(in) :: dphi(3)
             !! phi_a = dphi/dlam_a
         real(${k}$), intent(in) :: d2phi(3,3)
             !! phi_ab = d2phi/dlam_a dlam_b
-        type(${T4}$) :: res
+        real(${k}$) :: theta(3)
+            !! theta_12, theta_13, theta_23
 
-        type(${T2}$) :: E1, E2, E3, N
-        real(${k}$) :: tol, theta
+        real(${k}$) :: tol
+        logical :: far(3)
 
-        E1 = sym_outer_${k}$(V(:,1), V(:,1))
-        E2 = sym_outer_${k}$(V(:,2), V(:,2))
-        E3 = sym_outer_${k}$(V(:,3), V(:,3))
         tol = REPEATED_TOL_${k}$*max(abs(lam(1)), abs(lam(3)))
-
-        ! Terms of a = 1, then of the pairs (1,2) and (1,3), of a = 2, of the pair (2,3), of a = 3
-        res = d2phi(1,1)*(.tdotsym. E1)
-        if (abs(lam(1) - lam(2)) > tol) then
-            theta = (dphi(1) - dphi(2))/(lam(1) - lam(2))
-        else
-            theta = 0.5_${k}$*(d2phi(1,1) + d2phi(2,2)) - d2phi(1,2)
-        end if
-        N = sym_outer_${k}$(V(:,1), V(:,2))
-        res = res + (2.0_${k}$*d2phi(1,2))*(E1 .tdotsym. E2) + (2.0_${k}$*theta)*(.tdotsym. N)
-
-        if (abs(lam(1) - lam(3)) > tol) then
-            theta = (dphi(1) - dphi(3))/(lam(1) - lam(3))
-        else
-            theta = 0.5_${k}$*(d2phi(1,1) + d2phi(3,3)) - d2phi(1,3)
-        end if
-        N = sym_outer_${k}$(V(:,1), V(:,3))
-        res = res + (2.0_${k}$*d2phi(1,3))*(E1 .tdotsym. E3) + (2.0_${k}$*theta)*(.tdotsym. N)
-
-        res = res + d2phi(2,2)*(.tdotsym. E2)
-        if (abs(lam(2) - lam(3)) > tol) then
-            theta = (dphi(2) - dphi(3))/(lam(2) - lam(3))
-        else
-            theta = 0.5_${k}$*(d2phi(2,2) + d2phi(3,3)) - d2phi(2,3)
-        end if
-        N = sym_outer_${k}$(V(:,2), V(:,3))
-        res = res + (2.0_${k}$*d2phi(2,3))*(E2 .tdotsym. E3) + (2.0_${k}$*theta)*(.tdotsym. N)
-
-        res = res + d2phi(3,3)*(.tdotsym. E3)
-    end function spectral_hessian_${k}$
+        far = [abs(lam(1) - lam(2)) > tol, abs(lam(1) - lam(3)) > tol, abs(lam(2) - lam(3)) > tol]
+        theta(1) = merge((dphi(1) - dphi(2))/merge(lam(1) - lam(2), 1.0_${k}$, far(1)), &
+                         0.5_${k}$*(d2phi(1,1) + d2phi(2,2)) - d2phi(1,2), far(1))
+        theta(2) = merge((dphi(1) - dphi(3))/merge(lam(1) - lam(3), 1.0_${k}$, far(2)), &
+                         0.5_${k}$*(d2phi(1,1) + d2phi(3,3)) - d2phi(1,3), far(2))
+        theta(3) = merge((dphi(2) - dphi(3))/merge(lam(2) - lam(3), 1.0_${k}$, far(3)), &
+                         0.5_${k}$*(d2phi(2,2) + d2phi(3,3)) - d2phi(2,3), far(3))
+    end function spectral_theta_${k}$
 
     pure function sym_outer_${k}$(x, y) result(res)
         ! Symmetric part of the outer product of two vectors, sym(x (x) y); x = y gives x (x) x.

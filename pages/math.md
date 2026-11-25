@@ -36,7 +36,7 @@ tensor:
 | Eigenvalues and eigenvectors (for spectral gradients/Hessians) | `spectral_decomposition` | `muscle_math_eigen` |
 | Eigenvalues and eigenprojections accurate for close eigenvalues | `eigenprojections`, `eigenvals_refined` | `muscle_math_eigen` |
 | Derivatives of the eigenvalues (Cayley-Hamilton, no eigenvectors) | `dEigenvalues_dTensor`, `d2Eigenvalues_dTensor2` | `muscle_math_spectral_derivs` |
-| Gradient and Hessian of a symmetric function of the eigenvalues | `spectral_gradient`, `spectral_hessian` | `muscle_math_spectral_derivs` |
+| Gradient and Hessian of a symmetric function of the eigenvalues | `spectral_gradient`, `spectral_hessian`, `spectral_theta` | `muscle_math_spectral_derivs` |
 | Derivative of the square of a symmetric tensor | `dsquare` | `muscle_math_spectral_derivs` |
 | Rotation of the polar decomposition F = R U | `polar_rotation` | `muscle_math_matrix_functions` |
 | (ln a − ln b)/(a − b), accurate for close a, b | `log_divided_difference` | `muscle_math_matrix_functions` |
@@ -55,6 +55,13 @@ accurate to a few eps for every eigenvalue gap, at any scale, and is what the an
 their equivalent stress and its derivatives, and what the finite strain kinematics use through
 `eigenprojections` (\( P_a = v_a \otimes v_a \)). `eigenvals` (closed form, values only) and the
 Cayley-Hamilton derivatives of `muscle_math_spectral_derivs` remain public routines.
+
+Every index of `spectral_decomposition` is a literal and every choice a select (`merge`): an entry chosen at
+run time (`V(:,a)`) makes the Intel GPU compiler keep the arrays in private memory (D-050; same results).
+`spectral_hessian` writes the term of the widest pair (1,3) through the symmetric identity: five products per
+stored entry and no fourth-order temporaries. `spectral_theta` gives its three factors \( \theta_{ab} \)
+(divided difference or its limit) to criteria that assemble the Hessian in another basis, so that the
+repeated-eigenvalue threshold stays in one place (D-050).
 
 ## Shared code
 

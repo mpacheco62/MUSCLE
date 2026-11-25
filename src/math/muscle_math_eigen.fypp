@@ -140,8 +140,10 @@ contains
         real(${k}$), parameter :: THIRD = 1.0_${k}$/3.0_${k}$
         real(${k}$) :: x(6), m, amax, d(3,3), l(3), w(3), tr, de, dd, ee, ff, c1, c0, p, q, sqrt_p, phi, c, sn
         real(${k}$) :: r1(3), r2(3), r3(3), x1(3), x2(3), x3(3), ca(3), n1, n2, n3, na
-        real(${k}$) :: u(3), wv(3), du(3), dw(3), pp, pq, pr, diff, theta, tg, cs, si, la, tl, tv(3)
-        integer :: a, b, e, i, j
+        real(${k}$) :: u(3), wv(3), du(3), dw(3), pp, pq, pr, diff, theta, tg, cs, si, la
+        real(${k}$) :: va(3), vb(3), vc(3), lb, lc, lav
+        logical :: top, s1, s2, big1, small, zpq
+        integer :: e
 
         ! T = m I + 2^e D, D the deviator with its largest entry in [1/2, 1)
         m = (T%vals(1) + T%vals(2) + T%vals(3))*THIRD
@@ -187,17 +189,14 @@ contains
         l(3) = min(w(1), w(2), w(3))
         l(2) = w(1) + w(2) + w(3) - l(1) - l(3)
 
-        ! a: most separated eigenvalue; b, b+1: the remaining pair
-        if (l(1) - l(2) >= l(2) - l(3)) then
-            a = 1
-            b = 2
-        else
-            a = 3
-            b = 1
-        end if
+        ! Every index below is a literal and every choice a select (merge): a column or entry index known only at
+        ! run time (V(:,a), l(j)) makes IGC keep V and l in private memory, addressed by one 64-bit pointer per
+        ! lane, on the device. The operations are those of the former form with the indices a, b (same results).
+        ! Most separated eigenvalue: l(1) (top) or l(3); the remaining pair: (l(2), l(3)) or (l(1), l(2))
+        top = l(1) - l(2) >= l(2) - l(3)
+        la = merge(l(1), l(3), top)
 
-        ! Rows of D - l(a) I and their pairwise cross products; the largest one is v_a
-        la = l(a)
+        ! Rows of D - la I and their pairwise cross products; the largest one is v_a
         r1 = [d(1,1) - la, d(1,2), d(1,3)]
         r2 = [d(2,1), d(2,2) - la, d(2,3)]
         r3 = [d(3,1), d(3,2), d(3,3) - la]
@@ -207,72 +206,78 @@ contains
         n1 = dot_product(x1, x1)
         n2 = dot_product(x2, x2)
         n3 = dot_product(x3, x3)
-        if (n1 >= n2 .and. n1 >= n3) then
-            ca = x1
-            na = n1
-        else if (n2 >= n3) then
-            ca = x2
-            na = n2
-        else
-            ca = x3
-            na = n3
-        end if
+        s1 = n1 >= n2 .and. n1 >= n3
+        s2 = (.not. s1) .and. n2 >= n3
+        ca = merge(x1, merge(x2, x3, s2), s1)
+        na = merge(n1, merge(n2, n3, s2), s1)
         if (.not. (na > 0.0_${k}$)) then
             ! Only reached with a NaN entry (for a nonzero finite deviator the most separated eigenvalue is
             ! simple): NaN eigenvalues through l
             lam = m + fp_scale(l, e)
             return
         end if
-        V(:,a) = ca/sqrt(na)
+        va = ca/sqrt(na)
 
         ! Orthonormal basis (u, w) of the plane normal to v_a and the plane rotation that diagonalizes
         ! [[pp, pq], [pq, pr]], the restriction of D to it (tangent without overflow, D-028)
-        if (abs(V(1,a)) > abs(V(2,a))) then
-            u = [-V(3,a), 0.0_${k}$, V(1,a)]/sqrt(V(1,a)**2 + V(3,a)**2)
-        else
-            u = [0.0_${k}$, V(3,a), -V(2,a)]/sqrt(V(2,a)**2 + V(3,a)**2)
-        end if
-        wv = cross_${k}$(V(:,a), u)
+        big1 = abs(va(1)) > abs(va(2))
+        u = merge([-va(3), 0.0_${k}$, va(1)], [0.0_${k}$, va(3), -va(2)], big1)
+        u = u/sqrt(merge(va(1)**2 + va(3)**2, va(2)**2 + va(3)**2, big1))
+        wv = cross_${k}$(va, u)
         du = d(:,1)*u(1) + d(:,2)*u(2) + d(:,3)*u(3)
         dw = d(:,1)*wv(1) + d(:,2)*wv(2) + d(:,3)*wv(3)
         pp = dot_product(u, du)
         pq = dot_product(u, dw)
         pr = dot_product(wv, dw)
-        tg = 0.0_${k}$
-        if (abs(pq) > 0.0_${k}$) then
-            diff = pr - pp
-            if (abs(2.0_${k}$*pq) <= 1.0e-15_${k}$*abs(diff)) then
-                tg = pq/diff
-            else
-                theta = diff/(2.0_${k}$*pq)
-                tg = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
-            end if
-        end if
+        ! tg = 0 (pq = 0), pq/diff (|2 pq| <= 1e-15 |diff|) or the root of smaller magnitude of tg^2 + 2 theta tg = 1;
+        ! the divisors of the unused branches are 1
+        diff = pr - pp
+        zpq = .not. (abs(pq) > 0.0_${k}$)
+        small = abs(2.0_${k}$*pq) <= 1.0e-15_${k}$*abs(diff)
+        theta = diff/merge(1.0_${k}$, 2.0_${k}$*pq, small .or. zpq)
+        tg = sign(1.0_${k}$, theta)/(abs(theta) + sqrt(theta*theta + 1.0_${k}$))
+        tg = merge(0.0_${k}$, merge(pq/merge(1.0_${k}$, diff, zpq .or. .not. small), tg, small), zpq)
         cs = 1.0_${k}$/sqrt(tg*tg + 1.0_${k}$)
         si = tg*cs
         ! Rotated pair: pp - tg pq for cs u - si w, pr + tg pq for si u + cs w; v_a by its Rayleigh quotient
-        V(:,b) = cs*u - si*wv
-        V(:,b+1) = si*u + cs*wv
-        l(b) = pp - tg*pq
-        l(b+1) = pr + tg*pq
-        du = d(:,1)*V(1,a) + d(:,2)*V(2,a) + d(:,3)*V(3,a)
-        l(a) = dot_product(V(:,a), du)
+        vb = cs*u - si*wv
+        vc = si*u + cs*wv
+        lb = pp - tg*pq
+        lc = pr + tg*pq
+        du = d(:,1)*va(1) + d(:,2)*va(2) + d(:,3)*va(3)
+        lav = dot_product(va, du)
 
-        ! Descending order with the columns of V
-        do i = 1, 2
-            do j = 1, 3 - i
-                if (l(j) < l(j+1)) then
-                    tl = l(j)
-                    l(j) = l(j+1)
-                    l(j+1) = tl
-                    tv = V(:,j)
-                    V(:,j) = V(:,j+1)
-                    V(:,j+1) = tv
-                end if
-            end do
-        end do
+        ! Positions (v_a, pair): top: (1, 2, 3); otherwise (3, 1, 2). Then descending order by the network of
+        ! compare-exchanges (1,2), (2,3), (1,2) (no exchange on ties)
+        l(1) = merge(lav, lb, top)
+        V(:,1) = merge(va, vb, top)
+        l(2) = merge(lb, lc, top)
+        V(:,2) = merge(vb, vc, top)
+        l(3) = merge(lc, lav, top)
+        V(:,3) = merge(vc, va, top)
+        call order_pair_${k}$(l(1), V(:,1), l(2), V(:,2))
+        call order_pair_${k}$(l(2), V(:,2), l(3), V(:,3))
+        call order_pair_${k}$(l(1), V(:,1), l(2), V(:,2))
         lam = m + fp_scale(l, e)
     end subroutine spectral_decomposition_${k}$
+
+    pure subroutine order_pair_${k}$(la, va, lb, vb)
+        ! Compare and exchange (la, va), (lb, vb) so that la >= lb, by selects (no exchange on ties); used by
+        ! spectral_decomposition
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(inout) :: la, va(3), lb, vb(3)
+        real(${k}$) :: t, tv(3)
+        logical :: sw
+
+        sw = la < lb
+        t = la
+        la = merge(lb, la, sw)
+        lb = merge(t, lb, sw)
+        tv = va
+        va = merge(vb, va, sw)
+        vb = merge(tv, vb, sw)
+    end subroutine order_pair_${k}$
 
     pure subroutine eigenprojections_${k}$(s, eig, proj)
         !! Eigenvalues and eigenprojections \( P_a = v_a \otimes v_a \) of a symmetric tensor, `real(${k}$)`, from
