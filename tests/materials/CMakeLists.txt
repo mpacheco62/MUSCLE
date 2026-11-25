@@ -20,7 +20,8 @@ if(NOT MUSCLE_MATERIALS)
     # Strain sequence tests of the return mapping solvers, one per solver (the cases of the historical
     # reference tests): sp against dp, analytic vs FD tangent, coverage of the registry; the common part is
     # mat_sequence_common.fypp, the parameter sets case_params.py.
-    foreach(solver IN ITEMS closest_point closest_point_perzyna closest_point_time closest_point_2 cutting_plane)
+    foreach(solver IN ITEMS closest_point closest_point_perzyna closest_point_time closest_point_2 closest_point_lu
+                         cutting_plane)
         add_muscle_fypp_test(mat_${solver} test_muscle_material_${solver}.fypp
                              DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mat_sequence_common.fypp
                                      ${CMAKE_CURRENT_SOURCE_DIR}/case_params.py)

@@ -2169,3 +2169,41 @@ equivalentes, el término mixto sigue siendo 0 con los otros dos factores nulos)
 `phi == 1` (CPB06 y Yld2004: en el tensor nulo la guarda es redundante, las derivadas principales ya son 0; sólo cambiaría el
 resultado con \( \Phi \) escalado exactamente igual a 1, que ningún estado del test alcanza; la misma guarda de
 `yield_ddstress_eq` está en igual situación).
+
+## D-052 — Solver `closest_point_lu`: el closest point sin inversas (2026-11-25)
+
+**Contexto:** `closest_point` calcula cada corrección de Newton con \( \mathbb{H} = (\mathbb{C}^{-1} + \Delta\gamma\,
+\partial^2 f/\partial\boldsymbol\sigma^2)^{-1} \): dos inversas 6x6 por iteración (`M66INV` de la elasticidad y de la
+Hessiana algorítmica) y otra en la tangente. El experimento `wt-lu` (2026-11-22) escribió la misma iteración como un sistema
+bordeado 7x7 sin inversas; el de `wt-spec` (2026-11-24/25) lo midió frente a los otros closest point en CPU y GPU.
+**Decisión del usuario (2026-11-25, plan de la rama `perf/closest-point-cg`):** solver nuevo `closest_point_lu` (prefijo de
+material `cplu`), sin cambiar `closest_point`. Con \( \mathbb{B} = \mathbb{I} + \Delta\gamma\,(\partial^2 f/\partial
+\boldsymbol\sigma^2):\mathbb{C} \) vale \( \mathbb{H} = \mathbb{C}:\mathbb{B}^{-1} \), y la corrección de `closest_point` es la
+solución de
+\( \begin{bmatrix} \mathbb{B} & -\mathbf{n} \\ (\mathbb{C}:\mathbf{n}) & h \end{bmatrix}
+\begin{bmatrix} \delta\boldsymbol\varepsilon^p \\ \delta\Delta\gamma \end{bmatrix} =
+\begin{bmatrix} \mathbf{r} \\ f \end{bmatrix} \)
+(`LU7SOLVE`, componentes de almacenamiento: la fila \( \mathbb{C}:\mathbf{n} \) lleva el factor 2 de los cortes, como D-049);
+el resto de la iteración (predictor elástico, relajación, recorte \( \Delta\gamma \ge 0 \), test de convergencia, límites) es
+el de `closest_point`, así que los iterados coinciden salvo redondeo. La tangente consistente es la misma, con una sola
+inversa 6x6 (de \( \mathbb{B} \)) y sin invertir la elasticidad.
+**Medido (en el experimento; cifras no repetidas en esta rama):** CPU (gfortran Release, dp, un hilo, mínimo de 7 rondas intercaladas, 20 000 puntos): el closest
+point más rápido para todos los criterios, con entre 5 y 21 % menos tiempo que `closest_point` (von Mises 20,7 contra
+24,8 ms; Hill48 26,6 contra 33,7; CPB06 53,9 contra 57,9; CPB06ex2 149 contra 157; Yld2004 332 contra 361). GPU Intel (sp): entre `closest_point` y el gradiente conjugado de la misma rama.
+**Consecuencias:** el registro de prueba cubre cada criterio y ley de endurecimiento con `closest_point_lu` (prefijo `cplu`,
+también el caso Maxwell), con su test de secuencia, el retorno radial y la convergencia cuadrática (`mat_return_mapping`) y los
+pasos anisótropos de `mat_cp_anisotropic`, el sistema singular (`mat_cp2_singular`, que ahora corre con `cp2` y `cplu`: deja el
+iterado sin cambios y termina en `STATUS_NOT_CONVERGED`, donde `closest_point` propagaría ceros o NaN de `.inv.`) y un test
+`target` (`cplu_cpb06ex2_swift`). README (tabla de solvers), glosario (`cplu`), `contributing.md` y la página principal de
+FORD. Pendiente, de rendimiento y no de corrección: los bucles del sistema y de la tangente usan subíndices en tiempo de
+ejecución (`e_basis%vals(j)`, `a(j, j)`), que en la GPU Intel mandan los arreglos a memoria privada (D-035, D-050); se
+midió así y se deja igual que `closest_point_2`.
+**Verificación:** CPU Debug `sp;dp`: Windows gfortran 136/136 e ifx 136/136; Linux (WSL) gfortran 136/136 e ifx 136/136
+(`tools/check.sh --quick --ifx`), lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 51/51 tests `target`, con
+`cplu_cpb06ex2_swift` en sp (los dp se excluyen como los demás, `tools/gpu_skip_tests.sh`). Mutaciones del cuerpo
+(`tools/mutation_check.py solvers --only ...`, 65): 51 detectadas, 3 no compilan y 11 sobreviven: 5 que sólo cambian algo en
+empates (`<`/`<=` en los tests de convergencia, en el predictor elástico, en el recorte de \( \Delta\gamma \) y en el umbral de
+la tangente), 1 equivalente (`strain + strain_p` en la tangente elástica, que no depende de la deformación con la elasticidad
+lineal ni con la congelada) y 5 en las salvaguardas del Newton copiadas de `closest_point` (el factor 0,75 de las iteraciones
+10/20/30/40 y del recorte, el valor del recorte): cambian el camino de las iteraciones, no la solución convergida que comprueban
+los tests.

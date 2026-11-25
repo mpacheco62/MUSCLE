@@ -4,8 +4,12 @@
 #:include "muscle_fd.fypp"
 #:include "mat_sequence_common.fypp"
 #:set ANISO = muscle_meta.load_python_file('anisotropic_cases.py', base=_THIS_FILE_)
-#! Materials of the single steps (anisotropic_cases.py); cp_cpb06_swift also runs the large increments
-#:set MATS = sorted({c['material'] for c in ANISO.CASES})
+#! The single steps with closest_point (cp_*) and again with closest_point_lu (cplu_*: the same models and the same
+#! Newton iteration without inverses, D-052)
+#:assert all(c['material'].startswith('cp_') for c in ANISO.CASES)
+#:set CASES = list(ANISO.CASES) + [dict(c, material='cplu_' + c['material'][3:], name='lu ' + c['name']) for c in ANISO.CASES]
+#! Materials of the single steps; cp_cpb06_swift also runs the large increments
+#:set MATS = sorted({c['material'] for c in CASES})
 #! dp array constructor of a tuple of literals without kind
 #:set dp_vec = lambda xs: '[' + ', '.join(x + '_dp' for x in xs) + ']'
 
@@ -70,7 +74,7 @@ program test_mat_cp_anisotropic
 
     passed = .true.
     #:for k in REAL_KINDS
-    #:for c in ANISO.CASES
+    #:for c in CASES
     call step_${c['material']}$_${k}$('${c['name']}$', '${c['yld']}$', &
         ${dp_vec(c['strain'])}$, &
         ${dp_vec(c['stress'])}$, &
@@ -86,7 +90,7 @@ program test_mat_cp_anisotropic
     end if
 
 contains
-$:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in ANISO.CASES if 'tol_tan' in c])
+$:MAT_CASE_PROCS(MATS, fd_check=[c['material'] for c in CASES if 'tol_tan' in c])
     #:for k in REAL_KINDS
     #:for m in MATS
 

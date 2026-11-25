@@ -1,0 +1,56 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#:include "muscle_fd.fypp"
+#:include "mat_sequence_common.fypp"
+#! Materials of the test registry (tools/fypp/muscle_materials.py) solved by closest_point_lu: each one needs
+#! at least one entry in CASES, with parameter set names of case_params.py.
+#:set SOLVER = 'closest_point_lu'
+#:set MATS = solver_materials(SOLVER)
+
+program test_mat_closest_point_lu
+    !! Declared materials with the closest point return mapping without inverses: the point kernel
+    !! `mat_update` of the materials of the test registry along the strain sequences of the closest_point
+    !! cases of the same models, with the checks of mat_sequence_common.fypp (sp against dp, the analytic
+    !! tangent against finite differences, the Newton iterations within the limit of each case). The Newton
+    !! iteration is that of closest_point, so the limits are those of its cases. Rate independent: the time
+    !! step of the cases is 0 (not used). No reference records.
+    $:MAT_TEST_USES(MATS)
+    implicit none
+
+    $:MAT_TEST_DECLS()
+    ! Tolerances relative to the largest component: those of test_muscle_material_closest_point.fypp (same
+    ! Newton iteration and tolerance)
+    real(sp), parameter :: TOL_SP_STRESS = 5.0e-5_sp
+        !! sp vs dp, stress: the sp Newton tolerance (1e-5 sigma_y).
+    real(sp), parameter :: TOL_SP_STRAIN_P = 5.0e-5_sp
+        !! sp vs dp, plastic strain: the rounding of a difference of strains near the yield strain.
+    real(sp), parameter :: TOL_SP_EP = 5.0e-5_sp
+        !! sp vs dp, equivalent plastic strain.
+    real(sp), parameter :: TOL_SP_TANGENT = 2.0e-5_sp
+        !! sp vs dp, analytic tangent.
+    real(sp), parameter :: TOL_SP_FD = 5.0e-4_sp
+        !! sp analytic tangent vs finite differences: truncation of the sp step (FD_STEP_CEN_JAC_sp = 5e-3
+        !! relative) and the Newton tolerance of the perturbed solutions.
+    real(dp), parameter :: TOL_DP_FD = 1.0e-6_dp
+        !! dp analytic tangent vs finite differences.
+    type(solver_case), parameter :: CASES(*) = [ &
+        solver_case(0, 'cplu_vm_swift', 'lin1000', '', 'swift_small', 'vonmises', 200, 0.0_dp, 3.80e-2_dp), &
+        solver_case(0, 'cplu_vm_swift', 'steel', '', 'swift', 'vonmises', 200, 0.0_dp, 5.71e-4_dp), &
+        solver_case(0, 'cplu_vm_bilinear', 'steel', '', 'bilinear', 'vonmises', 200, 0.0_dp, 9.09e-4_dp), &
+        solver_case(0, 'cplu_hill48_swift', 'steel', '', 'swift', 'hill48-2', 200, 0.0_dp, 5.68e-4_dp), &
+        solver_case(0, 'cplu_cpb06_swift', 'steel', '', 'swift', 'cpb06-2', 200, 0.0_dp, 5.71e-4_dp), &
+        solver_case(0, 'cplu_cpb06_vocemod', 'steel', '', 'vocemod', 'cpb06-3', 200, 0.0_dp, 1.18e-3_dp, iters_max=60), &
+        solver_case(0, 'cplu_yld2004_swift', 'steel', '', 'swift', 'yld2004-2', 200, 0.0_dp, 5.63e-4_dp, iters_max=80), &
+        solver_case(0, 'cplu_dp_ludwik', 'steel', '', 'ludwik', 'dp-3', 200, 0.0_dp, 7.39e-4_dp), &
+        solver_case(0, 'cplu_cpb06ex2_swift', 'steel', '', 'swift', 'cpb06ex2-1', 200, 0.0_dp, 5.61e-4_dp, iters_max=65), &
+        solver_case(0, 'cplu_maxwell_vm_bilinear', 'maxwell', '', 'bilinear', 'vonmises', 200, 0.1_dp, 1.56e-2_dp)]
+        !! Cases of test_muscle_material_closest_point.fypp for the same models (case number 0, material,
+        !! parameter set names, Newton limit, time step, A_Y).
+
+    $:MAT_TEST_MAIN('test_mat_closest_point_lu', None, MATS)
+
+contains
+    $:MAT_TEST_PROCS(SOLVER, MATS, 'closest_point_lu', reference_tangent=None, zero_stress=False)
+
+end program test_mat_closest_point_lu

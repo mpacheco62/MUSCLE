@@ -1,7 +1,7 @@
 # Solver de return mapping nuevo
 
 Guía: `pages/contributing.md`, *How to add a solver*, y la tabla «Which one to declare a material with» del
-`README.md` (para justificar en qué se diferencia el solver nuevo de los cinco existentes).
+`README.md` (para justificar en qué se diferencia el solver nuevo de los existentes).
 
 ## Piezas
 

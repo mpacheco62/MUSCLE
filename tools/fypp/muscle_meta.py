@@ -1572,6 +1572,9 @@ MATERIAL_SOLVERS = {
                                          dt=True),
     # Monolithic Newton on (plastic strain, plastic multiplier): a 7x7 system solved by an own LU (D-018.1)
     'closest_point_2': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
+    # closest_point without inverses: each Newton correction from one bordered 7x7 system (own LU), the same
+    # iterates up to rounding (D-052)
+    'closest_point_lu': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
     # Explicit cutting plane (D-018.1): 100 corrections at most, as the historical solver
     'cutting_plane': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7, iter_nw=100),
 }
