@@ -8,5 +8,6 @@ muscle_add_fypp_sources(muscle
                  muscle_yield_cpb06.fypp
                  muscle_yield_cpb06ex2.fypp
                  muscle_yield_yld2004.fypp
+                 muscle_yield_yld2004p.fypp
                  muscle_yield_laws.fypp
                  )

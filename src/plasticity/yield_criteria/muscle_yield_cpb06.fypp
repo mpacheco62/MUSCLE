@@ -38,10 +38,10 @@ module muscle_yield_cpb06
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
     #:endfor
     use muscle_math_eigen, only : spectral_decomposition
-    use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian
+    use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian, spectral_theta
     use muscle_math_fp, only : fp_exponent, fp_scale
     use muscle_yield_anisotropic, only : yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, &
-        & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian
+        & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian, yield_eig_coords, yield_eig_hess, yield_eig_back
     implicit none
     private
 
@@ -49,6 +49,7 @@ module muscle_yield_cpb06
     public :: yield_cpb06_${k}$
     public :: yield_stress_eq_cpb06_3D_${k}$, yield_dstress_eq_cpb06_3D_${k}$, yield_ddstress_eq_cpb06_3D_${k}$
     public :: yield_stress_eq_and_derivatives_cpb06_3D_${k}$, yield_joint_evaluation_cpb06_${k}$
+    public :: yield_cpb06_hd_${k}$, yield_hess_prepare_cpb06_3D_${k}$, yield_hess_apply_cpb06_3D_${k}$
     public :: yield_cpb06_init_${k}$
     #:endfor
     public :: yield_cpb06_init
@@ -70,6 +71,18 @@ module muscle_yield_cpb06
         real(${k}$), private :: L(3,3)
             !! Normal block of \( \mathbf{L} = \mathbf{C} \mathbb{P}_{dev} \) (Eq. 8), from C1.
     end type yield_cpb06_${k}$
+
+    type :: yield_cpb06_hd_${k}$
+        !! Data of the second derivative of CPB06 applied to a tensor (`yield_hess_apply`, D-051), `real(${k}$)`:
+        !! what the spectral Hessian needs, 18 values instead of the 21 of the Hessian (whose assembly and pull-back
+        !! are skipped).
+        real(${k}$) :: V(3,3)
+            !! Eigenvectors of \( \boldsymbol\Sigma = \mathbf{L} : \boldsymbol\sigma \) (columns).
+        real(${k}$) :: phi(6)
+            !! \( \partial^2 f/\partial\lambda_a\partial\lambda_b \) in the order 11, 22, 33, 12, 23, 13.
+        real(${k}$) :: th(3)
+            !! \( \theta_{12}, \theta_{13}, \theta_{23} \) (`spectral_theta`).
+    end type yield_cpb06_hd_${k}$
     #:endfor
 
     interface yield_cpb06_init
@@ -211,18 +224,29 @@ contains
             !! Stress tensor \( \boldsymbol\sigma \).
         real(${k}$) :: res
             !! \( \sigma_{eq} \).
-        real(${k}$) :: sigma_eig(3), x(3), V(3,3)
-        integer :: e
+        real(${k}$) :: sigma_eig(3), V(3,3)
 
         ! Sigma = C : dev(sigma) = L : sigma (C1 on the normal components, C2 on the shears); its
         ! eigenvalues from the same spectral decomposition as the gradient and the Hessian (D-032)
         call spectral_decomposition(yield_lin_apply(prm%L, prm%C2, sigma), sigma_eig, V)
+        res = yield_cpb06_equivalent_${k}$(prm, sigma_eig)
+    end function yield_stress_eq_cpb06_3D_${k}$
 
-        ! Homogeneity of degree 1 on the principal values scaled by 2**(-e)
-        call yield_cpb06_scaled_${k}$(sigma_eig, x, e)
+    pure function yield_cpb06_equivalent_${k}$(prm, lam) result(res)
+        ! Equivalent stress B Phi**(1/a) from the principal values of Sigma, by homogeneity of degree 1 on the
+        ! values scaled by 2**(-e), in `real(${k}$)`; shared by yield_stress_eq and yield_hess_prepare (the same bits)
+        implicit none
+        @:DEVICE()
+        type(yield_cpb06_${k}$), intent(in) :: prm
+        real(${k}$), intent(in) :: lam(3)
+        real(${k}$) :: res
+        real(${k}$) :: x(3)
+        integer :: e
+
+        call yield_cpb06_scaled_${k}$(lam, x, e)
         res = sum((abs(x) - prm%k*x)**prm%a)**(1.0_${k}$/prm%a)
         res = fp_scale(res, e)*prm%B
-    end function yield_stress_eq_cpb06_3D_${k}$
+    end function yield_cpb06_equivalent_${k}$
 
     pure function yield_dstress_eq_cpb06_3D_${k}$(prm, sigma) result(res)
         !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the CPB06 (Cazacu-Plunkett-Barlat 2006) model in
@@ -306,6 +330,58 @@ contains
         df = yield_dstress_eq_cpb06_3D_${k}$(prm, sigma)
         if (present(ddf)) ddf = yield_ddstress_eq_cpb06_3D_${k}$(prm, sigma)
     end subroutine yield_stress_eq_and_derivatives_cpb06_3D_${k}$
+
+    pure subroutine yield_hess_prepare_cpb06_3D_${k}$(prm, sigma, f, df, hd)
+        !! Equivalent stress, gradient and the data of `yield_hess_apply_cpb06_3D_${k}$` from one spectral decomposition
+        !! of \( \boldsymbol\Sigma \), in `real(${k}$)` (D-051). At a null equivalent stress the gradient and the data
+        !! are zero, as `yield_dstress_eq` and `yield_ddstress_eq`.
+        implicit none
+        @:DEVICE()
+        type(yield_cpb06_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor.
+        real(${k}$), intent(out) :: f
+            !! Equivalent stress.
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! Gradient.
+        type(yield_cpb06_hd_${k}$), intent(out) :: hd
+            !! Data of the product.
+        real(${k}$) :: lam(3), df_dlam(3), d2f(3,3), phi
+
+        call spectral_decomposition(yield_lin_apply(prm%L, prm%C2, sigma), lam, hd%V)
+        f = yield_cpb06_equivalent_${k}$(prm, lam)
+        call yield_cpb06_principal_${k}$(prm, lam, phi, df_dlam, d2f)
+        if (phi == 0.0_${k}$) then
+            df%vals = 0.0_${k}$  ! null equivalent stress: zero derivatives
+            hd%phi = 0.0_${k}$
+            hd%th = 0.0_${k}$
+            return
+        end if
+        df = yield_lin_pull_back(prm%L, prm%C2, spectral_gradient(hd%V, df_dlam))
+        hd%phi = [d2f(1,1), d2f(2,2), d2f(3,3), d2f(1,2), d2f(2,3), d2f(1,3)]
+        hd%th = spectral_theta(lam, df_dlam, d2f)
+    end subroutine yield_hess_prepare_cpb06_3D_${k}$
+
+    pure function yield_hess_apply_cpb06_3D_${k}$(prm, hd, x) result(res)
+        !! The second derivative applied to a tensor without forming it, in `real(${k}$)` (D-051):
+        !! \( \mathbf{L}^T : \mathbb{H}(\boldsymbol\Sigma) : (\mathbf{L} : \mathbf{x}) \) through the coordinates of
+        !! \( \mathbf{L} : \mathbf{x} \) in the eigenbasis of \( \boldsymbol\Sigma \) (`yield_eig_coords`,
+        !! `yield_eig_hess`, `yield_eig_back`).
+        implicit none
+        @:DEVICE()
+        type(yield_cpb06_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(yield_cpb06_hd_${k}$), intent(in) :: hd
+            !! Data from `yield_hess_prepare`.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Tensor.
+        type(ten_3D2Osym_${k}$) :: res
+            !! d2f/dsigma2 : x.
+
+        res = yield_eig_back(prm%L, prm%C2, hd%V, &
+                             yield_eig_hess(hd%phi, hd%th, yield_eig_coords(hd%V, yield_lin_apply(prm%L, prm%C2, x))))
+    end function yield_hess_apply_cpb06_3D_${k}$
     #:endfor
 
 end module muscle_yield_cpb06

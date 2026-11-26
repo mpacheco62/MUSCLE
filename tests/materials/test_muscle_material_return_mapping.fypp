@@ -4,9 +4,13 @@
 #:include "muscle_fd.fypp"
 #:include "mat_sequence_common.fypp"
 #! Von Mises with linear hardening, one material per solver (closed forms)
-#:set LINEAR = ['cp_vm_bilinear', 'cp2_vm_bilinear', 'cut_vm_bilinear', 'tm_jc_vm_bilinear', 'pz_vm_bilinear']
+#:set LINEAR = ['cp_vm_bilinear', 'cp2_vm_bilinear', 'cplu_vm_bilinear', 'cpcg_vm_bilinear', 'cut_vm_bilinear', &
+    & 'chol_vm_bilinear', 'tm_jc_vm_bilinear', &
+    & 'pz_vm_bilinear']
 #! Hill (1948) with Swift hardening, one material per solver (properties of the converged step)
-#:set ANISO = ['cp_hill48_swift', 'cp2_hill48_swift', 'cut_hill48_swift', 'tm_jc_hill48_swift', 'pz_hill48_swift']
+#:set ANISO = ['cp_hill48_swift', 'cp2_hill48_swift', 'cplu_hill48_swift', 'cpcg_hill48_swift', 'cut_hill48_swift', &
+    & 'chol_hill48_swift', 'tm_jc_hill48_swift', &
+    & 'pz_hill48_swift']
 #:set MATS = LINEAR + ANISO
 #:set solver_of = lambda m: muscle_meta.material(m).solver
 #:set hard_of = lambda m: dict(muscle_meta.material_components(muscle_meta.material(m)))['hard']
@@ -16,12 +20,17 @@
 #! Parameters of a hardening law in stress units (scaled by the homogeneity checks)
 #:set HARD_STRESS_FIELDS = {'bilinear': ['y0', 'K'], 'swift': ['k']}
 #! Rate independent solvers whose elastic check has a relative threshold, and the threshold
-#:set THRESHOLD = {'closest_point': 'TOL_ELASTIC', 'closest_point_2': 'TOL_ELASTIC', 'closest_point_time': 'TOL_ELASTIC', &
-    & 'cutting_plane': 'NEWTON'}
+#:set THRESHOLD = {'closest_point': 'TOL_ELASTIC', 'closest_point_2': 'TOL_ELASTIC', 'closest_point_lu': 'TOL_ELASTIC', &
+    & 'closest_point_cg': 'TOL_ELASTIC', 'closest_point_chol': 'TOL_ELASTIC', &
+    & 'closest_point_time': 'TOL_ELASTIC', 'cutting_plane': 'NEWTON'}
 #! Newton solvers (the converged state solves the backward Euler equations; quadratic convergence)
-#:set NEWTON = ['closest_point', 'closest_point_2', 'closest_point_time', 'closest_point_perzyna']
+#:set NEWTON = ['closest_point', 'closest_point_2', 'closest_point_lu', 'closest_point_cg', 'closest_point_chol', &
+    & 'closest_point_time', &
+    & 'closest_point_perzyna']
 #! Newton solvers checked for quadratic convergence
 #:set QUADRATIC = NEWTON
+#! Rate independent closest point solvers
+#:set CP_SOLVERS = ['closest_point', 'closest_point_2', 'closest_point_lu', 'closest_point_cg', 'closest_point_chol']
 
 program test_mat_return_mapping
     !! Return mapping kernels of every solver against truths independent of the solver (plan R, R6), in
@@ -253,7 +262,7 @@ $:MAT_CASE_PROCS(MATS, fd_check=[m for m in LINEAR if solver_of(m) in NEWTON])
         type(${S4}$) :: tangent
         real(${k}$) :: g, y_n, hmod, q_tr, dgam, tol
         integer :: status, iters
-        #:if SOLVER in ('closest_point', 'closest_point_2', 'cutting_plane')
+        #:if SOLVER in CP_SOLVERS + ['cutting_plane']
         real(${k}$) :: bulk, theta, theta_bar
         type(${S2}$) :: elastic, n_hat, de, ds
         integer :: i, j
@@ -275,7 +284,7 @@ $:MAT_CASE_PROCS(MATS, fd_check=[m for m in LINEAR if solver_of(m) in NEWTON])
         trial = elas_stress(mat%elas, strain - sn%strain_p)
         s_tr = .dev. trial
         q_tr = q_vm_${k}$(trial)
-        #:if SOLVER in ('closest_point', 'closest_point_2', 'cutting_plane')
+        #:if SOLVER in CP_SOLVERS + ['cutting_plane']
         dgam = (q_tr - y_n)/(3.0_${k}$*g + hmod)
         tol = TOL_RADIAL_${k}$
         #:elif SOLVER == 'closest_point_time'
@@ -307,7 +316,7 @@ $:MAT_CASE_PROCS(MATS, fd_check=[m for m in LINEAR if solver_of(m) in NEWTON])
         flow = (1.5_${k}$/q_tr)*s_tr
         call mat_update(mat, strain, ${DT}$, sn, snp1, stress, tangent, status, iters)
         call check_true(passed, '${m}$ radial return converged (${k}$)', status == STATUS_OK)
-        #:if SOLVER in ('closest_point', 'closest_point_2')
+        #:if SOLVER in CP_SOLVERS
         call check_true(passed, '${m}$ radial return: one exact Newton update, confirmed by the next iteration (${k}$)', &
             iters == 2)
         #:elif SOLVER == 'cutting_plane'
@@ -318,7 +327,7 @@ $:MAT_CASE_PROCS(MATS, fd_check=[m for m in LINEAR if solver_of(m) in NEWTON])
             sn%strain_p%vals + dgam*flow%vals, tol)
         expected = trial - (2.0_${k}$*g*dgam)*flow
         call check_approx(passed, '${m}$ radial return stress (${k}$)', stress%vals, expected%vals, tol)
-        #:if SOLVER in ('closest_point', 'closest_point_2', 'cutting_plane')
+        #:if SOLVER in CP_SOLVERS + ['cutting_plane']
         ! Tangent: bulk tr(de) 1 + 2G theta dev(de) - 2G theta_bar (n:de) n, n = s/|s|; consistent
         ! (theta = 1 - 3G dgamma/q_tr) or, cutting_plane, continuum (theta = 1)
         bulk = real(E_STEEL, ${k}$)/(3.0_${k}$*(1.0_${k}$ - 2.0_${k}$*real(NU_STEEL, ${k}$)))

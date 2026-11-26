@@ -6,6 +6,7 @@
 # (muscle_material_batch.fypp) and the point API for FE codes (muscle_material_point.fypp)
 muscle_add_materials(muscle muscle_material.fypp
                      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../solvers/muscle_closest_point_tangent.fypp
+                             ${CMAKE_CURRENT_SOURCE_DIR}/../solvers/muscle_closest_point_b_tangent.fypp
                              ${CMAKE_CURRENT_SOURCE_DIR}/muscle_material_kernel.fypp
                              ${CMAKE_CURRENT_SOURCE_DIR}/muscle_material_batch.fypp
                              ${CMAKE_CURRENT_SOURCE_DIR}/muscle_material_point.fypp

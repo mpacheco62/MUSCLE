@@ -32,7 +32,9 @@ Voigt-notation tensor algebra with manually unrolled loops, in 3D and 2D, `sp` a
 *   **Elasticity:** linear isotropic; frozen viscoelastic elasticity driven by a viscoelastic model.
 *   **Viscoelasticity:** generalized Maxwell and Kelvin-Voigt.
 *   **Yield criteria:** von Mises, Hill48, Drucker-Prager, CPB06, CPB06ex2 (Cazacu-Plunkett-Barlat) and
-    Yld2004-18p, with analytical first and second derivatives.
+    Yld2004-18p, with analytical first and second derivatives and their product with a tensor for the
+    matrix-free solvers; Yld2004-18p also in polynomial form (`yld2004p`, exponents 2, 4, 6 and 8: no eigenvalues,
+    smaller GPU kernels).
 *   **Isotropic hardening:** bilinear, Ludwik, Swift, modified Voce.
 *   **Overstress viscoplasticity:** Perzyna, Chaboche.
 *   **Viscoplastic flow stress laws:** Johnson-Cook (and full Johnson-Cook), Rusinek-Klepaczko (standard and
@@ -44,6 +46,12 @@ Voigt-notation tensor algebra with manually unrolled loops, in 3D and 2D, `sp` a
 *   **Closest point projection** (Newton-Raphson, consistent tangent), with overstress (`closest_point_perzyna`)
     and consistency (`closest_point_time`) viscoplasticity.
 *   **Monolithic closest point** (`closest_point_2`, 7x7 Newton with an own LU solver).
+*   **Closest point without inverses** (`closest_point_lu`: the iterates of `closest_point` from one bordered 7x7
+    system per iteration).
+*   **Matrix-free closest point** (`closest_point_cg`: the same iteration, each correction by conjugate gradients
+    with Hessian-vector products of the criterion; for GPUs).
+*   **Cholesky closest point** (`closest_point_chol`: the same iteration, one symmetric 6x6 Cholesky factorization
+    per correction, reused by the tangent).
 *   **Cutting plane** (explicit, continuum elastoplastic tangent).
 
 Which one to declare a material with:
@@ -51,6 +59,9 @@ Which one to declare a material with:
 | Solver | For | Iterations | Tangent | When |
 |--------|-----|------------|---------|------|
 | `closest_point` | rate-independent plasticity | scalar Newton on the plastic multiplier \(\Delta\gamma \ge 0\), damped (x0.75) when it does not converge | consistent | **the default**: quadratic convergence |
+| `closest_point_lu` | rate-independent plasticity | the Newton iteration of `closest_point` (the same iterates up to rounding), each correction from one 7x7 system (own LU) instead of two 6x6 inverses | consistent, the same as `closest_point`, without inverting the elasticity | **the fastest closest point on the CPU** (7 to 20 % less time than `closest_point`, every criterion, D-056) |
+| `closest_point_cg` | rate-independent plasticity | the Newton iteration of `closest_point`, each correction from two conjugate gradient solutions with Hessian-vector products of the criterion (no matrix formed, D-051) | consistent, the same as `closest_point_lu` | **GPUs**: smaller kernels and fewer live values; on the Intel UHD 770 the fastest closest point for every criterion except `yld2004p` (2 times faster than `closest_point` with von Mises, 3.6 with CPB06ex2, 1.6 with Yld2004; D-056); on the CPU slower than `closest_point_lu` |
+| `closest_point_chol` | rate-independent plasticity | the Newton iteration of `closest_point`, each correction from one Cholesky factorization of the 6x6 matrix K = C + Δγ C:∂²f:C (unrolled, no pivoting) | consistent, from the same factorization | GPUs with `yld2004p`, the polynomial Yld2004 (the fastest on the Intel UHD 770 there, tied with `closest_point_lu`); slower than `closest_point_cg` with every other criterion and than `closest_point_lu` on the CPU (D-054, D-056) |
 | `closest_point_2` | rate-independent plasticity | monolithic 7x7 Newton on the plastic strain and \(\Delta\gamma\), own LU, no \(\Delta\gamma \ge 0\) | the same as `closest_point` | compatibility with the historical solver; without the constraint \(\Delta\gamma \ge 0\) it may converge to a step with \(\Delta\gamma < 0\), prefer `closest_point` |
 | `cutting_plane` | rate-independent plasticity | explicit corrections (at most 100), no linear system | continuum, not consistent | cheap iterations; fits an explicit FE code (no tangent needed); with an implicit one the global convergence is slower |
 | `closest_point_perzyna` | overstress viscoplasticity (Perzyna, Chaboche) | Newton with a line search | consistent | a material with an overstress (`os`) law |

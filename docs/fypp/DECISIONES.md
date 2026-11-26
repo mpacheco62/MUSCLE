@@ -2087,3 +2087,279 @@ tabla de solvers ya no lo cita (sigue recomendando `closest_point` por la falta 
 ella, CPU Debug `sp;dp`: Windows gfortran 133/133 e ifx 133/133; Linux (WSL) gfortran 133/133 e ifx 133/133
 (`tools/check.sh --quick --ifx`), lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 50/50 tests `target`. Mutaciones de las
 dos líneas nuevas (`tools/mutation_check.py solvers --only ...`): 4 de 4 detectadas por los unitarios.
+
+## D-050 — Descomposición espectral sin índices en tiempo de ejecución y Hessiana espectral con la identidad simétrica (2026-11-25)
+
+**Contexto:** el experimento de rutinas espectrales (2026-11-23/24, worktree aparte; notas locales no versionadas, las cifras que sostienen la decisión están aquí) midió
+alternativas a `spectral_decomposition` y `spectral_hessian`, solas en CPU y en la GPU Intel (UHD 770, sp), y luego dentro
+de los kernels de material. Dos problemas de dispositivo: (1) en `spectral_decomposition`, las columnas y entradas elegidas
+en tiempo de ejecución (`V(:,a)`, `l(b+1)`, el ordenamiento con intercambios) hacen que IGC guarde `V` y `l` en memoria
+privada, direccionada con un puntero de 64 bits por carril; (2) `spectral_hessian` sumaba seis productos `.tdotsym.` de
+cuarto orden: unos 128 registros y SIMD8.
+**Decisión del usuario (2026-11-25, plan de la rama `perf/closest-point-cg`):**
+- `spectral_decomposition`: las mismas operaciones con índices literales y selecciones (`merge`): el autovector más
+  separado y el par restante se ubican con `merge` según `top`, y el orden descendente es una red de tres
+  comparaciones-intercambios (`order_pair`, sin intercambio en empates). Mismos resultados: bit a bit con gfortran (-O0 y -O2, sp y dp) en 1,1 millones
+  de casos por kind (empates, autovalores repetidos, escalas 1e-10 a 1e10, NaN), sin trampas de punto flotante nuevas
+  (revisión del paso); en el experimento, memoria privada 0 y −32 % de tiempo en GPU medida sola (cifras del worktree, no
+  repetidas en esta rama).
+- `spectral_hessian`: el término del par (1,3) se escribe con la identidad
+  \( \sum_a E_a \otimes E_a + 2\sum_{a<b} N_{ab} \otimes N_{ab} = I_{sym} \): cinco productos por componente almacenada,
+  desenrollado desde el layout, sin temporales de cuarto orden. Difiere de la suma explícita en hasta 9 ε relativo a la entrada
+  mayor (2e5 casos dp con autovalores repetidos); contra cuádruple precisión 3,6 ε, el mismo orden que la anterior. En el
+  experimento: 1,3–1,6 veces más rápida en CPU y, en GPU, SIMD16 con ~70 registros en lugar de SIMD8 con 128.
+- `spectral_theta` (pública): los tres factores \( \theta_{ab} \) (diferencia dividida o su límite con `REPEATED_TOL`),
+  para los criterios que arman la Hessiana en otra base (la Hessiana aplicada de los solvers sin matriz), de modo que el
+  umbral de autovalores repetidos quede en un solo lugar. Su primer usuario llega con la Hessiana aplicada (paso siguiente).
+**Consecuencias:** cambian en pocos ε las Hessianas de CPB06, CPB06ex2 y Yld2004 (y con ellas los iterados del Newton, dentro
+de su tolerancia); nada cambia de API. El límite de precisión de \( \theta_{ab} \) cerca de `REPEATED_TOL` (≈3e-5 relativo en
+sp, 1e-8 en dp) sigue igual y queda documentado en la rutina, con dos mejoras posibles no hechas (umbral \( \sqrt\epsilon \),
+diferencia dividida sin cancelación dada por el criterio). Descartadas en el experimento: Cayley-Hamilton para la Hessiana
+(1e11–1e15 ε) y las variantes que no mejoraban la GPU.
+**Verificación:** test nuevo de `spectral_theta` (diferencia dividida, límite dentro de la banda, justo fuera, banda relativa a
+los autovalores extremos y no al intermedio, tensor nulo; contra las fórmulas en dp) en `math-math_spectral_kinds`; los tests
+existentes de la descomposición y de la Hessiana (\( \mathrm{tr}(S^3) \) contra su forma cerrada, a varias escalas y
+multiplicidades) pasan sin cambiar tolerancias. CPU Debug `sp;dp`: Windows gfortran 133/133 e ifx 133/133; Linux (WSL)
+gfortran 133/133 e ifx 133/133 (`tools/check.sh --quick --ifx`), lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 50/50
+tests `target`. Mutaciones de las líneas cambiadas (`tools/mutation_check.py math --only ...`, 184): 169 detectadas por los
+unitarios; 3 sólo por `math_reference` (comparaciones `>=`/`>` de la descomposición que sólo cambian el resultado en empates
+exactos, los que esa referencia guarda); 12 equivalentes: 5 divisores de la rama que `merge` descarta, 4 que sólo cambian
+algo en empates (`>=`/`>` y `<`/`<=` de selecciones y del ordenamiento) o en el límite del umbral `small`, el umbral `small`
+2 → 3 (las dos fórmulas de la tangente coinciden ahí) y `pq/diff` → `pq*diff` en esa rama (|tg| ≤ 1e-15, por debajo del
+redondeo); y `l(1) + l(2)` en lugar de `l(1) - l(2)` en `top`, igual porque la traza del desviador es 0.
+
+## D-051 — Producto Hessiana-vector de los criterios de fluencia (`yield_hess_prepare` / `yield_hess_apply`) (2026-11-25)
+
+**Contexto:** el experimento de solvers sin matriz (2026-11-24/25, worktree aparte) midió un closest point que resuelve cada
+corrección de Newton con gradiente conjugado (paso siguiente de la rama `perf/closest-point-cg`). Ese solver sólo necesita la
+segunda derivada del criterio aplicada a tensores, \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 : \mathbf{x} \), no
+la Hessiana armada: en los criterios espectrales, armarla (suma de productos de cuarto orden y dos pull-backs por
+transformación) es lo más caro del kernel y lo que más registros usa en GPU.
+**Decisión del usuario (2026-11-25, plan de la rama):** dos genéricos nuevos de la familia `yield`, en `muscle_yield_laws`, que
+cada criterio aporta junto a un tipo `yield_<m>_hd_<k>` con los datos del producto:
+- `call yield_hess_prepare(prm, sigma, f, df, hd)`: tensión equivalente y gradiente (las mismas operaciones que las
+  funciones, con helpers compartidos `yield_cpb06_equivalent` y `yield_cpb06ex2_equivalent`: mismos bits con gfortran;
+  con el modelo rápido de ifx, D-042, pueden diferir en pocos ulp y el test admite 8 ε) y los datos del producto, con
+  una sola descomposición espectral por transformación;
+- `yield_hess_apply(prm, hd, x)`: la segunda derivada aplicada a `x`, para cualquier número de tensores.
+von Mises, Hill48 y Drucker-Prager guardan la segunda derivada (21 valores; el producto es `ddf .ddot. x`). CPB06, CPB06ex2
+y Yld2004 guardan los autovectores, las segundas derivadas principales y los \( \theta_{ab} \) (`spectral_theta`, D-050):
+el producto transforma x con la misma transformación que la tensión (`yield_lin_apply` en CPB06 y CPB06ex2, la de
+Yld2004 en Yld2004, para que el producto sea simétrico como la Hessiana armada), lo pasa a la base propia
+(`yield_eig_coords`), aplica allí la Hessiana espectral
+(`yield_eig_hess`: \( z_{aa} = \sum_b \phi_{ab} y_{bb} \), \( z_{ab} = \theta_{ab} y_{ab} \)) y vuelve
+(`yield_eig_back`, \( \mathbf{L}^T : \mathbf{V}\mathbf{Z}\mathbf{V}^T \)), helpers nuevos de `muscle_yield_anisotropic`;
+CPB06ex2 suma su término mixto con los dos términos del gradiente y Yld2004 su término cruzado acoplando las diagonales de
+las dos bases. No entran en `ModelFamily.funcs` de `muscle_meta.py`: son una subrutina con un tipo propio por modelo, que el
+generador de tests `target` por familia no sabe llamar; su ejecución en GPU la cubren los materiales del solver que los usa.
+Descartado: un módulo aparte (como en el experimento) y las variantes de acumulación de la Hessiana armada (dan resultados
+erróneos en la GPU Intel por el recorte de kernels de IGC, PROBLEMAS).
+**Consecuencias:** un criterio nuevo debe aportar el tipo y los dos procedimientos (`pages/contributing.md`). Nada existente
+cambia de comportamiento (las funciones de CPB06 y CPB06ex2 sólo pasan a usar el helper de la tensión equivalente, con las
+mismas operaciones). Sin test en el dispositivo hasta el paso del solver con gradiente conjugado (ESTADO_OPTIMO §7.8).
+**Verificación:** test nuevo `test_hess_apply` en `plasticity-yield_criteria-yield_kinds`, contra las funciones de la familia
+(otra ruta: la segunda derivada armada, comprobada con diferencias centrales en `test_model_fd`) en los 32 estados generales,
+los hidrostáticos (exactos y con ruido de redondeo) y el tensor nulo, con todos los juegos de parámetros: f y df con 0 ε
+(gfortran; tolerancia 8 ε), el producto con 13 ε en sp y 15 en dp (tolerancia 64 ε) y su simetría
+\( \mathbf{y} : (\mathbb{H} : \mathbf{x}) = \mathbf{x} : (\mathbb{H} : \mathbf{y}) \) con 20 y 18 ε (tolerancia 64 ε). CPU Debug
+`sp;dp`: Windows gfortran 133/133 e ifx 133/133; Linux (WSL) gfortran 133/133 e ifx 133/133 (`tools/check.sh --quick --ifx`),
+lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 50/50 tests `target` (los kernels nuevos sólo compilan ahí, ESTADO_OPTIMO §7.8). Mutaciones de las líneas nuevas (`tools/mutation_check.py yield --only ...`, 516): 509 detectadas por los unitarios,
+2 no compilan y 5 sobreviven: 3 en la rama de \( \Phi = 0 \) de CPB06ex2 (`g`, `gp` o `cross` en 1 en lugar de 0:
+equivalentes, el término mixto sigue siendo 0 con los otros dos factores nulos) y 2 que cambian la guarda `phi == 0` por
+`phi == 1` (CPB06 y Yld2004: en el tensor nulo la guarda es redundante, las derivadas principales ya son 0; sólo cambiaría el
+resultado con \( \Phi \) escalado exactamente igual a 1, que ningún estado del test alcanza; la misma guarda de
+`yield_ddstress_eq` está en igual situación).
+
+## D-052 — Solver `closest_point_lu`: el closest point sin inversas (2026-11-25)
+
+**Contexto:** `closest_point` calcula cada corrección de Newton con \( \mathbb{H} = (\mathbb{C}^{-1} + \Delta\gamma\,
+\partial^2 f/\partial\boldsymbol\sigma^2)^{-1} \): dos inversas 6x6 por iteración (`M66INV` de la elasticidad y de la
+Hessiana algorítmica) y otra en la tangente. El experimento `wt-lu` (2026-11-22) escribió la misma iteración como un sistema
+bordeado 7x7 sin inversas; el de `wt-spec` (2026-11-24/25) lo midió frente a los otros closest point en CPU y GPU.
+**Decisión del usuario (2026-11-25, plan de la rama `perf/closest-point-cg`):** solver nuevo `closest_point_lu` (prefijo de
+material `cplu`), sin cambiar `closest_point`. Con \( \mathbb{B} = \mathbb{I} + \Delta\gamma\,(\partial^2 f/\partial
+\boldsymbol\sigma^2):\mathbb{C} \) vale \( \mathbb{H} = \mathbb{C}:\mathbb{B}^{-1} \), y la corrección de `closest_point` es la
+solución de
+\( \begin{bmatrix} \mathbb{B} & -\mathbf{n} \\ (\mathbb{C}:\mathbf{n}) & h \end{bmatrix}
+\begin{bmatrix} \delta\boldsymbol\varepsilon^p \\ \delta\Delta\gamma \end{bmatrix} =
+\begin{bmatrix} \mathbf{r} \\ f \end{bmatrix} \)
+(`LU7SOLVE`, componentes de almacenamiento: la fila \( \mathbb{C}:\mathbf{n} \) lleva el factor 2 de los cortes, como D-049);
+el resto de la iteración (predictor elástico, relajación, recorte \( \Delta\gamma \ge 0 \), test de convergencia, límites) es
+el de `closest_point`, así que los iterados coinciden salvo redondeo. La tangente consistente es la misma, con una sola
+inversa 6x6 (de \( \mathbb{B} \)) y sin invertir la elasticidad.
+**Medido (en el experimento; cifras no repetidas en esta rama):** CPU (gfortran Release, dp, un hilo, mínimo de 7 rondas intercaladas, 20 000 puntos): el closest
+point más rápido para todos los criterios, con entre 5 y 21 % menos tiempo que `closest_point` (von Mises 20,7 contra
+24,8 ms; Hill48 26,6 contra 33,7; CPB06 53,9 contra 57,9; CPB06ex2 149 contra 157; Yld2004 332 contra 361). GPU Intel (sp): entre `closest_point` y el gradiente conjugado de la misma rama.
+**Consecuencias:** el registro de prueba cubre cada criterio y ley de endurecimiento con `closest_point_lu` (prefijo `cplu`,
+también el caso Maxwell), con su test de secuencia, el retorno radial y la convergencia cuadrática (`mat_return_mapping`) y los
+pasos anisótropos de `mat_cp_anisotropic`, el sistema singular (`mat_cp2_singular`, que ahora corre con `cp2` y `cplu`: deja el
+iterado sin cambios y termina en `STATUS_NOT_CONVERGED`, donde `closest_point` propagaría ceros o NaN de `.inv.`) y un test
+`target` (`cplu_cpb06ex2_swift`). README (tabla de solvers), glosario (`cplu`), `contributing.md` y la página principal de
+FORD. Pendiente, de rendimiento y no de corrección: los bucles del sistema y de la tangente usan subíndices en tiempo de
+ejecución (`e_basis%vals(j)`, `a(j, j)`), que en la GPU Intel mandan los arreglos a memoria privada (D-035, D-050); se
+midió así y se deja igual que `closest_point_2`.
+**Verificación:** CPU Debug `sp;dp`: Windows gfortran 136/136 e ifx 136/136; Linux (WSL) gfortran 136/136 e ifx 136/136
+(`tools/check.sh --quick --ifx`), lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 51/51 tests `target`, con
+`cplu_cpb06ex2_swift` en sp (los dp se excluyen como los demás, `tools/gpu_skip_tests.sh`). Mutaciones del cuerpo
+(`tools/mutation_check.py solvers --only ...`, 65): 51 detectadas, 3 no compilan y 11 sobreviven: 5 que sólo cambian algo en
+empates (`<`/`<=` en los tests de convergencia, en el predictor elástico, en el recorte de \( \Delta\gamma \) y en el umbral de
+la tangente), 1 equivalente (`strain + strain_p` en la tangente elástica, que no depende de la deformación con la elasticidad
+lineal ni con la congelada) y 5 en las salvaguardas del Newton copiadas de `closest_point` (el factor 0,75 de las iteraciones
+10/20/30/40 y del recorte, el valor del recorte): cambian el camino de las iteraciones, no la solución convergida que comprueban
+los tests.
+
+## D-053 — Solver `closest_point_cg`: el closest point sin matriz, por gradiente conjugado (2026-11-25)
+
+**Contexto:** en la GPU Intel (UHD 770, sp) los closest point con criterios espectrales son lentos porque cada iteración arma
+la segunda derivada del criterio (21 valores, más sus pull-backs) y la matriz del Newton: muchos valores vivos, spill y
+kernels grandes; sobre el tamaño en que IGC deja de expandir en línea (PROBLEMAS) el kernel se vuelve mucho más lento y
+algunas variantes dan resultados erróneos. El experimento `wt-spec` (2026-11-24/25) probó un closest point sin matriz.
+**Decisión del usuario (2026-11-25, plan de la rama `perf/closest-point-cg`):** solver nuevo `closest_point_cg` (prefijo
+`cpcg`), sin cambiar `closest_point`. La iteración es la de `closest_point`; la corrección
+\( \delta\Delta\gamma = (f - (\mathbb{C}:\mathbf{n}):\mathbf{y}_r)/((\mathbb{C}:\mathbf{n}):\mathbf{y}_n + h) \),
+\( \delta\boldsymbol\varepsilon^p = \mathbf{y}_r + \delta\Delta\gamma\,\mathbf{y}_n \) sale de dos soluciones del sistema
+simétrico y definido positivo (para un criterio convexo)
+\( (\mathbb{C} + \Delta\gamma\,\mathbb{C}:\partial^2 f/\partial\boldsymbol\sigma^2:\mathbb{C}):\mathbf{y} = \mathbb{C}:\mathbf{b} \),
+\( \mathbf{b} = \mathbf{r}, \mathbf{n} \), por gradiente conjugado con los productos `yield_hess_apply` (D-051): ni la segunda
+derivada ni ninguna matriz se arman en la iteración. Como máximo 12 pasos (6 en aritmética exacta; el redondeo puede retrasar
+la terminación) hasta un residuo relativo de 8 ε: el Newton admite una corrección inexacta. La tangente consistente es la de
+`closest_point_lu` (una inversa 6x6, la segunda derivada armada una vez por punto), que pasa a un include compartido por los
+dos, `muscle_closest_point_b_tangent.fypp` (como `muscle_closest_point_tangent.fypp` con `closest_point` y
+`closest_point_2`).
+**Medido (en el experimento; cifras no repetidas en esta rama):** GPU Intel UHD 770 (sp, 100 000 puntos, banco de lote):
+von Mises 2,2 ms, Hill48 4,1, Drucker-Prager 3,6, CPB06 6,3 (Voce) y 9,0 (Swift), CPB06ex2 21,8 (115 con `closest_point`),
+Yld2004 48 (282 con `closest_point`); kernels entre 35 y 45 % más chicos que los de `closest_point`, ninguno sobre el
+umbral de recorte de IGC. Los de `closest_point` con CPB06ex2 y Yld2004 sí lo superan, y eso explica parte de la
+diferencia: sin el umbral (`IGC_KernelTotalSizeThreshold`, sólo para diagnosticar) `closest_point` con Yld2004 tarda 98 ms. CPU
+(gfortran Release, dp, un hilo): entre 1,0 y 2,3 veces el tiempo de `closest_point_lu` (Hill48 60,8 contra 26,6 ms, Yld2004
+575 contra 332). En una NVIDIA RTX 5060 (gfortran 15 con offload `nvptx`, tiempos absolutos no representativos: el código de
+gfortran usa un carril por warp) el orden se repite: el más rápido con CPB06 (−28 % frente a `closest_point_lu`), CPB06ex2
+(−33 %) y Yld2004 (−24 %).
+**Consecuencias:** en la GPU, `closest_point_cg` es el closest point recomendado; en la CPU, `closest_point_lu` (README). El
+registro de prueba cubre cada criterio y ley de endurecimiento con `cpcg` y el caso Maxwell; tests: secuencia propia, retorno
+radial y convergencia cuadrática (`mat_return_mapping`), pasos anisótropos de `mat_cp_anisotropic` y un test `target`
+(`cpcg_yld2004_swift`, que además ejecuta en el dispositivo los productos Hessiana-vector de D-051). ESTADO_OPTIMO §7.8 queda
+cerrado con él. Los incrementos grandes de CPB06 (100 a 1000 deformaciones de fluencia, los sistemas peor condicionados
+de los tests) de `mat_cp_anisotropic` corren ahora con `cp`, `cplu` y `cpcg`. El gradiente conjugado se detiene en una
+dirección con \( \mathbf{p}:\mathbb{K}:\mathbf{p} \le 0 \) (imposible con un criterio convexo y \( \Delta\gamma \ge 0 \)).
+**Verificación:** CPU Debug `sp;dp`: Windows gfortran 139/139 e ifx 139/139; Linux (WSL) gfortran 139/139 e ifx 139/139
+(`tools/check.sh --quick --ifx`), lint OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 52/52 tests `target`, con `cpcg_yld2004_swift`
+en sp. Mutaciones del cuerpo (`tools/mutation_check.py solvers --only ...`, 48): 30
+detectadas, 8 no compilan y 10 sobreviven: 6 que sólo cambian algo en empates (`<`/`<=` en la convergencia del Newton, en el
+predictor, en el recorte, en la parada del gradiente conjugado y en la guarda de \( \mathbf{p}:\mathbb{K}:\mathbf{p} \)), 1
+equivalente (la tangente elástica no depende de la deformación) y 3 en las salvaguardas del Newton de `closest_point` (el factor
+0,75 del recorte y el valor del recorte, que cambian el camino y no la solución). Las de `CG_MAX` y `CG_TOL` se detectan.
+
+## D-054 — Solver `closest_point_chol`: el closest point con una factorización de Cholesky 6x6 (2026-11-26)
+
+**Contexto:** el experimento `wt-spec` (2026-11-24/25) probó, junto al gradiente conjugado (D-053), resolver los dos sistemas
+de la corrección con la matriz \( \mathbb{K} = \mathbb{C} + \Delta\gamma\,\mathbb{C}:\partial^2 f/\partial\boldsymbol\sigma^2:
+\mathbb{C} \) armada y factorizada una vez por iteración (la alternativa directa al gradiente conjugado).
+**Decisión del usuario (2026-11-25, plan de la rama `perf/closest-point-cg`):** solver nuevo `closest_point_chol` (prefijo
+`chol`), sin cambiar `closest_point`. La iteración y la corrección son las de D-053; \( \mathbb{K} \) se arma en componentes de
+Mandel (cortes por \( \sqrt 2 \): allí es una matriz simétrica y la doble contracción el producto escalar) y se factoriza por
+Cholesky sin pivoteo, con todos los bucles desenrollados con subíndices literales (en la GPU la matriz queda en registros). Una
+factorización que falla (pivote no positivo o no finito) deja el iterado sin cambios. La tangente consistente reusa la misma
+factorización (siete soluciones: las seis componentes unitarias y \( \mathbf{n} \)).
+**Medido (en el experimento; cifras no repetidas en esta rama):** GPU Intel UHD 770 (sp, 100 000 puntos): von Mises 2,9 ms
+(2,2 con `closest_point_cg`), Hill48 4,8 (4,1), Drucker-Prager 5,0 (3,6), CPB06 con Voce modificado 9,3 y con Swift 13,2 (6,3 y 9,0);
+con CPB06ex2 y Yld2004 espectral el kernel supera el umbral de recorte de IGC y da resultados erróneos (PROBLEMAS). CPU: más lento que
+`closest_point_lu` (von Mises 37,0 contra 20,7 ms, Yld2004 401 contra 332).
+**Consecuencias:** no es el recomendado en ninguna plataforma con los criterios actuales en forma espectral; en la GPU Intel se
+debe usar `closest_point_cg` con CPB06ex2 y Yld2004 (README, FORD del solver). Se incluye porque con Yld2004 en forma
+polinómica (paso siguiente de la rama) fue el más rápido de la GPU Intel en el experimento. El registro de prueba cubre cada
+criterio y ley de endurecimiento con `chol` y el caso Maxwell; tests: secuencia propia, retorno radial y convergencia
+cuadrática, pasos anisótropos e incrementos grandes de `mat_cp_anisotropic` y un test `target` (`chol_cpb06_vocemod`, bajo el
+umbral de IGC). La rama de la factorización que falla no es alcanzable con los criterios actuales (convexos, \( \Delta\gamma
+\ge 0 \)); si ocurriera, el Newton repetiría la misma factorización hasta `iter_nw` y terminaría en `STATUS_NOT_CONVERGED`.
+Duplicación conocida: el `SOLVE` de `closest_point`, `closest_point_lu`, `closest_point_cg` y `closest_point_chol` es el
+mismo salvo la documentación; sacarlo a un include común es un refactor aparte (con `tools/gen_snapshot.sh`).
+**Verificación:** CPU Debug `sp;dp`: Windows gfortran 142/142 (el cuelgue intermitente de `gpu-family_target_hard_sp`,
+PROBLEMAS, pasó al repetirlo) e ifx 142/142; Linux (WSL) gfortran 142/142 e ifx 142/142 (`tools/check.sh --quick --ifx`), lint
+OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 53/53 tests `target`, con `chol_cpb06_vocemod` en sp. Mutaciones del cuerpo
+(`tools/mutation_check.py solvers --only ...`, 79): 61 detectadas, 5 no compilan y 13 sobreviven: 5
+que sólo cambian algo en empates (convergencia, recorte, umbral de la tangente, predictor), 3 equivalentes o en un borde exacto
+(la tangente elástica no depende de la deformación; `huge(2.0)` es `huge(1.0)`; `d < huge` contra `d <= huge`), 2 en la rama de
+la factorización que falla (`dinv` inicial; aceptar un pivote exactamente nulo), no alcanzable con los criterios actuales, y 3
+en las salvaguardas del Newton de `closest_point`.
+
+## D-055 — Criterio `yld2004p`: Yld2004-18p en forma polinomial (2026-11-26)
+
+**Contexto:** Yld2004-18p (`yld2004`) evalúa \( \phi = \sum_{i,j} |\lambda^\prime_i - \lambda^{\prime\prime}_j|^a \) con dos
+descomposiciones espectrales, y sus derivadas con las reglas espectrales (D-032, D-050): en la GPU Intel es el criterio más
+caro y el de kernels más grandes. Para a par, Soare y Barlat (2011, Eur. J. Mech. A/Solids 30, 807-819) lo escriben sin
+autovalores: \( \phi = \sum_p (-1)^p \binom{a}{p} Q_{a-p}(\mathbf{S}^\prime) Q_p(\mathbf{S}^{\prime\prime}) \), con las sumas de
+potencias \( Q_p = \mathrm{tr}(\mathbf{S}^p) \) por las identidades de Newton. El experimento `wt-spec` (2026-11-25) verificó la
+forma y su precisión (Python: f ≤ 1,3 ε, gradiente ≤ 3 ε, producto Hessiana-vector ≤ 90 ε relativo a su tamaño, en sp; la
+derivación contra diferencias finitas en cuádruple precisión, 3e-31) y la midió en la GPU.
+**Decisión del usuario (2026-11-25 y 2026-11-26):** criterio nuevo `yld2004p` (módulo `muscle_yield_yld2004p`), con los mismos
+parámetros e init que `yld2004` y exponentes a ∈ {2, 4, 6, 8} (otro valor: `STATUS_INVALID_PARAMETER`); `yld2004` no cambia.
+Las derivadas van por los invariantes, no por las componentes como en el artículo: \( Q_p \) y sus derivadas respecto de
+\( (I_1, I_2, I_3) \) son recurrencias escalares desenrolladas por exponente, y el gradiente y el producto Hessiana-vector (D-051)
+salen de \( \partial I_a/\partial\mathbf{S} \) y \( \partial^2 I_a:\mathbf{y} \) en forma cerrada; la Hessiana armada, de seis
+productos sobre una base ortonormal. Escala por potencia de dos como `yld2004` (D-017.10c), después de las transformaciones
+lineales (que eliminan la presión: escalar la tensión dejaría las imágenes de un estado casi hidrostático diminutas y sus
+potencias de grado 8 subnormales en sp, lo encontró la revisión); \( \phi = 0 \) da derivadas nulas, una tensión NaN da NaN
+(como la forma espectral) y un exponente rechazado por el init da una tensión equivalente NaN.
+Las funciones `yield_yld2004_deviatoric_block` y `yield_yld2004_linear_transform_3D` de `muscle_yield_yld2004` pasan a ser
+públicas para compartirlas. Los pesos \( (-1)^p\binom{a}{p} \) son `parameter` de Fortran (datos de FYPP, sin lógica, D-020).
+**Medido (en el experimento, con a ∈ {2, 6, 8}; cifras no repetidas en esta rama):** GPU Intel UHD 770 (sp, 100 000 puntos):
+`closest_point_chol` 28,9 ms, `closest_point_cg` 30,7, `closest_point_lu` 34,1, `closest_point` 43,3 (contra 48,2 de
+`closest_point_cg` con `yld2004` y 282 de `closest_point` con `yld2004`); ningún kernel sobre el umbral de recorte de IGC.
+Fijar un solo exponente achica el kernel un 15 % sin cambiar el tiempo. CPU: empate con la forma espectral. NVIDIA (gfortran,
+orden relativo): `closest_point_lu` y `closest_point_cg` 15 a 36 % más rápidos que con `yld2004`.
+**Consecuencias:** el registro de prueba cubre `yld2004p` con los ocho solvers que usan la familia `yield`; los tests comparan
+`yld2004p` con `yld2004` (la misma función por otra ruta) además de las comprobaciones de la familia. Pendiente de rendimiento (no medido): la Hessiana armada
+repite seis productos y con ellos los cofactores de las dos imágenes; guardarlos en los datos del producto la abarataría.
+**Verificación:** tests nuevos en `plasticity-yield_criteria-yield_kinds`: `yld2004p` contra `yld2004` con los cuatro juegos (sus
+exponentes y además a = 4), los estados escalados por 2^±24, un corte pequeño sobre una presión grande y el tensor nulo (f,
+gradiente, Hessiana y producto; peores con gfortran: sp 1,7, 4,4, 69 y 140 ε; dp 1,8, 4,3, 19 y 48 ε); el init con exponentes
+inválidos; todas las comprobaciones de la familia (nulo, genéricos, diferencias finitas, sp contra dp, homogeneidad, isótropo
+= von Mises, producto Hessiana-vector). Materiales: los ocho solvers en sus tests de secuencia dentro de los límites de
+`yld2004`, los pasos anisótropos de `mat_cp_anisotropic` con los valores publicados, `mat_init` con un exponente inválido,
+`yld2004p_private_params` y dos tests `target` (`cpcg_yld2004p_swift`, `chol_yld2004p_swift`). Mutaciones del módulo
+(`tools/mutation_check.py yield --only ...`, 552, antes de las correcciones de la revisión): 532 detectadas, 3 no compilan y
+17 sobreviven, equivalentes (valores iniciales de los datos antes de un retorno temprano, que no cambian ninguna salida).
+Tras las correcciones de la revisión (escalado después de las transformaciones, NaN), mutaciones de la rutina de evaluación
+(36): 16 detectadas, 1 no compila y 19 sobreviven: 13 valores iniciales de los datos antes de un retorno temprano y 4 guardas
+redundantes por su orden (equivalentes), `p == 1` en lugar de `p == 0` (sólo con \( \phi \) escalado exactamente 1, como en
+D-051) y el valor de la rama de \( \phi \) negativo por redondeo, que ningún estado de los tests alcanza. El test del corte
+pequeño sobre una presión grande falla con el escalado anterior (f = 0 en sp) y pasa con el corregido. CPU Debug `sp;dp`:
+Windows gfortran 147/147 e ifx 147/147; Linux (WSL) gfortran 147/147 e ifx 147/147 (`tools/check.sh --quick --ifx`), lint OK;
+GPU Intel de Linux (SPIR64, Debug `sp;dp`): 55/55 tests `target`, con `cpcg_yld2004p_swift` y `chol_yld2004p_swift` en sp.
+
+## D-056 — Medición de los closest point y de `yld2004p` en la rama `perf/closest-point-cg` (2026-11-26)
+
+**Contexto:** D-052 a D-055 citaban cifras del experimento `wt-spec`, cuyo código difería del de la rama (variantes de la
+Hessiana con acumuladores, tres exponentes de la forma polinomial, sumas desenrolladas con lambdas de FYPP). Al cerrar la rama
+se midió el código de la rama.
+**Cómo:** GPU Intel UHD 770 (Linux/WSL, ifx, SPIR64, Release, sp): banco de lote `bench_batch_gpu_<material>_sp`, 100 000
+puntos, mínimo de 5 repeticiones, verificación de 1000 puntos contra la CPU (1 o 2 en el borde de la tolerancia del banco,
+como siempre), tamaño expandido del kernel (`IGC_PrintControlKernelTotalSize`) y spill. CPU (Linux/WSL, gfortran 15 Release,
+dp, un hilo fijo en un núcleo, 20 000 puntos): mínimo de 7 a 19 rondas intercaladas (WSL2 da tiempos bimodales, con la
+mediana hasta 2 veces el mínimo; los casos que no cayeron en el modo rápido se repitieron).
+**Resultados** (ms; GPU / CPU):
+
+| Criterio | `closest_point` | `closest_point_lu` | `closest_point_cg` | `closest_point_chol` |
+|---|---|---|---|---|
+| von Mises | 4,5 / 24,2 | 3,3 / **19,9** | **2,2** / 25,1 | 3,0 / 36,3 |
+| Hill48 | 6,1 / 32,8 | 4,8 / **26,1** | **4,1** / 60,4 | 4,9 / 47,6 |
+| Drucker-Prager | 6,6 / — | 5,1 / — | **3,5** / — | 4,9 / — |
+| CPB06 (Voce mod.) | 10,3 / 54,6 | 9,5 / **50,5** | **6,3** / 60,4 | 9,1 / 64,0 |
+| CPB06ex2 | 74,5 / 151 | 67,6 / **141** | **20,9** / 170 | 67,0 / 165 |
+| Yld2004 | 77,5 / 343 | 59,3 / **308** | **47,3** / 576 | 59,7 / 377 |
+| Yld2004 polinómico (`yld2004p`) | 49,4 / 396 | 37,9 / **362** | 42,9 / 601 | **37,0** / ≈680 (sólo modo lento) |
+
+Tamaño expandido de los kernels en la GPU (umbral de recorte de IGC ≈ 110 000): con CPB06ex2 y Yld2004, `closest_point`,
+`closest_point_lu` y `closest_point_chol` 113 000 a 121 000 (recortados, resultados correctos; sin el umbral CPB06ex2 baja a
+30–34 ms y Yld2004 no cambia), `closest_point_cg` 63 000 y 72 000; con `yld2004p` 102 000 a 105 000 y 58 000 con
+`closest_point_cg`.
+**Conclusiones:** en la CPU, `closest_point_lu` es el más rápido con todos los criterios (7 a 20 % menos que `closest_point`);
+en la GPU Intel, `closest_point_cg` con todos los criterios en forma espectral (1,6 a 3,6 veces menos que `closest_point`), y
+con `yld2004p` `closest_point_chol` y `closest_point_lu` (37 ms, 36 % menos que con `yld2004`). En la CPU la forma espectral de
+Yld2004 es 4 a 17 % más rápida que `yld2004p`. Diferencias con el experimento: `closest_point` con Yld2004 tarda 78 ms y no 282
+(el experimento usaba una Hessiana con acumuladores que no entró; la Hessiana de D-050 es más barata), y Cholesky con
+CPB06ex2 y Yld2004 espectral da resultados correctos (los erróneos venían de esa misma variante). La primera versión de
+`yld2004p` en la rama sumaba con secciones de arreglos y bucles con índice variable: 5 376 bytes de memoria privada y 115 a
+143 ms; con las sumas desenrolladas término a término, 0 bytes y los tiempos de la tabla. `closest_point_cg` con `yld2004p`
+(42,9) sigue más lento que en el experimento (30,7): hipótesis, no medida, el cuarto exponente (kernel de 49 600 a 57 700).

@@ -40,11 +40,11 @@ Where each family lives (paths relative to `src/` and `tests/`; `<m>` is the mod
 
 | Family | Template | Family module | Lists in `tools/fypp/muscle_meta.py` (besides `MODEL_PARAMS`, `MODEL_LABELS`) | Material solvers that use it | Test of the model | Mutation area |
 |--------|----------|---------------|------------------------------------------------------------------------------|------------------------------|-------------------|---------------|
-| `hard` | `plasticity/hardening_laws/muscle_hard_<m>.fypp` | `muscle_hard_laws` | `HARDENING_MODELS` | `closest_point`, `closest_point_2`, `cutting_plane` (and composed by `vp`/`os` laws) | `test_muscle_hard_laws_kinds` | `hard` |
+| `hard` | `plasticity/hardening_laws/muscle_hard_<m>.fypp` | `muscle_hard_laws` | `HARDENING_MODELS` | `closest_point`, `closest_point_2`, `closest_point_lu`, `closest_point_cg`, `closest_point_chol`, `cutting_plane` (and composed by `vp`/`os` laws) | `test_muscle_hard_laws_kinds` | `hard` |
 | `vp` | `plasticity/viscoplastic_laws/muscle_vp_<m>.fypp` | `muscle_vp_laws` | `VISCOPLASTIC_MODELS`; `VISCOPLASTIC_COMPOSED` if it composes a hardening law; `VISCOPLASTIC_FLOOR` if it has a rate floor | `closest_point_time` | `test_muscle_vp_laws_kinds` (boundaries: `test_muscle_vp_laws_limits`) | `vp` |
 | `os` | `plasticity/viscoplastic_laws/muscle_os_<m>.fypp` | `muscle_os_laws` | `OVERSTRESS_MODELS`, `OVERSTRESS_COMPOSED` | `closest_point_perzyna` | `test_muscle_vp_laws_kinds` (Chaboche: `test_muscle_os_chaboche`) | `vp` |
-| `yield` | `plasticity/yield_criteria/muscle_yield_<m>.fypp` | `muscle_yield_laws` | `YIELD_MODELS`; `YIELD_JOINT` if it writes its own joint evaluation; `YIELD_ISOTROPIC` if isotropic | all five | `test_muscle_yield_laws_kinds` | `yield` |
-| `elas` | `elasticity/muscle_elas_<m>.fypp` (`frozen`: `viscoelasticity/muscle_elas_frozen.fypp`) | `muscle_elas_laws` | `ELASTICITY_MODELS`, `ELASTICITY_ISOTROPIC` | all five | `test_muscle_elas_laws_kinds` | `elas` |
+| `yield` | `plasticity/yield_criteria/muscle_yield_<m>.fypp` | `muscle_yield_laws` | `YIELD_MODELS`; `YIELD_JOINT` if it writes its own joint evaluation; `YIELD_ISOTROPIC` if isotropic | all eight | `test_muscle_yield_laws_kinds` | `yield` |
+| `elas` | `elasticity/muscle_elas_<m>.fypp` (`frozen`: `viscoelasticity/muscle_elas_frozen.fypp`) | `muscle_elas_laws` | `ELASTICITY_MODELS`, `ELASTICITY_ISOTROPIC` | all eight | `test_muscle_elas_laws_kinds` | `elas` |
 | `visco` | `viscoelasticity/muscle_visco_<m>.fypp` | `muscle_visco_laws` | `VISCOELASTIC_MODELS` | all, through `elas='frozen'` | `test_muscle_visco_laws_kinds` or `test_muscle_visco_<m>` | `visco` |
 | `kin` | `kinematics/muscle_kin_<m>.fypp` | `muscle_kin_laws` | `KINEMATICS_MODELS`; `KINEMATICS_SPATIAL`, `KINEMATICS_ROTATION`, `KINEMATICS_FE_ROTATED` as the case may be | all, through `kin=` | `test_muscle_kin_laws_kinds`, `test_muscle_kin_finite` | `kin` (`mat_kin` adds the kinematic materials) |
 
@@ -143,12 +143,15 @@ Example: a new hardening law `mylaw` with \( \sigma_y = \sigma_{y0} + K\epsilon_
 6. **Make it reachable from the materials** of the test registry `tools/fypp/muscle_materials.py`, which
    must cover every model with **every solver that uses its family** (`tests/tools/test_muscle_materials.py`
    checks it; the solvers of each family are in the table above; for a hardening law: `closest_point`,
-   `closest_point_2` and `cutting_plane`):
+   `closest_point_2`, `closest_point_lu`, `closest_point_cg`, `closest_point_chol` and `cutting_plane`):
 
    ```python
    Material('cp_vm_mylaw', 'closest_point', elas='linear', yield_='vonmises', hard='mylaw',
             doc='von Mises with quadratic hardening'),
    Material('cp2_vm_mylaw', 'closest_point_2', elas='linear', yield_='vonmises', hard='mylaw'),
+   Material('cplu_vm_mylaw', 'closest_point_lu', elas='linear', yield_='vonmises', hard='mylaw'),
+   Material('cpcg_vm_mylaw', 'closest_point_cg', elas='linear', yield_='vonmises', hard='mylaw'),
+   Material('chol_vm_mylaw', 'closest_point_chol', elas='linear', yield_='vonmises', hard='mylaw'),
    Material('cut_vm_mylaw', 'cutting_plane', elas='linear', yield_='vonmises', hard='mylaw'),
    ```
 
@@ -169,8 +172,13 @@ Example: a new hardening law `mylaw` with \( \sigma_y = \sigma_{y0} + K\epsilon_
 The same steps apply to the other families, with the names of the table above (copy the neighbour model of
 the family): a yield criterion
 writes `stress_eq` and its gradient and Hessian (and may write the joint evaluation by hand, as the
-existing criteria do); a viscoplastic or overstress law that composes a hardening law receives its values
-(`sy`, `dsy_dep`) as arguments.
+existing criteria do), plus the Hessian-vector product of the matrix-free solvers (D-051): a type
+`yield_<m>_hd_<k>` with the data of the product, `yield_hess_prepare_<m>_3D_<k>` (equivalent stress, gradient
+and that data) and `yield_hess_apply_<m>_3D_<k>` (the second derivative applied to a tensor), added to the two
+generics of `muscle_yield_laws`; the simplest form keeps the second derivative in the data (von Mises, Hill48,
+Drucker-Prager); a spectral criterion keeps its eigenbases and principal derivatives (`yield_eig_coords`,
+`yield_eig_hess`, `yield_eig_back` of `muscle_yield_anisotropic`). A viscoplastic or overstress law that composes a
+hardening law receives its values (`sy`, `dsy_dep`) as arguments.
 
 ## How to add a solver
 

@@ -52,6 +52,7 @@ program test_mat_closest_point_perzyna
         solver_case(0, 'pz_cha_cpb06ex2_bilinear', 'steel', 'cha1', 'bilinear', 'cpb06ex2-3', 200, 1.0e-2_dp, &
             9.13e-4_dp), &
         solver_case(0, 'pz_yld2004_swift', 'steel', 'per1', 'swift', 'yld2004-2', 200, 1.0e-2_dp, 5.63e-4_dp), &
+        solver_case(0, 'pz_yld2004p_swift', 'steel', 'per1', 'swift', 'yld2004p-2', 200, 1.0e-2_dp, 5.63e-4_dp), &
         solver_case(0, 'pz_cha_yld2004_ludwik', 'steel', 'cha1', 'ludwik', 'yld2004-4', 200, 1.0e-2_dp, 9.21e-4_dp), &
         solver_case(0, 'pz_maxwell_vm_bilinear', 'maxwell', 'per1', 'bilinear', 'vonmises', 200, 1.0e-2_dp, 1.27e-2_dp), &
         solver_case(0, 'pz_kelvin_cha_hill48_swift', 'kelvin', 'cha1', 'swift', 'hill48-2', 200, 1.0e-1_dp, 6.55e-3_dp), &

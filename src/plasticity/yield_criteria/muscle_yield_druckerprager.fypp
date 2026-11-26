@@ -73,6 +73,7 @@ module muscle_yield_druckerprager
     public :: yield_stress_eq_druckerprager_3D_${k}$, yield_dstress_eq_druckerprager_3D_${k}$, &
         & yield_ddstress_eq_druckerprager_3D_${k}$
     public :: yield_stress_eq_and_derivatives_druckerprager_3D_${k}$, yield_joint_evaluation_druckerprager_${k}$
+    public :: yield_druckerprager_hd_${k}$, yield_hess_prepare_druckerprager_3D_${k}$, yield_hess_apply_druckerprager_3D_${k}$
     #:endfor
     public :: yield_druckerprager_init, ${', '.join('yield_druckerprager_init_' + k for k in REAL_KINDS)}$
 
@@ -108,6 +109,14 @@ module muscle_yield_druckerprager
         integer :: hardening_mode = DP_HARDENING_TENSION
             !! Hardening calibration mode (`DP_HARDENING_TENSION`, `DP_HARDENING_COMPRESSION` or `DP_HARDENING_SHEAR`).
     end type yield_druckerprager_${k}$
+
+    type :: yield_druckerprager_hd_${k}$
+        !! Data of the second derivative applied to a tensor (`yield_hess_apply`, D-051) of the Drucker-Prager criterion,
+        !! `real(${k}$)`: the second derivative itself (21 values; a closed form cheaper than the contraction is
+        !! not used).
+        type(ten_3D4O3sym_${k}$) :: ddf
+            !! \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 \).
+    end type yield_druckerprager_hd_${k}$
 
     #:endfor
     interface yield_druckerprager_init
@@ -346,6 +355,42 @@ contains
         df = yield_dstress_eq_druckerprager_3D_${k}$(prm, sigma)
         if (present(ddf)) ddf = yield_ddstress_eq_druckerprager_3D_${k}$(prm, sigma)
     end subroutine yield_stress_eq_and_derivatives_druckerprager_3D_${k}$
+
+    pure subroutine yield_hess_prepare_druckerprager_3D_${k}$(prm, sigma, f, df, hd)
+        !! Equivalent stress, gradient and the data of `yield_hess_apply_druckerprager_3D_${k}$` (the second derivative), in
+        !! `real(${k}$)` (D-051).
+        implicit none
+        @:DEVICE()
+        type(yield_druckerprager_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor.
+        real(${k}$), intent(out) :: f
+            !! Equivalent stress.
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! Gradient.
+        type(yield_druckerprager_hd_${k}$), intent(out) :: hd
+            !! Data of the product.
+
+        call yield_stress_eq_and_derivatives_druckerprager_3D_${k}$(prm, sigma, f, df, hd%ddf)
+    end subroutine yield_hess_prepare_druckerprager_3D_${k}$
+
+    pure function yield_hess_apply_druckerprager_3D_${k}$(prm, hd, x) result(res)
+        !! The second derivative applied to a tensor, \( \partial^2\sigma_{eq}/\partial\boldsymbol\sigma^2 : \mathbf{x} \),
+        !! in `real(${k}$)` (D-051).
+        implicit none
+        @:DEVICE()
+        type(yield_druckerprager_${k}$), intent(in) :: prm
+            !! Parameters (not used: the data holds the second derivative).
+        type(yield_druckerprager_hd_${k}$), intent(in) :: hd
+            !! Data from `yield_hess_prepare`.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Tensor.
+        type(ten_3D2Osym_${k}$) :: res
+            !! d2f/dsigma2 : x.
+
+        res = hd%ddf .ddot. x
+    end function yield_hess_apply_druckerprager_3D_${k}$
     #:endfor
 
 end module muscle_yield_druckerprager

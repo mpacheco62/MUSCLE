@@ -119,8 +119,8 @@ OVERSTRESS_COMPOSED = ('chaboche', 'perzyna')
 #: ``src/plasticity/yield_criteria/muscle_yield_<name>.fypp`` each, exported by
 #: ``muscle_yield_laws``. ``YIELD_JOINT``: those that write their own joint evaluation of the
 #: equivalent stress and its derivatives (the others get the default, three calls in turn).
-YIELD_MODELS = ('vonmises', 'hill48', 'druckerprager', 'cpb06', 'cpb06ex2', 'yld2004')
-YIELD_JOINT = ('yld2004',)
+YIELD_MODELS = ('vonmises', 'hill48', 'druckerprager', 'cpb06', 'cpb06ex2', 'yld2004', 'yld2004p')
+YIELD_JOINT = ('yld2004', 'yld2004p')
 #: Isotropic yield criteria (the others have anisotropy axes): with a spatial strain measure, a material
 #: with another criterion runs its return mapping in the frame of the polar rotation (D-018.15f).
 YIELD_ISOTROPIC = ('vonmises', 'druckerprager')
@@ -177,6 +177,7 @@ MODEL_LABELS = {('hard', 'bilinear'): 'bilinear', ('hard', 'ludwik'): 'Ludwik', 
                 ('yield', 'druckerprager'): 'extended linear Drucker-Prager',
                 ('yield', 'cpb06ex2'): 'CPB06ex2 (Plunkett-Cazacu-Barlat 2008)',
                 ('yield', 'yld2004'): 'Yld2004-18p (Barlat et al. 2005)',
+                ('yield', 'yld2004p'): 'Yld2004-18p, polynomial form (Soare and Barlat 2011)',
                 ('elas', 'linear'): 'linear isotropic elastic',
                 ('elas', 'frozen'): 'frozen (algorithmic) viscoelastic',
                 ('visco', 'maxwell'): 'generalized Maxwell', ('visco', 'kelvin'): 'Kelvin-Voigt',
@@ -1152,6 +1153,18 @@ MODEL_PARAMS = MappingProxyType({
            r'Shear factors of \( \mathbf{C}^{\prime\prime} \) on (xy, yz, xz): (cpp44, cpp55, cpp66).', None),
         _P('a', 'real', '', r'Exponent \( a \ge 2 \) (the analytical derivatives need it).', None),
     ),
+    ('yield', 'yld2004p'): (
+        _P('Lp', 'real', '(3,3)',
+           r'Normal block of \( \mathbf{L}^\prime = \mathbf{C}^\prime \mathbb{P}_{dev} \), which maps (sxx, '
+           r'syy, szz) to (Spxx, Spyy, Spzz).', None, True),
+        _P('cp_shear', 'real', '(3)',
+           r'Shear factors of \( \mathbf{C}^\prime \) on (xy, yz, xz): (cp44, cp55, cp66).', None),
+        _P('Lpp', 'real', '(3,3)',
+           r'Normal block of \( \mathbf{L}^{\prime\prime} = \mathbf{C}^{\prime\prime} \mathbb{P}_{dev} \).', None, True),
+        _P('cpp_shear', 'real', '(3)',
+           r'Shear factors of \( \mathbf{C}^{\prime\prime} \) on (xy, yz, xz): (cpp44, cpp55, cpp66).', None),
+        _P('a', 'real', '', r'Exponent \( a \in \{2, 4, 6, 8\} \) (one unrolled recurrence each, D-055).', None),
+    ),
     ('hard', 'bilinear'): (
         _P('y0', 'real', '', r'Initial yield stress \( \sigma_{y0} \).', None),
         _P('K', 'real', '', r'Hardening modulus \( K \).', None),
@@ -1350,6 +1363,13 @@ MODEL_INITS = MappingProxyType({
         + _matrix_inputs('cpp', _OFF_DIAG + _SHEAR, r'C^{\prime\prime}')
         + (_R('a', r'Exponent.'),),
         status=_STATUS_OK_ONLY),
+    ('yield', 'yld2004p'): ModelInit(
+        doc=(r'Parameters of the polynomial Yld2004-18p model in `real({k})`: the coefficients of yield_yld2004_init',
+             r'(Barlat et al., 2005, Eq. 15; shears in the library order) and the exponent, 2, 4, 6 or 8 (D-055).'),
+        inputs=_matrix_inputs('cp', _OFF_DIAG + _SHEAR, r'C^\prime')
+        + _matrix_inputs('cpp', _OFF_DIAG + _SHEAR, r'C^{\prime\prime}')
+        + (_R('a', r'Exponent: 2, 4, 6 or 8.'),),
+        status=_STATUS),
     ('visco', 'maxwell'): ModelInit(
         doc=(r'Parameters of the generalized Maxwell model in `real({k})` from the Prony series with',
              r'absolute moduli. `STATUS_INVALID_PARAMETER` (and the default parameters) if `shear` and',
@@ -1572,6 +1592,15 @@ MATERIAL_SOLVERS = {
                                          dt=True),
     # Monolithic Newton on (plastic strain, plastic multiplier): a 7x7 system solved by an own LU (D-018.1)
     'closest_point_2': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
+    # closest_point without inverses: each Newton correction from one bordered 7x7 system (own LU), the same
+    # iterates up to rounding (D-052)
+    'closest_point_lu': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
+    # Matrix-free closest point: each Newton correction from two conjugate gradient solutions with the
+    # Hessian-vector products of the criterion (D-051, D-053); the iterates of closest_point up to the CG tolerance
+    'closest_point_cg': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
+    # closest_point with one Cholesky factorization of the 6x6 matrix K = C + dgamma C:d2f:C per Newton correction
+    # (Mandel components, unrolled), reused by the tangent (D-054)
+    'closest_point_chol': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
     # Explicit cutting plane (D-018.1): 100 corrections at most, as the historical solver
     'cutting_plane': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7, iter_nw=100),
 }

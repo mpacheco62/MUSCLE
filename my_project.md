@@ -71,7 +71,7 @@ Each model is a concrete parameter type (`<family>_<model>_<k>`, e.g. `hard_swif
 ### 3. Yield Criteria (`muscle_yield_laws`)
 Implements the surface that delimits the elastic-plastic transition.
 - [[muscle_yield_vonmises]]: Classic J2 plasticity.
-- [[muscle_yield_hill48]], [[muscle_yield_druckerprager]], [[muscle_yield_yld2004]].
+- [[muscle_yield_hill48]], [[muscle_yield_druckerprager]], [[muscle_yield_yld2004]] and its polynomial form [[muscle_yield_yld2004p]] (even exponents up to 8, no eigenvalues; for GPUs).
 - [[muscle_yield_cpb06]], [[muscle_yield_cpb06ex2]]: criteria for materials with strength differential effects (asymmetry between tension and compression).
 
 ### 4. Hardening and Viscoplastic Laws (`muscle_hard_laws`, `muscle_vp_laws`, `muscle_os_laws`)
@@ -82,7 +82,7 @@ Defines the evolution of the flow stress:
 
 ### 5. Solvers and Declared Materials (`src/solvers`, `src/materials`)
 The return mapping algorithms are bodies (`src/solvers/muscle_<solver>_body.fypp`) included by the material template, which calls only the family generics:
-- **`closest_point`:** implicit closest point projection with the consistent tangent (quadratic convergence of the global FEA Newton iterations); **`closest_point_perzyna`** and **`closest_point_time`**: overstress and consistency viscoplasticity; **`closest_point_2`**: monolithic 7x7 Newton; **`cutting_plane`**: explicit, continuum tangent.
+- **`closest_point`:** implicit closest point projection with the consistent tangent (quadratic convergence of the global FEA Newton iterations); **`closest_point_perzyna`** and **`closest_point_time`**: overstress and consistency viscoplasticity; **`closest_point_2`**: monolithic 7x7 Newton; **`closest_point_lu`**: the iterates of `closest_point` without inverses (one 7x7 system per iteration, the fastest closest point on the CPU); **`closest_point_cg`**: matrix-free, by conjugate gradients with Hessian-vector products (for GPUs); **`closest_point_chol`**: one 6x6 Cholesky factorization per iteration; **`cutting_plane`**: explicit, continuum tangent.
 - Each generated module `muscle_mat_<name>` provides the material type `mat_<name>_<k>`, `mat_init_<name>` (flat parameter array), the point API `muscle_point_<name>` for FE user subroutines (see [FEA Integration](page/integration.html)) and the batch API `muscle_update_<name>` over SoA arrays (`eps(npts, 6)`, optional index list).
 - New models and solvers: see the [Developer Guide](page/contributing.html).
 

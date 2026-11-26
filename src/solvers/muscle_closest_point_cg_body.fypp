@@ -1,0 +1,259 @@
+#! SPDX-License-Identifier: GPL-3.0-or-later
+#! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#! Body of the matrix-free closest point return mapping of a declared material (D-053), written once against the
+#! family generics `elas_*`, `yield_*` (with `yield_hess_prepare` and `yield_hess_apply`, D-051) and `hard_*`. Same
+#! Newton iteration as `closest_point` (elastic predictor, under-relaxation, clipping of the multiplier at zero,
+#! same convergence test), but each correction comes from two conjugate gradient solutions with Hessian-vector
+#! products of the criterion: neither the second derivative nor the Newton matrix is formed. The consistent tangent
+#! is that of `closest_point_lu` (muscle_closest_point_b_tangent.fypp: one 6x6 inverse, the second derivative
+#! formed once per point).
+#!
+#! Included by src/materials/muscle_material.fypp inside its `#:for k` loop, with these variables set: `k`, `MAT`,
+#! `MAT_T`, `ELAS_T`, `SOLVE` / `ITER` / `TANGENT` and `S2` / `C4` / `T4` (see muscle_closest_point_body.fypp). 3D
+#! only. The material type has the components `yield` and `hard` (MATERIAL_SOLVERS['closest_point_cg']), `iter_nw`
+#! and `tol`. The dummy arguments of `SOLVE` are declared by hand in the body (one signature for every solver).
+#! Preprocessed alone (FORD preprocesses every template) it expands to nothing.
+#:if defined('MAT')
+
+    pure subroutine ${SOLVE}$(mat, elas, strain, dt, state_n, state_np1, stress, tangent, status, iters)
+        !! Matrix-free closest point return mapping of material `${MAT.name}$` at one point, `real(${k}$)`:
+        !! the state at \( t_{n+1} \), the stress and the consistent (analytic) tangent for the total
+        !! strain `strain` from the converged state `state_n`. Rate independent: the time step `dt` of
+        !! the common kernel signature is not used.
+        !!
+        !! The Newton iteration of `closest_point`: elastic predictor \( f_{trial}/\max(\sigma_y, \)
+        !! `SY_MIN_${k}$`\( ) \le \) `TOL_ELASTIC_${k}$`; otherwise Newton iterations on \( \Delta\gamma \) with
+        !! under-relaxation (factor 0.75 at iterations 10, 20, 30, 40 and when \( \Delta\gamma \) is clipped at
+        !! 0) until \( |f| < tol\,\max(\sigma_y, \) `SY_MIN_${k}$`\( ) \) and the plastic strain residual is below
+        !! `tol`. Each correction comes from two conjugate gradient solutions (`${ITER}$`). An elastic and a
+        !! converged plastic step return `STATUS_OK` (`iters` = 0 in an elastic step); with
+        !! `STATUS_NOT_CONVERGED` the outputs hold the last iterate and must not be used.
+        !!
+        !! **Why this solver (D-053).** It is meant for GPUs. The Newton iteration forms neither the second
+        !! derivative of the criterion nor any matrix: each correction comes from two conjugate gradient
+        !! solutions with Hessian-vector products (`yield_hess_apply`, D-051), so the kernel keeps fewer values
+        !! live and is smaller. Measured on the Intel UHD 770 (sp, 100 000 points, D-056) it is the fastest closest
+        !! point for every criterion except the polynomial Yld2004: from 2.2 ms against 4.5 of `closest_point` (von
+        !! Mises) to 20.9 against 74.5 (CPB06ex2) and 47 against 78 (Yld2004), with kernels 35 to 45 % smaller,
+        !! none above the size where the Intel GPU compiler stops inlining (those of the other closest point solvers
+        !! with CPB06ex2 and Yld2004 are above it). On the CPU it is 1 to 2.3 times slower than `closest_point_lu`,
+        !! which should be used there. Same Newton iteration, tolerances and limits as `closest_point`; its
+        !! iterates agree with those of `closest_point` up to the conjugate gradient tolerance.
+        use muscle_kinds, only : TOL_ELASTIC_${k}$, SY_MIN_${k}$
+        use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
+        use muscle_tensors, only : operator(-)
+        use muscle_elas_laws, only : elas_stress
+        use muscle_yield_laws, only : yield_stress_eq
+        use muscle_hard_laws, only : hard_stress
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material (parameters of its models, iteration limit and tolerance).
+        type(${ELAS_T}$), intent(in) :: elas
+            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
+        type(${S2}$), intent(in) :: strain
+            !! Total strain at \( t_{n+1} \).
+        real(${k}$), intent(in) :: dt
+            !! Time step (not used).
+        type(plastic_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(plastic_state_${k}$), intent(out) :: state_np1
+            !! State at \( t_{n+1} \) (stress, plastic strain, equivalent plastic strain).
+        type(${S2}$), intent(out) :: stress
+            !! Stress at \( t_{n+1} \) (the stress of `state_np1`).
+        type(${T4}$), intent(out) :: tangent
+            !! Consistent tangent \( d\boldsymbol\sigma/d\boldsymbol\varepsilon \) at \( t_{n+1} \).
+        integer, intent(out) :: status
+            !! `STATUS_OK` or `STATUS_NOT_CONVERGED` (muscle_status).
+        integer, intent(out) :: iters
+            !! Newton iterations (0 in an elastic step, at most `mat%iter_nw`).
+
+        type(${S2}$) :: stress_trial
+        real(${k}$) :: hard_n, f_trial, dgamma, omega
+        logical :: converged
+        integer :: i
+
+        ! dt: argument of the common kernel signature of the materials, not used here
+        associate (unused_dt => dt)
+        end associate
+
+        ! Elastic trial check
+        stress_trial = elas_stress(elas, strain - state_n%strain_p)
+        hard_n = hard_stress(mat%hard, state_n%strain_pf)
+        f_trial = yield_stress_eq(mat%yield, stress_trial) - hard_n
+
+        if (f_trial/max(hard_n, SY_MIN_${k}$) <= TOL_ELASTIC_${k}$) then
+            state_np1%stress = stress_trial
+            state_np1%strain_p = state_n%strain_p
+            state_np1%strain_pf = state_n%strain_pf
+            status = STATUS_OK
+            iters = 0
+        else
+            ! Newton-Raphson loop with adaptive relaxation from the converged state
+            state_np1 = state_n
+            dgamma = 0.0_${k}$
+            omega = 1.0_${k}$
+            status = STATUS_NOT_CONVERGED
+            do i = 1, mat%iter_nw
+                ! Stagnation protection
+                if (i == 10 .or. i == 20 .or. i == 30 .or. i == 40) then
+                    omega = omega*0.75_${k}$
+                end if
+                call ${ITER}$(mat, elas, strain, state_n, state_np1, dgamma, omega, converged)
+                if (converged) then
+                    status = STATUS_OK
+                    exit
+                end if
+            end do
+            ! Exhausted iterations: the loop counter ends at iter_nw + 1
+            iters = min(i, mat%iter_nw)
+        end if
+
+        stress = state_np1%stress
+        call ${TANGENT}$(mat, elas, strain, state_n, state_np1, tangent)
+    end subroutine ${SOLVE}$
+
+    pure subroutine ${ITER}$(mat, elas, strain, state_n, state, dgamma, omega, converged)
+        !! One Newton-Raphson iteration of the matrix-free closest point return mapping of material `${MAT.name}$`,
+        !! `real(${k}$)`, with under-relaxation `omega` of \( \Delta\gamma \) and of the plastic strain.
+        !!
+        !! The correction of `closest_point` (\( \mathbb{H} = [\mathbb{C}^{-1} + \Delta\gamma\,\partial^2 f/
+        !! \partial\boldsymbol\sigma^2]^{-1} \), \( \delta\Delta\gamma = (f - \mathbf{n}:\mathbb{H}:\mathbf{r})/
+        !! (\mathbf{n}:\mathbb{H}:\mathbf{n} + h) \), \( \delta\boldsymbol\varepsilon^p = \mathbb{C}^{-1}:\mathbb{H}:
+        !! (\mathbf{r} + \delta\Delta\gamma\,\mathbf{n}) \)) from two solutions of the symmetric positive definite
+        !! system \( \mathbb{K}\,\mathbf{y} = \mathbb{C}:\mathbf{b} \), \( \mathbb{K} = \mathbb{C} + \Delta\gamma\,
+        !! \mathbb{C}:\partial^2 f/\partial\boldsymbol\sigma^2:\mathbb{C} \) (\( \mathbf{y} = \mathbb{C}^{-1}:\mathbb{H}:
+        !! \mathbf{b} \)), for \( \mathbf{b} = \mathbf{r} \) and \( \mathbf{b} = \mathbf{n} \), by conjugate gradients
+        !! (`${ITER}$_cg`) with the products of the second derivative from `yield_hess_apply` (no matrix is formed):
+        !! \( \delta\Delta\gamma = (f - (\mathbb{C}:\mathbf{n}):\mathbf{y}_r)/((\mathbb{C}:\mathbf{n}):\mathbf{y}_n +
+        !! h) \), \( \delta\boldsymbol\varepsilon^p = \mathbf{y}_r + \delta\Delta\gamma\,\mathbf{y}_n \).
+        use muscle_tensors, only : operator(+), operator(-), operator(*), operator(.ddot.)
+        use muscle_elas_laws, only : elas_stress, elas_dstress_dstrain
+        use muscle_yield_laws, only : yield_hess_prepare, yield_${MAT.yield_}$_hd_${k}$
+        use muscle_kinds, only : SY_MIN_${k}$
+        use muscle_hard_laws, only : hard_stress, hard_dstress_dep
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material.
+        type(${ELAS_T}$), intent(in) :: elas
+            !! Elasticity of the step (that of the material, or the frozen one of its viscoelastic model).
+        type(${S2}$), intent(in) :: strain
+            !! Total strain at \( t_{n+1} \).
+        type(plastic_state_${k}$), intent(in) :: state_n
+            !! Converged state at \( t_n \).
+        type(plastic_state_${k}$), intent(inout) :: state
+            !! Candidate state at \( t_{n+1} \): iterate k in, k+1 out (unchanged plastic variables and
+            !! the stress of iterate k when converged).
+        real(${k}$), intent(inout) :: dgamma
+            !! Plastic multiplier increment \( \Delta\gamma \).
+        real(${k}$), intent(inout) :: omega
+            !! Relaxation factor, \( 0 < \omega \le 1 \) (reduced when \( \Delta\gamma \) is clipped at 0).
+        logical, intent(out) :: converged
+            !! Iterate k meets the tolerance.
+
+        type(${S2}$) :: strain_p, df, residual, stress, cdf, yr, yn
+        type(${C4}$) :: elas_tan
+        type(yield_${MAT.yield_}$_hd_${k}$) :: hd
+        real(${k}$) :: strain_pf, hard, dhard, f, norm_res, ddgamma
+
+        strain_p = state%strain_p
+        strain_pf = state%strain_pf
+
+        ! Elastic tangent, stress, equivalent stress, gradient and the data of the Hessian-vector products
+        elas_tan = elas_dstress_dstrain(elas, strain - strain_p)
+        stress = elas_stress(elas, strain - strain_p)
+        hard = hard_stress(mat%hard, strain_pf)
+        call yield_hess_prepare(mat%yield, stress, f, df, hd)
+        f = f - hard
+
+        ! Plastic strain residual
+        dhard = hard_dstress_dep(mat%hard, strain_pf)
+        residual = state_n%strain_p - strain_p + (dgamma*df)
+        norm_res = sqrt(sum(residual%vals**2))
+
+        ! Convergence: |f| relative to the current yield stress; the plastic strain residual
+        ! (dimensionless) against the same tolerance
+        if (abs(f) < mat%tol*max(hard, SY_MIN_${k}$) .and. norm_res < mat%tol) then
+            converged = .true.
+            state%stress = stress
+            return
+        end if
+        converged = .false.
+
+        ! y_r and y_n by conjugate gradients, then the correction
+        call ${ITER}$_cg(mat, elas_tan, hd, dgamma, elas_tan .ddot. residual, yr)
+        cdf = elas_tan .ddot. df
+        call ${ITER}$_cg(mat, elas_tan, hd, dgamma, cdf, yn)
+        ddgamma = (f - (cdf .ddot. yr))/((cdf .ddot. yn) + dhard)
+
+        ! Under-relaxed step, non-negative plastic multiplier
+        dgamma = dgamma + omega*ddgamma
+        if (dgamma < 0.0_${k}$) then
+            dgamma = 0.0_${k}$
+            omega = omega*0.75_${k}$
+        end if
+
+        strain_pf = state_n%strain_pf + dgamma
+
+        ! The plastic strain takes the same relaxed step as dgamma (except in an iteration where
+        ! dgamma is clipped at zero)
+        strain_p = strain_p + omega*(yr + ddgamma*yn)
+
+        state%strain_p = strain_p
+        state%strain_pf = strain_pf
+        state%stress = stress
+    end subroutine ${ITER}$
+
+    pure subroutine ${ITER}$_cg(mat, elas_tan, hd, dgamma, b, y)
+        !! Conjugate gradients for \( (\mathbb{C} + \Delta\gamma\,\mathbb{C}:\partial^2 f/\partial\boldsymbol\sigma^2:
+        !! \mathbb{C}) : \mathbf{y} = \mathbf{b} \) (symmetric positive definite for a convex criterion) in the inner
+        !! product of the double contraction, `real(${k}$)`: at most `CG_MAX` steps (6 in exact arithmetic), until the
+        !! residual is below `CG_TOL` times that of y = 0. The products of the second derivative come from
+        !! `yield_hess_apply` (no matrix is formed). A direction with \( \mathbf{p}:\mathbb{K}:\mathbf{p} \le 0 \)
+        !! (not possible with a convex criterion and \( \Delta\gamma \ge 0 \)) stops the iteration with the
+        !! current solution.
+        use muscle_tensors, only : operator(+), operator(-), operator(*), operator(.ddot.)
+        use muscle_yield_laws, only : yield_hess_apply, yield_${MAT.yield_}$_hd_${k}$
+        implicit none
+        @:DEVICE()
+        type(${MAT_T}$), intent(in) :: mat
+            !! Material (its criterion).
+        type(${C4}$), intent(in) :: elas_tan
+            !! Elastic tangent C.
+        type(yield_${MAT.yield_}$_hd_${k}$), intent(in) :: hd
+            !! Data of the Hessian-vector products.
+        real(${k}$), intent(in) :: dgamma
+            !! Plastic multiplier increment.
+        type(${S2}$), intent(in) :: b
+            !! Right-hand side.
+        type(${S2}$), intent(out) :: y
+            !! Solution.
+        integer, parameter :: CG_MAX = 12
+            ! Twice the dimension: rounding can delay the exact termination after 6 steps
+        real(${k}$), parameter :: CG_TOL = 8.0_${k}$*epsilon(1.0_${k}$)
+            ! Relative residual; the Newton iteration tolerates an inexact correction
+        type(${S2}$) :: r, p, q, kp
+        real(${k}$) :: rr, rr_new, bb, alpha, pkp
+        integer :: it
+
+        y%vals = 0.0_${k}$
+        r = b
+        p = b
+        rr = r .ddot. r
+        bb = rr
+        do it = 1, CG_MAX
+            if (.not. (rr > (CG_TOL*CG_TOL)*bb)) exit
+            q = elas_tan .ddot. p
+            kp = q + dgamma*(elas_tan .ddot. yield_hess_apply(mat%yield, hd, q))
+            pkp = p .ddot. kp
+            if (.not. (pkp > 0.0_${k}$)) exit
+            alpha = rr/pkp
+            y = y + alpha*p
+            r = r - alpha*kp
+            rr_new = r .ddot. r
+            p = r + (rr_new/rr)*p
+            rr = rr_new
+        end do
+    end subroutine ${ITER}$_cg
+#:endif

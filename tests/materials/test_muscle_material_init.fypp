@@ -44,7 +44,7 @@ module test_mat_init_cases
     !! - the material behaves bit for bit as the one built by hand with the same inputs (the initializers of
     !!   the models called with keywords, the components set by name): point API on a plastic step;
     !! - fewer than `MAT_<NAME>_NPROPS` values give `STATUS_INVALID_PARAMETER`, extra values are ignored;
-    !!   an invalid input of an initializer with validation (Maxwell: tau <= 0) gives its status, and so does
+    !!   an invalid input of an initializer with validation (Maxwell: tau <= 0; Yld2004p: a = 3) gives its status, and so does
     !!   a value outside the domain checked by `mat_init_<name>` (`tol`, `iter_nw` <= 0, Young modulus,
     !!   Poisson ratio, Drucker-Prager hardening mode, the Johnson-Cook rate factor on the floor
     !!   C |ln(epmin/epdmax)| < 1).
@@ -58,6 +58,7 @@ module test_mat_init_cases
     use muscle_yield_cpb06, only : yield_cpb06_init
     use muscle_yield_cpb06ex2, only : yield_cpb06ex2_init
     use muscle_yield_yld2004, only : yield_yld2004_init
+    use muscle_yield_yld2004p, only : yield_yld2004p_init
     #:for MAT in MATS
     #:set mat_kinds = ', '.join(muscle_meta.material_type(MAT.name, k) for k in REAL_KINDS)
     use ${muscle_meta.material_module(MAT.name)}$, only : mat_init_${MAT.name}$, muscle_point_${MAT.name}$, &
@@ -234,6 +235,14 @@ contains
         props(${TAU.index}$) = -1.0_${k}$
         call mat_init_${MAT.name}$(mat, props, st)
         call check_true(passed, '${L}$: Maxwell tau <= 0', st == STATUS_INVALID_PARAMETER)
+        #:endif
+        #:if getattr(MAT, muscle_meta.MATERIAL_FIELDS['yield']) == 'yld2004p'
+        #:set EXPO = [q for q in PROPS if q.component == 'yield' and q.name == 'a'][0]
+
+        ! Invalid input of the Yld2004p initializer (an exponent without a recurrence, D-055)
+        props(${EXPO.index}$) = 3.0_${k}$
+        call mat_init_${MAT.name}$(mat, props, st)
+        call check_true(passed, '${L}$: Yld2004p a = 3', st == STATUS_INVALID_PARAMETER)
         #:endif
     end subroutine run_${MAT.name}$_${k}$
     #:endfor

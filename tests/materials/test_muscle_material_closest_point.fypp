@@ -55,6 +55,7 @@ program test_mat_closest_point
         solver_case(0, 'cp_cpb06ex2_swift', 'steel', '', 'swift', 'cpb06ex2-1', 200, 0.0_dp, 5.61e-4_dp, iters_max=65), &
         solver_case(0, 'cp_cpb06ex2_bilinear', 'steel', '', 'bilinear', 'cpb06ex2-3', 200, 0.0_dp, 9.13e-4_dp, iters_max=40), &
         solver_case(0, 'cp_yld2004_swift', 'steel', '', 'swift', 'yld2004-2', 200, 0.0_dp, 5.63e-4_dp, iters_max=80), &
+        solver_case(0, 'cp_yld2004p_swift', 'steel', '', 'swift', 'yld2004p-2', 200, 0.0_dp, 5.63e-4_dp, iters_max=80), &
         solver_case(0, 'cp_yld2004_vocemod', 'steel', '', 'vocemod', 'yld2004-4', 200, 0.0_dp, 1.25e-3_dp), &
         solver_case(0, 'cp_maxwell_vm_bilinear', 'maxwell', '', 'bilinear', 'vonmises', 200, 0.1_dp, 1.56e-2_dp), &
         solver_case(0, 'cp_kelvin_hill48_swift', 'kelvin', '', 'swift', 'hill48-2', 200, 0.1_dp, 6.55e-3_dp), &

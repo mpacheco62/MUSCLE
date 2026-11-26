@@ -4,7 +4,8 @@
 #:include "muscle_fd.fypp"
 #!
 #! Kernel API of the yield criteria (D-017) in every kind: von Mises, Hill48, Drucker-Prager, CPB06,
-#! CPB06ex2 and Yld2004 through the family generics of muscle_yield_laws:
+#! CPB06ex2, Yld2004 and Yld2004p (Yld2004 in polynomial form, D-055) through the family generics of
+#! muscle_yield_laws (Yld2004p has the checks of Yld2004 in every item below, with the sets of Yld2004):
 #! - dp: the equivalent stress against closed forms (von Mises sqrt(3 J2), Hill48 quadratic form,
 #!   isotropic CPB06, CPB06ex2 and Yld2004 = von Mises, Drucker-Prager with beta = 0 and K = 1 = von
 #!   Mises), positive homogeneity, and the analytical gradient and Hessian
@@ -37,6 +38,9 @@
 #!   derivatives (measured 7.8e-10 gradient, 1.6e-9 Hessian, CPB06 with a = 8; Yld2004 1.3e-9 and
 #!   CPB06ex2 9.3e-10 Hessian; the states where Sigma has a null principal value are skipped for
 #!   CPB06 with k /= 0, see below);
+#! - Yld2004p against Yld2004 (another route of the same yield function: power sums against
+#!   eigenvalues) on every state and set, f, gradient, Hessian and Hessian-vector product, and its
+#!   initializer (exponents 2, 4, 6, 8 only); tolerances in test_yld2004p_vs_yld2004;
 #! - TOL_K: sp against dp, also over the magnitude sweeps (CPB06, CPB06ex2 and Yld2004 |sigma|
 #!   1e-8..1e5 (see test_vs_dp), Drucker-Prager 1e-8..1e12, von
 #!   Mises 1e-15..1e15) (measured 5.6e-7 stress_eq, Drucker-Prager; 6.3e-7 gradient and 1.7e-6 Hessian,
@@ -173,12 +177,13 @@ module test_yield_point
     use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, &
         yield_stress_eq_and_derivatives, yield_joint_evaluation, &
         ${', '.join('yield_{}_{}'.format(m, k) for m in ('vonmises', 'hill48', 'cpb06') for k in REAL_KINDS)}$, &
-        ${', '.join('yield_{}_{}'.format(m, k) for m in ('druckerprager', 'cpb06ex2', 'yld2004') for k in REAL_KINDS)}$
+        ${', '.join('yield_{}_{}'.format(m, k) for m in ('druckerprager', 'cpb06ex2', 'yld2004') for k in REAL_KINDS)}$, &
+        ${', '.join('yield_yld2004p_{}'.format(k) for k in REAL_KINDS)}$
     implicit none
     private
 
     #:for k in REAL_KINDS
-    public :: point_${k}$, point2_${k}$
+    public :: point_${k}$, point2_${k}$, point3_${k}$
     #:endfor
 
 contains
@@ -240,11 +245,29 @@ contains
         call yield_stress_eq_and_derivatives(y, s, f(6), df(6), ddf(6))
         joint = [yield_joint_evaluation(p), yield_joint_evaluation(x), yield_joint_evaluation(y)]
     end subroutine point2_${k}$
+
+    pure subroutine point3_${k}$(y, s, f, df, ddf, joint)
+        !! As `point_${k}$` for the criterion `y` (Yld2004p): 1 by the functions, 2 by the joint evaluation, and
+        !! the joint flag.
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: y
+        type(${tname('3D2Osym', k)}$), intent(in) :: s
+        real(${k}$), intent(out) :: f(2)
+        type(${tname('3D2Osym', k)}$), intent(out) :: df(2)
+        type(${tname('3D4O3sym', k)}$), intent(out) :: ddf(2)
+        logical, intent(out) :: joint
+
+        f(1) = yield_stress_eq(y, s)
+        df(1) = yield_dstress_eq(y, s)
+        ddf(1) = yield_ddstress_eq(y, s)
+        call yield_stress_eq_and_derivatives(y, s, f(2), df(2), ddf(2))
+        joint = yield_joint_evaluation(y)
+    end subroutine point3_${k}$
     #:endfor
 
 end module test_yield_point
 
-#:set MODELS = ['vonmises', 'hill48', 'druckerprager', 'cpb06', 'cpb06ex2', 'yld2004']
+#:set MODELS = ['vonmises', 'hill48', 'druckerprager', 'cpb06', 'cpb06ex2', 'yld2004', 'yld2004p']
 #:set ALLM = MODELS + ['fdhill']
 module test_yield_eval
     !! `ev(y, s)`: [stress_eq, dstress_eq%vals, ddstress_eq%vals] (28 values) of a criterion `y`
@@ -328,13 +351,16 @@ module test_yield_cases
     use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
     use muscle_tensors, only : ${', '.join(tname('3D' + F, k) for F in ('2Osym', '4O3sym') for k in REAL_KINDS)}$
     use muscle_yield_laws, only : yield_stress_eq, yield_dstress_eq, yield_ddstress_eq, yield_joint_evaluation, &
+        yield_hess_prepare, yield_hess_apply, &
+        ${', '.join('yield_{}_hd_{}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$, &
         ${', '.join('yield_{}_{}'.format(m, k) for m in MODELS for k in REAL_KINDS)}$
     use muscle_yield_cpb06, only : yield_cpb06_init
     use muscle_yield_druckerprager, only : yield_druckerprager_init, DP_HARDENING_TENSION, DP_HARDENING_COMPRESSION, &
         DP_HARDENING_SHEAR
     use muscle_yield_cpb06ex2, only : yield_cpb06ex2_init
     use muscle_yield_yld2004, only : yield_yld2004_init
-    use muscle_status, only : STATUS_OK
+    use muscle_yield_yld2004p, only : yield_yld2004p_init
+    use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER
     use muscle_yield_fdhill, only : ${', '.join('yield_fdhill_' + k for k in REAL_KINDS)}$, &
         ${', '.join('yield_joint_evaluation_fdhill_' + k for k in REAL_KINDS)}$
     use test_yield_eval, only : ev, ev_joint, ev_joint_noddf
@@ -422,7 +448,7 @@ module test_yield_cases
         1.404620_dp, 1.051660_dp, 1.147100_dp, 6.0_dp], [19, 4])
         !! Yld2004: cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66, cpp12..cpp66, a (1 isotropic,
         !! a = 2, = von Mises; 2 AA2090-T3, a = 8; 3 C' isotropic, C'' of AA2090-T3, a = 2; 4 AA2090-T3,
-        !! a = 6).
+        !! a = 6). Also the sets of Yld2004p (every exponent is 2, 4, 6 or 8).
     real(dp), parameter :: PRESSURES(6) = [1.0_dp, -1.0_dp, 2.0_dp, 0.5_dp, 250.0_dp, -1.0e5_dp]
         !! Hydrostatic stresses (3p/3 = p exactly, so dev = 0 exactly).
     real(dp), parameter :: NOISY(3) = [0.1_dp, -0.3_dp, 7.1_dp]
@@ -453,9 +479,12 @@ contains
         call record(test_generics_${k}$(), ${10*i + 2}$, 'generics, joint evaluation and flag ${k}$', code)
         call record(test_point_${k}$(), ${10*i + 3}$, 'pure point procedure ${k}$', code)
         call record(test_model_fd_${k}$(), ${10*i + 4}$, 'FD_GRAD gradient and FD_HESS Hessian ${k}$', code)
+        call record(test_hess_apply_${k}$(), ${80 + i}$, 'yield_hess_prepare and yield_hess_apply ${k}$ (D-051)', code)
         #:if k != 'dp'
         call record(test_vs_dp_${k}$(), ${10*i + 5}$, '${k}$ against dp', code)
         #:endif
+        call record(test_yld2004p_vs_yld2004_${k}$(), ${60 + i}$, 'Yld2004p against Yld2004 ${k}$ (D-055)', code)
+        call record(test_yld2004p_init_${k}$(), ${70 + i}$, 'Yld2004p initializer status ${k}$', code)
         #:endfor
         call record(test_formulas(), 91, 'closed forms and homogeneity (dp)', code)
         call record(test_fd_reference(), 92, 'analytical derivatives against central differences (dp)', code)
@@ -549,8 +578,88 @@ contains
         end select
     end function dp_i1_${k}$
 
+    function test_hess_apply_${k}$() result(passed)
+        !! `yield_hess_prepare` and `yield_hess_apply` of every criterion and parameter set in `real(${k}$)` against the
+        !! family functions (another route: the assembled second derivative, itself checked against central
+        !! differences in `test_model_fd`): f and df relative to their size, d2f : x for pseudo-random x relative to
+        !! max|d2f| max|x|, and the symmetry y : (d2f : x) = x : (d2f : y) of the product (a property the matrix-free
+        !! solvers need), on the general states, on hydrostatic ones (exact and with a rounding-noise deviator, where
+        !! the transformed stress is noise) and at the zero tensor (f, df and the product exactly 0). Prints the
+        !! worst ratios in eps (gfortran, 2026-11-25: f and df 0, the same operations; the product 13 eps in sp and
+        !! 15 in dp; the symmetry 20 and 18).
+        use muscle_tensors, only : operator(.ddot.)
+        logical :: passed
+        type(park_miller) :: rng
+        type(${tname('3D2Osym', k)}$) :: s, x, y, df, hx, hy, ref, dref
+        type(${tname('3D4O3sym', k)}$) :: ddf
+        type(yield_vonmises_${k}$) :: v
+        #:for m in MODELS
+        type(yield_${m}$_hd_${k}$) :: hd_${m}$
+        #:endfor
+        real(${k}$) :: f, eps, worst(4), e
+        integer :: i, j, l, c
+
+        passed = .true.
+        rng = park_miller(20261125)
+        eps = epsilon(1.0_${k}$)
+        worst = 0.0_${k}$
+        do j = 0, NS + size(PRESSURES) + size(NOISY)
+            if (j == 0) then
+                s%vals = 0.0_${k}$
+            else if (j <= NS) then
+                s = stress_${k}$(j)
+            else
+                s%vals = 0.0_${k}$
+                s%vals(1:3) = real(merge(PRESSURES(min(j - NS, size(PRESSURES))), &
+                                         NOISY(max(j - NS - size(PRESSURES), 1)), j - NS <= size(PRESSURES)), ${k}$)
+            end if
+            do l = 1, 3
+                do c = 1, 6
+                    x%vals(c) = real(rnd(rng), ${k}$)
+                    y%vals(c) = real(rnd(rng), ${k}$)
+                end do
+                #:for m, inst, n in [('vonmises', 'v', '1'), ('hill48', 'hill_' + k + '(i)', 'size(HILLV, 2)'), &
+                    & ('druckerprager', 'dpr_' + k + '(i)', 'size(DPV, 2)'), ('cpb06', 'cpb_' + k + '(i)', 'size(CPBV, 2)'), &
+                    & ('cpb06ex2', 'ex2_' + k + '(i)', 'size(EX2V, 2)'), ('yld2004', 'yld_' + k + '(i)', 'size(YLDV, 2)'), &
+                    & ('yld2004p', 'yldp_' + k + '(i)', 'size(YLDV, 2)')]
+                do i = 1, ${n}$
+                    call yield_hess_prepare(${inst}$, s, f, df, hd_${m}$)
+                    hx = yield_hess_apply(${inst}$, hd_${m}$, x)
+                    #:if m != 'druckerprager'
+                    ! (Drucker-Prager has a pressure gradient at the zero tensor: compared with the functions below)
+                    if (j == 0) then
+                        call check_true(passed, '${k}$ hess_prepare/apply ${m}$ at the zero tensor', f == 0.0_${k}$ &
+                                        .and. all(df%vals == 0.0_${k}$) .and. all(hx%vals == 0.0_${k}$))
+                        cycle
+                    end if
+                    #:endif
+                    ddf = yield_ddstress_eq(${inst}$, s)
+                    ref = ddf .ddot. x
+                    dref = yield_dstress_eq(${inst}$, s)
+                    e = abs(f - yield_stress_eq(${inst}$, s))/(max(abs(f), tiny(f))*eps)
+                    worst(1) = max(worst(1), e)
+                    call check_true(passed, '${k}$ hess_prepare f ${m}$', e <= 8.0_${k}$)
+                    e = maxval(abs(df%vals - dref%vals))/(max(maxval(abs(dref%vals)), tiny(f))*eps)
+                    worst(2) = max(worst(2), e)
+                    call check_true(passed, '${k}$ hess_prepare df ${m}$', e <= 8.0_${k}$)
+                    e = maxval(abs(hx%vals - ref%vals))/(max(maxval(abs(ddf%vals))*maxval(abs(x%vals)), tiny(f))*eps)
+                    worst(3) = max(worst(3), e)
+                    call check_true(passed, '${k}$ hess_apply ${m}$', e <= 64.0_${k}$)
+                    hy = yield_hess_apply(${inst}$, hd_${m}$, y)
+                    e = abs((y .ddot. hx) - (x .ddot. hy)) &
+                        /(max(maxval(abs(ddf%vals))*maxval(abs(x%vals))*maxval(abs(y%vals)), tiny(f))*eps)
+                    worst(4) = max(worst(4), e)
+                    call check_true(passed, '${k}$ hess_apply symmetric ${m}$', e <= 64.0_${k}$)
+                end do
+                #:endfor
+            end do
+        end do
+        print '(a, 4f10.2)', '  ${k}$ hess_prepare f, df, hess_apply, symmetry: worst error/eps', worst
+    end function test_hess_apply_${k}$
+
     function test_small_shear_${k}$() result(passed)
-        !! CPB06, CPB06ex2 and Yld2004 (f through `ev`, the family generics) at a shear tau e12 far below the old
+        !! CPB06, CPB06ex2, Yld2004 and Yld2004p (f through `ev`, the family generics) at a shear tau e12 far below
+        !! the old
         !! absolute threshold of `eigenvals` (1e-10 dp, 1e-9 sp on sqrt(J2/3), D-017.9), alone and on a
         !! pressure p = 1 or 0.1, `real(${k}$)`. f takes its
         !! eigenvalues from `spectral_decomposition` (D-032), which has no absolute threshold, so:
@@ -599,7 +708,7 @@ contains
                 call check_true(passed, '${k}$ CPB06ex2 tiny shear on a pressure: f(p I + tau e12) = f(tau e12)', fp == ft)
             end do
         end do
-        ! Yld2004: not exactly insensitive to a pressure (D-017.9), so only the shear alone
+        ! Yld2004 and Yld2004p: not exactly insensitive to a pressure (D-017.9), so only the shear alone
         do i = 1, size(YLDV, 2)
             r = ev(yld_${k}$(i), s1)
             f1 = r(1)
@@ -607,6 +716,12 @@ contains
             ft = r(1)
             call check_true(passed, '${k}$ Yld2004 tiny shear: f > 0', ft > 0.0_${k}$)
             call check_true(passed, '${k}$ Yld2004 tiny shear: f(tau e12) = tau f(e12)', ft == TAU*f1)
+            r = ev(yldp_${k}$(i), s1)
+            f1 = r(1)
+            r = ev(yldp_${k}$(i), st)
+            ft = r(1)
+            call check_true(passed, '${k}$ Yld2004p tiny shear: f > 0', ft > 0.0_${k}$)
+            call check_true(passed, '${k}$ Yld2004p tiny shear: f(tau e12) = tau f(e12)', ft == TAU*f1)
         end do
     end function test_small_shear_${k}$
 
@@ -636,6 +751,21 @@ contains
                                 a=c(19), status=status)
         if (status /= STATUS_OK) error stop 'yield_yld2004_init failed'
     end function yld_${k}$
+
+    function yldp_${k}$(i) result(p)
+        !! i-th Yld2004 parameter set for Yld2004p (polynomial form, D-055) in `real(${k}$)` (initializer of the
+        !! kernel API).
+        integer, intent(in) :: i
+        type(yield_yld2004p_${k}$) :: p
+        real(${k}$) :: c(19)
+        integer :: status
+        c = real(YLDV(:, i), ${k}$)
+        call yield_yld2004p_init(p, cp12=c(1), cp13=c(2), cp21=c(3), cp23=c(4), cp31=c(5), cp32=c(6), &
+                                 cp44=c(7), cp55=c(8), cp66=c(9), cpp12=c(10), cpp13=c(11), cpp21=c(12), &
+                                 cpp23=c(13), cpp31=c(14), cpp32=c(15), cpp44=c(16), cpp55=c(17), cpp66=c(18), &
+                                 a=c(19), status=status)
+        if (status /= STATUS_OK) error stop 'yield_yld2004p_init failed'
+    end function yldp_${k}$
 
     function test_null_${k}$() result(passed)
         !! Zero and hydrostatic stresses: f = 0 and both derivatives exactly 0 (D-017.9), every set;
@@ -668,6 +798,13 @@ contains
                     call check_null('Yld2004 joint', ev_joint(yld_${k}$(i), s))
                 else
                     call check_yld_hydro(ev(yld_${k}$(i), s), abs(s%vals(1)))
+                end if
+                ! Yld2004p: the same yield function, the same checks
+                if (j == 0) then
+                    call check_null('Yld2004p', ev(yldp_${k}$(i), s))
+                    call check_null('Yld2004p joint', ev_joint(yldp_${k}$(i), s))
+                else
+                    call check_yld_hydro(ev(yldp_${k}$(i), s), abs(s%vals(1)))
                 end if
             end do
             do i = 1, size(DPV, 2)
@@ -774,6 +911,8 @@ contains
         use muscle_yield_druckerprager, only : yield_stress_eq_druckerprager_3D_${k}$
         use muscle_yield_cpb06ex2, only : yield_dstress_eq_cpb06ex2_3D_${k}$
         use muscle_yield_yld2004, only : yield_ddstress_eq_yld2004_3D_${k}$, yield_stress_eq_and_derivatives_yld2004_3D_${k}$
+        use muscle_yield_yld2004p, only : yield_stress_eq_yld2004p_3D_${k}$, yield_dstress_eq_yld2004p_3D_${k}$, &
+            yield_ddstress_eq_yld2004p_3D_${k}$, yield_stress_eq_and_derivatives_yld2004p_3D_${k}$
         logical :: passed
         type(${tname('3D2Osym', k)}$) :: s, d1, d2
         type(${tname('3D4O3sym', k)}$) :: h1, h2
@@ -806,9 +945,9 @@ contains
             r = ev(v, s)
             call check_approx(passed, '${k}$ joint without ddf (von Mises)', ev_joint_noddf(v, s), r(1:7), 0.0_${k}$)
         end do
-        call check_true(passed, '${k}$ joint flags: Drucker-Prager, CPB06ex2 false, Yld2004 true', &
+        call check_true(passed, '${k}$ joint flags: Drucker-Prager, CPB06ex2 false, Yld2004 and Yld2004p true', &
                         .not. (yield_joint_evaluation(dpr_${k}$(1)) .or. yield_joint_evaluation(ex2_${k}$(1))) &
-                        .and. yield_joint_evaluation(yld_${k}$(1)))
+                        .and. yield_joint_evaluation(yld_${k}$(1)) .and. yield_joint_evaluation(yldp_${k}$(1)))
         do j = 0, NS
             s = stress_${k}$(j)
             do i = 1, size(DPV, 2)
@@ -843,12 +982,27 @@ contains
                 call check_approx(passed, '${k}$ joint specific = functions (Yld2004)', [f, d1%vals, h1%vals], r, &
                                   2*epsilon(0.0_${k}$))
             end do
+            ! Yld2004p: generic = specific (the three functions), its own joint evaluation = the functions
+            do i = 1, size(YLDV, 2)
+                r = ev(yldp_${k}$(i), s)
+                d1 = yield_dstress_eq_yld2004p_3D_${k}$(yldp_${k}$(i), s)
+                h1 = yield_ddstress_eq_yld2004p_3D_${k}$(yldp_${k}$(i), s)
+                call check_approx(passed, '${k}$ generic = specific (Yld2004p)', &
+                                  [yield_stress_eq_yld2004p_3D_${k}$(yldp_${k}$(i), s), d1%vals, h1%vals], r, 0.0_${k}$)
+                call check_approx(passed, '${k}$ joint = functions (Yld2004p)', ev_joint(yldp_${k}$(i), s), r, &
+                                  2*epsilon(0.0_${k}$))
+                call check_approx(passed, '${k}$ joint without ddf (Yld2004p)', ev_joint_noddf(yldp_${k}$(i), s), &
+                                  r(1:7), 2*epsilon(0.0_${k}$))
+                call yield_stress_eq_and_derivatives_yld2004p_3D_${k}$(yldp_${k}$(i), s, f, d1, h1)
+                call check_approx(passed, '${k}$ joint specific = functions (Yld2004p)', [f, d1%vals, h1%vals], r, &
+                                  2*epsilon(0.0_${k}$))
+            end do
         end do
     end function test_generics_${k}$
 
     function test_point_${k}$() result(passed)
         !! The pure point procedure gives the same bits as the direct calls.
-        use test_yield_point, only : point_${k}$, point2_${k}$
+        use test_yield_point, only : point_${k}$, point2_${k}$, point3_${k}$
         logical :: passed
         type(${tname('3D2Osym', k)}$) :: s, df(6)
         type(${tname('3D4O3sym', k)}$) :: ddf(6)
@@ -885,6 +1039,15 @@ contains
                                   2*epsilon(0.0_${k}$))
             end do
             call check_true(passed, '${k}$ point2 joint flags', all(joint .eqv. [.false., .false., .true.]))
+        end do
+        do j = 0, NS
+            s = stress_${k}$(j)
+            call point3_${k}$(yldp_${k}$(2), s, f(1:2), df(1:2), ddf(1:2), joint(1))
+            ref(:, 1) = ev(yldp_${k}$(2), s)
+            do i = 1, 2
+                call check_approx(passed, '${k}$ point3', [f(i), df(i)%vals, ddf(i)%vals], ref(:, 1), 2*epsilon(0.0_${k}$))
+            end do
+            call check_true(passed, '${k}$ point3 joint flag', joint(1))
         end do
     end function test_point_${k}$
 
@@ -966,7 +1129,7 @@ contains
         end do
     contains
         subroutine compare_new(suffix, e)
-            ! Drucker-Prager, CPB06ex2 and Yld2004 at the current s / sd (magnitude 10**e), dp
+            ! Drucker-Prager, CPB06ex2, Yld2004 and Yld2004p at the current s / sd (magnitude 10**e), dp
             ! parameters from the `real(${k}$)` values of each set (exact conversion). Drucker-Prager
             ! from 1e-8 to 1e12 (stable Hessian, D-017.11d; the equivalent stress and the gradient
             ! keep q**3, which overflows in sp above ~7e12). CPB06ex2 and Yld2004 from 1e-8 to 1e5, as CPB06 (before
@@ -977,6 +1140,7 @@ contains
             type(yield_druckerprager_dp) :: pd
             type(yield_cpb06ex2_dp) :: xd
             type(yield_yld2004_dp) :: yd
+            type(yield_yld2004p_dp) :: ypd
             real(dp) :: c(27)
             integer :: i, status
             if (e < -8 .or. e > 12) return
@@ -1001,6 +1165,10 @@ contains
                                         c(12), c(13), c(14), c(15), c(16), c(17), c(18), c(19), status)
                 call check_true(passed, 'Yld2004 dp init status', status == STATUS_OK)
                 call compare('Yld2004' // suffix, ev(yld_${k}$(i), s), ev(yd, sd))
+                call yield_yld2004p_init(ypd, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), &
+                                         c(12), c(13), c(14), c(15), c(16), c(17), c(18), c(19), status)
+                call check_true(passed, 'Yld2004p dp init status', status == STATUS_OK)
+                call compare('Yld2004p' // suffix, ev(yldp_${k}$(i), s), ev(ypd, sd))
             end do
         end subroutine compare_new
 
@@ -1026,6 +1194,150 @@ contains
         end subroutine cpb_from_${k}$
     end function test_vs_dp_${k}$
     #:endif
+
+    function test_yld2004p_vs_yld2004_${k}$() result(passed)
+        !! Yld2004p (power sums, D-055) against Yld2004 (eigenvalues of the image stresses): the same yield function
+        !! by another route, in `real(${k}$)`. Every Yld2004 set with its own exponent and again with a = 4 (no set
+        !! has it), on the stress states scaled by 2**(-24), 1 and 2**24 (|sigma| up to ~4e9: a power of degree 8
+        !! overflows in sp without the scaling of the stress): f relative to f, the gradient relative to its largest
+        !! component, the Hessian relative to its largest component and the Hessian-vector product, for pseudo-random
+        !! x, relative to max|d2f| max|x| (both through `yield_hess_prepare` and `yield_hess_apply`). At the zero
+        !! tensor both give exactly 0. On hydrostatic stresses (exact and with a rounding-noise deviator) the two
+        !! forms are not compared: f is a tiny difference of large terms in both and the polynomial form loses the
+        !! relative accuracy of the Hessian-vector product by cancellation; there, as `test_null` does for Yld2004,
+        !! 0 <= f <= 100 eps |p| and a finite gradient and product. A small shear on a large pressure (tau/p = 1e-6,
+        !! the image stresses about 1e-6 of the stress) is compared too: f and the gradient must not lose accuracy
+        !! (the stress is scaled after the linear transformations, D-055). Prints the worst errors in eps.
+        use muscle_tensors, only : operator(.ddot.)
+        logical :: passed
+        real(${k}$), parameter :: TOL(4) = [8.0_${k}$, 16.0_${k}$, ${'256.0' if k == 'sp' else '64.0'}$_${k}$, &
+                                            ${'512.0' if k == 'sp' else '256.0'}$_${k}$]
+            !! f, gradient, Hessian and product, in eps, about 3 to 5 times the measured maxima (gfortran Debug,
+            !! Windows, 2026-11-26: sp 1.7, 4.4, 69, 140; dp 1.8, 4.3, 19, 48; the Hessian and the product carry the
+            !! error of the eigenvector terms of Yld2004 near repeated principal values).
+        real(${k}$), parameter :: SCALES(3) = [2.0_${k}$**(-24), 1.0_${k}$, 2.0_${k}$**24]
+            !! Exact scale factors of the stress states.
+        type(park_miller) :: rng
+        type(${tname('3D2Osym', k)}$) :: s, x, df, dfp, hx, hxp
+        type(yield_yld2004_${k}$) :: y
+        type(yield_yld2004p_${k}$) :: yp
+        type(yield_yld2004_hd_${k}$) :: hd
+        type(yield_yld2004p_hd_${k}$) :: hdp
+        real(${k}$) :: r(28), rp(28), f, fp, eps, worst(4), e, a, p
+        integer :: i, j, l, c, ia, status
+
+        passed = .true.
+        rng = park_miller(20261126)
+        eps = epsilon(1.0_${k}$)
+        worst = 0.0_${k}$
+        do i = 1, size(YLDV, 2)
+            do ia = 1, 2
+                a = merge(real(YLDV(19, i), ${k}$), 4.0_${k}$, ia == 1)
+                call make_pair(i, a)
+                do j = 0, NS + size(PRESSURES) + size(NOISY)
+                    do l = 1, size(SCALES)
+                        if (j == 0 .and. l > 1) exit
+                        s%vals = 0.0_${k}$
+                        if (j > NS) then
+                            p = real(merge(PRESSURES(min(j - NS, size(PRESSURES))), &
+                                           NOISY(max(j - NS - size(PRESSURES), 1)), j - NS <= size(PRESSURES)), ${k}$)
+                            s%vals(1:3) = SCALES(l)*p
+                        else if (j > 0) then
+                            s%vals = SCALES(l)*real(states(:, j), ${k}$)
+                        end if
+                        do c = 1, 6
+                            x%vals(c) = real(rnd(rng), ${k}$)
+                        end do
+                        r = ev(y, s)
+                        rp = ev(yp, s)
+                        call yield_hess_prepare(y, s, f, df, hd)
+                        hx = yield_hess_apply(y, hd, x)
+                        call yield_hess_prepare(yp, s, fp, dfp, hdp)
+                        hxp = yield_hess_apply(yp, hdp, x)
+                        if (j == 0) then
+                            call check_true(passed, '${k}$ Yld2004p at the zero tensor: f, df, d2f and the product 0', &
+                                            all(rp == 0.0_${k}$) .and. fp == 0.0_${k}$ .and. all(dfp%vals == 0.0_${k}$) &
+                                            .and. all(hxp%vals == 0.0_${k}$))
+                        else if (j > NS) then
+                            p = abs(s%vals(1))
+                            call check_true(passed, '${k}$ Yld2004p hydrostatic: 0 <= f <= 100 eps |p|', &
+                                            rp(1) >= 0.0_${k}$ .and. rp(1) <= 100.0_${k}$*eps*p)
+                            call check_true(passed, '${k}$ Yld2004p hydrostatic: finite gradient and product', &
+                                            all(abs(rp(2:7)) <= huge(p)) .and. all(abs(hxp%vals) <= huge(p)))
+                        else
+                            e = abs(rp(1) - r(1))/(abs(r(1))*eps)
+                            call measure(1, e, 'f')
+                            e = maxval(abs(rp(2:7) - r(2:7)))/(maxval(abs(r(2:7)))*eps)
+                            call measure(2, e, 'gradient')
+                            e = maxval(abs(rp(8:28) - r(8:28)))/(maxval(abs(r(8:28)))*eps)
+                            call measure(3, e, 'Hessian')
+                            e = maxval(abs(hxp%vals - hx%vals))/(maxval(abs(r(8:28)))*maxval(abs(x%vals))*eps)
+                            call measure(4, e, 'Hessian-vector product')
+                        end if
+                    end do
+                end do
+            end do
+        end do
+        ! A small shear on a large pressure: both forms from the same image stresses, which are about 1e-6 of the
+        ! stress (their powers of degree 8 would be subnormal in sp with a scale taken from the stress)
+        do i = 1, size(YLDV, 2)
+            call make_pair(i, real(YLDV(19, i), ${k}$))
+            s%vals = [100.0_${k}$, 100.0_${k}$, 100.0_${k}$, 1.0e-4_${k}$, 0.0_${k}$, 0.0_${k}$]
+            r = ev(y, s)
+            rp = ev(yp, s)
+            call check_true(passed, '${k}$ Yld2004p small shear on a pressure: f > 0', rp(1) > 0.0_${k}$)
+            e = abs(rp(1) - r(1))/(abs(r(1))*eps)
+            call measure(1, e, 'f, small shear on a pressure')
+            e = maxval(abs(rp(2:7) - r(2:7)))/(maxval(abs(r(2:7)))*eps)
+            call measure(2, e, 'gradient, small shear on a pressure')
+        end do
+        print '(a, 4f10.2)', '  ${k}$ Yld2004p vs Yld2004 f, df, d2f, product: worst error/eps', worst
+    contains
+        subroutine make_pair(i, a)
+            ! Yld2004 and Yld2004p with the coefficients of set i and the exponent a
+            integer, intent(in) :: i
+            real(${k}$), intent(in) :: a
+            real(${k}$) :: c(18)
+            c = real(YLDV(1:18, i), ${k}$)
+            call yield_yld2004_init(y, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), c(12), &
+                                    c(13), c(14), c(15), c(16), c(17), c(18), a, status)
+            call check_true(passed, '${k}$ Yld2004 init status', status == STATUS_OK)
+            call yield_yld2004p_init(yp, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), c(12), &
+                                     c(13), c(14), c(15), c(16), c(17), c(18), a, status)
+            call check_true(passed, '${k}$ Yld2004p init status', status == STATUS_OK)
+        end subroutine make_pair
+
+        subroutine measure(m, e, name)
+            integer, intent(in) :: m
+            real(${k}$), intent(in) :: e
+            character(len=*), intent(in) :: name
+            worst(m) = max(worst(m), e)
+            call check_true(passed, '${k}$ Yld2004p = Yld2004: ' // name, e <= TOL(m))
+        end subroutine measure
+    end function test_yld2004p_vs_yld2004_${k}$
+
+    function test_yld2004p_init_${k}$() result(passed)
+        !! `yield_yld2004p_init` in `real(${k}$)`: `STATUS_INVALID_PARAMETER` for an exponent without a recurrence
+        !! (3, 5, 10, 2.5), `STATUS_OK` for a = 4 (the other valid exponents, 2, 6 and 8, build the sets of `yldp`).
+        logical :: passed
+        real(${k}$), parameter :: BAD(4) = [3.0_${k}$, 5.0_${k}$, 10.0_${k}$, 2.5_${k}$]
+            !! Exponents without a recurrence.
+        type(yield_yld2004p_${k}$) :: yp
+        real(${k}$) :: c(18)
+        integer :: i, status
+
+        passed = .true.
+        c = real(YLDV(1:18, 2), ${k}$)
+        do i = 1, size(BAD)
+            call yield_yld2004p_init(yp, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), c(12), &
+                                     c(13), c(14), c(15), c(16), c(17), c(18), BAD(i), status)
+            call check_true(passed, '${k}$ Yld2004p init: STATUS_INVALID_PARAMETER for a not in {2, 4, 6, 8}', &
+                            status == STATUS_INVALID_PARAMETER)
+        end do
+        call yield_yld2004p_init(yp, c(1), c(2), c(3), c(4), c(5), c(6), c(7), c(8), c(9), c(10), c(11), c(12), &
+                                 c(13), c(14), c(15), c(16), c(17), c(18), 4.0_${k}$, status)
+        call check_true(passed, '${k}$ Yld2004p init: STATUS_OK for a = 4', status == STATUS_OK)
+    end function test_yld2004p_init_${k}$
     #:endfor
 
     function test_formulas() result(passed)
@@ -1050,6 +1362,7 @@ contains
             call check_approx(passed, 'isotropic CPB06 = von Mises', yield_stress_eq(cpb_dp(1), s), vm, 1.0e-13_dp)
             call check_approx(passed, 'isotropic CPB06ex2 = von Mises', yield_stress_eq(ex2_dp(5), s), vm, 1.0e-13_dp)
             call check_approx(passed, 'isotropic Yld2004 = von Mises', yield_stress_eq(yld_dp(1), s), vm, 1.0e-13_dp)
+            call check_approx(passed, 'isotropic Yld2004p = von Mises', yield_stress_eq(yldp_dp(1), s), vm, 1.0e-13_dp)
             call check_approx(passed, 'Drucker-Prager beta = 0, K = 1 = von Mises', yield_stress_eq(dpr_dp(5), s), vm, &
                               1.0e-13_dp)
             call check_homogeneous('von Mises', ev(v, s), ev(v, s2))
@@ -1071,6 +1384,7 @@ contains
             end do
             do i = 1, size(YLDV, 2)
                 call check_homogeneous('Yld2004', ev(yld_dp(i), s), ev(yld_dp(i), s2))
+                call check_homogeneous('Yld2004p', ev(yldp_dp(i), s), ev(yldp_dp(i), s2))
             end do
         end do
     contains
@@ -1100,7 +1414,8 @@ contains
             h = 1.0e-5_dp*sqrt(sum(s%vals**2))
             #:for m, n, sets, y in [('vonmises', 'von Mises', None, 'v'), ('hill48', 'Hill48', 'HILLV', 'hill_dp(i)'), &
                 & ('cpb06', 'CPB06', 'CPBV', 'cpb_dp(i)'), ('druckerprager', 'Drucker-Prager', 'DPV', 'dpr_dp(i)'), &
-                & ('cpb06ex2', 'CPB06ex2', 'EX2V', 'ex2_dp(i)'), ('yld2004', 'Yld2004', 'YLDV', 'yld_dp(i)')]
+                & ('cpb06ex2', 'CPB06ex2', 'EX2V', 'ex2_dp(i)'), ('yld2004', 'Yld2004', 'YLDV', 'yld_dp(i)'), &
+                & ('yld2004p', 'Yld2004p', 'YLDV', 'yldp_dp(i)')]
             do i = 1, ${'1' if sets is None else 'size({}, 2)'.format(sets)}$
                 #:if m == 'cpb06'
                 ! States 2 and 3 give Sigma a null principal value: with k /= 0 the second derivative

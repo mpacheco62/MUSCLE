@@ -38,12 +38,12 @@ module muscle_yield_cpb06ex2
     #:for k in REAL_KINDS
     use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
     #:endfor
-    use muscle_tensors, only : operator(.tdotsym.), operator(*), operator(+), assignment(=)
+    use muscle_tensors, only : operator(.tdotsym.), operator(.ddot.), operator(*), operator(+), assignment(=)
     use muscle_math_eigen, only : spectral_decomposition
-    use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian
+    use muscle_math_spectral_derivs, only : spectral_gradient, spectral_hessian, spectral_theta
     use muscle_math_fp, only : fp_exponent, fp_scale
     use muscle_yield_anisotropic, only : yield_lin_dev_block, yield_lin_apply, yield_lin_pull_back, &
-        & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian
+        & yield_lin_pull_back_hessian, yield_cpb_terms, yield_cpb_hessian, yield_eig_coords, yield_eig_hess, yield_eig_back
     implicit none
     private
 
@@ -51,6 +51,7 @@ module muscle_yield_cpb06ex2
     public :: yield_cpb06ex2_${k}$
     public :: yield_stress_eq_cpb06ex2_3D_${k}$, yield_dstress_eq_cpb06ex2_3D_${k}$, yield_ddstress_eq_cpb06ex2_3D_${k}$
     public :: yield_stress_eq_and_derivatives_cpb06ex2_3D_${k}$, yield_joint_evaluation_cpb06ex2_${k}$
+    public :: yield_cpb06ex2_hd_${k}$, yield_hess_prepare_cpb06ex2_3D_${k}$, yield_hess_apply_cpb06ex2_3D_${k}$
     public :: yield_cpb06ex2_init_${k}$
     #:endfor
     public :: yield_cpb06ex2_init
@@ -78,6 +79,21 @@ module muscle_yield_cpb06ex2
         real(${k}$), private :: B
             !! Normalization: \( \sigma_{eq} = s \) in uniaxial tension \( s \) along RD (Eq. 11 with \( \theta = 0 \)).
     end type yield_cpb06ex2_${k}$
+
+    type :: yield_cpb06ex2_hd_${k}$
+        !! Data of the second derivative of CPB06ex2 applied to a tensor (`yield_hess_apply`, D-051), `real(${k}$)`:
+        !! what each spectral term needs and the two terms of the gradient for the mixed term.
+        real(${k}$) :: V(3,3), Vp(3,3)
+            !! Eigenvectors of \( \boldsymbol\Sigma \) and \( \boldsymbol\Sigma^\prime \) (columns).
+        real(${k}$) :: phi(6), phip(6)
+            !! Second derivatives with respect to the principal values of each term, order 11, 22, 33, 12, 23, 13.
+        real(${k}$) :: th(3), thp(3)
+            !! \( \theta_{12}, \theta_{13}, \theta_{23} \) of each term (`spectral_theta`).
+        type(ten_3D2Osym_${k}$) :: g, gp
+            !! The two terms of the gradient, \( \mathbf{L}^T : \partial f/\partial\boldsymbol\Sigma \) and its primed one.
+        real(${k}$) :: cross
+            !! Coefficient of the mixed term \( 2\,c\,\mathrm{sym}(\mathbf{g} \otimes \mathbf{g}^\prime) \).
+    end type yield_cpb06ex2_hd_${k}$
     #:endfor
 
     interface yield_cpb06ex2_init
@@ -255,26 +271,38 @@ contains
             !! Stress tensor \( \boldsymbol\sigma \).
         real(${k}$) :: res
             !! \( \sigma_{eq} \).
-        ! Equivalent stress B Psi**(1/a), Plunkett et al. (2008), Eq. (8), on the principal values
-        ! scaled by 2**(-e) (homogeneity of degree 1)
         real(${k}$) :: lam(3), lamp(3), V(3,3)
-        integer :: e
 
         ! Eigenvalues from the same spectral decomposition as the gradient and the Hessian (D-032)
         call spectral_decomposition(yield_lin_apply(prm%L, prm%c_shear, sigma), lam, V)
         call spectral_decomposition(yield_lin_apply(prm%Lp, prm%cp_shear, sigma), lamp, V)
+        res = yield_cpb06ex2_equivalent_${k}$(prm, lam, lamp)
+    end function yield_stress_eq_cpb06ex2_3D_${k}$
+
+    pure function yield_cpb06ex2_equivalent_${k}$(prm, lam, lamp) result(res)
+        ! Equivalent stress B Psi**(1/a), Plunkett et al. (2008), Eq. (8), from the principal values of Sigma and
+        ! Sigmap, scaled by 2**(-e) (homogeneity of degree 1), in `real(${k}$)`; shared by yield_stress_eq and
+        ! yield_hess_prepare (the same bits)
+        implicit none
+        @:DEVICE()
+        type(yield_cpb06ex2_${k}$), intent(in) :: prm
+        real(${k}$), intent(in) :: lam(3), lamp(3)
+        real(${k}$) :: res
+        real(${k}$) :: x(3), xp(3)
+        integer :: e
+
         e = 0
         if (max(maxval(abs(lam)), maxval(abs(lamp))) > 0.0_${k}$) e = fp_exponent(max(maxval(abs(lam)), maxval(abs(lamp))))
-        lam = fp_scale(lam, -e)
-        lamp = fp_scale(lamp, -e)
-        res = ((abs(lam(1)) - prm%k*lam(1))**prm%a &
-               + (abs(lam(2)) - prm%k*lam(2))**prm%a &
-               + (abs(lam(3)) - prm%k*lam(3))**prm%a &
-               + (abs(lamp(1)) - prm%kp*lamp(1))**prm%a &
-               + (abs(lamp(2)) - prm%kp*lamp(2))**prm%a &
-               + (abs(lamp(3)) - prm%kp*lamp(3))**prm%a)**(1.0_${k}$/prm%a)
+        x = fp_scale(lam, -e)
+        xp = fp_scale(lamp, -e)
+        res = ((abs(x(1)) - prm%k*x(1))**prm%a &
+               + (abs(x(2)) - prm%k*x(2))**prm%a &
+               + (abs(x(3)) - prm%k*x(3))**prm%a &
+               + (abs(xp(1)) - prm%kp*xp(1))**prm%a &
+               + (abs(xp(2)) - prm%kp*xp(2))**prm%a &
+               + (abs(xp(3)) - prm%kp*xp(3))**prm%a)**(1.0_${k}$/prm%a)
         res = fp_scale(res, e)*prm%B
-    end function yield_stress_eq_cpb06ex2_3D_${k}$
+    end function yield_cpb06ex2_equivalent_${k}$
 
     pure function yield_dstress_eq_cpb06ex2_3D_${k}$(prm, sigma) result(res)
         !! Gradient \( \partial\sigma_{eq}/\partial\boldsymbol\sigma \) of the CPB06ex2 (Plunkett-Cazacu-Barlat 2008) model in
@@ -366,6 +394,72 @@ contains
         df = yield_dstress_eq_cpb06ex2_3D_${k}$(prm, sigma)
         if (present(ddf)) ddf = yield_ddstress_eq_cpb06ex2_3D_${k}$(prm, sigma)
     end subroutine yield_stress_eq_and_derivatives_cpb06ex2_3D_${k}$
+
+    pure subroutine yield_hess_prepare_cpb06ex2_3D_${k}$(prm, sigma, f, df, hd)
+        !! Equivalent stress, gradient and the data of `yield_hess_apply_cpb06ex2_3D_${k}$` from one spectral
+        !! decomposition of each transformed stress, in `real(${k}$)` (D-051). At a null equivalent stress the
+        !! gradient and the data are zero, as `yield_dstress_eq` and `yield_ddstress_eq`.
+        implicit none
+        @:DEVICE()
+        type(yield_cpb06ex2_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor.
+        real(${k}$), intent(out) :: f
+            !! Equivalent stress.
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! Gradient.
+        type(yield_cpb06ex2_hd_${k}$), intent(out) :: hd
+            !! Data of the product.
+        real(${k}$) :: lam(3), lamp(3), dfl(3), dflp(3), d2f(3,3), d2fp(3,3), phi
+
+        call spectral_decomposition(yield_lin_apply(prm%L, prm%c_shear, sigma), lam, hd%V)
+        call spectral_decomposition(yield_lin_apply(prm%Lp, prm%cp_shear, sigma), lamp, hd%Vp)
+        f = yield_cpb06ex2_equivalent_${k}$(prm, lam, lamp)
+        call yield_cpb06ex2_principal_${k}$(prm, lam, lamp, phi, dfl, dflp, d2f, d2fp, hd%cross)
+        if (phi == 0.0_${k}$) then
+            df%vals = 0.0_${k}$  ! null equivalent stress: zero derivatives
+            hd%phi = 0.0_${k}$
+            hd%th = 0.0_${k}$
+            hd%phip = 0.0_${k}$
+            hd%thp = 0.0_${k}$
+            hd%g%vals = 0.0_${k}$
+            hd%gp%vals = 0.0_${k}$
+            hd%cross = 0.0_${k}$
+            return
+        end if
+        hd%g = yield_lin_pull_back(prm%L, prm%c_shear, spectral_gradient(hd%V, dfl))
+        hd%gp = yield_lin_pull_back(prm%Lp, prm%cp_shear, spectral_gradient(hd%Vp, dflp))
+        df = hd%g + hd%gp
+        hd%phi = [d2f(1,1), d2f(2,2), d2f(3,3), d2f(1,2), d2f(2,3), d2f(1,3)]
+        hd%th = spectral_theta(lam, dfl, d2f)
+        hd%phip = [d2fp(1,1), d2fp(2,2), d2fp(3,3), d2fp(1,2), d2fp(2,3), d2fp(1,3)]
+        hd%thp = spectral_theta(lamp, dflp, d2fp)
+    end subroutine yield_hess_prepare_cpb06ex2_3D_${k}$
+
+    pure function yield_hess_apply_cpb06ex2_3D_${k}$(prm, hd, x) result(res)
+        !! The second derivative applied to a tensor without forming it, in `real(${k}$)` (D-051): the two spectral
+        !! terms in their eigenbases (`yield_eig_coords`, `yield_eig_hess`, `yield_eig_back`) plus the mixed term,
+        !! \( 2c\,\mathrm{sym}(\mathbf{g} \otimes \mathbf{g}^\prime) : \mathbf{x}
+        !! = c\,(\mathbf{g}\,(\mathbf{g}^\prime : \mathbf{x}) + \mathbf{g}^\prime\,(\mathbf{g} : \mathbf{x})) \).
+        implicit none
+        @:DEVICE()
+        type(yield_cpb06ex2_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(yield_cpb06ex2_hd_${k}$), intent(in) :: hd
+            !! Data from `yield_hess_prepare`.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Tensor.
+        type(ten_3D2Osym_${k}$) :: res
+            !! d2f/dsigma2 : x.
+
+        res = yield_eig_back(prm%L, prm%c_shear, hd%V, &
+                             yield_eig_hess(hd%phi, hd%th, yield_eig_coords(hd%V, yield_lin_apply(prm%L, prm%c_shear, x)))) &
+              + yield_eig_back(prm%Lp, prm%cp_shear, hd%Vp, &
+                               yield_eig_hess(hd%phip, hd%thp, &
+                                              yield_eig_coords(hd%Vp, yield_lin_apply(prm%Lp, prm%cp_shear, x)))) &
+              + (hd%cross*(hd%gp .ddot. x))*hd%g + (hd%cross*(hd%g .ddot. x))*hd%gp
+    end function yield_hess_apply_cpb06ex2_3D_${k}$
     #:endfor
 
 end module muscle_yield_cpb06ex2
