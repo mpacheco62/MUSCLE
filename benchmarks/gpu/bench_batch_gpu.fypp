@@ -84,9 +84,11 @@ program bench_batch_gpu
         !! Device of the memory of `omp_target_alloc`, initial (host) device.
     type(c_ptr) :: c_eps, c_hn, c_hb, c_sig, c_tan, c_st, c_it
         !! Device memory for the largest number of points.
-    real(${k}$), pointer :: d_eps(:, :), d_hn(:, :), d_hb(:, :), d_sg(:, :), d_tn(:, :, :)
-    integer, pointer :: d_st(:), d_it(:)
-        !! Fortran views of the device memory for the current number of points.
+    real(${k}$), pointer, contiguous :: d_eps(:, :), d_hn(:, :), d_hb(:, :), d_sg(:, :), d_tn(:, :, :)
+    integer, pointer, contiguous :: d_st(:), d_it(:)
+        !! Fortran views of the device memory for the current number of points. `contiguous`: without it gfortran
+        !! packs them into host temporaries when passing them to the batch API, reading device memory (a segfault
+        !! with NVIDIA offload; PROBLEMAS).
     real(dp) :: t_init
         !! Device initialization (image load and JIT with MUSCLE_GPU).
     integer :: j, nmax, n_bad
