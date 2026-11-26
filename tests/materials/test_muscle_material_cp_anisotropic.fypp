@@ -5,13 +5,15 @@
 #:include "mat_sequence_common.fypp"
 #:set ANISO = muscle_meta.load_python_file('anisotropic_cases.py', base=_THIS_FILE_)
 #! The single steps with closest_point (cp_*) and again with closest_point_lu (cplu_*: the same models and the same
-#! Newton iteration without inverses, D-052) and closest_point_cg (cpcg_*: the same iteration, matrix-free, D-053)
+#! Newton iteration without inverses, D-052), closest_point_cg (cpcg_*: the same iteration, matrix-free, D-053) and
+#! closest_point_chol (chol_*: Cholesky, D-054)
 #:assert all(c['material'].startswith('cp_') for c in ANISO.CASES)
 #:set CASES = list(ANISO.CASES) + [dict(c, material='cplu_' + c['material'][3:], name='lu ' + c['name']) for c in ANISO.CASES] &
-    & + [dict(c, material='cpcg_' + c['material'][3:], name='cg ' + c['name']) for c in ANISO.CASES]
+    & + [dict(c, material='cpcg_' + c['material'][3:], name='cg ' + c['name']) for c in ANISO.CASES] &
+    & + [dict(c, material='chol_' + c['material'][3:], name='chol ' + c['name']) for c in ANISO.CASES]
 #! The large increments, with every closest point (the worst conditioned Newton systems of the tests, where the
 #! conjugate gradients of closest_point_cg are the least accurate)
-#:set LARGE = ['cp_cpb06_swift', 'cplu_cpb06_swift', 'cpcg_cpb06_swift']
+#:set LARGE = ['cp_cpb06_swift', 'cplu_cpb06_swift', 'cpcg_cpb06_swift', 'chol_cpb06_swift']
 #! Materials of the single steps and of the large increments
 #:set MATS = sorted({c['material'] for c in CASES} | set(LARGE))
 #! dp array constructor of a tuple of literals without kind
@@ -19,7 +21,7 @@
 
 program test_mat_cp_anisotropic
     !! Physical checks of the anisotropic yield criteria with the closest point kernels (D-018.18g; also
-    !! closest_point_lu, D-052, and closest_point_cg, D-053),
+    !! closest_point_lu, D-052, closest_point_cg, D-053, and closest_point_chol, D-054),
     !! ported from the historical OO tests test_muscle_solver_closest_point_{hill48,cpb06,cpb06ex2,
     !! yld2004,large_increment}.f90, in every kind:
     !!

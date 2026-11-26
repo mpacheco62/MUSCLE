@@ -1578,6 +1578,9 @@ MATERIAL_SOLVERS = {
     # Matrix-free closest point: each Newton correction from two conjugate gradient solutions with the
     # Hessian-vector products of the criterion (D-051, D-053); the iterates of closest_point up to the CG tolerance
     'closest_point_cg': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
+    # closest_point with one Cholesky factorization of the 6x6 matrix K = C + dgamma C:d2f:C per Newton correction
+    # (Mandel components, unrolled), reused by the tangent (D-054)
+    'closest_point_chol': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7),
     # Explicit cutting plane (D-018.1): 100 corrections at most, as the historical solver
     'cutting_plane': MaterialSolver(families=('elas', 'yield', 'hard'), nstate=7, iter_nw=100),
 }

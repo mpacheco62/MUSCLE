@@ -2249,3 +2249,36 @@ detectadas, 8 no compilan y 10 sobreviven: 6 que sólo cambian algo en empates (
 predictor, en el recorte, en la parada del gradiente conjugado y en la guarda de \( \mathbf{p}:\mathbb{K}:\mathbf{p} \)), 1
 equivalente (la tangente elástica no depende de la deformación) y 3 en las salvaguardas del Newton de `closest_point` (el factor
 0,75 del recorte y el valor del recorte, que cambian el camino y no la solución). Las de `CG_MAX` y `CG_TOL` se detectan.
+
+## D-054 — Solver `closest_point_chol`: el closest point con una factorización de Cholesky 6x6 (2026-11-26)
+
+**Contexto:** el experimento `wt-spec` (2026-11-24/25) probó, junto al gradiente conjugado (D-053), resolver los dos sistemas
+de la corrección con la matriz \( \mathbb{K} = \mathbb{C} + \Delta\gamma\,\mathbb{C}:\partial^2 f/\partial\boldsymbol\sigma^2:
+\mathbb{C} \) armada y factorizada una vez por iteración (la alternativa directa al gradiente conjugado).
+**Decisión del usuario (2026-11-25, plan de la rama `perf/closest-point-cg`):** solver nuevo `closest_point_chol` (prefijo
+`chol`), sin cambiar `closest_point`. La iteración y la corrección son las de D-053; \( \mathbb{K} \) se arma en componentes de
+Mandel (cortes por \( \sqrt 2 \): allí es una matriz simétrica y la doble contracción el producto escalar) y se factoriza por
+Cholesky sin pivoteo, con todos los bucles desenrollados con subíndices literales (en la GPU la matriz queda en registros). Una
+factorización que falla (pivote no positivo o no finito) deja el iterado sin cambios. La tangente consistente reusa la misma
+factorización (siete soluciones: las seis componentes unitarias y \( \mathbf{n} \)).
+**Medido (en el experimento; cifras no repetidas en esta rama):** GPU Intel UHD 770 (sp, 100 000 puntos): von Mises 2,9 ms
+(2,2 con `closest_point_cg`), Hill48 4,8 (4,1), Drucker-Prager 5,0 (3,6), CPB06 con Voce modificado 9,3 y con Swift 13,2 (6,3 y 9,0);
+con CPB06ex2 y Yld2004 espectral el kernel supera el umbral de recorte de IGC y da resultados erróneos (PROBLEMAS). CPU: más lento que
+`closest_point_lu` (von Mises 37,0 contra 20,7 ms, Yld2004 401 contra 332).
+**Consecuencias:** no es el recomendado en ninguna plataforma con los criterios actuales en forma espectral; en la GPU Intel se
+debe usar `closest_point_cg` con CPB06ex2 y Yld2004 (README, FORD del solver). Se incluye porque con Yld2004 en forma
+polinómica (paso siguiente de la rama) fue el más rápido de la GPU Intel en el experimento. El registro de prueba cubre cada
+criterio y ley de endurecimiento con `chol` y el caso Maxwell; tests: secuencia propia, retorno radial y convergencia
+cuadrática, pasos anisótropos e incrementos grandes de `mat_cp_anisotropic` y un test `target` (`chol_cpb06_vocemod`, bajo el
+umbral de IGC). La rama de la factorización que falla no es alcanzable con los criterios actuales (convexos, \( \Delta\gamma
+\ge 0 \)); si ocurriera, el Newton repetiría la misma factorización hasta `iter_nw` y terminaría en `STATUS_NOT_CONVERGED`.
+Duplicación conocida: el `SOLVE` de `closest_point`, `closest_point_lu`, `closest_point_cg` y `closest_point_chol` es el
+mismo salvo la documentación; sacarlo a un include común es un refactor aparte (con `tools/gen_snapshot.sh`).
+**Verificación:** CPU Debug `sp;dp`: Windows gfortran 142/142 (el cuelgue intermitente de `gpu-family_target_hard_sp`,
+PROBLEMAS, pasó al repetirlo) e ifx 142/142; Linux (WSL) gfortran 142/142 e ifx 142/142 (`tools/check.sh --quick --ifx`), lint
+OK; GPU Intel de Linux (SPIR64, Debug `sp;dp`): 53/53 tests `target`, con `chol_cpb06_vocemod` en sp. Mutaciones del cuerpo
+(`tools/mutation_check.py solvers --only ...`, 79): 61 detectadas, 5 no compilan y 13 sobreviven: 5
+que sólo cambian algo en empates (convergencia, recorte, umbral de la tangente, predictor), 3 equivalentes o en un borde exacto
+(la tangente elástica no depende de la deformación; `huge(2.0)` es `huge(1.0)`; `d < huge` contra `d <= huge`), 2 en la rama de
+la factorización que falla (`dinv` inicial; aceptar un pivote exactamente nulo), no alcanzable con los criterios actuales, y 3
+en las salvaguardas del Newton de `closest_point`.

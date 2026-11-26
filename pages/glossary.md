@@ -16,6 +16,7 @@ overstress, von Mises, bilinear hardening).
 | `cp` | Closest point projection return mapping (`closest_point`, Newton on the plastic multiplier; which solver to use: the table of the `README.md`, section 3) |
 | `cplu` | Closest point without inverses (`closest_point_lu`: the iterates of `cp` from one 7x7 system per iteration; the fastest on the CPU, see the `README.md`) |
 | `cpcg` | Matrix-free closest point (`closest_point_cg`: the iteration of `cp`, each correction by conjugate gradients with Hessian-vector products; for GPUs, see the `README.md`) |
+| `chol` | Cholesky closest point (`closest_point_chol`: the iteration of `cp`, one 6x6 Cholesky factorization per correction; see the `README.md`) |
 | `cp2` | Monolithic closest point (`closest_point_2`, 7x7 Newton with an own LU solver; prefer `cp`, see the `README.md`) |
 | `pz` | Closest point with overstress viscoplasticity (`closest_point_perzyna`: Perzyna or Chaboche law) |
 | `tm` | Closest point with consistency viscoplasticity (`closest_point_time`: flow stress laws of the `vp` family) |

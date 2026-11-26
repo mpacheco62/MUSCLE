@@ -220,6 +220,26 @@ MATERIALS = (
              doc='CPB06ex2 with Swift hardening'),
     Material('cpcg_maxwell_vm_bilinear', 'closest_point_cg', elas='frozen', visco='maxwell', visco_branches=2,
              yield_='vonmises', hard='bilinear', doc='Maxwell (2 branches), von Mises, bilinear'),
+    # Return mapping closest_point_chol (D-054, 6x6 Cholesky): every yield criterion and hardening law, as
+    # closest_point, and the Maxwell case
+    Material('chol_vm_swift', 'closest_point_chol', elas='linear', yield_='vonmises', hard='swift',
+             doc='von Mises with Swift hardening'),
+    Material('chol_vm_bilinear', 'closest_point_chol', elas='linear', yield_='vonmises', hard='bilinear',
+             doc='von Mises with bilinear hardening'),
+    Material('chol_hill48_swift', 'closest_point_chol', elas='linear', yield_='hill48', hard='swift',
+             doc='Hill (1948) with Swift hardening'),
+    Material('chol_cpb06_swift', 'closest_point_chol', elas='linear', yield_='cpb06', hard='swift',
+             doc='CPB06 with Swift hardening'),
+    Material('chol_cpb06_vocemod', 'closest_point_chol', elas='linear', yield_='cpb06', hard='vocemod',
+             doc='CPB06 with modified Voce hardening'),
+    Material('chol_yld2004_swift', 'closest_point_chol', elas='linear', yield_='yld2004', hard='swift',
+             doc='Yld2004-18p with Swift hardening'),
+    Material('chol_dp_ludwik', 'closest_point_chol', elas='linear', yield_='druckerprager', hard='ludwik',
+             doc='Drucker-Prager with Ludwik hardening'),
+    Material('chol_cpb06ex2_swift', 'closest_point_chol', elas='linear', yield_='cpb06ex2', hard='swift',
+             doc='CPB06ex2 with Swift hardening'),
+    Material('chol_maxwell_vm_bilinear', 'closest_point_chol', elas='frozen', visco='maxwell', visco_branches=2,
+             yield_='vonmises', hard='bilinear', doc='Maxwell (2 branches), von Mises, bilinear'),
     # Return mapping cutting_plane (explicit): linear elasticity, every yield criterion and every
     # hardening law
     Material('cut_vm_swift', 'cutting_plane', elas='linear', yield_='vonmises', hard='swift',

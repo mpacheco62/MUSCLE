@@ -296,6 +296,9 @@ contains
 #:elif MAT.solver == 'closest_point_cg'
 
 #:include "../solvers/muscle_closest_point_cg_body.fypp"
+#:elif MAT.solver == 'closest_point_chol'
+
+#:include "../solvers/muscle_closest_point_chol_body.fypp"
 #:elif MAT.solver == 'cutting_plane'
 
 #:include "../solvers/muscle_cutting_plane_body.fypp"

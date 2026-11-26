@@ -21,7 +21,7 @@ if(NOT MUSCLE_MATERIALS)
     # reference tests): sp against dp, analytic vs FD tangent, coverage of the registry; the common part is
     # mat_sequence_common.fypp, the parameter sets case_params.py.
     foreach(solver IN ITEMS closest_point closest_point_perzyna closest_point_time closest_point_2 closest_point_lu
-                         closest_point_cg
+                         closest_point_cg closest_point_chol
                          cutting_plane)
         add_muscle_fypp_test(mat_${solver} test_muscle_material_${solver}.fypp
                              DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mat_sequence_common.fypp
