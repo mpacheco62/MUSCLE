@@ -71,7 +71,7 @@ Each model is a concrete parameter type (`<family>_<model>_<k>`, e.g. `hard_swif
 ### 3. Yield Criteria (`muscle_yield_laws`)
 Implements the surface that delimits the elastic-plastic transition.
 - [[muscle_yield_vonmises]]: Classic J2 plasticity.
-- [[muscle_yield_hill48]], [[muscle_yield_druckerprager]], [[muscle_yield_yld2004]].
+- [[muscle_yield_hill48]], [[muscle_yield_druckerprager]], [[muscle_yield_yld2004]] and its polynomial form [[muscle_yield_yld2004p]] (even exponents up to 8, no eigenvalues; for GPUs).
 - [[muscle_yield_cpb06]], [[muscle_yield_cpb06ex2]]: criteria for materials with strength differential effects (asymmetry between tension and compression).
 
 ### 4. Hardening and Viscoplastic Laws (`muscle_hard_laws`, `muscle_vp_laws`, `muscle_os_laws`)

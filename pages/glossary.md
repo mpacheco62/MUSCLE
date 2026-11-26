@@ -30,6 +30,7 @@ overstress, von Mises, bilinear hardening).
 | `dp` | extended linear **Drucker-Prager** (not double precision!) | yield |
 | `cpb06`, `cpb06ex2` | Cazacu-Plunkett-Barlat 2006 and its two-transformation extension (2008) | yield |
 | `yld2004` | Yld2004-18p (Barlat et al. 2005) | yield |
+| `yld2004p` | Yld2004-18p in polynomial form (Soare and Barlat 2011; exponents 2, 4, 6, 8) | yield |
 | `bilinear`, `ludwik`, `swift`, `vocemod` | bilinear, Ludwik, Swift, modified Voce | hard |
 | `jc`, `jcfull` | Johnson-Cook, full Johnson-Cook | vp |
 | `rk`, `mrk` | Rusinek-Klepaczko, modified Rusinek-Klepaczko | vp |

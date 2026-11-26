@@ -37,6 +37,7 @@ _YLD2004 = ('call yield_yld2004_init({v}, cp12=-0.069888_{k}, cp13=0.936408_{k},
             'cp66=1.069060_{k}, cpp12=0.981171_{k}, cpp13=0.476741_{k}, cpp21=0.575316_{k}, @@'
             'cpp23=0.866827_{k}, cpp31=1.145010_{k}, cpp32=-0.079294_{k}, cpp44=1.404620_{k}, @@'
             'cpp55=1.051660_{k}, cpp66=1.147100_{k}, a={a}_{k}, status=status)')
+_YLD2004P = _YLD2004.replace('yield_yld2004_init', 'yield_yld2004p_init')
 _DP = ('call yield_druckerprager_init({v}, beta_deg={beta}_{k}, K={K}_{k}, @@'
        'hardening_mode=DP_HARDENING_{mode}, status=status)')
 
@@ -86,6 +87,9 @@ CASE_PARAMS = {
                          'cpb06-li': _checked(_CPB06_LI)},
     ('yield', 'cpb06ex2'): {'cpb06ex2-1': _checked(_CPB06EX2), 'cpb06ex2-3': _checked(_CPB06EX2_3)},
     ('yield', 'yld2004'): {'yld2004-2': _checked(_sub(_YLD2004, a='8.0')), 'yld2004-4': _checked(_sub(_YLD2004, a='6.0'))},
+    # the same model in polynomial form (D-055): the same coefficients and exponents
+    ('yield', 'yld2004p'): {'yld2004p-2': _checked(_sub(_YLD2004P, a='8.0')),
+                            'yld2004p-4': _checked(_sub(_YLD2004P, a='6.0'))},
     ('os', 'perzyna'): {'per1': ['{v}%eta = 1.0e-2_{k}', '{v}%n = 1.0_{k}'],
                         'per2': ['{v}%eta = 1.0_{k}', '{v}%n = 0.5_{k}'],
                         'per3': ['{v}%eta = 1.0e-4_{k}', '{v}%n = 5.0_{k}']},
@@ -127,6 +131,7 @@ YIELD_USES = {
     'cpb06': ('muscle_yield_cpb06', ('yield_cpb06_init',)),
     'cpb06ex2': ('muscle_yield_cpb06ex2', ('yield_cpb06ex2_init',)),
     'yld2004': ('muscle_yield_yld2004', ('yield_yld2004_init',)),
+    'yld2004p': ('muscle_yield_yld2004p', ('yield_yld2004p_init',)),
 }
 
 #: Initializers a test imports for the viscoelastic models of its materials (module, names).

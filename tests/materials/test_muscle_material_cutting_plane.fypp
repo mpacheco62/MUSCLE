@@ -49,6 +49,7 @@ program test_mat_cutting_plane
         solver_case(0, 'cut_dp_bilinear', 'steel', '', 'bilinear', 'dp-1', 100, 0.0_dp, 9.05e-4_dp), &
         solver_case(0, 'cut_cpb06_vocemod', 'steel', '', 'vocemod', 'cpb06-2', 100, 0.0_dp, 1.23e-3_dp), &
         solver_case(0, 'cut_yld2004_ludwik', 'steel', '', 'ludwik', 'yld2004-2', 100, 0.0_dp, 8.97e-4_dp), &
+        solver_case(0, 'cut_yld2004p_ludwik', 'steel', '', 'ludwik', 'yld2004p-2', 100, 0.0_dp, 8.97e-4_dp), &
         solver_case(0, 'cut_maxwell_vm_bilinear', 'maxwell', '', 'bilinear', 'vonmises', 100, 0.1_dp, 1.56e-2_dp), &
         solver_case(0, 'cut_cpb06ex2_swift', 'steel', '', 'swift', 'cpb06ex2-1', 100, 0.0_dp, 5.61e-4_dp)]
         !! Cases of the historical test_cutting_plane_golden (case number 0, material, parameter set names,

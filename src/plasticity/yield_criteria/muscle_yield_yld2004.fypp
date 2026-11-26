@@ -59,6 +59,8 @@ module muscle_yield_yld2004
     public :: yield_stress_eq_and_derivatives_yld2004_3D_${k}$, yield_joint_evaluation_yld2004_${k}$
     public :: yield_yld2004_hd_${k}$, yield_hess_prepare_yld2004_3D_${k}$, yield_hess_apply_yld2004_3D_${k}$
     public :: yield_yld2004_init_${k}$
+    ! Shared with the polynomial form (muscle_yield_yld2004p, D-055)
+    public :: yield_yld2004_deviatoric_block_${k}$, yield_yld2004_linear_transform_3D_${k}$
     #:endfor
     public :: yield_yld2004_init
 

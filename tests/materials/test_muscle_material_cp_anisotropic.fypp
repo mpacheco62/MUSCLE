@@ -7,10 +7,14 @@
 #! The single steps with closest_point (cp_*) and again with closest_point_lu (cplu_*: the same models and the same
 #! Newton iteration without inverses, D-052), closest_point_cg (cpcg_*: the same iteration, matrix-free, D-053) and
 #! closest_point_chol (chol_*: Cholesky, D-054)
-#:assert all(c['material'].startswith('cp_') for c in ANISO.CASES)
-#:set CASES = list(ANISO.CASES) + [dict(c, material='cplu_' + c['material'][3:], name='lu ' + c['name']) for c in ANISO.CASES] &
-    & + [dict(c, material='cpcg_' + c['material'][3:], name='cg ' + c['name']) for c in ANISO.CASES] &
-    & + [dict(c, material='chol_' + c['material'][3:], name='chol ' + c['name']) for c in ANISO.CASES]
+#! The Yld2004-18p cases also with its polynomial form (yld2004p, D-055): the same yield function, so the same
+#! published values
+#:set BASE = list(ANISO.CASES) + [dict(c, material='cp_yld2004p_swift', yld='yld2004p-2', name='poly ' + c['name']) &
+    & for c in ANISO.CASES if c['material'] == 'cp_yld2004_swift']
+#:assert all(c['material'].startswith('cp_') for c in BASE)
+#:set CASES = BASE + [dict(c, material='cplu_' + c['material'][3:], name='lu ' + c['name']) for c in BASE] &
+    & + [dict(c, material='cpcg_' + c['material'][3:], name='cg ' + c['name']) for c in BASE] &
+    & + [dict(c, material='chol_' + c['material'][3:], name='chol ' + c['name']) for c in BASE]
 #! The large increments, with every closest point (the worst conditioned Newton systems of the tests, where the
 #! conjugate gradients of closest_point_cg are the least accurate)
 #:set LARGE = ['cp_cpb06_swift', 'cplu_cpb06_swift', 'cpcg_cpb06_swift', 'chol_cpb06_swift']
@@ -21,7 +25,8 @@
 
 program test_mat_cp_anisotropic
     !! Physical checks of the anisotropic yield criteria with the closest point kernels (D-018.18g; also
-    !! closest_point_lu, D-052, closest_point_cg, D-053, and closest_point_chol, D-054),
+    !! closest_point_lu, D-052, closest_point_cg, D-053, and closest_point_chol, D-054; Yld2004-18p also in its
+    !! polynomial form, yld2004p, D-055),
     !! ported from the historical OO tests test_muscle_solver_closest_point_{hill48,cpb06,cpb06ex2,
     !! yld2004,large_increment}.f90, in every kind:
     !!

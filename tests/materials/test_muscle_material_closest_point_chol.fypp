@@ -42,6 +42,7 @@ program test_mat_closest_point_chol
         solver_case(0, 'chol_cpb06_swift', 'steel', '', 'swift', 'cpb06-2', 200, 0.0_dp, 5.71e-4_dp), &
         solver_case(0, 'chol_cpb06_vocemod', 'steel', '', 'vocemod', 'cpb06-3', 200, 0.0_dp, 1.18e-3_dp, iters_max=60), &
         solver_case(0, 'chol_yld2004_swift', 'steel', '', 'swift', 'yld2004-2', 200, 0.0_dp, 5.63e-4_dp, iters_max=80), &
+        solver_case(0, 'chol_yld2004p_swift', 'steel', '', 'swift', 'yld2004p-2', 200, 0.0_dp, 5.63e-4_dp, iters_max=80), &
         solver_case(0, 'chol_dp_ludwik', 'steel', '', 'ludwik', 'dp-3', 200, 0.0_dp, 7.39e-4_dp), &
         solver_case(0, 'chol_cpb06ex2_swift', 'steel', '', 'swift', 'cpb06ex2-1', 200, 0.0_dp, 5.61e-4_dp, iters_max=65), &
         solver_case(0, 'chol_maxwell_vm_bilinear', 'maxwell', '', 'bilinear', 'vonmises', 200, 0.1_dp, 1.56e-2_dp)]

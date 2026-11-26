@@ -72,6 +72,8 @@ MATERIAL_CASES = (
     ('cp2_maxwell_vm_bilinear', 'maxwell', '', 'bilinear', 'vonmises', '0.1', '1.56e-2', '0.0'),
     ('cplu_cpb06ex2_swift', 'steel', '', 'swift', 'cpb06ex2-1', '0.0', '5.61e-4', '0.0'),
     ('cpcg_yld2004_swift', 'steel', '', 'swift', 'yld2004-2', '0.0', '5.63e-4', '0.0'),
+    ('cpcg_yld2004p_swift', 'steel', '', 'swift', 'yld2004p-2', '0.0', '5.63e-4', '0.0'),
+    ('chol_yld2004p_swift', 'steel', '', 'swift', 'yld2004p-2', '0.0', '5.63e-4', '0.0'),
     ('chol_cpb06_vocemod', 'steel', '', 'vocemod', 'cpb06-3', '0.0', '1.18e-3', '0.0'),
     ('cut_yld2004_ludwik', 'steel', '', 'ludwik', 'yld2004-2', '0.0', '8.97e-4', '0.0'),
 )

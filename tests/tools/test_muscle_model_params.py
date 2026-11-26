@@ -166,6 +166,7 @@ class TestModelInits(unittest.TestCase):
         self.assertEqual(len(mm.model_inputs('yield', 'cpb06')), 14)
         self.assertEqual(len(mm.model_inputs('yield', 'cpb06ex2')), 27)
         self.assertEqual(len(mm.model_inputs('yield', 'yld2004')), 19)
+        self.assertEqual(len(mm.model_inputs('yield', 'yld2004p')), 19)
         self.assertEqual([i.shape for i in mm.model_inputs('visco', 'maxwell')], ['', '', '(:)', '(:)'])
 
     def test_public_parameters_without_initializer(self):

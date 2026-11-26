@@ -74,6 +74,13 @@ module muscle_yield_laws
         & yield_stress_eq_and_derivatives_yld2004_3D_${k}$, &
         & yield_joint_evaluation_yld2004_${k}$, &
         & yield_yld2004_hd_${k}$, yield_hess_prepare_yld2004_3D_${k}$, yield_hess_apply_yld2004_3D_${k}$
+    use muscle_yield_yld2004p, only : yield_yld2004p_${k}$, &
+        & yield_stress_eq_yld2004p_3D_${k}$, &
+        & yield_dstress_eq_yld2004p_3D_${k}$, &
+        & yield_ddstress_eq_yld2004p_3D_${k}$, &
+        & yield_stress_eq_and_derivatives_yld2004p_3D_${k}$, &
+        & yield_joint_evaluation_yld2004p_${k}$, &
+        & yield_yld2004p_hd_${k}$, yield_hess_prepare_yld2004p_3D_${k}$, yield_hess_apply_yld2004p_3D_${k}$
     #:endfor
     implicit none
     private
@@ -87,6 +94,7 @@ module muscle_yield_laws
     public :: yield_cpb06_${k}$, yield_cpb06_hd_${k}$
     public :: yield_cpb06ex2_${k}$, yield_cpb06ex2_hd_${k}$
     public :: yield_yld2004_${k}$, yield_yld2004_hd_${k}$
+    public :: yield_yld2004p_${k}$, yield_yld2004p_hd_${k}$
     #:endfor
 
     interface yield_stress_eq
@@ -98,6 +106,7 @@ module muscle_yield_laws
         module procedure yield_stress_eq_cpb06_3D_${k}$
         module procedure yield_stress_eq_cpb06ex2_3D_${k}$
         module procedure yield_stress_eq_yld2004_3D_${k}$
+        module procedure yield_stress_eq_yld2004p_3D_${k}$
         #:endfor
     end interface yield_stress_eq
 
@@ -110,6 +119,7 @@ module muscle_yield_laws
         module procedure yield_dstress_eq_cpb06_3D_${k}$
         module procedure yield_dstress_eq_cpb06ex2_3D_${k}$
         module procedure yield_dstress_eq_yld2004_3D_${k}$
+        module procedure yield_dstress_eq_yld2004p_3D_${k}$
         #:endfor
     end interface yield_dstress_eq
 
@@ -123,6 +133,7 @@ module muscle_yield_laws
         module procedure yield_ddstress_eq_cpb06_3D_${k}$
         module procedure yield_ddstress_eq_cpb06ex2_3D_${k}$
         module procedure yield_ddstress_eq_yld2004_3D_${k}$
+        module procedure yield_ddstress_eq_yld2004p_3D_${k}$
         #:endfor
     end interface yield_ddstress_eq
 
@@ -136,6 +147,7 @@ module muscle_yield_laws
         module procedure yield_stress_eq_and_derivatives_cpb06_3D_${k}$
         module procedure yield_stress_eq_and_derivatives_cpb06ex2_3D_${k}$
         module procedure yield_stress_eq_and_derivatives_yld2004_3D_${k}$
+        module procedure yield_stress_eq_and_derivatives_yld2004p_3D_${k}$
         #:endfor
     end interface yield_stress_eq_and_derivatives
 
@@ -149,6 +161,7 @@ module muscle_yield_laws
         module procedure yield_joint_evaluation_cpb06_${k}$
         module procedure yield_joint_evaluation_cpb06ex2_${k}$
         module procedure yield_joint_evaluation_yld2004_${k}$
+        module procedure yield_joint_evaluation_yld2004p_${k}$
         #:endfor
     end interface yield_joint_evaluation
 
@@ -162,6 +175,7 @@ module muscle_yield_laws
         module procedure yield_hess_prepare_cpb06_3D_${k}$
         module procedure yield_hess_prepare_cpb06ex2_3D_${k}$
         module procedure yield_hess_prepare_yld2004_3D_${k}$
+        module procedure yield_hess_prepare_yld2004p_3D_${k}$
         #:endfor
     end interface yield_hess_prepare
 
@@ -175,6 +189,7 @@ module muscle_yield_laws
         module procedure yield_hess_apply_cpb06_3D_${k}$
         module procedure yield_hess_apply_cpb06ex2_3D_${k}$
         module procedure yield_hess_apply_yld2004_3D_${k}$
+        module procedure yield_hess_apply_yld2004p_3D_${k}$
         #:endfor
     end interface yield_hess_apply
 

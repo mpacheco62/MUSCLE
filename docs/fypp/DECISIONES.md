@@ -2282,3 +2282,48 @@ que sólo cambian algo en empates (convergencia, recorte, umbral de la tangente,
 (la tangente elástica no depende de la deformación; `huge(2.0)` es `huge(1.0)`; `d < huge` contra `d <= huge`), 2 en la rama de
 la factorización que falla (`dinv` inicial; aceptar un pivote exactamente nulo), no alcanzable con los criterios actuales, y 3
 en las salvaguardas del Newton de `closest_point`.
+
+## D-055 — Criterio `yld2004p`: Yld2004-18p en forma polinomial (2026-11-26)
+
+**Contexto:** Yld2004-18p (`yld2004`) evalúa \( \phi = \sum_{i,j} |\lambda^\prime_i - \lambda^{\prime\prime}_j|^a \) con dos
+descomposiciones espectrales, y sus derivadas con las reglas espectrales (D-032, D-050): en la GPU Intel es el criterio más
+caro y el de kernels más grandes. Para a par, Soare y Barlat (2011, Eur. J. Mech. A/Solids 30, 807-819) lo escriben sin
+autovalores: \( \phi = \sum_p (-1)^p \binom{a}{p} Q_{a-p}(\mathbf{S}^\prime) Q_p(\mathbf{S}^{\prime\prime}) \), con las sumas de
+potencias \( Q_p = \mathrm{tr}(\mathbf{S}^p) \) por las identidades de Newton. El experimento `wt-spec` (2026-11-25) verificó la
+forma y su precisión (Python: f ≤ 1,3 ε, gradiente ≤ 3 ε, producto Hessiana-vector ≤ 90 ε relativo a su tamaño, en sp; la
+derivación contra diferencias finitas en cuádruple precisión, 3e-31) y la midió en la GPU.
+**Decisión del usuario (2026-11-25 y 2026-11-26):** criterio nuevo `yld2004p` (módulo `muscle_yield_yld2004p`), con los mismos
+parámetros e init que `yld2004` y exponentes a ∈ {2, 4, 6, 8} (otro valor: `STATUS_INVALID_PARAMETER`); `yld2004` no cambia.
+Las derivadas van por los invariantes, no por las componentes como en el artículo: \( Q_p \) y sus derivadas respecto de
+\( (I_1, I_2, I_3) \) son recurrencias escalares desenrolladas por exponente, y el gradiente y el producto Hessiana-vector (D-051)
+salen de \( \partial I_a/\partial\mathbf{S} \) y \( \partial^2 I_a:\mathbf{y} \) en forma cerrada; la Hessiana armada, de seis
+productos sobre una base ortonormal. Escala por potencia de dos como `yld2004` (D-017.10c), después de las transformaciones
+lineales (que eliminan la presión: escalar la tensión dejaría las imágenes de un estado casi hidrostático diminutas y sus
+potencias de grado 8 subnormales en sp, lo encontró la revisión); \( \phi = 0 \) da derivadas nulas, una tensión NaN da NaN
+(como la forma espectral) y un exponente rechazado por el init da una tensión equivalente NaN.
+Las funciones `yield_yld2004_deviatoric_block` y `yield_yld2004_linear_transform_3D` de `muscle_yield_yld2004` pasan a ser
+públicas para compartirlas. Los pesos \( (-1)^p\binom{a}{p} \) son `parameter` de Fortran (datos de FYPP, sin lógica, D-020).
+**Medido (en el experimento, con a ∈ {2, 6, 8}; cifras no repetidas en esta rama):** GPU Intel UHD 770 (sp, 100 000 puntos):
+`closest_point_chol` 28,9 ms, `closest_point_cg` 30,7, `closest_point_lu` 34,1, `closest_point` 43,3 (contra 48,2 de
+`closest_point_cg` con `yld2004` y 282 de `closest_point` con `yld2004`); ningún kernel sobre el umbral de recorte de IGC.
+Fijar un solo exponente achica el kernel un 15 % sin cambiar el tiempo. CPU: empate con la forma espectral. NVIDIA (gfortran,
+orden relativo): `closest_point_lu` y `closest_point_cg` 15 a 36 % más rápidos que con `yld2004`.
+**Consecuencias:** el registro de prueba cubre `yld2004p` con los ocho solvers que usan la familia `yield`; los tests comparan
+`yld2004p` con `yld2004` (la misma función por otra ruta) además de las comprobaciones de la familia. Pendiente de rendimiento (no medido): la Hessiana armada
+repite seis productos y con ellos los cofactores de las dos imágenes; guardarlos en los datos del producto la abarataría.
+**Verificación:** tests nuevos en `plasticity-yield_criteria-yield_kinds`: `yld2004p` contra `yld2004` con los cuatro juegos (sus
+exponentes y además a = 4), los estados escalados por 2^±24, un corte pequeño sobre una presión grande y el tensor nulo (f,
+gradiente, Hessiana y producto; peores con gfortran: sp 1,7, 4,4, 69 y 140 ε; dp 1,8, 4,3, 19 y 48 ε); el init con exponentes
+inválidos; todas las comprobaciones de la familia (nulo, genéricos, diferencias finitas, sp contra dp, homogeneidad, isótropo
+= von Mises, producto Hessiana-vector). Materiales: los ocho solvers en sus tests de secuencia dentro de los límites de
+`yld2004`, los pasos anisótropos de `mat_cp_anisotropic` con los valores publicados, `mat_init` con un exponente inválido,
+`yld2004p_private_params` y dos tests `target` (`cpcg_yld2004p_swift`, `chol_yld2004p_swift`). Mutaciones del módulo
+(`tools/mutation_check.py yield --only ...`, 552, antes de las correcciones de la revisión): 532 detectadas, 3 no compilan y
+17 sobreviven, equivalentes (valores iniciales de los datos antes de un retorno temprano, que no cambian ninguna salida).
+Tras las correcciones de la revisión (escalado después de las transformaciones, NaN), mutaciones de la rutina de evaluación
+(36): 16 detectadas, 1 no compila y 19 sobreviven: 13 valores iniciales de los datos antes de un retorno temprano y 4 guardas
+redundantes por su orden (equivalentes), `p == 1` en lugar de `p == 0` (sólo con \( \phi \) escalado exactamente 1, como en
+D-051) y el valor de la rama de \( \phi \) negativo por redondeo, que ningún estado de los tests alcanza. El test del corte
+pequeño sobre una presión grande falla con el escalado anterior (f = 0 en sp) y pasa con el corregido. CPU Debug `sp;dp`:
+Windows gfortran 147/147 e ifx 147/147; Linux (WSL) gfortran 147/147 e ifx 147/147 (`tools/check.sh --quick --ifx`), lint OK;
+GPU Intel de Linux (SPIR64, Debug `sp;dp`): 55/55 tests `target`, con `cpcg_yld2004p_swift` y `chol_yld2004p_swift` en sp.

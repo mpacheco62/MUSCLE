@@ -1,0 +1,563 @@
+! SPDX-License-Identifier: GPL-3.0-or-later
+! Copyright (C) 2025 Matias Pacheco-Alarcon <matias.pacheco.a@gmail.com>
+#:include "muscle_common.fypp"
+#! Exponents with an unrolled recurrence (D-055) and the weights W_p = (-1)^p C(n, p) of each
+#:set POLY_N = [8, 6, 4, 2]
+#:set WEIGHTS = {2: '1, -2, 1', 4: '1, -4, 6, -4, 1', 6: '1, -6, 15, -20, 15, -6, 1', &
+    & 8: '1, -8, 28, -56, 70, -56, 28, -8, 1'}
+#! Second derivatives packed 11 22 33 12 23 13: the pairs (a, b) and their position
+#:set PAIRS = [(1, 1, 1), (2, 2, 2), (3, 3, 3), (1, 2, 4), (2, 3, 5), (1, 3, 6)]
+#! Sign of dQ_p/dI_a in the Newton identities (+I1, -I2, +I3)
+#:set SG = {1: '+', 2: '-', 3: '+'}
+
+module muscle_yield_yld2004p
+    !! Yld2004-18p anisotropic yield criterion (Barlat et al., 2005) in its polynomial form (Soare and Barlat, 2011,
+    !! Eur. J. Mech. A/Solids 30, 807-819, Eqs. 5-9): the same yield function as `muscle_yield_yld2004`, written
+    !! without eigenvalues, for an even integer exponent \( a = n \in \{2, 4, 6, 8\} \) (D-055).
+    !!
+    !! With the image stresses \( \mathbf{S}^\prime = \mathbf{L}^\prime:\boldsymbol\sigma \) and
+    !! \( \mathbf{S}^{\prime\prime} = \mathbf{L}^{\prime\prime}:\boldsymbol\sigma \) of `yld2004` and the power sums
+    !! \( Q_p(\mathbf{S}) = \mathrm{tr}(\mathbf{S}^p) \),
+    !! \[ \phi = \sum_{i,j} (\lambda^\prime_i - \lambda^{\prime\prime}_j)^n
+    !!    = \sum_{p=0}^{n} (-1)^p \binom{n}{p} Q_{n-p}(\mathbf{S}^\prime)\,Q_p(\mathbf{S}^{\prime\prime}), \qquad
+    !!    \bar\sigma = (\phi/4)^{1/n}, \]
+    !! and the power sums come from the invariants by the Newton identities,
+    !! \( Q_p = I_1 Q_{p-1} - I_2 Q_{p-2} + I_3 Q_{p-3} \) (\( I_2 \) the classical second invariant; the paper uses
+    !! \( -I_2 \)). The derivatives go through the invariants, not through the stress components as in the paper:
+    !! \( Q_p \) and its first and second derivatives with respect to \( (I_1, I_2, I_3) \) are scalar recurrences,
+    !! and with \( \partial I_1/\partial\mathbf{S} = \mathbf{1} \), \( \partial I_2/\partial\mathbf{S} = I_1\mathbf{1} -
+    !! \mathbf{S} \), \( \partial I_3/\partial\mathbf{S} = \mathrm{cof}\,\mathbf{S} = \mathbf{S}^2 - I_1\mathbf{S} +
+    !! I_2\mathbf{1} \), \( \partial^2 I_2:\mathbf{y} = \mathrm{tr}(\mathbf{y})\mathbf{1} - \mathbf{y} \) and
+    !! \( \partial^2 I_3:\mathbf{y} = \mathbf{S}\mathbf{y} + \mathbf{y}\mathbf{S} - \mathrm{tr}(\mathbf{y})\mathbf{S}
+    !! - I_1\mathbf{y} + (I_1\,\mathrm{tr}(\mathbf{y}) - \mathbf{S}:\mathbf{y})\mathbf{1} \) they give the gradient and
+    !! the Hessian-vector product (`yield_hess_apply`, D-051) without eigenvalues; the assembled Hessian is
+    !! \( \sum_k \mathrm{sym}((\mathbb{H}:\mathbf{B}_k) \otimes \mathbf{B}_k) \) over an orthonormal basis.
+    !!
+    !! **Why this form.** No spectral decomposition and no eigenvector rotation term: on a GPU the kernels are
+    !! smaller and keep fewer values live (Intel UHD 770, sp, 100 000 points, measured before this module entered
+    !! the library: `closest_point_cg` 30.7 ms against 48 with `yld2004`, `closest_point_chol` 28.9). The power sums
+    !! are exact polynomials: no branch at repeated eigenvalues. On the CPU the two forms cost about the same.
+    !!
+    !! **Weak points.** Only even integer exponents up to 8, each with its own unrolled recurrence (`init` returns
+    !! `STATUS_INVALID_PARAMETER` otherwise). The Hessian-vector product loses relative accuracy (measured up to
+    !! about 90 eps relative to its size) where \( \phi \) is a small difference of large power sums: near a
+    !! hydrostatic stress, as any form of the criterion.
+    !!
+    !! Scaling: the image stresses are divided by the power of two of their largest component (exact; after the
+    !! linear transformations, which remove the pressure, as `yld2004` scales its principal values), using the
+    !! homogeneity of degree 1 of \( \bar\sigma \), 0 of its gradient and -1 of its Hessian, so that no power of
+    !! degree 8 under- or overflows. At \( \phi = 0 \) the derivatives are 0 (as `yld2004`, D-017.9); a NaN stress
+    !! gives NaN results, and an exponent rejected by the initializer gives a NaN equivalent stress.
+    !!
+    !! Kernel API: parameter type `yield_yld2004p_<k>` (built with `yield_yld2004p_init`, the same arguments as
+    !! `yield_yld2004_init`), the functions of the family (`yield_stress_eq`, `yield_dstress_eq`, `yield_ddstress_eq`,
+    !! `yield_stress_eq_and_derivatives`, `yield_joint_evaluation`, true) and the Hessian-vector product
+    !! (`yield_hess_prepare`, `yield_hess_apply`, type `yield_yld2004p_hd_<k>`) for each real kind, through the
+    !! generics of `muscle_yield_laws`.
+    use muscle_kinds, only : ${', '.join(REAL_KINDS)}$
+    use muscle_status, only : STATUS_OK, STATUS_INVALID_PARAMETER
+    #:for k in REAL_KINDS
+    use muscle_tensors, only : ten_3D2Osym_${k}$, ten_3D4O3sym_${k}$
+    use muscle_yield_yld2004, only : yield_yld2004_deviatoric_block_${k}$, yield_yld2004_linear_transform_3D_${k}$
+    #:endfor
+    use muscle_tensors, only : operator(.ddot.), operator(.tdotsym.), operator(+), assignment(=)
+    use muscle_math_fp, only : fp_exponent, fp_scale
+    #:for k in REAL_KINDS
+    use muscle_math_fp, only : QUIET_NAN_${k}$
+    #:endfor
+    use muscle_yield_anisotropic, only : yield_lin_pull_back
+    implicit none
+    private
+
+    #:for k in REAL_KINDS
+    public :: yield_yld2004p_${k}$
+    public :: yield_stress_eq_yld2004p_3D_${k}$, yield_dstress_eq_yld2004p_3D_${k}$, yield_ddstress_eq_yld2004p_3D_${k}$
+    public :: yield_stress_eq_and_derivatives_yld2004p_3D_${k}$, yield_joint_evaluation_yld2004p_${k}$
+    public :: yield_yld2004p_hd_${k}$, yield_hess_prepare_yld2004p_3D_${k}$, yield_hess_apply_yld2004p_3D_${k}$
+    public :: yield_yld2004p_init_${k}$
+    #:endfor
+    public :: yield_yld2004p_init
+
+    #:for k in REAL_KINDS
+    type :: yield_yld2004p_${k}$
+        !! Parameters of the Yld2004-18p model in polynomial form in `real(${k}$)` (build it with `yield_yld2004p_init`,
+        !! which computes the private components; do not change the inputs after it).
+        real(${k}$), private :: Lp(3,3)
+            !! Normal block of \( \mathbf{L}^\prime = \mathbf{C}^\prime \mathbb{P}_{dev} \).
+        real(${k}$) :: cp_shear(3)
+            !! Shear factors of \( \mathbf{C}^\prime \) on (xy, yz, xz): (cp44, cp55, cp66).
+        real(${k}$), private :: Lpp(3,3)
+            !! Normal block of \( \mathbf{L}^{\prime\prime} = \mathbf{C}^{\prime\prime} \mathbb{P}_{dev} \).
+        real(${k}$) :: cpp_shear(3)
+            !! Shear factors of \( \mathbf{C}^{\prime\prime} \) on (xy, yz, xz): (cpp44, cpp55, cpp66).
+        real(${k}$) :: a
+            !! Exponent \( a \in \{2, 4, 6, 8\} \).
+    end type yield_yld2004p_${k}$
+
+    type :: yield_yld2004p_hd_${k}$
+        !! Data of the second derivative applied to a tensor (`yield_hess_apply`, D-051) of the polynomial Yld2004-18p,
+        !! `real(${k}$)` (scaled stress).
+        real(${k}$) :: Sp(6), Spp(6)
+            !! Scaled image stresses (tensorial Voigt order).
+        real(${k}$) :: Ip(3), Ipp(3)
+            !! Their invariants \( (I_1, I_2, I_3) \).
+        real(${k}$) :: Pa(3), Pb(3)
+            !! \( \partial\phi/\partial I^\prime_a \) and \( \partial\phi/\partial I^{\prime\prime}_a \).
+        real(${k}$) :: Paa(6), Pbb(6)
+            !! Second derivatives of \( \phi \) with respect to the invariants of each image stress (11 22 33 12 23 13).
+        real(${k}$) :: X(3,3)
+            !! Cross second derivatives \( \partial^2\phi/\partial I^\prime_a\partial I^{\prime\prime}_b \).
+        real(${k}$) :: c1, c2, sinv
+            !! \( \bar\sigma/(a\phi) \), \( (a - 1)/\bar\sigma \) (scaled) and the inverse of the scale.
+        real(${k}$) :: df(6)
+            !! Gradient.
+    end type yield_yld2004p_hd_${k}$
+    #:endfor
+
+    interface yield_yld2004p_init
+        !! Builds the parameters of the polynomial Yld2004-18p model.
+        #:for k in REAL_KINDS
+        module procedure yield_yld2004p_init_${k}$
+        #:endfor
+    end interface yield_yld2004p_init
+
+contains
+    #:for k in REAL_KINDS
+
+    pure subroutine yield_yld2004p_init_${k}$(prm, cp12, cp13, cp21, cp23, cp31, cp32, cp44, cp55, cp66, cpp12, cpp13, &
+            & cpp21, cpp23, cpp31, cpp32, cpp44, cpp55, cpp66, a, status)
+        !! Parameters of the polynomial Yld2004-18p model in `real(${k}$)`: the coefficients of `yield_yld2004_init`
+        !! (Barlat et al., 2005, Eq. 15; shears in the library order) and the exponent.
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(out) :: prm
+            !! Parameters.
+        real(${k}$), intent(in) :: cp12, cp13, cp21, cp23, cp31, cp32
+            !! Normal coefficients of \( \mathbf{C}^\prime \).
+        real(${k}$), intent(in) :: cp44, cp55, cp66
+            !! Shear coefficients of \( \mathbf{C}^\prime \) (xy, yz, xz).
+        real(${k}$), intent(in) :: cpp12, cpp13, cpp21, cpp23, cpp31, cpp32
+            !! Normal coefficients of \( \mathbf{C}^{\prime\prime} \).
+        real(${k}$), intent(in) :: cpp44, cpp55, cpp66
+            !! Shear coefficients of \( \mathbf{C}^{\prime\prime} \) (xy, yz, xz).
+        real(${k}$), intent(in) :: a
+            !! Exponent: 2, 4, 6 or 8.
+        integer, intent(out) :: status
+            !! `STATUS_OK`, or `STATUS_INVALID_PARAMETER` for another exponent.
+
+        prm%Lp = yield_yld2004_deviatoric_block_${k}$(cp12, cp13, cp21, cp23, cp31, cp32)
+        prm%cp_shear = [cp44, cp55, cp66]
+        prm%Lpp = yield_yld2004_deviatoric_block_${k}$(cpp12, cpp13, cpp21, cpp23, cpp31, cpp32)
+        prm%cpp_shear = [cpp44, cpp55, cpp66]
+        prm%a = a
+        status = STATUS_OK
+        if (a /= 2.0_${k}$ .and. a /= 4.0_${k}$ .and. a /= 6.0_${k}$ .and. a /= 8.0_${k}$) status = STATUS_INVALID_PARAMETER
+    end subroutine yield_yld2004p_init_${k}$
+
+    pure function yield_stress_eq_yld2004p_3D_${k}$(prm, sigma) result(res)
+        !! Equivalent stress \( \bar\sigma(\boldsymbol\sigma) \) of the polynomial Yld2004-18p model in `real(${k}$)` (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$) :: res
+            !! \( \bar\sigma \).
+        type(ten_3D2Osym_${k}$) :: df
+        type(yield_yld2004p_hd_${k}$) :: hd
+
+        call yield_yld2004p_eval_${k}$(prm, sigma, .false., res, df, hd)
+    end function yield_stress_eq_yld2004p_3D_${k}$
+
+    pure function yield_dstress_eq_yld2004p_3D_${k}$(prm, sigma) result(res)
+        !! Gradient \( \partial\bar\sigma/\partial\boldsymbol\sigma \) of the polynomial Yld2004-18p model in `real(${k}$)`
+        !! (3D).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D2Osym_${k}$) :: res
+            !! \( \partial\bar\sigma/\partial\boldsymbol\sigma \).
+        real(${k}$) :: f
+        type(yield_yld2004p_hd_${k}$) :: hd
+
+        call yield_yld2004p_eval_${k}$(prm, sigma, .false., f, res, hd)
+    end function yield_dstress_eq_yld2004p_3D_${k}$
+
+    pure function yield_ddstress_eq_yld2004p_3D_${k}$(prm, sigma) result(res)
+        !! Second derivative \( \partial^2\bar\sigma/\partial\boldsymbol\sigma^2 \) of the polynomial Yld2004-18p model in
+        !! `real(${k}$)` (3D), assembled from six Hessian-vector products.
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$) :: res
+            !! \( \partial^2\bar\sigma/\partial\boldsymbol\sigma^2 \).
+        real(${k}$) :: f
+        type(ten_3D2Osym_${k}$) :: df
+        type(yield_yld2004p_hd_${k}$) :: hd
+
+        call yield_yld2004p_eval_${k}$(prm, sigma, .true., f, df, hd)
+        res = yield_yld2004p_hessian_${k}$(prm, hd)
+    end function yield_ddstress_eq_yld2004p_3D_${k}$
+
+    pure function yield_joint_evaluation_yld2004p_${k}$(prm) result(res)
+        !! Whether the criterion writes its own joint evaluation: true (one evaluation of the power sums serves f,
+        !! the gradient and the second derivative).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: prm
+            !! Parameters (not used: only selects the model).
+        logical :: res
+            !! `.true.`
+
+        res = .true.
+    end function yield_joint_evaluation_yld2004p_${k}$
+
+    pure subroutine yield_stress_eq_and_derivatives_yld2004p_3D_${k}$(prm, sigma, f, df, ddf)
+        !! Equivalent stress and its first and second derivatives of the polynomial Yld2004-18p model in `real(${k}$)`
+        !! (3D): one evaluation of the power sums for the three (the second derivative only if `ddf` is present).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor \( \boldsymbol\sigma \).
+        real(${k}$), intent(out) :: f
+            !! \( \bar\sigma \).
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! \( \partial\bar\sigma/\partial\boldsymbol\sigma \).
+        type(ten_3D4O3sym_${k}$), intent(out), optional :: ddf
+            !! \( \partial^2\bar\sigma/\partial\boldsymbol\sigma^2 \) (not computed when absent).
+        type(yield_yld2004p_hd_${k}$) :: hd
+
+        call yield_yld2004p_eval_${k}$(prm, sigma, present(ddf), f, df, hd)
+        if (present(ddf)) ddf = yield_yld2004p_hessian_${k}$(prm, hd)
+    end subroutine yield_stress_eq_and_derivatives_yld2004p_3D_${k}$
+
+    pure subroutine yield_hess_prepare_yld2004p_3D_${k}$(prm, sigma, f, df, hd)
+        !! Equivalent stress, gradient and the data of `yield_hess_apply_yld2004p_3D_${k}$` from one evaluation of the
+        !! power sums, in `real(${k}$)` (D-051).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+            !! Stress tensor.
+        real(${k}$), intent(out) :: f
+            !! Equivalent stress.
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+            !! Gradient.
+        type(yield_yld2004p_hd_${k}$), intent(out) :: hd
+            !! Data of the product.
+
+        call yield_yld2004p_eval_${k}$(prm, sigma, .true., f, df, hd)
+    end subroutine yield_hess_prepare_yld2004p_3D_${k}$
+
+    pure function yield_hess_apply_yld2004p_3D_${k}$(prm, hd, x) result(res)
+        !! The second derivative applied to a tensor without forming it, in `real(${k}$)` (D-051): with
+        !! \( \mathbf{y} = \mathbf{L}:\mathbf{x} \) for each image stress,
+        !! \( \mathbf{z} = \sum_a \partial I_a/\partial\mathbf{S}\,(\sum_b \phi_{ab}\,\partial I_b[\mathbf{y}] +
+        !! \text{cross}) + \phi_{,2}\,\partial^2 I_2:\mathbf{y} + \phi_{,3}\,\partial^2 I_3:\mathbf{y} \), pulled back with
+        !! \( \mathbf{L}^T \); then \( \mathbb{H}:\mathbf{x} = (c_1 (\mathbf{L}^{\prime T}:\mathbf{z}^\prime +
+        !! \mathbf{L}^{\prime\prime T}:\mathbf{z}^{\prime\prime}) - c_2 (\nabla\bar\sigma:\mathbf{x})\nabla\bar\sigma)/s \).
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: prm
+            !! Parameters.
+        type(yield_yld2004p_hd_${k}$), intent(in) :: hd
+            !! Data from `yield_hess_prepare`.
+        type(ten_3D2Osym_${k}$), intent(in) :: x
+            !! Tensor.
+        type(ten_3D2Osym_${k}$) :: res
+            !! d2f/dsigma2 : x.
+        real(${k}$) :: yp(6), yq(6), dip(3), diq(3), cp(3), cq(3), zp(6), zq(6)
+        type(ten_3D2Osym_${k}$) :: t, dfx
+
+        t = yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, x)
+        yp = t%vals
+        t = yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, x)
+        yq = t%vals
+        call yield_yld2004p_dinv_${k}$(hd%Sp, hd%Ip, yp, dip)
+        call yield_yld2004p_dinv_${k}$(hd%Spp, hd%Ipp, yq, diq)
+        ! c_a = sum_b phi_ab dI_b[y] + cross terms, with phi_ab packed 11 22 33 12 23 13
+        cp(1) = hd%Paa(1)*dip(1) + hd%Paa(4)*dip(2) + hd%Paa(6)*dip(3) + hd%X(1,1)*diq(1) + hd%X(1,2)*diq(2) + hd%X(1,3)*diq(3)
+        cp(2) = hd%Paa(4)*dip(1) + hd%Paa(2)*dip(2) + hd%Paa(5)*dip(3) + hd%X(2,1)*diq(1) + hd%X(2,2)*diq(2) + hd%X(2,3)*diq(3)
+        cp(3) = hd%Paa(6)*dip(1) + hd%Paa(5)*dip(2) + hd%Paa(3)*dip(3) + hd%X(3,1)*diq(1) + hd%X(3,2)*diq(2) + hd%X(3,3)*diq(3)
+        cq(1) = hd%Pbb(1)*diq(1) + hd%Pbb(4)*diq(2) + hd%Pbb(6)*diq(3) + hd%X(1,1)*dip(1) + hd%X(2,1)*dip(2) + hd%X(3,1)*dip(3)
+        cq(2) = hd%Pbb(4)*diq(1) + hd%Pbb(2)*diq(2) + hd%Pbb(5)*diq(3) + hd%X(1,2)*dip(1) + hd%X(2,2)*dip(2) + hd%X(3,2)*dip(3)
+        cq(3) = hd%Pbb(6)*diq(1) + hd%Pbb(5)*diq(2) + hd%Pbb(3)*diq(3) + hd%X(1,3)*dip(1) + hd%X(2,3)*dip(2) + hd%X(3,3)*dip(3)
+        zp = yield_yld2004p_z_${k}$(hd%Sp, hd%Ip, cp, hd%Pa, yp)
+        zq = yield_yld2004p_z_${k}$(hd%Spp, hd%Ipp, cq, hd%Pb, yq)
+        t%vals = zp
+        res = yield_lin_pull_back(prm%Lp, prm%cp_shear, t)
+        t%vals = zq
+        res = res + yield_lin_pull_back(prm%Lpp, prm%cpp_shear, t)
+        dfx%vals = hd%df
+        res%vals = hd%sinv*(hd%c1*res%vals - (hd%c2*(dfx .ddot. x))*hd%df)
+    end function yield_hess_apply_yld2004p_3D_${k}$
+
+    pure function yield_yld2004p_hessian_${k}$(prm, hd) result(res)
+        ! Assembled second derivative from six Hessian-vector products: H = sum_k sym((H:B_k) (x) B_k) over the
+        ! orthonormal basis B_k (unit normal components; shears with 1/sqrt(2) in each of the two off-diagonal entries)
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: prm
+        type(yield_yld2004p_hd_${k}$), intent(in) :: hd
+        type(ten_3D4O3sym_${k}$) :: res
+        type(ten_3D2Osym_${k}$) :: b
+        real(${k}$), parameter :: RS2 = 1.0_${k}$/sqrt(2.0_${k}$)
+
+        #:for j in range(1, 7)
+        b%vals = 0.0_${k}$
+        #:if j <= 3
+        b%vals(${j}$) = 1.0_${k}$
+        #:else
+        b%vals(${j}$) = RS2
+        #:endif
+        #:if j == 1
+        res = yield_hess_apply_yld2004p_3D_${k}$(prm, hd, b) .tdotsym. b
+        #:else
+        res = res + (yield_hess_apply_yld2004p_3D_${k}$(prm, hd, b) .tdotsym. b)
+        #:endif
+        #:endfor
+    end function yield_yld2004p_hessian_${k}$
+
+    pure subroutine yield_yld2004p_eval_${k}$(prm, sigma, second, f, df, hd)
+        ! f, gradient and (second = .true.) the data of the second derivative, on the stress scaled by a power of two
+        ! (exact: homogeneity of degree 1, 0 and -1), so that no power of degree 8 under- or overflows
+        implicit none
+        @:DEVICE()
+        type(yield_yld2004p_${k}$), intent(in) :: prm
+        type(ten_3D2Osym_${k}$), intent(in) :: sigma
+        logical, intent(in) :: second
+        real(${k}$), intent(out) :: f
+        type(ten_3D2Osym_${k}$), intent(out) :: df
+        type(yield_yld2004p_hd_${k}$), intent(out) :: hd
+        type(ten_3D2Osym_${k}$) :: s, t
+        real(${k}$) :: big, p
+        integer :: e, n
+
+        hd%Sp = 0.0_${k}$
+        hd%Spp = 0.0_${k}$
+        hd%Ip = 0.0_${k}$
+        hd%Ipp = 0.0_${k}$
+        hd%Pa = 0.0_${k}$
+        hd%Pb = 0.0_${k}$
+        hd%Paa = 0.0_${k}$
+        hd%Pbb = 0.0_${k}$
+        hd%X = 0.0_${k}$
+        hd%c1 = 0.0_${k}$
+        hd%c2 = 0.0_${k}$
+        hd%sinv = 1.0_${k}$
+        hd%df = 0.0_${k}$
+        f = 0.0_${k}$
+        df%vals = 0.0_${k}$
+        ! Scaled after the transformations (as yld2004 scales the principal values): Lp and Lpp remove the pressure,
+        ! so a power of two taken from sigma would leave the image stresses of a nearly hydrostatic state tiny and
+        ! their powers of degree 8 subnormal in sp
+        s = yield_yld2004_linear_transform_3D_${k}$(prm%Lp, prm%cp_shear, sigma)
+        t = yield_yld2004_linear_transform_3D_${k}$(prm%Lpp, prm%cpp_shear, sigma)
+        big = max(maxval(abs(s%vals)), maxval(abs(t%vals)))
+        if (big == 0.0_${k}$) return  ! null image stresses: zero equivalent stress and derivatives (D-017.9)
+        if (.not. (big > 0.0_${k}$)) then
+            ! A NaN stress: NaN results, as the spectral form
+            f = big
+            df%vals = big
+            return
+        end if
+        e = fp_exponent(big)
+        hd%Sp = fp_scale(s%vals, -e)
+        hd%Spp = fp_scale(t%vals, -e)
+        hd%Ip = yield_yld2004p_inv_${k}$(hd%Sp)
+        hd%Ipp = yield_yld2004p_inv_${k}$(hd%Spp)
+        n = nint(prm%a)
+        select case (n)
+        #:for N in POLY_N
+        case (${N}$)
+            call yield_yld2004p_sums_n${N}$_${k}$(hd%Ip, hd%Ipp, second, p, hd%Pa, hd%Pb, hd%Paa, hd%Pbb, hd%X)
+        #:endfor
+        case default
+            ! An exponent rejected by yield_yld2004p_init: NaN, so that an ignored status does not pass unnoticed
+            f = QUIET_NAN_${k}$()
+            df%vals = f
+            return
+        end select
+        if (p == 0.0_${k}$) return  ! null equivalent stress: zero derivatives (D-017.9)
+        if (.not. (p > 0.0_${k}$)) then
+            ! NaN (or a negative rounding of a null phi): the value of phi, as the spectral form propagates a NaN
+            f = merge(0.0_${k}$, p, p < 0.0_${k}$)
+            df%vals = f
+            return
+        end if
+        f = (0.25_${k}$*p)**(1.0_${k}$/prm%a)
+        hd%c1 = f/(prm%a*p)
+        hd%c2 = (prm%a - 1.0_${k}$)/f
+        hd%sinv = fp_scale(1.0_${k}$, -e)
+        t%vals = yield_yld2004p_grad_${k}$(hd%Sp, hd%Ip, hd%Pa)
+        df = yield_lin_pull_back(prm%Lp, prm%cp_shear, t)
+        t%vals = yield_yld2004p_grad_${k}$(hd%Spp, hd%Ipp, hd%Pb)
+        df = df + yield_lin_pull_back(prm%Lpp, prm%cpp_shear, t)
+        df%vals = hd%c1*df%vals
+        hd%df = df%vals
+        f = fp_scale(f, e)
+    end subroutine yield_yld2004p_eval_${k}$
+    #:for N in POLY_N
+
+    pure subroutine yield_yld2004p_sums_n${N}$_${k}$(ip, iq, second, p, pa, pb, paa, pbb, x)
+        ! phi = sum_j W_j Q_(n-j)(Sp) Q_j(Spp), W_j = (-1)^j C(n, j), for n = ${N}$, and its derivatives with respect to
+        ! the invariants of Sp (pa, paa) and of Spp (pb, pbb) and the cross ones (x)
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: ip(3), iq(3)
+        logical, intent(in) :: second
+        real(${k}$), intent(out) :: p, pa(3), pb(3), paa(6), pbb(6), x(3,3)
+        real(${k}$), parameter :: W(0:${N}$) = real([${WEIGHTS[N]}$], ${k}$)
+        real(${k}$) :: qp(0:${N}$), dqp(3,0:${N}$), d2qp(6,0:${N}$), qq(0:${N}$), dqq(3,0:${N}$), d2qq(6,0:${N}$)
+        integer :: j, c
+
+        call yield_yld2004p_q_n${N}$_${k}$(ip, second, qp, dqp, d2qp)
+        call yield_yld2004p_q_n${N}$_${k}$(iq, second, qq, dqq, d2qq)
+        ! Q_(n-j)(Sp) is qp(n:0:-1) against qq(0:n)
+        p = sum(W*qp(${N}$:0:-1)*qq)
+        do c = 1, 3
+            pa(c) = sum(W*dqp(c, ${N}$:0:-1)*qq)
+            pb(c) = sum(W*qp(${N}$:0:-1)*dqq(c, :))
+        end do
+        paa = 0.0_${k}$
+        pbb = 0.0_${k}$
+        x = 0.0_${k}$
+        if (.not. second) return
+        do c = 1, 6
+            paa(c) = sum(W*d2qp(c, ${N}$:0:-1)*qq)
+            pbb(c) = sum(W*qp(${N}$:0:-1)*d2qq(c, :))
+        end do
+        do j = 1, 3
+            do c = 1, 3
+                x(c, j) = sum(W*dqp(c, ${N}$:0:-1)*dqq(j, :))
+            end do
+        end do
+    end subroutine yield_yld2004p_sums_n${N}$_${k}$
+
+    pure subroutine yield_yld2004p_q_n${N}$_${k}$(inv, second, q, dq, d2q)
+        ! Power sums Q_0..Q_${N}$ of a symmetric 3x3 tensor from its invariants (the Newton identities) and their first
+        ! and (second = .true.) second derivatives with respect to (I1, I2, I3); unrolled with literal subscripts
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: inv(3)
+        logical, intent(in) :: second
+        real(${k}$), intent(out) :: q(0:${N}$), dq(3,0:${N}$), d2q(6,0:${N}$)
+
+        q(0) = 3.0_${k}$
+        q(1) = inv(1)
+        q(2) = inv(1)*inv(1) - 2.0_${k}$*inv(2)
+        dq(:,0) = 0.0_${k}$
+        dq(:,1) = [1.0_${k}$, 0.0_${k}$, 0.0_${k}$]
+        dq(:,2) = [2.0_${k}$*inv(1), -2.0_${k}$, 0.0_${k}$]
+        ! Q_p = I1 Q_(p-1) - I2 Q_(p-2) + I3 Q_(p-3); dQ_p/dI_a = (+, -, +) Q_(p-a) + the recurrence on dQ
+        #:for p in range(3, N + 1)
+        q(${p}$) = inv(1)*q(${p-1}$) - inv(2)*q(${p-2}$) + inv(3)*q(${p-3}$)
+        #:for a in range(1, 4)
+        dq(${a}$,${p}$) = ${SG[a]}$q(${p-a}$) + inv(1)*dq(${a}$,${p-1}$) - inv(2)*dq(${a}$,${p-2}$) + inv(3)*dq(${a}$,${p-3}$)
+        #:endfor
+        #:endfor
+        d2q = 0.0_${k}$
+        if (.not. second) return
+        d2q(1,2) = 2.0_${k}$
+        ! d2Q_p/dI_a dI_b = (sign a) dQ_(p-a)/dI_b + (sign b) dQ_(p-b)/dI_a + the recurrence on d2Q; e.g. the pair
+        ! (1, 2): +dQ_(p-1)/dI_2 - dQ_(p-2)/dI_1
+        #:for p in range(3, N + 1)
+        #:for a, b, c in PAIRS
+        d2q(${c}$,${p}$) = ${SG[a]}$dq(${b}$,${p-a}$) ${SG[b]}$ dq(${a}$,${p-b}$) + inv(1)*d2q(${c}$,${p-1}$) &
+            - inv(2)*d2q(${c}$,${p-2}$) + inv(3)*d2q(${c}$,${p-3}$)
+        #:endfor
+        #:endfor
+    end subroutine yield_yld2004p_q_n${N}$_${k}$
+    #:endfor
+
+    pure function yield_yld2004p_inv_${k}$(s) result(res)
+        ! Classical invariants (I1, I2, I3) of a symmetric tensor in tensorial Voigt order (xx yy zz xy yz xz)
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: s(6)
+        real(${k}$) :: res(3)
+
+        res(1) = s(1) + s(2) + s(3)
+        res(2) = s(1)*s(2) + s(2)*s(3) + s(1)*s(3) - s(4)*s(4) - s(5)*s(5) - s(6)*s(6)
+        res(3) = s(1)*(s(2)*s(3) - s(5)*s(5)) - s(4)*(s(4)*s(3) - s(5)*s(6)) + s(6)*(s(4)*s(5) - s(2)*s(6))
+    end function yield_yld2004p_inv_${k}$
+
+    pure function yield_yld2004p_anti_${k}$(a, b) result(res)
+        ! A B + B A of two symmetric tensors (tensorial Voigt order), symmetric
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: a(6), b(6)
+        real(${k}$) :: res(6)
+
+        res(1) = 2.0_${k}$*(a(1)*b(1) + a(4)*b(4) + a(6)*b(6))
+        res(2) = 2.0_${k}$*(a(4)*b(4) + a(2)*b(2) + a(5)*b(5))
+        res(3) = 2.0_${k}$*(a(6)*b(6) + a(5)*b(5) + a(3)*b(3))
+        res(4) = a(1)*b(4) + a(4)*b(2) + a(6)*b(5) + b(1)*a(4) + b(4)*a(2) + b(6)*a(5)
+        res(5) = a(4)*b(6) + a(2)*b(5) + a(5)*b(3) + b(4)*a(6) + b(2)*a(5) + b(5)*a(3)
+        res(6) = a(1)*b(6) + a(4)*b(5) + a(6)*b(3) + b(1)*a(6) + b(4)*a(5) + b(6)*a(3)
+    end function yield_yld2004p_anti_${k}$
+
+    pure function yield_yld2004p_cof_${k}$(s, inv) result(res)
+        ! dI3/dS = cof(S) = S^2 - I1 S + I2 1
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: s(6), inv(3)
+        real(${k}$) :: res(6)
+
+        res = 0.5_${k}$*yield_yld2004p_anti_${k}$(s, s) - inv(1)*s
+        res(1:3) = res(1:3) + inv(2)
+    end function yield_yld2004p_cof_${k}$
+
+    pure function yield_yld2004p_grad_${k}$(s, inv, pa) result(res)
+        ! dphi/dS = pa1 1 + pa2 (I1 1 - S) + pa3 cof(S)
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: s(6), inv(3), pa(3)
+        real(${k}$) :: res(6)
+
+        res = pa(3)*yield_yld2004p_cof_${k}$(s, inv) - pa(2)*s
+        res(1:3) = res(1:3) + pa(1) + pa(2)*inv(1)
+    end function yield_yld2004p_grad_${k}$
+
+    pure subroutine yield_yld2004p_dinv_${k}$(s, inv, y, di)
+        ! Directional derivatives of the invariants: dIa[y] = dIa/dS : y (tensorial Voigt: shears counted twice)
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: s(6), inv(3), y(6)
+        real(${k}$), intent(out) :: di(3)
+        real(${k}$) :: c(6), ty
+
+        ty = y(1) + y(2) + y(3)
+        c = yield_yld2004p_cof_${k}$(s, inv)
+        di(1) = ty
+        di(2) = inv(1)*ty - (s(1)*y(1) + s(2)*y(2) + s(3)*y(3) + 2.0_${k}$*(s(4)*y(4) + s(5)*y(5) + s(6)*y(6)))
+        di(3) = c(1)*y(1) + c(2)*y(2) + c(3)*y(3) + 2.0_${k}$*(c(4)*y(4) + c(5)*y(5) + c(6)*y(6))
+    end subroutine yield_yld2004p_dinv_${k}$
+
+    pure function yield_yld2004p_z_${k}$(s, inv, c, pa, y) result(res)
+        ! sum_a c_a dIa/dS + pa2 d2I2:y + pa3 d2I3:y
+        implicit none
+        @:DEVICE()
+        real(${k}$), intent(in) :: s(6), inv(3), c(3), pa(3), y(6)
+        real(${k}$) :: res(6)
+        real(${k}$) :: ty, sy
+
+        ty = y(1) + y(2) + y(3)
+        sy = s(1)*y(1) + s(2)*y(2) + s(3)*y(3) + 2.0_${k}$*(s(4)*y(4) + s(5)*y(5) + s(6)*y(6))
+        res = c(3)*yield_yld2004p_cof_${k}$(s, inv) - c(2)*s - pa(2)*y &
+            + pa(3)*(yield_yld2004p_anti_${k}$(s, y) - ty*s - inv(1)*y)
+        res(1:3) = res(1:3) + c(1) + c(2)*inv(1) + pa(2)*ty + pa(3)*(inv(1)*ty - sy)
+    end function yield_yld2004p_z_${k}$
+    #:endfor
+
+end module muscle_yield_yld2004p

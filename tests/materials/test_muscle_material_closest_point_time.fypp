@@ -63,6 +63,7 @@ program test_mat_closest_point_time
         solver_case(0, 'tm_jc_hill48_swift', 'steel', 'jc3', 'swift', 'hill48-2', 200, 1.0e-2_dp, 4.37e-4_dp), &
         solver_case(0, 'tm_jc_cpb06_ludwik', 'steel', 'jc2', 'ludwik', 'cpb06-2', 200, 1.0e-3_dp, 7.04e-4_dp), &
         solver_case(0, 'tm_jc_yld2004_swift', 'steel', 'jc3', 'swift', 'yld2004-2', 200, 1.0e-2_dp, 4.34e-4_dp), &
+        solver_case(0, 'tm_jc_yld2004p_swift', 'steel', 'jc3', 'swift', 'yld2004p-2', 200, 1.0e-2_dp, 4.34e-4_dp), &
         solver_case(0, 'tm_jc_dp_bilinear', 'steel', 'jc2', 'bilinear', 'dp-1', 200, 1.0e-3_dp, 7.01e-4_dp), &
         solver_case(0, 'tm_maxwell_jc_vm_bilinear', 'maxwell', 'jc2', 'bilinear', 'vonmises', 200, 1.0e-2_dp, 9.81e-3_dp), &
         solver_case(0, 'tm_jc_vm_swift', 'lin1000', 'jc1', 'swift_small', 'vonmises', 1, 100.0_dp, 3.00e-3_dp), &
