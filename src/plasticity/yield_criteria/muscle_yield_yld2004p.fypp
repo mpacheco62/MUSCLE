@@ -34,9 +34,10 @@ module muscle_yield_yld2004p
     !! \( \sum_k \mathrm{sym}((\mathbb{H}:\mathbf{B}_k) \otimes \mathbf{B}_k) \) over an orthonormal basis.
     !!
     !! **Why this form.** No spectral decomposition and no eigenvector rotation term: on a GPU the kernels are
-    !! smaller and keep fewer values live (Intel UHD 770, sp, 100 000 points, measured before this module entered
-    !! the library: `closest_point_cg` 30.7 ms against 48 with `yld2004`, `closest_point_chol` 28.9). The power sums
-    !! are exact polynomials: no branch at repeated eigenvalues. On the CPU the two forms cost about the same.
+    !! smaller and keep fewer values live (Intel UHD 770, sp, 100 000 points, D-056: 36 % less time than `yld2004`
+    !! with `closest_point`, `closest_point_lu` and `closest_point_chol`, the fastest being `closest_point_chol` with
+    !! 37.0 ms; 9 % less with `closest_point_cg`). The power sums are exact polynomials: no branch at repeated
+    !! eigenvalues. On the CPU the spectral form is 4 to 17 % faster.
     !!
     !! **Weak points.** Only even integer exponents up to 8, each with its own unrolled recurrence (`init` returns
     !! `STATUS_INVALID_PARAMETER` otherwise). The Hessian-vector product loses relative accuracy (measured up to
@@ -419,29 +420,43 @@ contains
         real(${k}$), intent(out) :: p, pa(3), pb(3), paa(6), pbb(6), x(3,3)
         real(${k}$), parameter :: W(0:${N}$) = real([${WEIGHTS[N]}$], ${k}$)
         real(${k}$) :: qp(0:${N}$), dqp(3,0:${N}$), d2qp(6,0:${N}$), qq(0:${N}$), dqq(3,0:${N}$), d2qq(6,0:${N}$)
-        integer :: j, c
 
         call yield_yld2004p_q_n${N}$_${k}$(ip, second, qp, dqp, d2qp)
         call yield_yld2004p_q_n${N}$_${k}$(iq, second, qq, dqq, d2qq)
-        ! Q_(n-j)(Sp) is qp(n:0:-1) against qq(0:n)
-        p = sum(W*qp(${N}$:0:-1)*qq)
-        do c = 1, 3
-            pa(c) = sum(W*dqp(c, ${N}$:0:-1)*qq)
-            pb(c) = sum(W*qp(${N}$:0:-1)*dqq(c, :))
-        end do
+        ! Every sum term by term with literal subscripts (sums over array sections or loops with a run-time subscript
+        ! send the arrays to private memory on the Intel GPU: 2 to 4 times slower, D-055); Q_(n-j)(Sp) Q_j(Spp)
+        p = W(0)*qp(${N}$)*qq(0)
+        #:for j in range(1, N + 1)
+        p = p + W(${j}$)*qp(${N - j}$)*qq(${j}$)
+        #:endfor
+        #:for c in range(1, 4)
+        pa(${c}$) = W(0)*dqp(${c}$,${N}$)*qq(0)
+        pb(${c}$) = W(0)*qp(${N}$)*dqq(${c}$,0)
+        #:for j in range(1, N + 1)
+        pa(${c}$) = pa(${c}$) + W(${j}$)*dqp(${c}$,${N - j}$)*qq(${j}$)
+        pb(${c}$) = pb(${c}$) + W(${j}$)*qp(${N - j}$)*dqq(${c}$,${j}$)
+        #:endfor
+        #:endfor
         paa = 0.0_${k}$
         pbb = 0.0_${k}$
         x = 0.0_${k}$
         if (.not. second) return
-        do c = 1, 6
-            paa(c) = sum(W*d2qp(c, ${N}$:0:-1)*qq)
-            pbb(c) = sum(W*qp(${N}$:0:-1)*d2qq(c, :))
-        end do
-        do j = 1, 3
-            do c = 1, 3
-                x(c, j) = sum(W*dqp(c, ${N}$:0:-1)*dqq(j, :))
-            end do
-        end do
+        #:for c in range(1, 7)
+        paa(${c}$) = W(0)*d2qp(${c}$,${N}$)*qq(0)
+        pbb(${c}$) = W(0)*qp(${N}$)*d2qq(${c}$,0)
+        #:for j in range(1, N + 1)
+        paa(${c}$) = paa(${c}$) + W(${j}$)*d2qp(${c}$,${N - j}$)*qq(${j}$)
+        pbb(${c}$) = pbb(${c}$) + W(${j}$)*qp(${N - j}$)*d2qq(${c}$,${j}$)
+        #:endfor
+        #:endfor
+        #:for b in range(1, 4)
+        #:for a in range(1, 4)
+        x(${a}$,${b}$) = W(0)*dqp(${a}$,${N}$)*dqq(${b}$,0)
+        #:for j in range(1, N + 1)
+        x(${a}$,${b}$) = x(${a}$,${b}$) + W(${j}$)*dqp(${a}$,${N - j}$)*dqq(${b}$,${j}$)
+        #:endfor
+        #:endfor
+        #:endfor
     end subroutine yield_yld2004p_sums_n${N}$_${k}$
 
     pure subroutine yield_yld2004p_q_n${N}$_${k}$(inv, second, q, dq, d2q)
