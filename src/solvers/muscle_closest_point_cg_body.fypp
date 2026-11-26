@@ -32,11 +32,11 @@
         !! **Why this solver (D-053).** It is meant for GPUs. The Newton iteration forms neither the second
         !! derivative of the criterion nor any matrix: each correction comes from two conjugate gradient
         !! solutions with Hessian-vector products (`yield_hess_apply`, D-051), so the kernel keeps fewer values
-        !! live and is smaller. Measured on the Intel UHD 770 (sp, 100 000 points): CPB06ex2 21.8 ms against 115
-        !! of `closest_point` and Yld2004 48 against 282, with kernels 35 to 45 % smaller than those of
-        !! `closest_point`, none above the size where IGC stops inlining (the kernels of `closest_point` with these
-        !! two criteria are above it, which explains part of the difference: Yld2004 with `closest_point` takes
-        !! 98 ms without that limit, PROBLEMAS). On the CPU it is 1 to 2.3 times slower than `closest_point_lu`,
+        !! live and is smaller. Measured on the Intel UHD 770 (sp, 100 000 points, D-056) it is the fastest closest
+        !! point for every criterion except the polynomial Yld2004: from 2.2 ms against 4.5 of `closest_point` (von
+        !! Mises) to 20.9 against 74.5 (CPB06ex2) and 47 against 78 (Yld2004), with kernels 35 to 45 % smaller,
+        !! none above the size where the Intel GPU compiler stops inlining (those of the other closest point solvers
+        !! with CPB06ex2 and Yld2004 are above it). On the CPU it is 1 to 2.3 times slower than `closest_point_lu`,
         !! which should be used there. Same Newton iteration, tolerances and limits as `closest_point`; its
         !! iterates agree with those of `closest_point` up to the conjugate gradient tolerance.
         use muscle_kinds, only : TOL_ELASTIC_${k}$, SY_MIN_${k}$

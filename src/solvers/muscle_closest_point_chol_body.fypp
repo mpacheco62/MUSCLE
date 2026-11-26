@@ -33,13 +33,12 @@
         !! \mathbb{C}:\partial^2 f/\partial\boldsymbol\sigma^2:\mathbb{C} \) (symmetric positive definite for a convex
         !! criterion) once per iteration and factorizes it by Cholesky (no pivoting, no inverse); the factorization
         !! and the solutions are unrolled with literal subscripts, so that the matrix stays in registers on a GPU, and
-        !! the tangent reuses the same factorization. With the criteria of the library it is not the recommended
-        !! closest point on any platform: in the measurements that led to it (Intel UHD 770, sp, 100 000 points,
-        !! before this solver entered the library) it was slower than `closest_point_cg` for von Mises, Hill48,
-        !! Drucker-Prager and CPB06 (2.9 against 2.2 ms with von Mises), its kernels with CPB06ex2 and the spectral
-        !! Yld2004 exceeded the size where the Intel GPU compiler stops inlining, with wrong results (PROBLEMAS), and
-        !! on the CPU `closest_point_lu` is faster. It was the fastest on that GPU with a Yld2004 written in
-        !! polynomial form. Same Newton iteration, tolerances and limits as `closest_point`; its iterates agree with
+        !! the tangent reuses the same factorization. Measured (D-056): on the Intel UHD 770 (sp, 100 000 points)
+        !! it is the fastest closest point with the polynomial Yld2004 (`yld2004p`, 37.0 ms, with
+        !! `closest_point_lu` 37.9 and `closest_point_cg` 42.9) and slower than `closest_point_cg` with every other
+        !! criterion (with CPB06ex2 and the spectral Yld2004 its kernels exceed the size where the Intel GPU
+        !! compiler stops inlining: correct results, 67 and 60 ms against 21 and 47); on the CPU `closest_point_lu`
+        !! is faster. Same Newton iteration, tolerances and limits as `closest_point`; its iterates agree with
         !! those of `closest_point` up to rounding.
         use muscle_kinds, only : TOL_ELASTIC_${k}$, SY_MIN_${k}$
         use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED

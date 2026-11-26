@@ -35,8 +35,8 @@
         !! **Why this solver (D-052).** It computes the iterates of `closest_point` (the same up to rounding) at a
         !! lower cost: one 7x7 LU solve per iteration instead of two 6x6 inverses (the elasticity and the
         !! algorithmic Hessian), and no inverse of the elasticity in the tangent. Measured on the CPU (gfortran
-        !! Release, dp, one thread) it is the fastest closest point of the library for every criterion, with 5 to
-        !! 21 % less time than `closest_point`. Same Newton iteration, tolerances and limits as `closest_point`.
+        !! Release, dp, one thread, D-056) it is the fastest closest point of the library for every criterion, with
+        !! 7 to 20 % less time than `closest_point`. Same Newton iteration, tolerances and limits as `closest_point`.
         use muscle_kinds, only : TOL_ELASTIC_${k}$, SY_MIN_${k}$
         use muscle_status, only : STATUS_OK, STATUS_NOT_CONVERGED
         use muscle_tensors, only : operator(-)

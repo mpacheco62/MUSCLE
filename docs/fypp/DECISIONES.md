@@ -2327,3 +2327,39 @@ D-051) y el valor de la rama de \( \phi \) negativo por redondeo, que ningún es
 pequeño sobre una presión grande falla con el escalado anterior (f = 0 en sp) y pasa con el corregido. CPU Debug `sp;dp`:
 Windows gfortran 147/147 e ifx 147/147; Linux (WSL) gfortran 147/147 e ifx 147/147 (`tools/check.sh --quick --ifx`), lint OK;
 GPU Intel de Linux (SPIR64, Debug `sp;dp`): 55/55 tests `target`, con `cpcg_yld2004p_swift` y `chol_yld2004p_swift` en sp.
+
+## D-056 — Medición de los closest point y de `yld2004p` en la rama `perf/closest-point-cg` (2026-11-26)
+
+**Contexto:** D-052 a D-055 citaban cifras del experimento `wt-spec`, cuyo código difería del de la rama (variantes de la
+Hessiana con acumuladores, tres exponentes de la forma polinomial, sumas desenrolladas con lambdas de FYPP). Al cerrar la rama
+se midió el código de la rama.
+**Cómo:** GPU Intel UHD 770 (Linux/WSL, ifx, SPIR64, Release, sp): banco de lote `bench_batch_gpu_<material>_sp`, 100 000
+puntos, mínimo de 5 repeticiones, verificación de 1000 puntos contra la CPU (1 o 2 en el borde de la tolerancia del banco,
+como siempre), tamaño expandido del kernel (`IGC_PrintControlKernelTotalSize`) y spill. CPU (Linux/WSL, gfortran 15 Release,
+dp, un hilo fijo en un núcleo, 20 000 puntos): mínimo de 7 a 19 rondas intercaladas (WSL2 da tiempos bimodales, con la
+mediana hasta 2 veces el mínimo; los casos que no cayeron en el modo rápido se repitieron).
+**Resultados** (ms; GPU / CPU):
+
+| Criterio | `closest_point` | `closest_point_lu` | `closest_point_cg` | `closest_point_chol` |
+|---|---|---|---|---|
+| von Mises | 4,5 / 24,2 | 3,3 / **19,9** | **2,2** / 25,1 | 3,0 / 36,3 |
+| Hill48 | 6,1 / 32,8 | 4,8 / **26,1** | **4,1** / 60,4 | 4,9 / 47,6 |
+| Drucker-Prager | 6,6 / — | 5,1 / — | **3,5** / — | 4,9 / — |
+| CPB06 (Voce mod.) | 10,3 / 54,6 | 9,5 / **50,5** | **6,3** / 60,4 | 9,1 / 64,0 |
+| CPB06ex2 | 74,5 / 151 | 67,6 / **141** | **20,9** / 170 | 67,0 / 165 |
+| Yld2004 | 77,5 / 343 | 59,3 / **308** | **47,3** / 576 | 59,7 / 377 |
+| Yld2004 polinómico (`yld2004p`) | 49,4 / 396 | 37,9 / **362** | 42,9 / 601 | **37,0** / ≈680 (sólo modo lento) |
+
+Tamaño expandido de los kernels en la GPU (umbral de recorte de IGC ≈ 110 000): con CPB06ex2 y Yld2004, `closest_point`,
+`closest_point_lu` y `closest_point_chol` 113 000 a 121 000 (recortados, resultados correctos; sin el umbral CPB06ex2 baja a
+30–34 ms y Yld2004 no cambia), `closest_point_cg` 63 000 y 72 000; con `yld2004p` 102 000 a 105 000 y 58 000 con
+`closest_point_cg`.
+**Conclusiones:** en la CPU, `closest_point_lu` es el más rápido con todos los criterios (7 a 20 % menos que `closest_point`);
+en la GPU Intel, `closest_point_cg` con todos los criterios en forma espectral (1,6 a 3,6 veces menos que `closest_point`), y
+con `yld2004p` `closest_point_chol` y `closest_point_lu` (37 ms, 36 % menos que con `yld2004`). En la CPU la forma espectral de
+Yld2004 es 4 a 17 % más rápida que `yld2004p`. Diferencias con el experimento: `closest_point` con Yld2004 tarda 78 ms y no 282
+(el experimento usaba una Hessiana con acumuladores que no entró; la Hessiana de D-050 es más barata), y Cholesky con
+CPB06ex2 y Yld2004 espectral da resultados correctos (los erróneos venían de esa misma variante). La primera versión de
+`yld2004p` en la rama sumaba con secciones de arreglos y bucles con índice variable: 5 376 bytes de memoria privada y 115 a
+143 ms; con las sumas desenrolladas término a término, 0 bytes y los tiempos de la tabla. `closest_point_cg` con `yld2004p`
+(42,9) sigue más lento que en el experimento (30,7): hipótesis, no medida, el cuarto exponente (kernel de 49 600 a 57 700).
